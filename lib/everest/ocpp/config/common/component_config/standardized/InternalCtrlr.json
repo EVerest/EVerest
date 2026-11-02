@@ -497,7 +497,7 @@
         "attributes": [
             {
                 "type": "Actual",
-                "mutability": "ReadWrite"
+                "mutability": "ReadOnly"
             }
         ],
         "default": false,
@@ -713,6 +713,24 @@
           "description": "Maximum size in bytes for messages sent to the CSMS via websocket. If a message exceeds this size and is eligible to be split into multiple messages, it will be split. Otherwise, this value is ignored.",
           "minimum": 1,
           "default": "32000",
+          "type": "integer"
+      },
+      "MaxIncomingMessageSize": {
+          "variable_name": "MaxIncomingMessageSize",
+          "characteristics": {
+              "minLimit": 65536,
+              "supportsMonitoring": true,
+              "dataType": "integer"
+          },
+          "attributes": [
+              {
+                  "type": "Actual",
+                  "mutability": "ReadOnly"
+              }
+          ],
+          "description": "Maximum size in bytes for messages received from the CSMS via websocket, across all fragments of a message. The connection is closed with status 1009 (Message Too Big) when a message exceeds this size. Takes effect on the next connection.",
+          "minimum": 65536,
+          "default": "4194304",
           "type": "integer"
       },
       "SupportedCriteria": {

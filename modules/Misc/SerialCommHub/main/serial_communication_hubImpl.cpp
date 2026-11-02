@@ -7,7 +7,7 @@
 #include <cstdint>
 #include <date/date.h>
 #include <date/tz.h>
-#include <fmt/core.h>
+#include <fmt/format.h>
 #include <mutex>
 #include <typeinfo>
 

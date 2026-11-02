@@ -11,7 +11,7 @@
 
 namespace ocpp_multi {
 
-V16ConnectionConfigValidator::V16ConnectionConfigValidator(ocpp::v2::DeviceModelInterface& device_model) :
+V16ConnectionConfigValidator::V16ConnectionConfigValidator(ocpp::v2::DeviceModelVariablesInterface& device_model) :
     m_device_model(device_model) {
 }
 

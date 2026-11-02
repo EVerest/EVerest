@@ -3,7 +3,7 @@ asyncapi: 3.0.0
 id: 'pionix:de:everest:ocpp_consumer_API'
 info:
   title: 'EVerest API definition for ocpp (consumer)'
-  version: 1.0.0
+  version: 1.1.0
   description: >-
     API for EVerest API clients implementing occp / ocpp_data_transfer (consumer).
 
@@ -1458,7 +1458,7 @@ components:
           description: Identifies the event
           type: integer
         timestamp:
-          description: Timestamp of the moment the report was generated
+          description: Timestamp of the moment the report was generated in RFC3339 format
           type: string
           format: date-time
         trigger:
@@ -1941,8 +1941,8 @@ components:
           $ref: '#/components/schemas/AttributeEnum'
         value:
           description: >-
-            Value of the requested variable and AttributeEnum. This field can only be empty when the given
-            status is NOT accepted
+            Value of the requested variable and AttributeEnum. Present if and only if the status is Accepted.
+            An empty string when the AttributeEnum is supported but has no value
           type: string
           minLength: 0
           maxLength: 2500
@@ -2053,7 +2053,9 @@ components:
             A critical security event is transmitted as a message to the CSMS, a non-critical one is just written to the security log
           type: boolean
         timestamp:
-          description: Timestamp of the moment the security event was generated, if absent the current datetime is assumed
+          description: >-
+            Timestamp of the moment the security event was generated in RFC3339 format, if absent the current datetime is
+            assumed
           type: string
           format: date-time
     SetVariableRequest:
@@ -2225,7 +2227,10 @@ components:
 
     CommunicationCheck:
       type: boolean
-      description: "Send 'true' at least every 'cfg_communication_check_to_s' seconds to signal module is alive. Send 'false' to stop communication check"
+      description: >-
+        Send true at least every cfg_communication_check_to_s seconds to signal that the client is alive, otherwise
+        EVerest raises a CommunicationFault, which the next message clears. Send false to stop the check until the
+        module restarts.
 
     HeartBeatId:
       type: integer

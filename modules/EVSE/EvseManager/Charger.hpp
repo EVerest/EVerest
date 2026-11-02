@@ -78,12 +78,14 @@ public:
         bool ac_hlc_enabled{false};
         bool ac_hlc_use_5percent{false};
         bool ac_enforce_hlc{false};
+        bool ac_limit_slac_init_retries{true};
         bool ac_with_soc_timeout{false};
         float soft_over_current_tolerance_percent{0};
         float soft_over_current_measurement_noise_A{0};
         int switch_3ph1ph_delay_s{0};
         std::string switch_3ph1ph_cp_state{};
         int soft_over_current_timeout_ms{0};
+        int soft_over_current_stale_data_warning_ms{0};
         int state_F_after_fault_ms{0};
         int reinit_duration_ms{0};
         std::string reinit_method{};
@@ -196,9 +198,12 @@ public:
     void run();
 
     void request_error_sequence();
+    // request_error_sequence() without taking the state machine mutex: for the main loop itself.
+    void request_error_sequence_internal();
 
     void set_matching_started(bool m);
     void set_slac_matched(bool matched);
+    void set_dlink_ready(bool ready);
 
     void notify_currentdemand_started();
     void reset_dc_enforce_target_limits_timer();
@@ -215,6 +220,9 @@ public:
     types::iso15118::DcEvseMinimumLimits get_evse_min_hlc_limits();
 
     void dlink_pause();
+    // AC HLC session authorized by PnC whose EV never started the charging loop: the data link ending is
+    // the EV asking for basic charging.
+    bool pnc_without_charging_loop() const;
     void dlink_error();
     // Returns true if the terminate was a data link loss during session setup and was handled as a D-LINK_ERROR;
     // the caller then forwards a D-LINK_ERROR rather than a D-LINK_TERMINATE to the data link layer.
@@ -301,6 +309,9 @@ private:
     void clear_errors_on_unplug();
 
     void update_pwm_now(float duty_cycle);
+    bool pwm_signal_off() const;
+    void note_pwm_switched_off();
+    bool must_wait_in_x1_before_pwm();
     void update_pwm_now_if_changed(float duty_cycle);
     void update_pwm_now_if_changed_ampere(float duty_cycle);
     void update_pwm_max_every_5seconds_ampere(float duty_cycle);
@@ -392,6 +403,9 @@ private:
         bool authorized_pnc;
         bool matching_started;
         std::atomic_bool slac_matched{false};
+        // D-LINK_READY(link established) was indicated since the session or the last error sequence started, and HLC
+        // has not reported the link lost since.
+        bool dlink_established{false};
         float max_current;
         std::chrono::time_point<std::chrono::steady_clock> max_current_valid_until;
         std::optional<double> max_current_cable;
@@ -407,11 +421,15 @@ private:
         std::optional<types::evse_manager::StopTransactionReason> last_stop_transaction_reason;
         types::evse_manager::StartSessionReason last_start_session_reason;
         float current_drawn_by_vehicle[3];
+        // Diagnostics for stale power meter data: when current_drawn_by_vehicle was last updated
+        // (default-constructed until the first powermeter publication). Only used for warnings,
+        // the values are still used as-is.
+        std::chrono::time_point<std::chrono::steady_clock> current_drawn_by_vehicle_last_update{};
         ShutdownType shutdown_type{ShutdownType::None};
         ShutdownType last_shutdown_type{ShutdownType::None};
-        int ac_with_soc_timer;
+        int ac_with_soc_timer{3600000};
         // non standard compliant option: time out after a while and switch back to DC to get SoC update
-        bool ac_with_soc_timeout;
+        bool ac_with_soc_timeout{false};
         bool contactor_welded{false};
         bool switch_3ph1ph_threephase{false};
         bool switch_3ph1ph_threephase_ongoing{false};
@@ -429,11 +447,14 @@ private:
 
     struct ConfigContext {
         // non standard compliant option to enforce HLC in AC mode
-        bool ac_enforce_hlc;
+        bool ac_enforce_hlc{false};
+        // ISO15118-3 SLAC retries: at most C_SEQU_RETRY with 5 percent, then X1 ([V2G3-M06-07]); none without 5
+        // percent ([V2G3-A09-13])
+        bool ac_limit_slac_init_retries{true};
         // Config option to use 5 percent PWM in HLC AC mode
-        bool ac_hlc_use_5percent;
+        bool ac_hlc_use_5percent{false};
         // Config option to enable HLC in AC mode
-        bool ac_hlc_enabled;
+        bool ac_hlc_enabled{false};
         // AC or DC
         ChargeMode charge_mode{0};
         // Delay when switching from 1ph to 3ph or 3ph to 1ph
@@ -442,6 +463,8 @@ private:
         std::string switch_3ph1ph_cp_state{"X1"};
         // Tolerate soft over current for given time
         int soft_over_current_timeout_ms{7000};
+        // Warn if power meter data used for soft over current checking is older than given time (0 = disabled)
+        int soft_over_current_stale_data_warning_ms{5000};
         // Switch to F for configured ms after a fatal error
         int state_F_after_fault_ms{300};
         // Duration in milliseconds of the reinit state before returning to normal operation
@@ -449,9 +472,9 @@ private:
         // CP state to use during reinitialization
         std::string reinit_method{"CPStateF"};
         // Fail on powermeter errors
-        bool fail_on_powermeter_errors;
+        bool fail_on_powermeter_errors{false};
         // Raise MREC9 authorization timeout error
-        bool raise_mrec9;
+        bool raise_mrec9{false};
         // sleep before enabling pwm in hlc mode
         int sleep_before_enabling_pwm_hlc_mode_ms{1000};
         // type used to generate session ids
@@ -479,6 +502,9 @@ private:
         int hlc_ev_pause_bcb_count{0};
         std::chrono::time_point<std::chrono::steady_clock> hlc_ev_pause_start_of_bcb;
         std::chrono::time_point<std::chrono::steady_clock> hlc_ev_pause_start_of_bcb_sequence;
+        // [V2G3-M07-27]: armed on a wake-up from an EV pause; the PLC link has to be (re-)detected
+        // before it expires, else the error sequence (E/F for T_step_EF, new matching) runs.
+        std::optional<std::chrono::time_point<std::chrono::steady_clock>> wakeup_link_deadline;
         float update_pwm_last_duty_cycle;
         std::chrono::time_point<std::chrono::steady_clock> last_pwm_update;
 
@@ -490,8 +516,12 @@ private:
 
         EvseState t_step_X1_return_state;
         float t_step_X1_return_pwm;
+        // T_step_X1 after a lost data link: X1 lasts until the SLAC module is unmatched ([V2G3-M07-05..07]).
+        bool t_step_X1_until_unmatched{false};
         std::chrono::time_point<std::chrono::steady_clock> last_over_current_event;
         bool over_current{false};
+        // Rate limit for the stale powermeter data warning in check_soft_over_current
+        std::chrono::time_point<std::chrono::steady_clock> last_stale_powermeter_warning{};
 
         ShutdownType last_shutdown_type{ShutdownType::None};
         std::chrono::system_clock::time_point current_state_started;
@@ -503,6 +533,16 @@ private:
         float pwm_set_last_ampere{0};
         bool t_step_ef_x1_pause{false};
         bool cp_state_F_active{false};
+
+        // Time at which a running PWM was switched off (X1 or 100 % duty cycle). IEC 61851-1:2017 Table A.6
+        // sequence 9.2 requires at least IEC_MIN_X1_BEFORE_PWM_MS in X1 before PWM is enabled again.
+        std::optional<std::chrono::time_point<std::chrono::steady_clock>> pwm_switched_off_at{};
+        bool min_x1_wait_logged{false};
+
+        // E/F matching retries in 5 percent mode since plug-in or the last match ([V2G3-M06-07])
+        int slac_retries{0};
+        // C_SEQU_RETRY retries done: 5 percent stays off until unplug, also with ac_enforce_hlc
+        bool slac_retries_exhausted{false};
 
         bool ac_x1_fallback_nominal_timeout_running{false};
         std::chrono::time_point<std::chrono::steady_clock> ac_x1_fallback_nominal_timeout_started;
@@ -583,14 +623,27 @@ private:
     static constexpr int T_REPLUG_MS = 4000;
     // 3 seconds according to IEC61851-1
     static constexpr int T_STEP_X1 = 3000;
+    // 1 second according to table 3 of ISO15118-3: the time the node has to leave the logical network. An X1 for a lost
+    // data link is held at least this long so that the leave happens within X1 ([V2G3-M07-06]).
+    static constexpr int TP_MATCH_LEAVE_MS = 1000;
     // 4 seconds according to table 3 of ISO15118-3
     static constexpr int T_STEP_EF = 4000;
+    // T_conn_max_comm, 8 s according to table 3 of ISO15118-3: after a wake-up the PLC link has to be detected
+    // within it, else [V2G3-M07-27] requires state E for at least T_step_EF and a new matching process.
+    static constexpr auto T_CONN_MAX_COMM = std::chrono::milliseconds(8000);
+    // C_sequ_retry according to table 3 of ISO15118-3
+    static constexpr int C_SEQU_RETRY = 2;
     static constexpr int IEC_PWM_MAX_UPDATE_INTERVAL = 5000;
+    // IEC 61851-1:2017 Table A.6 sequence 9.2: after switching PWM off at state B (B2->B1) the EVSE shall wait at
+    // least 3 s before it enables PWM again (sequence 3.1, B1->B2).
+    static constexpr int IEC_MIN_X1_BEFORE_PWM_MS = 3000;
     // EV READY certification requires a small pause of 500-1000 ms in X1 after a t_step_EF sequence before going to X2-
     // This is not required by IEC61851-1, but it is allowed by the IEC. It helps some older EVs to start charging
     // after the wake-up sequence.
     static constexpr int STAY_IN_X1_AFTER_TSTEP_EF_MS = 750;
     static constexpr int WAIT_FOR_ENERGY_IN_AUTHLOOP_TIMEOUT_MS = 5000;
+    // EIM after plug-in with matching already started: time given to the HLC session to reach the charging loop
+    // before the switch to nominal PWM. A PnC authorization waits for the end of the data link instead.
     static constexpr int AC_X1_FALLBACK_TO_NOMINAL_TIMEOUT_MS = 10000;
     static constexpr int STOPPING_CHARGING_TIMEOUT_MS = 20000;
     // An ISO 15118-20 pause grants the EV NotificationMaxDelay, fixed at 60 s [V2G20-3308], to react before the
@@ -620,8 +673,14 @@ protected:
     constexpr auto& get_shared_context() {
         return shared_context;
     }
+    constexpr auto& get_internal_context() {
+        return internal_context;
+    }
     auto& get_hlc_use_5percent_current_session() {
         return hlc_use_5percent_current_session;
+    }
+    constexpr auto& get_config_context() {
+        return config_context;
     }
     constexpr const auto& get_enable_disable_source_table() const {
         return enable_disable_source_table;

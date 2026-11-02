@@ -9,9 +9,9 @@
 namespace {
 using namespace ocpp::v16::stubs;
 
-ocpp::v2::Ocpp16CustomConfigMappings create_custom_mappings(
+ocpp::v2::Ocpp16KeyMappings create_custom_mappings(
     std::initializer_list<std::pair<const std::string, std::pair<std::string, std::string>>> entries) {
-    ocpp::v2::Ocpp16CustomConfigMappings mappings;
+    ocpp::v2::Ocpp16KeyMappings mappings;
     for (const auto& [key, target] : entries) {
         const auto& [component, variable] = target;
         mappings.emplace(key, std::make_pair(ocpp::v2::Component{component}, ocpp::v2::Variable{variable}));
@@ -37,6 +37,7 @@ const std::map<std::string, std::string> expected_key_value = {
     {"LogMessagesRaw", "false"},
     {"MaxCompositeScheduleDuration", "31536000"},
     {"MaxMessageSize", "65000"},
+    {"MaxIncomingMessageSize", "4194304"},
     {"OcspRequestInterval", "604800"},
     {"ReportSuspendedEVSEReasonChange", "false"},
     {"RetryBackoffRandomRange", "10"},

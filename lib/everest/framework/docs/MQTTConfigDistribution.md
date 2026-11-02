@@ -2,8 +2,8 @@
 
 Since everest-framework 0.19.0 the module configuration is parsed once
 by the manager and then distributed to the modules via MQTT.
-This is achieved by parsing the MQTT settings from the config,
-spawning the modules and passing these MQTT settings to them.
+This is achieved by parsing the MQTT settings from the settings file
+(`--settings`, or the deprecated `settings` block of the config), spawning the modules and passing these MQTT settings to them.
 The modules themselves then ask for their module config via MQTT,
 which is in turn provided to them from the manager.
 After the modules have received their config, their init() function is called.
@@ -24,7 +24,7 @@ The following sequence diagram illustrates this startup process
 sequenceDiagram
     create participant manager
     create participant ManagerSettings
-    manager-)ManagerSettings: ManagerSettings(prefix, config_path)
+    manager-)ManagerSettings: ManagerSettings(prefix, boot_source)
     ManagerSettings-->>manager: return ms
     create participant ConfigServiceCore
     manager-)ConfigServiceCore: ConfigServiceCore(ms, config database)
@@ -76,13 +76,17 @@ class ConfigParseSettings{
     +fs::path modules_dir
     +fs::path configs_dir
     +fs::path config_file
+    +fs::path user_config_file
     +nlohmann::json config
     +bool validate_schema
 }
 
 class ManagerSettings{
     +fs::path db_dir
+    +fs::path settings_file
     +std::vector~std::string~ deprecated_settings
+    +bool deprecated_settings_block
+    +bool settings_block_ignored
     +std::string run_as_user
     +std::string version_information
     +MQTTSettings mqtt_settings
@@ -90,6 +94,7 @@ class ManagerSettings{
     +ManagerSettings(const std::string& prefix, const std::string& config)
     +ManagerSettings(const std::string& prefix, const std::string& config, const std::string& db_path)
     +ManagerSettings(WithoutConfig, const std::string& prefix, const std::string& db_path)
+    +ManagerSettings(const std::string& prefix, const BootSource& boot_source)
 }
 
 class MQTTSettings{

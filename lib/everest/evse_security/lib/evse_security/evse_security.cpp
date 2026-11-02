@@ -185,7 +185,7 @@ std::set<fs::path> get_certificate_path_of_key(const fs::path& key, const fs::pa
     std::string private_key;
 
     if (false == filesystem_utils::read_from_file(key, private_key)) {
-        throw NoPrivateKeyException("Could not read private key from path: " + private_key);
+        throw NoPrivateKeyException("Could not read private key from path: " + key.string());
     }
 
     // Before iterating all bundles, check by certificates from key filename
@@ -345,6 +345,16 @@ EvseSecurity::EvseSecurity(const FilePaths& file_paths, const std::optional<std:
             }
         } else if (!fs::is_directory(path)) {
             throw std::runtime_error(path.string() + " is not a directory.");
+        }
+    }
+
+    for (const auto& path :
+         {file_paths.directories.csms_leaf_key_directory, file_paths.directories.secc_leaf_key_directory}) {
+        std::error_code ec;
+        fs::permissions(path, fs::perms::owner_all, fs::perm_options::replace, ec);
+        if (ec) {
+            EVLOG_warning << "Could not restrict permissions of private key directory " << path.string() << ": "
+                          << ec.message();
         }
     }
 

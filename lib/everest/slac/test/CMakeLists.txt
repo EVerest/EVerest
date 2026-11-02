@@ -35,6 +35,17 @@ target_compile_features(evse_slac_event_tx_test PRIVATE cxx_std_17)
 
 add_test(NAME evse_slac_event_tx_test COMMAND evse_slac_event_tx_test)
 
+add_executable(slac_socket_test slac_socket_test.cpp)
+
+target_link_libraries(slac_socket_test
+    PRIVATE
+        slac
+)
+
+target_compile_features(slac_socket_test PRIVATE cxx_std_17)
+
+add_test(NAME slac_socket_test COMMAND slac_socket_test)
+
 add_executable(evse_slac_telemetry_test evse_slac_telemetry_test.cpp)
 
 target_link_libraries(evse_slac_telemetry_test

@@ -17,14 +17,7 @@ types::reservation::ReservationResult reservationImpl::handle_reserve_now(types:
 
     EVLOG_debug << "Handle reservation for evse id " << (request.evse_id.has_value() ? request.evse_id.value() : -1);
 
-    const auto reservation_result = this->mod->auth_handler->handle_reservation(request);
-    if (reservation_result == ReservationResult::Accepted) {
-        if (!this->mod->auth_handler->call_reserved(request.reservation_id, request.evse_id)) {
-            this->mod->auth_handler->handle_cancel_reservation(request.reservation_id);
-            return ReservationResult::Rejected;
-        }
-    }
-    return reservation_result;
+    return this->mod->auth_handler->place_reservation(request);
 };
 
 bool reservationImpl::handle_cancel_reservation(int& reservation_id) {

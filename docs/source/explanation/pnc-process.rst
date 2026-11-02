@@ -66,15 +66,17 @@ for further information on how to do the configuration for this module.
 In the visualization, step (0) shows the process that represents the previously described process of
 provisioning the charger with the correct certificates, before there is a physical
 connection to the EV. The OCPP module (OCPPmulti is recommended; OCPP/OCPP201 are
-deprecated alternatives) and the EvseV2G module require a module that implements
+deprecated alternatives) and the ISO 15118 module (Evse15118D20; EvseV2G is a
+deprecated alternative) require a module that implements
 the :doc:`evse_security interface </reference/interfaces/evse_security>`,
 in order to execute the following commands:
 
 * install_ca_certificate (Used by OCPP to install root certificates. This process is initiated by the OCPP CSMS)
 * update_leaf_certificate (Used to install or update SECC leaf certificates)
 * generate_certificate_signing_request (Used to generate a CSR that is used in the SignCertificate.req of OCPP)
-* verify_certificate (Used by EvseV2G to verify the contract certificate and by OCPP to verify new leaf certificates)
-* get_mo_ocsp_request_data (Used by EvseV2G and OCPP to get the OCSP request data of the contract certificate (chain))
+* verify_certificate (Used by EvseV2G to verify the contract certificate and by OCPP to verify new leaf certificates;
+  Evse15118D20 validates the contract chain against the root bundles from get_verify_file instead)
+* get_mo_ocsp_request_data (Used by the ISO 15118 module and OCPP to get the OCSP request data of the contract certificate (chain))
 
 There are more commands provided by the :doc:`evse_security interface </reference/interfaces/evse_security>`,
 which are not included in the Plug&Charge process.
@@ -96,7 +98,7 @@ Step 1
 ======
 
 This step is triggered by a physical connection between the EV and the charger. A TLS connection is required 
-between the EV and the charger to allow Plug&Charge, so the EvseV2G module retrieves the SECC leaf certificate 
+between the EV and the charger to allow Plug&Charge, so the ISO 15118 module retrieves the SECC leaf certificate 
 chain and private key from via the evse_security.yaml interface and sets up a TLS server, to which the EV
 can connect as a TLS client.
 
@@ -105,7 +107,7 @@ Step 2
 
 When charger and EV have agreed on Contract being the selected payment option, we have something going on
 that we can call a Plug&Charge process. The EV sends its contract certificate chain and requests authorization
-from the charger. The EvseV2G module generates a
+from the charger. The ISO 15118 module generates a
 :ref:`ProvidedIdToken <authorization-ProvidedIdToken>`,
 which is the EVerest type that contains data about the authorization request, including the contract
 certificate and OCSP request data. 
@@ -138,7 +140,7 @@ that authorization is present and the charging session can be started.
 Step 6
 ======
 
-The EvseManager forwards the authorization response to the EvseV2G module, which can then send the 
+The EvseManager forwards the authorization response to the ISO 15118 module, which can then send the 
 awaited ISO15118 response to the EV.
 
 .. note::

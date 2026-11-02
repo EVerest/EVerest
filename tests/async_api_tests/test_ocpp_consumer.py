@@ -122,6 +122,28 @@ async def _publish_status_until_received(probe_module: ProbeModule, queues, stat
     raise TimeoutError(f"connection status was not forwarded: {received}")
 
 
+async def _get_latched_until_reply(handler: AsyncApiMqttHandler, prefix: str, variable: str,
+                                   deadline: float = 15.0):
+    """Requests a latched var until its reply arrives and returns the reply.
+
+    A request published before the bridge has subscribed its <var>/get topic is lost,
+    so it is repeated until the reply topic answers.
+    """
+    reply_topic = f"{API_BASE}/e2m/{variable}/reply"
+    reply_queue = await _subscribe_to_queue(handler, f"{prefix}{reply_topic}")
+    request = json.dumps({"headers": {"replyTo": reply_topic}})
+
+    loop = asyncio.get_event_loop()
+    end = loop.time() + deadline
+    while loop.time() < end:
+        await handler.publish(f"{prefix}{API_BASE}/m2e/{variable}/get", request)
+        try:
+            return await loop.run_in_executor(None, lambda: reply_queue.get(timeout=0.5))
+        except Empty:
+            continue
+    raise TimeoutError(f"no reply received for {variable}/get")
+
+
 @pytest.mark.asyncio
 @pytest.mark.everest_core_config("probe-ocpp-consumer.yaml")
 async def test_connection_status_is_forwarded_with_legacy_is_connected(
@@ -177,3 +199,17 @@ async def test_latched_connection_status_and_is_connected_are_served(
             f"{prefix}{API_BASE}/m2e/{variable}/get",
             json.dumps({"headers": {"replyTo": reply_topic}}))
         assert await _get_from_queue(reply_queue) == expected
+
+
+@pytest.mark.asyncio
+@pytest.mark.everest_core_config("probe-ocpp-consumer.yaml")
+async def test_latched_var_not_yet_published_is_served_as_null(
+    everest_core: EverestCore,
+    async_api_mqtt_handler: AsyncApiMqttHandler,
+    probe_module: ProbeModule,
+):
+    prefix = everest_core.mqtt_external_prefix
+
+    # the probe never publishes connection_status, so nothing is cached for either var
+    for variable in ("connection_status", "is_connected"):
+        assert await _get_latched_until_reply(async_api_mqtt_handler, prefix, variable) is None

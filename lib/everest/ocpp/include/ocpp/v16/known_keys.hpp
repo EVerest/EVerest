@@ -42,11 +42,13 @@ namespace ocpp::v16::keys {
     mapping(MeterValuesSampledData, SampledDataTxUpdatedMeasurands) \
     mapping(MeterValueSampleInterval, SampledDataTxUpdatedInterval) \
     mapping(ResetRetries, ResetRetries) \
+    mapping(StopTransactionOnEVSideDisconnect, StopTxOnEVSideDisconnect) \
     mapping(StopTransactionOnInvalidId, StopTxOnInvalidId) \
     mapping(StopTxnAlignedData, AlignedDataTxEndedMeasurands) \
     mapping(StopTxnSampledData, SampledDataTxEndedMeasurands) \
     mapping(TransactionMessageAttempts, MessageAttempts) \
     mapping(TransactionMessageRetryInterval, MessageAttemptInterval) \
+    mapping(UnlockConnectorOnEVSideDisconnect, UnlockOnEVSideDisconnect) \
     mapping(WebSocketPingInterval, WebSocketPingInterval) \
     mapping(LocalAuthListEnabled, LocalAuthListCtrlrEnabled) \
     mapping(SendLocalListMaxLength, ItemsPerMessageSendLocalList) \
@@ -106,6 +108,7 @@ namespace ocpp::v16::keys {
     mapping(MessageTypesDiscardForQueueing, MessageTypesDiscardForQueueing) \
     mapping(MessageQueueSizeThreshold, MessageQueueSizeThreshold) \
     mapping(MaxMessageSize, MaxMessageSize) \
+    mapping(MaxIncomingMessageSize, MaxIncomingMessageSize) \
     mapping(TLSKeylogFile, TLSKeylogFile) \
     mapping(EnableTLSKeylog, EnableTLSKeylog) \
     mapping(RetryBackoffWaitMinimum, RetryBackOffWaitMinimum)
@@ -151,6 +154,8 @@ namespace ocpp::v16::keys {
 
 #define MAPPING_COST(mapping) \
     mapping(NumberOfDecimalsForCostValues, NumberOfDecimalsForCostValues) \
+    mapping(CustomDisplayCostAndPrice, CustomImplementationCaliforniaPricingEnabled) \
+    mapping(CustomMultiLanguageMessages, CustomImplementationMultiLanguageEnabled) \
     mapping(TimeOffset, TimeOffset) \
     mapping(NextTimeOffsetTransitionDateTime, NextTimeOffsetTransitionDateTime) \
     mapping(TimeOffsetNextTransition, TimeOffsetNextTransition)
@@ -166,10 +171,8 @@ namespace ocpp::v16::keys {
     mapping(GetConfigurationMaxKeys, GetConfigurationMaxKeys) \
     mapping(LightIntensity, LightIntensity) \
     mapping(MinimumStatusDuration, MinimumStatusDuration) \
-    mapping(StopTransactionOnEVSideDisconnect, StopTransactionOnEVSideDisconnect) \
     mapping(SupportedFeatureProfiles, SupportedFeatureProfiles) \
     mapping(SupportedFeatureProfilesMaxLength, SupportedFeatureProfilesMaxLength) \
-    mapping(UnlockConnectorOnEVSideDisconnect, UnlockConnectorOnEVSideDisconnect) \
     mapping(ReserveConnectorZeroSupported, ReserveConnectorZeroSupported) \
     mapping(AllowChargingProfileWithoutStartSchedule, AllowChargingProfileWithoutStartSchedule) \
     mapping(WaitForStopTransactionsOnResetTimeout, WaitForStopTransactionsOnResetTimeout) \
@@ -180,12 +183,10 @@ namespace ocpp::v16::keys {
     mapping(MeterPublicKeys, MeterPublicKeys) \
     mapping(DisableSecurityEventNotifications, DisableSecurityEventNotifications) \
     mapping(ISO15118CertificateManagementEnabled, ISO15118CertificateManagementEnabled) \
-    mapping(CustomDisplayCostAndPrice, CustomDisplayCostAndPrice) \
     mapping(DefaultPrice, DefaultPrice) \
     mapping(DefaultPriceText, DefaultPriceText) \
     mapping(CustomIdleFeeAfterStop, CustomIdleFeeAfterStop) \
     mapping(SupportedLanguages, SupportedLanguages) \
-    mapping(CustomMultiLanguageMessages, CustomMultiLanguageMessages) \
     mapping(Language, Language) \
     mapping(WaitForSetUserPriceTimeout, WaitForSetUserPriceTimeout) \
     mapping(NumberOfConnectors, NumberOfConnectors) \
@@ -274,6 +275,7 @@ namespace ocpp::v16::keys {
     key(Internal, LogRotationMaximumFileCount) \
     key(Internal, LogRotationMaximumFileSize) \
     key(Internal, MaxCompositeScheduleDuration) \
+    key(Internal, MaxIncomingMessageSize) \
     key(Internal, MaxMessageSize) \
     key(Internal, MessageQueueSizeThreshold) \
     key(Internal, MessageTypesDiscardForQueueing) \

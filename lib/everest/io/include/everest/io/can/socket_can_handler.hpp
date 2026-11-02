@@ -9,6 +9,7 @@
 #include <everest/io/can/can_payload.hpp>
 #include <everest/io/can/can_recv_filter.hpp>
 #include <everest/io/event/unique_fd.hpp>
+#include <everest/io/socket/io_error_record.hpp>
 #include <optional>
 #include <string>
 #include <vector>
@@ -162,6 +163,7 @@ private:
     bool apply_recv_filters();
 
     event::unique_fd m_owned_can_fd;
+    socket::io_error_record m_error;
     std::string m_can_dev;
     std::vector<can_recv_filter> m_recv_filters;
     socket_can_options m_options;

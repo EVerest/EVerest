@@ -22,6 +22,10 @@ DeviceModelTestHelper::DeviceModelTestHelper(const std::string& database_path, c
     this->device_model = create_device_model();
 }
 
+void DeviceModelTestHelper::reload_device_model() {
+    this->device_model = create_device_model(false);
+}
+
 DeviceModel* DeviceModelTestHelper::get_device_model() {
     if (this->device_model == nullptr) {
         return nullptr;
@@ -208,6 +212,7 @@ bool DeviceModelTestHelper::set_variable_attribute_value_null(const std::string&
         return false;
     }
 
+    this->device_model = create_device_model(false);
     return true;
 }
 

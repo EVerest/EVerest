@@ -28,7 +28,6 @@ target_link_libraries(${TEST_TARGET_NAME}
 )
 
 if (NOT DISABLE_EDM)
-    list(APPEND CMAKE_MODULE_PATH ${CPM_PACKAGE_catch2_SOURCE_DIR}/extras)
     include(Catch)
     catch_discover_tests(${TEST_TARGET_NAME})
 endif ()

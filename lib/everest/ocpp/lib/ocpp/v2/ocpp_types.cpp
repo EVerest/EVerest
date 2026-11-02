@@ -9,6 +9,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include <ocpp/common/json_number.hpp>
 #include <ocpp/common/types.hpp>
 #include <ocpp/v2/ocpp_enums.hpp>
 
@@ -73,10 +74,10 @@ void from_json(const json& j, PeriodicEventStreamParams& k) {
 
     // the optional parts of the message
     if (j.contains("interval")) {
-        k.interval.emplace(j.at("interval"));
+        k.interval.emplace(ocpp::integer_from_json(j.at("interval")));
     }
     if (j.contains("values")) {
-        k.values.emplace(j.at("values"));
+        k.values.emplace(ocpp::integer_from_json(j.at("values")));
     }
     if (j.contains("customData")) {
         k.customData.emplace(j.at("customData"));
@@ -290,7 +291,7 @@ void from_json(const json& j, IdTokenInfo& k) {
         k.cacheExpiryDateTime.emplace(j.at("cacheExpiryDateTime").get<std::string>());
     }
     if (j.contains("chargingPriority")) {
-        k.chargingPriority.emplace(j.at("chargingPriority"));
+        k.chargingPriority.emplace(ocpp::integer_from_json(j.at("chargingPriority")));
     }
     if (j.contains("groupIdToken")) {
         k.groupIdToken.emplace(j.at("groupIdToken"));
@@ -305,7 +306,7 @@ void from_json(const json& j, IdTokenInfo& k) {
         const json& arr = j.at("evseId");
         std::vector<std::int32_t> vec;
         for (const auto& val : arr) {
-            vec.push_back(val);
+            vec.push_back(ocpp::integer_from_json(val));
         }
         k.evseId.emplace(vec);
     }
@@ -424,40 +425,40 @@ void from_json(const json& j, TariffConditions& k) {
         k.evseKind.emplace(conversions::string_to_evse_kind_enum(j.at("evseKind")));
     }
     if (j.contains("minEnergy")) {
-        k.minEnergy.emplace(j.at("minEnergy"));
+        k.minEnergy.emplace(ocpp::decimal_from_json(j.at("minEnergy")));
     }
     if (j.contains("maxEnergy")) {
-        k.maxEnergy.emplace(j.at("maxEnergy"));
+        k.maxEnergy.emplace(ocpp::decimal_from_json(j.at("maxEnergy")));
     }
     if (j.contains("minCurrent")) {
-        k.minCurrent.emplace(j.at("minCurrent"));
+        k.minCurrent.emplace(ocpp::decimal_from_json(j.at("minCurrent")));
     }
     if (j.contains("maxCurrent")) {
-        k.maxCurrent.emplace(j.at("maxCurrent"));
+        k.maxCurrent.emplace(ocpp::decimal_from_json(j.at("maxCurrent")));
     }
     if (j.contains("minPower")) {
-        k.minPower.emplace(j.at("minPower"));
+        k.minPower.emplace(ocpp::decimal_from_json(j.at("minPower")));
     }
     if (j.contains("maxPower")) {
-        k.maxPower.emplace(j.at("maxPower"));
+        k.maxPower.emplace(ocpp::decimal_from_json(j.at("maxPower")));
     }
     if (j.contains("minTime")) {
-        k.minTime.emplace(j.at("minTime"));
+        k.minTime.emplace(ocpp::integer_from_json(j.at("minTime")));
     }
     if (j.contains("maxTime")) {
-        k.maxTime.emplace(j.at("maxTime"));
+        k.maxTime.emplace(ocpp::integer_from_json(j.at("maxTime")));
     }
     if (j.contains("minChargingTime")) {
-        k.minChargingTime.emplace(j.at("minChargingTime"));
+        k.minChargingTime.emplace(ocpp::integer_from_json(j.at("minChargingTime")));
     }
     if (j.contains("maxChargingTime")) {
-        k.maxChargingTime.emplace(j.at("maxChargingTime"));
+        k.maxChargingTime.emplace(ocpp::integer_from_json(j.at("maxChargingTime")));
     }
     if (j.contains("minIdleTime")) {
-        k.minIdleTime.emplace(j.at("minIdleTime"));
+        k.minIdleTime.emplace(ocpp::integer_from_json(j.at("minIdleTime")));
     }
     if (j.contains("maxIdleTime")) {
-        k.maxIdleTime.emplace(j.at("maxIdleTime"));
+        k.maxIdleTime.emplace(ocpp::integer_from_json(j.at("maxIdleTime")));
     }
     if (j.contains("customData")) {
         k.customData.emplace(j.at("customData"));
@@ -489,7 +490,7 @@ void to_json(json& j, const TariffEnergyPrice& k) {
 /// \brief Conversion from a given json object \p j to a given TariffEnergyPrice \p k
 void from_json(const json& j, TariffEnergyPrice& k) {
     // the required parts of the message
-    k.priceKwh = j.at("priceKwh");
+    k.priceKwh = ocpp::decimal_from_json(j.at("priceKwh"));
 
     // the optional parts of the message
     if (j.contains("conditions")) {
@@ -527,11 +528,11 @@ void to_json(json& j, const TaxRate& k) {
 void from_json(const json& j, TaxRate& k) {
     // the required parts of the message
     k.type = j.at("type");
-    k.tax = j.at("tax");
+    k.tax = ocpp::decimal_from_json(j.at("tax"));
 
     // the optional parts of the message
     if (j.contains("stack")) {
-        k.stack.emplace(j.at("stack"));
+        k.stack.emplace(ocpp::integer_from_json(j.at("stack")));
     }
     if (j.contains("customData")) {
         k.customData.emplace(j.at("customData"));
@@ -609,7 +610,7 @@ void to_json(json& j, const TariffTimePrice& k) {
 /// \brief Conversion from a given json object \p j to a given TariffTimePrice \p k
 void from_json(const json& j, TariffTimePrice& k) {
     // the required parts of the message
-    k.priceMinute = j.at("priceMinute");
+    k.priceMinute = ocpp::decimal_from_json(j.at("priceMinute"));
 
     // the optional parts of the message
     if (j.contains("conditions")) {
@@ -778,7 +779,7 @@ void to_json(json& j, const TariffFixedPrice& k) {
 /// \brief Conversion from a given json object \p j to a given TariffFixedPrice \p k
 void from_json(const json& j, TariffFixedPrice& k) {
     // the required parts of the message
-    k.priceFixed = j.at("priceFixed");
+    k.priceFixed = ocpp::decimal_from_json(j.at("priceFixed"));
 
     // the optional parts of the message
     if (j.contains("conditions")) {
@@ -874,10 +875,10 @@ void from_json(const json& j, Price& k) {
 
     // the optional parts of the message
     if (j.contains("exclTax")) {
-        k.exclTax.emplace(j.at("exclTax"));
+        k.exclTax.emplace(ocpp::decimal_from_json(j.at("exclTax")));
     }
     if (j.contains("inclTax")) {
-        k.inclTax.emplace(j.at("inclTax"));
+        k.inclTax.emplace(ocpp::decimal_from_json(j.at("inclTax")));
     }
     if (j.contains("taxRates")) {
         const json& arr = j.at("taxRates");
@@ -1023,10 +1024,10 @@ void to_json(json& j, const BatteryData& k) {
 /// \brief Conversion from a given json object \p j to a given BatteryData \p k
 void from_json(const json& j, BatteryData& k) {
     // the required parts of the message
-    k.evseId = j.at("evseId");
+    k.evseId = ocpp::integer_from_json(j.at("evseId"));
     k.serialNumber = j.at("serialNumber");
-    k.soC = j.at("soC");
-    k.soH = j.at("soH");
+    k.soC = ocpp::decimal_from_json(j.at("soC"));
+    k.soH = ocpp::decimal_from_json(j.at("soH"));
 
     // the optional parts of the message
     if (j.contains("productionDate")) {
@@ -1154,11 +1155,11 @@ void to_json(json& j, const EVSE& k) {
 /// \brief Conversion from a given json object \p j to a given EVSE \p k
 void from_json(const json& j, EVSE& k) {
     // the required parts of the message
-    k.id = j.at("id");
+    k.id = ocpp::integer_from_json(j.at("id"));
 
     // the optional parts of the message
     if (j.contains("connectorId")) {
-        k.connectorId.emplace(j.at("connectorId"));
+        k.connectorId.emplace(ocpp::integer_from_json(j.at("connectorId")));
     }
     if (j.contains("customData")) {
         k.customData.emplace(j.at("customData"));
@@ -1198,14 +1199,14 @@ void from_json(const json& j, ClearChargingProfile& k) {
 
     // the optional parts of the message
     if (j.contains("evseId")) {
-        k.evseId.emplace(j.at("evseId"));
+        k.evseId.emplace(ocpp::integer_from_json(j.at("evseId")));
     }
     if (j.contains("chargingProfilePurpose")) {
         k.chargingProfilePurpose.emplace(
             conversions::string_to_charging_profile_purpose_enum(j.at("chargingProfilePurpose")));
     }
     if (j.contains("stackLevel")) {
-        k.stackLevel.emplace(j.at("stackLevel"));
+        k.stackLevel.emplace(ocpp::integer_from_json(j.at("stackLevel")));
     }
     if (j.contains("customData")) {
         k.customData.emplace(j.at("customData"));
@@ -1281,7 +1282,7 @@ void to_json(json& j, const ClearMonitoringResult& k) {
 void from_json(const json& j, ClearMonitoringResult& k) {
     // the required parts of the message
     k.status = conversions::string_to_clear_monitoring_status_enum(j.at("status"));
-    k.id = j.at("id");
+    k.id = ocpp::integer_from_json(j.at("id"));
 
     // the optional parts of the message
     if (j.contains("statusInfo")) {
@@ -1455,13 +1456,13 @@ void from_json(const json& j, ChargingProfileCriterion& k) {
             conversions::string_to_charging_profile_purpose_enum(j.at("chargingProfilePurpose")));
     }
     if (j.contains("stackLevel")) {
-        k.stackLevel.emplace(j.at("stackLevel"));
+        k.stackLevel.emplace(ocpp::integer_from_json(j.at("stackLevel")));
     }
     if (j.contains("chargingProfileId")) {
         const json& arr = j.at("chargingProfileId");
         std::vector<std::int32_t> vec;
         for (const auto& val : arr) {
-            vec.push_back(val);
+            vec.push_back(ocpp::integer_from_json(val));
         }
         k.chargingProfileId.emplace(vec);
     }
@@ -1501,8 +1502,8 @@ void to_json(json& j, const V2XFreqWattPoint& k) {
 /// \brief Conversion from a given json object \p j to a given V2XFreqWattPoint \p k
 void from_json(const json& j, V2XFreqWattPoint& k) {
     // the required parts of the message
-    k.frequency = j.at("frequency");
-    k.power = j.at("power");
+    k.frequency = ocpp::decimal_from_json(j.at("frequency"));
+    k.power = ocpp::decimal_from_json(j.at("power"));
 
     // the optional parts of the message
     if (j.contains("customData")) {
@@ -1533,8 +1534,8 @@ void to_json(json& j, const V2XSignalWattPoint& k) {
 /// \brief Conversion from a given json object \p j to a given V2XSignalWattPoint \p k
 void from_json(const json& j, V2XSignalWattPoint& k) {
     // the required parts of the message
-    k.signal = j.at("signal");
-    k.power = j.at("power");
+    k.signal = ocpp::integer_from_json(j.at("signal"));
+    k.power = ocpp::decimal_from_json(j.at("power"));
 
     // the optional parts of the message
     if (j.contains("customData")) {
@@ -1630,50 +1631,50 @@ void to_json(json& j, const ChargingSchedulePeriod& k) {
 /// \brief Conversion from a given json object \p j to a given ChargingSchedulePeriod \p k
 void from_json(const json& j, ChargingSchedulePeriod& k) {
     // the required parts of the message
-    k.startPeriod = j.at("startPeriod");
+    k.startPeriod = ocpp::integer_from_json(j.at("startPeriod"));
 
     // the optional parts of the message
     if (j.contains("limit")) {
-        k.limit.emplace(j.at("limit"));
+        k.limit.emplace(ocpp::decimal_from_json(j.at("limit")));
     }
     if (j.contains("limit_L2")) {
-        k.limit_L2.emplace(j.at("limit_L2"));
+        k.limit_L2.emplace(ocpp::decimal_from_json(j.at("limit_L2")));
     }
     if (j.contains("limit_L3")) {
-        k.limit_L3.emplace(j.at("limit_L3"));
+        k.limit_L3.emplace(ocpp::decimal_from_json(j.at("limit_L3")));
     }
     if (j.contains("numberPhases")) {
-        k.numberPhases.emplace(j.at("numberPhases"));
+        k.numberPhases.emplace(ocpp::integer_from_json(j.at("numberPhases")));
     }
     if (j.contains("phaseToUse")) {
-        k.phaseToUse.emplace(j.at("phaseToUse"));
+        k.phaseToUse.emplace(ocpp::integer_from_json(j.at("phaseToUse")));
     }
     if (j.contains("dischargeLimit")) {
-        k.dischargeLimit.emplace(j.at("dischargeLimit"));
+        k.dischargeLimit.emplace(ocpp::decimal_from_json(j.at("dischargeLimit")));
     }
     if (j.contains("dischargeLimit_L2")) {
-        k.dischargeLimit_L2.emplace(j.at("dischargeLimit_L2"));
+        k.dischargeLimit_L2.emplace(ocpp::decimal_from_json(j.at("dischargeLimit_L2")));
     }
     if (j.contains("dischargeLimit_L3")) {
-        k.dischargeLimit_L3.emplace(j.at("dischargeLimit_L3"));
+        k.dischargeLimit_L3.emplace(ocpp::decimal_from_json(j.at("dischargeLimit_L3")));
     }
     if (j.contains("setpoint")) {
-        k.setpoint.emplace(j.at("setpoint"));
+        k.setpoint.emplace(ocpp::decimal_from_json(j.at("setpoint")));
     }
     if (j.contains("setpoint_L2")) {
-        k.setpoint_L2.emplace(j.at("setpoint_L2"));
+        k.setpoint_L2.emplace(ocpp::decimal_from_json(j.at("setpoint_L2")));
     }
     if (j.contains("setpoint_L3")) {
-        k.setpoint_L3.emplace(j.at("setpoint_L3"));
+        k.setpoint_L3.emplace(ocpp::decimal_from_json(j.at("setpoint_L3")));
     }
     if (j.contains("setpointReactive")) {
-        k.setpointReactive.emplace(j.at("setpointReactive"));
+        k.setpointReactive.emplace(ocpp::decimal_from_json(j.at("setpointReactive")));
     }
     if (j.contains("setpointReactive_L2")) {
-        k.setpointReactive_L2.emplace(j.at("setpointReactive_L2"));
+        k.setpointReactive_L2.emplace(ocpp::decimal_from_json(j.at("setpointReactive_L2")));
     }
     if (j.contains("setpointReactive_L3")) {
-        k.setpointReactive_L3.emplace(j.at("setpointReactive_L3"));
+        k.setpointReactive_L3.emplace(ocpp::decimal_from_json(j.at("setpointReactive_L3")));
     }
     if (j.contains("preconditioningRequest")) {
         k.preconditioningRequest.emplace(j.at("preconditioningRequest"));
@@ -1682,7 +1683,7 @@ void from_json(const json& j, ChargingSchedulePeriod& k) {
         k.evseSleep.emplace(j.at("evseSleep"));
     }
     if (j.contains("v2xBaseline")) {
-        k.v2xBaseline.emplace(j.at("v2xBaseline"));
+        k.v2xBaseline.emplace(ocpp::decimal_from_json(j.at("v2xBaseline")));
     }
     if (j.contains("operationMode")) {
         k.operationMode.emplace(conversions::string_to_operation_mode_enum(j.at("operationMode")));
@@ -1734,8 +1735,8 @@ void to_json(json& j, const CompositeSchedule& k) {
 /// \brief Conversion from a given json object \p j to a given CompositeSchedule \p k
 void from_json(const json& j, CompositeSchedule& k) {
     // the required parts of the message
-    k.evseId = j.at("evseId");
-    k.duration = j.at("duration");
+    k.evseId = ocpp::integer_from_json(j.at("evseId"));
+    k.duration = ocpp::integer_from_json(j.at("duration"));
     k.scheduleStart = ocpp::DateTime(std::string(j.at("scheduleStart")));
     k.chargingRateUnit = conversions::string_to_charging_rate_unit_enum(j.at("chargingRateUnit"));
     for (const auto& val : j.at("chargingSchedulePeriod")) {
@@ -1974,9 +1975,9 @@ void to_json(json& j, const ConstantStreamData& k) {
 /// \brief Conversion from a given json object \p j to a given ConstantStreamData \p k
 void from_json(const json& j, ConstantStreamData& k) {
     // the required parts of the message
-    k.id = j.at("id");
+    k.id = ocpp::integer_from_json(j.at("id"));
     k.params = j.at("params");
-    k.variableMonitoringId = j.at("variableMonitoringId");
+    k.variableMonitoringId = ocpp::integer_from_json(j.at("variableMonitoringId"));
 
     // the optional parts of the message
     if (j.contains("customData")) {
@@ -2033,7 +2034,7 @@ void from_json(const json& j, TariffAssignment& k) {
         const json& arr = j.at("evseIds");
         std::vector<std::int32_t> vec;
         for (const auto& val : arr) {
-            vec.push_back(val);
+            vec.push_back(ocpp::integer_from_json(val));
         }
         k.evseIds.emplace(vec);
     }
@@ -2216,7 +2217,7 @@ void from_json(const json& j, UnitOfMeasure& k) {
         k.unit.emplace(j.at("unit"));
     }
     if (j.contains("multiplier")) {
-        k.multiplier.emplace(j.at("multiplier"));
+        k.multiplier.emplace(ocpp::integer_from_json(j.at("multiplier")));
     }
     if (j.contains("customData")) {
         k.customData.emplace(j.at("customData"));
@@ -2263,7 +2264,7 @@ void to_json(json& j, const SampledValue& k) {
 /// \brief Conversion from a given json object \p j to a given SampledValue \p k
 void from_json(const json& j, SampledValue& k) {
     // the required parts of the message
-    k.value = j.at("value");
+    k.value = ocpp::decimal_from_json(j.at("value"));
 
     // the optional parts of the message
     if (j.contains("measurand")) {
@@ -2346,8 +2347,8 @@ void to_json(json& j, const LimitAtSoC& k) {
 /// \brief Conversion from a given json object \p j to a given LimitAtSoC \p k
 void from_json(const json& j, LimitAtSoC& k) {
     // the required parts of the message
-    k.soc = j.at("soc");
-    k.limit = j.at("limit");
+    k.soc = ocpp::integer_from_json(j.at("soc"));
+    k.limit = ocpp::decimal_from_json(j.at("limit"));
 
     // the optional parts of the message
     if (j.contains("customData")) {
@@ -2380,11 +2381,11 @@ void to_json(json& j, const RelativeTimeInterval& k) {
 /// \brief Conversion from a given json object \p j to a given RelativeTimeInterval \p k
 void from_json(const json& j, RelativeTimeInterval& k) {
     // the required parts of the message
-    k.start = j.at("start");
+    k.start = ocpp::integer_from_json(j.at("start"));
 
     // the optional parts of the message
     if (j.contains("duration")) {
-        k.duration.emplace(j.at("duration"));
+        k.duration.emplace(ocpp::integer_from_json(j.at("duration")));
     }
     if (j.contains("customData")) {
         k.customData.emplace(j.at("customData"));
@@ -2418,11 +2419,11 @@ void to_json(json& j, const Cost& k) {
 void from_json(const json& j, Cost& k) {
     // the required parts of the message
     k.costKind = conversions::string_to_cost_kind_enum(j.at("costKind"));
-    k.amount = j.at("amount");
+    k.amount = ocpp::integer_from_json(j.at("amount"));
 
     // the optional parts of the message
     if (j.contains("amountMultiplier")) {
-        k.amountMultiplier.emplace(j.at("amountMultiplier"));
+        k.amountMultiplier.emplace(ocpp::integer_from_json(j.at("amountMultiplier")));
     }
     if (j.contains("customData")) {
         k.customData.emplace(j.at("customData"));
@@ -2452,7 +2453,7 @@ void to_json(json& j, const ConsumptionCost& k) {
 /// \brief Conversion from a given json object \p j to a given ConsumptionCost \p k
 void from_json(const json& j, ConsumptionCost& k) {
     // the required parts of the message
-    k.startValue = j.at("startValue");
+    k.startValue = ocpp::decimal_from_json(j.at("startValue"));
     for (const auto& val : j.at("cost")) {
         k.cost.push_back(val);
     }
@@ -2498,7 +2499,7 @@ void from_json(const json& j, SalesTariffEntry& k) {
 
     // the optional parts of the message
     if (j.contains("ePriceLevel")) {
-        k.ePriceLevel.emplace(j.at("ePriceLevel"));
+        k.ePriceLevel.emplace(ocpp::integer_from_json(j.at("ePriceLevel")));
     }
     if (j.contains("consumptionCost")) {
         const json& arr = j.at("consumptionCost");
@@ -2542,7 +2543,7 @@ void to_json(json& j, const SalesTariff& k) {
 /// \brief Conversion from a given json object \p j to a given SalesTariff \p k
 void from_json(const json& j, SalesTariff& k) {
     // the required parts of the message
-    k.id = j.at("id");
+    k.id = ocpp::integer_from_json(j.at("id"));
     for (const auto& val : j.at("salesTariffEntry")) {
         k.salesTariffEntry.push_back(val);
     }
@@ -2552,7 +2553,7 @@ void from_json(const json& j, SalesTariff& k) {
         k.salesTariffDescription.emplace(j.at("salesTariffDescription"));
     }
     if (j.contains("numEPriceLevels")) {
-        k.numEPriceLevels.emplace(j.at("numEPriceLevels"));
+        k.numEPriceLevels.emplace(ocpp::integer_from_json(j.at("numEPriceLevels")));
     }
     if (j.contains("customData")) {
         k.customData.emplace(j.at("customData"));
@@ -2582,8 +2583,8 @@ void to_json(json& j, const RationalNumber& k) {
 /// \brief Conversion from a given json object \p j to a given RationalNumber \p k
 void from_json(const json& j, RationalNumber& k) {
     // the required parts of the message
-    k.exponent = j.at("exponent");
-    k.value = j.at("value");
+    k.exponent = ocpp::integer_from_json(j.at("exponent"));
+    k.value = ocpp::integer_from_json(j.at("value"));
 
     // the optional parts of the message
     if (j.contains("customData")) {
@@ -2631,13 +2632,13 @@ void from_json(const json& j, PriceRule& k) {
 
     // the optional parts of the message
     if (j.contains("parkingFeePeriod")) {
-        k.parkingFeePeriod.emplace(j.at("parkingFeePeriod"));
+        k.parkingFeePeriod.emplace(ocpp::integer_from_json(j.at("parkingFeePeriod")));
     }
     if (j.contains("carbonDioxideEmission")) {
-        k.carbonDioxideEmission.emplace(j.at("carbonDioxideEmission"));
+        k.carbonDioxideEmission.emplace(ocpp::integer_from_json(j.at("carbonDioxideEmission")));
     }
     if (j.contains("renewableGenerationPercentage")) {
-        k.renewableGenerationPercentage.emplace(j.at("renewableGenerationPercentage"));
+        k.renewableGenerationPercentage.emplace(ocpp::integer_from_json(j.at("renewableGenerationPercentage")));
     }
     if (j.contains("parkingFee")) {
         k.parkingFee.emplace(j.at("parkingFee"));
@@ -2670,7 +2671,7 @@ void to_json(json& j, const PriceRuleStack& k) {
 /// \brief Conversion from a given json object \p j to a given PriceRuleStack \p k
 void from_json(const json& j, PriceRuleStack& k) {
     // the required parts of the message
-    k.duration = j.at("duration");
+    k.duration = ocpp::integer_from_json(j.at("duration"));
     for (const auto& val : j.at("priceRule")) {
         k.priceRule.push_back(val);
     }
@@ -2714,7 +2715,7 @@ void to_json(json& j, const TaxRule& k) {
 /// \brief Conversion from a given json object \p j to a given TaxRule \p k
 void from_json(const json& j, TaxRule& k) {
     // the required parts of the message
-    k.taxRuleID = j.at("taxRuleID");
+    k.taxRuleID = ocpp::integer_from_json(j.at("taxRuleID"));
     k.appliesToEnergyFee = j.at("appliesToEnergyFee");
     k.appliesToParkingFee = j.at("appliesToParkingFee");
     k.appliesToOverstayFee = j.at("appliesToOverstayFee");
@@ -2761,8 +2762,8 @@ void to_json(json& j, const OverstayRule& k) {
 void from_json(const json& j, OverstayRule& k) {
     // the required parts of the message
     k.overstayFee = j.at("overstayFee");
-    k.startTime = j.at("startTime");
-    k.overstayFeePeriod = j.at("overstayFeePeriod");
+    k.startTime = ocpp::integer_from_json(j.at("startTime"));
+    k.overstayFeePeriod = ocpp::integer_from_json(j.at("overstayFeePeriod"));
 
     // the optional parts of the message
     if (j.contains("overstayRuleDescription")) {
@@ -2810,7 +2811,7 @@ void from_json(const json& j, OverstayRuleList& k) {
         k.overstayPowerThreshold.emplace(j.at("overstayPowerThreshold"));
     }
     if (j.contains("overstayTimeThreshold")) {
-        k.overstayTimeThreshold.emplace(j.at("overstayTimeThreshold"));
+        k.overstayTimeThreshold.emplace(ocpp::integer_from_json(j.at("overstayTimeThreshold")));
     }
     if (j.contains("customData")) {
         k.customData.emplace(j.at("customData"));
@@ -2901,7 +2902,7 @@ void to_json(json& j, const AbsolutePriceSchedule& k) {
 void from_json(const json& j, AbsolutePriceSchedule& k) {
     // the required parts of the message
     k.timeAnchor = ocpp::DateTime(std::string(j.at("timeAnchor")));
-    k.priceScheduleID = j.at("priceScheduleID");
+    k.priceScheduleID = ocpp::integer_from_json(j.at("priceScheduleID"));
     k.currency = j.at("currency");
     k.language = j.at("language");
     k.priceAlgorithm = j.at("priceAlgorithm");
@@ -2966,8 +2967,8 @@ void to_json(json& j, const PriceLevelScheduleEntry& k) {
 /// \brief Conversion from a given json object \p j to a given PriceLevelScheduleEntry \p k
 void from_json(const json& j, PriceLevelScheduleEntry& k) {
     // the required parts of the message
-    k.duration = j.at("duration");
-    k.priceLevel = j.at("priceLevel");
+    k.duration = ocpp::integer_from_json(j.at("duration"));
+    k.priceLevel = ocpp::integer_from_json(j.at("priceLevel"));
 
     // the optional parts of the message
     if (j.contains("customData")) {
@@ -3007,8 +3008,8 @@ void from_json(const json& j, PriceLevelSchedule& k) {
         k.priceLevelScheduleEntries.push_back(val);
     }
     k.timeAnchor = ocpp::DateTime(std::string(j.at("timeAnchor")));
-    k.priceScheduleId = j.at("priceScheduleId");
-    k.numberOfPriceLevels = j.at("numberOfPriceLevels");
+    k.priceScheduleId = ocpp::integer_from_json(j.at("priceScheduleId"));
+    k.numberOfPriceLevels = ocpp::integer_from_json(j.at("numberOfPriceLevels"));
 
     // the optional parts of the message
     if (j.contains("priceScheduleDescription")) {
@@ -3079,7 +3080,7 @@ void to_json(json& j, const ChargingSchedule& k) {
 /// \brief Conversion from a given json object \p j to a given ChargingSchedule \p k
 void from_json(const json& j, ChargingSchedule& k) {
     // the required parts of the message
-    k.id = j.at("id");
+    k.id = ocpp::integer_from_json(j.at("id"));
     k.chargingRateUnit = conversions::string_to_charging_rate_unit_enum(j.at("chargingRateUnit"));
     for (const auto& val : j.at("chargingSchedulePeriod")) {
         k.chargingSchedulePeriod.push_back(val);
@@ -3093,16 +3094,16 @@ void from_json(const json& j, ChargingSchedule& k) {
         k.startSchedule.emplace(j.at("startSchedule").get<std::string>());
     }
     if (j.contains("duration")) {
-        k.duration.emplace(j.at("duration"));
+        k.duration.emplace(ocpp::integer_from_json(j.at("duration")));
     }
     if (j.contains("minChargingRate")) {
-        k.minChargingRate.emplace(j.at("minChargingRate"));
+        k.minChargingRate.emplace(ocpp::decimal_from_json(j.at("minChargingRate")));
     }
     if (j.contains("powerTolerance")) {
-        k.powerTolerance.emplace(j.at("powerTolerance"));
+        k.powerTolerance.emplace(ocpp::decimal_from_json(j.at("powerTolerance")));
     }
     if (j.contains("signatureId")) {
-        k.signatureId.emplace(j.at("signatureId"));
+        k.signatureId.emplace(ocpp::integer_from_json(j.at("signatureId")));
     }
     if (j.contains("digestValue")) {
         k.digestValue.emplace(j.at("digestValue"));
@@ -3111,7 +3112,7 @@ void from_json(const json& j, ChargingSchedule& k) {
         k.useLocalTime.emplace(j.at("useLocalTime"));
     }
     if (j.contains("randomizedDelay")) {
-        k.randomizedDelay.emplace(j.at("randomizedDelay"));
+        k.randomizedDelay.emplace(ocpp::integer_from_json(j.at("randomizedDelay")));
     }
     if (j.contains("salesTariff")) {
         k.salesTariff.emplace(j.at("salesTariff"));
@@ -3214,7 +3215,7 @@ void to_json(json& j, const MessageInfo& k) {
 /// \brief Conversion from a given json object \p j to a given MessageInfo \p k
 void from_json(const json& j, MessageInfo& k) {
     // the required parts of the message
-    k.id = j.at("id");
+    k.id = ocpp::integer_from_json(j.at("id"));
     k.priority = conversions::string_to_message_priority_enum(j.at("priority"));
     k.message = j.at("message");
 
@@ -3272,10 +3273,10 @@ void to_json(json& j, const ACChargingParameters& k) {
 /// \brief Conversion from a given json object \p j to a given ACChargingParameters \p k
 void from_json(const json& j, ACChargingParameters& k) {
     // the required parts of the message
-    k.energyAmount = j.at("energyAmount");
-    k.evMinCurrent = j.at("evMinCurrent");
-    k.evMaxCurrent = j.at("evMaxCurrent");
-    k.evMaxVoltage = j.at("evMaxVoltage");
+    k.energyAmount = ocpp::decimal_from_json(j.at("energyAmount"));
+    k.evMinCurrent = ocpp::decimal_from_json(j.at("evMinCurrent"));
+    k.evMaxCurrent = ocpp::decimal_from_json(j.at("evMaxCurrent"));
+    k.evMaxVoltage = ocpp::decimal_from_json(j.at("evMaxVoltage"));
 
     // the optional parts of the message
     if (j.contains("customData")) {
@@ -3451,85 +3452,85 @@ void from_json(const json& j, DERChargingParameters& k) {
         k.evSupportedDERControl.emplace(vec);
     }
     if (j.contains("evOverExcitedMaxDischargePower")) {
-        k.evOverExcitedMaxDischargePower.emplace(j.at("evOverExcitedMaxDischargePower"));
+        k.evOverExcitedMaxDischargePower.emplace(ocpp::decimal_from_json(j.at("evOverExcitedMaxDischargePower")));
     }
     if (j.contains("evOverExcitedPowerFactor")) {
-        k.evOverExcitedPowerFactor.emplace(j.at("evOverExcitedPowerFactor"));
+        k.evOverExcitedPowerFactor.emplace(ocpp::decimal_from_json(j.at("evOverExcitedPowerFactor")));
     }
     if (j.contains("evUnderExcitedMaxDischargePower")) {
-        k.evUnderExcitedMaxDischargePower.emplace(j.at("evUnderExcitedMaxDischargePower"));
+        k.evUnderExcitedMaxDischargePower.emplace(ocpp::decimal_from_json(j.at("evUnderExcitedMaxDischargePower")));
     }
     if (j.contains("evUnderExcitedPowerFactor")) {
-        k.evUnderExcitedPowerFactor.emplace(j.at("evUnderExcitedPowerFactor"));
+        k.evUnderExcitedPowerFactor.emplace(ocpp::decimal_from_json(j.at("evUnderExcitedPowerFactor")));
     }
     if (j.contains("maxApparentPower")) {
-        k.maxApparentPower.emplace(j.at("maxApparentPower"));
+        k.maxApparentPower.emplace(ocpp::decimal_from_json(j.at("maxApparentPower")));
     }
     if (j.contains("maxChargeApparentPower")) {
-        k.maxChargeApparentPower.emplace(j.at("maxChargeApparentPower"));
+        k.maxChargeApparentPower.emplace(ocpp::decimal_from_json(j.at("maxChargeApparentPower")));
     }
     if (j.contains("maxChargeApparentPower_L2")) {
-        k.maxChargeApparentPower_L2.emplace(j.at("maxChargeApparentPower_L2"));
+        k.maxChargeApparentPower_L2.emplace(ocpp::decimal_from_json(j.at("maxChargeApparentPower_L2")));
     }
     if (j.contains("maxChargeApparentPower_L3")) {
-        k.maxChargeApparentPower_L3.emplace(j.at("maxChargeApparentPower_L3"));
+        k.maxChargeApparentPower_L3.emplace(ocpp::decimal_from_json(j.at("maxChargeApparentPower_L3")));
     }
     if (j.contains("maxDischargeApparentPower")) {
-        k.maxDischargeApparentPower.emplace(j.at("maxDischargeApparentPower"));
+        k.maxDischargeApparentPower.emplace(ocpp::decimal_from_json(j.at("maxDischargeApparentPower")));
     }
     if (j.contains("maxDischargeApparentPower_L2")) {
-        k.maxDischargeApparentPower_L2.emplace(j.at("maxDischargeApparentPower_L2"));
+        k.maxDischargeApparentPower_L2.emplace(ocpp::decimal_from_json(j.at("maxDischargeApparentPower_L2")));
     }
     if (j.contains("maxDischargeApparentPower_L3")) {
-        k.maxDischargeApparentPower_L3.emplace(j.at("maxDischargeApparentPower_L3"));
+        k.maxDischargeApparentPower_L3.emplace(ocpp::decimal_from_json(j.at("maxDischargeApparentPower_L3")));
     }
     if (j.contains("maxChargeReactivePower")) {
-        k.maxChargeReactivePower.emplace(j.at("maxChargeReactivePower"));
+        k.maxChargeReactivePower.emplace(ocpp::decimal_from_json(j.at("maxChargeReactivePower")));
     }
     if (j.contains("maxChargeReactivePower_L2")) {
-        k.maxChargeReactivePower_L2.emplace(j.at("maxChargeReactivePower_L2"));
+        k.maxChargeReactivePower_L2.emplace(ocpp::decimal_from_json(j.at("maxChargeReactivePower_L2")));
     }
     if (j.contains("maxChargeReactivePower_L3")) {
-        k.maxChargeReactivePower_L3.emplace(j.at("maxChargeReactivePower_L3"));
+        k.maxChargeReactivePower_L3.emplace(ocpp::decimal_from_json(j.at("maxChargeReactivePower_L3")));
     }
     if (j.contains("minChargeReactivePower")) {
-        k.minChargeReactivePower.emplace(j.at("minChargeReactivePower"));
+        k.minChargeReactivePower.emplace(ocpp::decimal_from_json(j.at("minChargeReactivePower")));
     }
     if (j.contains("minChargeReactivePower_L2")) {
-        k.minChargeReactivePower_L2.emplace(j.at("minChargeReactivePower_L2"));
+        k.minChargeReactivePower_L2.emplace(ocpp::decimal_from_json(j.at("minChargeReactivePower_L2")));
     }
     if (j.contains("minChargeReactivePower_L3")) {
-        k.minChargeReactivePower_L3.emplace(j.at("minChargeReactivePower_L3"));
+        k.minChargeReactivePower_L3.emplace(ocpp::decimal_from_json(j.at("minChargeReactivePower_L3")));
     }
     if (j.contains("maxDischargeReactivePower")) {
-        k.maxDischargeReactivePower.emplace(j.at("maxDischargeReactivePower"));
+        k.maxDischargeReactivePower.emplace(ocpp::decimal_from_json(j.at("maxDischargeReactivePower")));
     }
     if (j.contains("maxDischargeReactivePower_L2")) {
-        k.maxDischargeReactivePower_L2.emplace(j.at("maxDischargeReactivePower_L2"));
+        k.maxDischargeReactivePower_L2.emplace(ocpp::decimal_from_json(j.at("maxDischargeReactivePower_L2")));
     }
     if (j.contains("maxDischargeReactivePower_L3")) {
-        k.maxDischargeReactivePower_L3.emplace(j.at("maxDischargeReactivePower_L3"));
+        k.maxDischargeReactivePower_L3.emplace(ocpp::decimal_from_json(j.at("maxDischargeReactivePower_L3")));
     }
     if (j.contains("minDischargeReactivePower")) {
-        k.minDischargeReactivePower.emplace(j.at("minDischargeReactivePower"));
+        k.minDischargeReactivePower.emplace(ocpp::decimal_from_json(j.at("minDischargeReactivePower")));
     }
     if (j.contains("minDischargeReactivePower_L2")) {
-        k.minDischargeReactivePower_L2.emplace(j.at("minDischargeReactivePower_L2"));
+        k.minDischargeReactivePower_L2.emplace(ocpp::decimal_from_json(j.at("minDischargeReactivePower_L2")));
     }
     if (j.contains("minDischargeReactivePower_L3")) {
-        k.minDischargeReactivePower_L3.emplace(j.at("minDischargeReactivePower_L3"));
+        k.minDischargeReactivePower_L3.emplace(ocpp::decimal_from_json(j.at("minDischargeReactivePower_L3")));
     }
     if (j.contains("nominalVoltage")) {
-        k.nominalVoltage.emplace(j.at("nominalVoltage"));
+        k.nominalVoltage.emplace(ocpp::decimal_from_json(j.at("nominalVoltage")));
     }
     if (j.contains("nominalVoltageOffset")) {
-        k.nominalVoltageOffset.emplace(j.at("nominalVoltageOffset"));
+        k.nominalVoltageOffset.emplace(ocpp::decimal_from_json(j.at("nominalVoltageOffset")));
     }
     if (j.contains("maxNominalVoltage")) {
-        k.maxNominalVoltage.emplace(j.at("maxNominalVoltage"));
+        k.maxNominalVoltage.emplace(ocpp::decimal_from_json(j.at("maxNominalVoltage")));
     }
     if (j.contains("minNominalVoltage")) {
-        k.minNominalVoltage.emplace(j.at("minNominalVoltage"));
+        k.minNominalVoltage.emplace(ocpp::decimal_from_json(j.at("minNominalVoltage")));
     }
     if (j.contains("evInverterManufacturer")) {
         k.evInverterManufacturer.emplace(j.at("evInverterManufacturer"));
@@ -3555,25 +3556,26 @@ void from_json(const json& j, DERChargingParameters& k) {
         k.evIslandingDetectionMethod.emplace(vec);
     }
     if (j.contains("evIslandingTripTime")) {
-        k.evIslandingTripTime.emplace(j.at("evIslandingTripTime"));
+        k.evIslandingTripTime.emplace(ocpp::decimal_from_json(j.at("evIslandingTripTime")));
     }
     if (j.contains("evMaximumLevel1DCInjection")) {
-        k.evMaximumLevel1DCInjection.emplace(j.at("evMaximumLevel1DCInjection"));
+        k.evMaximumLevel1DCInjection.emplace(ocpp::decimal_from_json(j.at("evMaximumLevel1DCInjection")));
     }
     if (j.contains("evDurationLevel1DCInjection")) {
-        k.evDurationLevel1DCInjection.emplace(j.at("evDurationLevel1DCInjection"));
+        k.evDurationLevel1DCInjection.emplace(ocpp::decimal_from_json(j.at("evDurationLevel1DCInjection")));
     }
     if (j.contains("evMaximumLevel2DCInjection")) {
-        k.evMaximumLevel2DCInjection.emplace(j.at("evMaximumLevel2DCInjection"));
+        k.evMaximumLevel2DCInjection.emplace(ocpp::decimal_from_json(j.at("evMaximumLevel2DCInjection")));
     }
     if (j.contains("evDurationLevel2DCInjection")) {
-        k.evDurationLevel2DCInjection.emplace(j.at("evDurationLevel2DCInjection"));
+        k.evDurationLevel2DCInjection.emplace(ocpp::decimal_from_json(j.at("evDurationLevel2DCInjection")));
     }
     if (j.contains("evReactiveSusceptance")) {
-        k.evReactiveSusceptance.emplace(j.at("evReactiveSusceptance"));
+        k.evReactiveSusceptance.emplace(ocpp::decimal_from_json(j.at("evReactiveSusceptance")));
     }
     if (j.contains("evSessionTotalDischargeEnergyAvailable")) {
-        k.evSessionTotalDischargeEnergyAvailable.emplace(j.at("evSessionTotalDischargeEnergyAvailable"));
+        k.evSessionTotalDischargeEnergyAvailable.emplace(
+            ocpp::decimal_from_json(j.at("evSessionTotalDischargeEnergyAvailable")));
     }
     if (j.contains("customData")) {
         k.customData.emplace(j.at("customData"));
@@ -3603,8 +3605,8 @@ void to_json(json& j, const EVPriceRule& k) {
 /// \brief Conversion from a given json object \p j to a given EVPriceRule \p k
 void from_json(const json& j, EVPriceRule& k) {
     // the required parts of the message
-    k.energyFee = j.at("energyFee");
-    k.powerRangeStart = j.at("powerRangeStart");
+    k.energyFee = ocpp::decimal_from_json(j.at("energyFee"));
+    k.powerRangeStart = ocpp::decimal_from_json(j.at("powerRangeStart"));
 
     // the optional parts of the message
     if (j.contains("customData")) {
@@ -3635,7 +3637,7 @@ void to_json(json& j, const EVAbsolutePriceScheduleEntry& k) {
 /// \brief Conversion from a given json object \p j to a given EVAbsolutePriceScheduleEntry \p k
 void from_json(const json& j, EVAbsolutePriceScheduleEntry& k) {
     // the required parts of the message
-    k.duration = j.at("duration");
+    k.duration = ocpp::integer_from_json(j.at("duration"));
     for (const auto& val : j.at("evPriceRule")) {
         k.evPriceRule.push_back(val);
     }
@@ -3708,8 +3710,8 @@ void to_json(json& j, const EVPowerScheduleEntry& k) {
 /// \brief Conversion from a given json object \p j to a given EVPowerScheduleEntry \p k
 void from_json(const json& j, EVPowerScheduleEntry& k) {
     // the required parts of the message
-    k.duration = j.at("duration");
-    k.power = j.at("power");
+    k.duration = ocpp::integer_from_json(j.at("duration"));
+    k.power = ocpp::decimal_from_json(j.at("power"));
 
     // the optional parts of the message
     if (j.contains("customData")) {
@@ -3828,27 +3830,27 @@ void to_json(json& j, const DCChargingParameters& k) {
 /// \brief Conversion from a given json object \p j to a given DCChargingParameters \p k
 void from_json(const json& j, DCChargingParameters& k) {
     // the required parts of the message
-    k.evMaxCurrent = j.at("evMaxCurrent");
-    k.evMaxVoltage = j.at("evMaxVoltage");
+    k.evMaxCurrent = ocpp::decimal_from_json(j.at("evMaxCurrent"));
+    k.evMaxVoltage = ocpp::decimal_from_json(j.at("evMaxVoltage"));
 
     // the optional parts of the message
     if (j.contains("evMaxPower")) {
-        k.evMaxPower.emplace(j.at("evMaxPower"));
+        k.evMaxPower.emplace(ocpp::decimal_from_json(j.at("evMaxPower")));
     }
     if (j.contains("evEnergyCapacity")) {
-        k.evEnergyCapacity.emplace(j.at("evEnergyCapacity"));
+        k.evEnergyCapacity.emplace(ocpp::decimal_from_json(j.at("evEnergyCapacity")));
     }
     if (j.contains("energyAmount")) {
-        k.energyAmount.emplace(j.at("energyAmount"));
+        k.energyAmount.emplace(ocpp::decimal_from_json(j.at("energyAmount")));
     }
     if (j.contains("stateOfCharge")) {
-        k.stateOfCharge.emplace(j.at("stateOfCharge"));
+        k.stateOfCharge.emplace(ocpp::integer_from_json(j.at("stateOfCharge")));
     }
     if (j.contains("fullSoC")) {
-        k.fullSoC.emplace(j.at("fullSoC"));
+        k.fullSoC.emplace(ocpp::integer_from_json(j.at("fullSoC")));
     }
     if (j.contains("bulkSoC")) {
-        k.bulkSoC.emplace(j.at("bulkSoC"));
+        k.bulkSoC.emplace(ocpp::integer_from_json(j.at("bulkSoC")));
     }
     if (j.contains("customData")) {
         k.customData.emplace(j.at("customData"));
@@ -3950,76 +3952,76 @@ void from_json(const json& j, V2XChargingParameters& k) {
 
     // the optional parts of the message
     if (j.contains("minChargePower")) {
-        k.minChargePower.emplace(j.at("minChargePower"));
+        k.minChargePower.emplace(ocpp::decimal_from_json(j.at("minChargePower")));
     }
     if (j.contains("minChargePower_L2")) {
-        k.minChargePower_L2.emplace(j.at("minChargePower_L2"));
+        k.minChargePower_L2.emplace(ocpp::decimal_from_json(j.at("minChargePower_L2")));
     }
     if (j.contains("minChargePower_L3")) {
-        k.minChargePower_L3.emplace(j.at("minChargePower_L3"));
+        k.minChargePower_L3.emplace(ocpp::decimal_from_json(j.at("minChargePower_L3")));
     }
     if (j.contains("maxChargePower")) {
-        k.maxChargePower.emplace(j.at("maxChargePower"));
+        k.maxChargePower.emplace(ocpp::decimal_from_json(j.at("maxChargePower")));
     }
     if (j.contains("maxChargePower_L2")) {
-        k.maxChargePower_L2.emplace(j.at("maxChargePower_L2"));
+        k.maxChargePower_L2.emplace(ocpp::decimal_from_json(j.at("maxChargePower_L2")));
     }
     if (j.contains("maxChargePower_L3")) {
-        k.maxChargePower_L3.emplace(j.at("maxChargePower_L3"));
+        k.maxChargePower_L3.emplace(ocpp::decimal_from_json(j.at("maxChargePower_L3")));
     }
     if (j.contains("minDischargePower")) {
-        k.minDischargePower.emplace(j.at("minDischargePower"));
+        k.minDischargePower.emplace(ocpp::decimal_from_json(j.at("minDischargePower")));
     }
     if (j.contains("minDischargePower_L2")) {
-        k.minDischargePower_L2.emplace(j.at("minDischargePower_L2"));
+        k.minDischargePower_L2.emplace(ocpp::decimal_from_json(j.at("minDischargePower_L2")));
     }
     if (j.contains("minDischargePower_L3")) {
-        k.minDischargePower_L3.emplace(j.at("minDischargePower_L3"));
+        k.minDischargePower_L3.emplace(ocpp::decimal_from_json(j.at("minDischargePower_L3")));
     }
     if (j.contains("maxDischargePower")) {
-        k.maxDischargePower.emplace(j.at("maxDischargePower"));
+        k.maxDischargePower.emplace(ocpp::decimal_from_json(j.at("maxDischargePower")));
     }
     if (j.contains("maxDischargePower_L2")) {
-        k.maxDischargePower_L2.emplace(j.at("maxDischargePower_L2"));
+        k.maxDischargePower_L2.emplace(ocpp::decimal_from_json(j.at("maxDischargePower_L2")));
     }
     if (j.contains("maxDischargePower_L3")) {
-        k.maxDischargePower_L3.emplace(j.at("maxDischargePower_L3"));
+        k.maxDischargePower_L3.emplace(ocpp::decimal_from_json(j.at("maxDischargePower_L3")));
     }
     if (j.contains("minChargeCurrent")) {
-        k.minChargeCurrent.emplace(j.at("minChargeCurrent"));
+        k.minChargeCurrent.emplace(ocpp::decimal_from_json(j.at("minChargeCurrent")));
     }
     if (j.contains("maxChargeCurrent")) {
-        k.maxChargeCurrent.emplace(j.at("maxChargeCurrent"));
+        k.maxChargeCurrent.emplace(ocpp::decimal_from_json(j.at("maxChargeCurrent")));
     }
     if (j.contains("minDischargeCurrent")) {
-        k.minDischargeCurrent.emplace(j.at("minDischargeCurrent"));
+        k.minDischargeCurrent.emplace(ocpp::decimal_from_json(j.at("minDischargeCurrent")));
     }
     if (j.contains("maxDischargeCurrent")) {
-        k.maxDischargeCurrent.emplace(j.at("maxDischargeCurrent"));
+        k.maxDischargeCurrent.emplace(ocpp::decimal_from_json(j.at("maxDischargeCurrent")));
     }
     if (j.contains("minVoltage")) {
-        k.minVoltage.emplace(j.at("minVoltage"));
+        k.minVoltage.emplace(ocpp::decimal_from_json(j.at("minVoltage")));
     }
     if (j.contains("maxVoltage")) {
-        k.maxVoltage.emplace(j.at("maxVoltage"));
+        k.maxVoltage.emplace(ocpp::decimal_from_json(j.at("maxVoltage")));
     }
     if (j.contains("evTargetEnergyRequest")) {
-        k.evTargetEnergyRequest.emplace(j.at("evTargetEnergyRequest"));
+        k.evTargetEnergyRequest.emplace(ocpp::decimal_from_json(j.at("evTargetEnergyRequest")));
     }
     if (j.contains("evMinEnergyRequest")) {
-        k.evMinEnergyRequest.emplace(j.at("evMinEnergyRequest"));
+        k.evMinEnergyRequest.emplace(ocpp::decimal_from_json(j.at("evMinEnergyRequest")));
     }
     if (j.contains("evMaxEnergyRequest")) {
-        k.evMaxEnergyRequest.emplace(j.at("evMaxEnergyRequest"));
+        k.evMaxEnergyRequest.emplace(ocpp::decimal_from_json(j.at("evMaxEnergyRequest")));
     }
     if (j.contains("evMinV2XEnergyRequest")) {
-        k.evMinV2XEnergyRequest.emplace(j.at("evMinV2XEnergyRequest"));
+        k.evMinV2XEnergyRequest.emplace(ocpp::decimal_from_json(j.at("evMinV2XEnergyRequest")));
     }
     if (j.contains("evMaxV2XEnergyRequest")) {
-        k.evMaxV2XEnergyRequest.emplace(j.at("evMaxV2XEnergyRequest"));
+        k.evMaxV2XEnergyRequest.emplace(ocpp::decimal_from_json(j.at("evMaxV2XEnergyRequest")));
     }
     if (j.contains("targetSoC")) {
-        k.targetSoC.emplace(j.at("targetSoC"));
+        k.targetSoC.emplace(ocpp::integer_from_json(j.at("targetSoC")));
     }
     if (j.contains("customData")) {
         k.customData.emplace(j.at("customData"));
@@ -4167,7 +4169,7 @@ void to_json(json& j, const EventData& k) {
 /// \brief Conversion from a given json object \p j to a given EventData \p k
 void from_json(const json& j, EventData& k) {
     // the required parts of the message
-    k.eventId = j.at("eventId");
+    k.eventId = ocpp::integer_from_json(j.at("eventId"));
     k.timestamp = ocpp::DateTime(std::string(j.at("timestamp")));
     k.trigger = conversions::string_to_event_trigger_enum(j.at("trigger"));
     k.actualValue = j.at("actualValue");
@@ -4177,7 +4179,7 @@ void from_json(const json& j, EventData& k) {
 
     // the optional parts of the message
     if (j.contains("cause")) {
-        k.cause.emplace(j.at("cause"));
+        k.cause.emplace(ocpp::integer_from_json(j.at("cause")));
     }
     if (j.contains("techCode")) {
         k.techCode.emplace(j.at("techCode"));
@@ -4192,10 +4194,10 @@ void from_json(const json& j, EventData& k) {
         k.transactionId.emplace(j.at("transactionId"));
     }
     if (j.contains("variableMonitoringId")) {
-        k.variableMonitoringId.emplace(j.at("variableMonitoringId"));
+        k.variableMonitoringId.emplace(ocpp::integer_from_json(j.at("variableMonitoringId")));
     }
     if (j.contains("severity")) {
-        k.severity.emplace(j.at("severity"));
+        k.severity.emplace(ocpp::integer_from_json(j.at("severity")));
     }
     if (j.contains("customData")) {
         k.customData.emplace(j.at("customData"));
@@ -4231,11 +4233,11 @@ void to_json(json& j, const VariableMonitoring& k) {
 /// \brief Conversion from a given json object \p j to a given VariableMonitoring \p k
 void from_json(const json& j, VariableMonitoring& k) {
     // the required parts of the message
-    k.id = j.at("id");
+    k.id = ocpp::integer_from_json(j.at("id"));
     k.transaction = j.at("transaction");
-    k.value = j.at("value");
+    k.value = ocpp::decimal_from_json(j.at("value"));
     k.type = conversions::string_to_monitor_enum(j.at("type"));
-    k.severity = j.at("severity");
+    k.severity = ocpp::integer_from_json(j.at("severity"));
 
     // the optional parts of the message
     if (j.contains("eventNotificationType")) {
@@ -4305,7 +4307,7 @@ void to_json(json& j, const StreamDataElement& k) {
 /// \brief Conversion from a given json object \p j to a given StreamDataElement \p k
 void from_json(const json& j, StreamDataElement& k) {
     // the required parts of the message
-    k.t = j.at("t");
+    k.t = ocpp::decimal_from_json(j.at("t"));
     k.v = j.at("v");
 
     // the optional parts of the message
@@ -4342,8 +4344,8 @@ void from_json(const json& j, NotifyPeriodicEventStream& k) {
     for (const auto& val : j.at("data")) {
         k.data.push_back(val);
     }
-    k.id = j.at("id");
-    k.pending = j.at("pending");
+    k.id = ocpp::integer_from_json(j.at("id"));
+    k.pending = ocpp::integer_from_json(j.at("pending"));
     k.basetime = ocpp::DateTime(std::string(j.at("basetime")));
 
     // the optional parts of the message
@@ -4471,13 +4473,13 @@ void from_json(const json& j, VariableCharacteristics& k) {
         k.unit.emplace(j.at("unit"));
     }
     if (j.contains("minLimit")) {
-        k.minLimit.emplace(j.at("minLimit"));
+        k.minLimit.emplace(ocpp::decimal_from_json(j.at("minLimit")));
     }
     if (j.contains("maxLimit")) {
-        k.maxLimit.emplace(j.at("maxLimit"));
+        k.maxLimit.emplace(ocpp::decimal_from_json(j.at("maxLimit")));
     }
     if (j.contains("maxElements")) {
-        k.maxElements.emplace(j.at("maxElements"));
+        k.maxElements.emplace(ocpp::integer_from_json(j.at("maxElements")));
     }
     if (j.contains("valuesList")) {
         k.valuesList.emplace(j.at("valuesList"));
@@ -4636,40 +4638,40 @@ void from_json(const json& j, ChargingScheduleUpdate& k) {
 
     // the optional parts of the message
     if (j.contains("limit")) {
-        k.limit.emplace(j.at("limit"));
+        k.limit.emplace(ocpp::decimal_from_json(j.at("limit")));
     }
     if (j.contains("limit_L2")) {
-        k.limit_L2.emplace(j.at("limit_L2"));
+        k.limit_L2.emplace(ocpp::decimal_from_json(j.at("limit_L2")));
     }
     if (j.contains("limit_L3")) {
-        k.limit_L3.emplace(j.at("limit_L3"));
+        k.limit_L3.emplace(ocpp::decimal_from_json(j.at("limit_L3")));
     }
     if (j.contains("dischargeLimit")) {
-        k.dischargeLimit.emplace(j.at("dischargeLimit"));
+        k.dischargeLimit.emplace(ocpp::decimal_from_json(j.at("dischargeLimit")));
     }
     if (j.contains("dischargeLimit_L2")) {
-        k.dischargeLimit_L2.emplace(j.at("dischargeLimit_L2"));
+        k.dischargeLimit_L2.emplace(ocpp::decimal_from_json(j.at("dischargeLimit_L2")));
     }
     if (j.contains("dischargeLimit_L3")) {
-        k.dischargeLimit_L3.emplace(j.at("dischargeLimit_L3"));
+        k.dischargeLimit_L3.emplace(ocpp::decimal_from_json(j.at("dischargeLimit_L3")));
     }
     if (j.contains("setpoint")) {
-        k.setpoint.emplace(j.at("setpoint"));
+        k.setpoint.emplace(ocpp::decimal_from_json(j.at("setpoint")));
     }
     if (j.contains("setpoint_L2")) {
-        k.setpoint_L2.emplace(j.at("setpoint_L2"));
+        k.setpoint_L2.emplace(ocpp::decimal_from_json(j.at("setpoint_L2")));
     }
     if (j.contains("setpoint_L3")) {
-        k.setpoint_L3.emplace(j.at("setpoint_L3"));
+        k.setpoint_L3.emplace(ocpp::decimal_from_json(j.at("setpoint_L3")));
     }
     if (j.contains("setpointReactive")) {
-        k.setpointReactive.emplace(j.at("setpointReactive"));
+        k.setpointReactive.emplace(ocpp::decimal_from_json(j.at("setpointReactive")));
     }
     if (j.contains("setpointReactive_L2")) {
-        k.setpointReactive_L2.emplace(j.at("setpointReactive_L2"));
+        k.setpointReactive_L2.emplace(ocpp::decimal_from_json(j.at("setpointReactive_L2")));
     }
     if (j.contains("setpointReactive_L3")) {
-        k.setpointReactive_L3.emplace(j.at("setpointReactive_L3"));
+        k.setpointReactive_L3.emplace(ocpp::decimal_from_json(j.at("setpointReactive_L3")));
     }
     if (j.contains("customData")) {
         k.customData.emplace(j.at("customData"));
@@ -4729,8 +4731,8 @@ void to_json(json& j, const ChargingProfile& k) {
 /// \brief Conversion from a given json object \p j to a given ChargingProfile \p k
 void from_json(const json& j, ChargingProfile& k) {
     // the required parts of the message
-    k.id = j.at("id");
-    k.stackLevel = j.at("stackLevel");
+    k.id = ocpp::integer_from_json(j.at("id"));
+    k.stackLevel = ocpp::integer_from_json(j.at("stackLevel"));
     k.chargingProfilePurpose = conversions::string_to_charging_profile_purpose_enum(j.at("chargingProfilePurpose"));
     k.chargingProfileKind = conversions::string_to_charging_profile_kind_enum(j.at("chargingProfileKind"));
     for (const auto& val : j.at("chargingSchedule")) {
@@ -4751,13 +4753,13 @@ void from_json(const json& j, ChargingProfile& k) {
         k.transactionId.emplace(j.at("transactionId"));
     }
     if (j.contains("maxOfflineDuration")) {
-        k.maxOfflineDuration.emplace(j.at("maxOfflineDuration"));
+        k.maxOfflineDuration.emplace(ocpp::integer_from_json(j.at("maxOfflineDuration")));
     }
     if (j.contains("invalidAfterOfflineDuration")) {
         k.invalidAfterOfflineDuration.emplace(j.at("invalidAfterOfflineDuration"));
     }
     if (j.contains("dynUpdateInterval")) {
-        k.dynUpdateInterval.emplace(j.at("dynUpdateInterval"));
+        k.dynUpdateInterval.emplace(ocpp::integer_from_json(j.at("dynUpdateInterval")));
     }
     if (j.contains("dynUpdateTime")) {
         k.dynUpdateTime.emplace(j.at("dynUpdateTime").get<std::string>());
@@ -4793,8 +4795,8 @@ void to_json(json& j, const DERCurvePoints& k) {
 /// \brief Conversion from a given json object \p j to a given DERCurvePoints \p k
 void from_json(const json& j, DERCurvePoints& k) {
     // the required parts of the message
-    k.x = j.at("x");
-    k.y = j.at("y");
+    k.x = ocpp::decimal_from_json(j.at("x"));
+    k.y = ocpp::decimal_from_json(j.at("y"));
 
     // the optional parts of the message
     if (j.contains("customData")) {
@@ -4837,16 +4839,16 @@ void from_json(const json& j, Hysteresis& k) {
 
     // the optional parts of the message
     if (j.contains("hysteresisHigh")) {
-        k.hysteresisHigh.emplace(j.at("hysteresisHigh"));
+        k.hysteresisHigh.emplace(ocpp::decimal_from_json(j.at("hysteresisHigh")));
     }
     if (j.contains("hysteresisLow")) {
-        k.hysteresisLow.emplace(j.at("hysteresisLow"));
+        k.hysteresisLow.emplace(ocpp::decimal_from_json(j.at("hysteresisLow")));
     }
     if (j.contains("hysteresisDelay")) {
-        k.hysteresisDelay.emplace(j.at("hysteresisDelay"));
+        k.hysteresisDelay.emplace(ocpp::decimal_from_json(j.at("hysteresisDelay")));
     }
     if (j.contains("hysteresisGradient")) {
-        k.hysteresisGradient.emplace(j.at("hysteresisGradient"));
+        k.hysteresisGradient.emplace(ocpp::decimal_from_json(j.at("hysteresisGradient")));
     }
     if (j.contains("customData")) {
         k.customData.emplace(j.at("customData"));
@@ -4885,13 +4887,13 @@ void from_json(const json& j, ReactivePowerParams& k) {
 
     // the optional parts of the message
     if (j.contains("vRef")) {
-        k.vRef.emplace(j.at("vRef"));
+        k.vRef.emplace(ocpp::decimal_from_json(j.at("vRef")));
     }
     if (j.contains("autonomousVRefEnable")) {
         k.autonomousVRefEnable.emplace(j.at("autonomousVRefEnable"));
     }
     if (j.contains("autonomousVRefTimeConstant")) {
-        k.autonomousVRefTimeConstant.emplace(j.at("autonomousVRefTimeConstant"));
+        k.autonomousVRefTimeConstant.emplace(ocpp::decimal_from_json(j.at("autonomousVRefTimeConstant")));
     }
     if (j.contains("customData")) {
         k.customData.emplace(j.at("customData"));
@@ -4930,10 +4932,10 @@ void from_json(const json& j, VoltageParams& k) {
 
     // the optional parts of the message
     if (j.contains("hv10MinMeanValue")) {
-        k.hv10MinMeanValue.emplace(j.at("hv10MinMeanValue"));
+        k.hv10MinMeanValue.emplace(ocpp::decimal_from_json(j.at("hv10MinMeanValue")));
     }
     if (j.contains("hv10MinMeanTripDelay")) {
-        k.hv10MinMeanTripDelay.emplace(j.at("hv10MinMeanTripDelay"));
+        k.hv10MinMeanTripDelay.emplace(ocpp::decimal_from_json(j.at("hv10MinMeanTripDelay")));
     }
     if (j.contains("powerDuringCessation")) {
         k.powerDuringCessation.emplace(
@@ -4989,7 +4991,7 @@ void from_json(const json& j, DERCurve& k) {
     for (const auto& val : j.at("curveData")) {
         k.curveData.push_back(val);
     }
-    k.priority = j.at("priority");
+    k.priority = ocpp::integer_from_json(j.at("priority"));
     k.yUnit = conversions::string_to_derunit_enum(j.at("yUnit"));
 
     // the optional parts of the message
@@ -5003,13 +5005,13 @@ void from_json(const json& j, DERCurve& k) {
         k.voltageParams.emplace(j.at("voltageParams"));
     }
     if (j.contains("responseTime")) {
-        k.responseTime.emplace(j.at("responseTime"));
+        k.responseTime.emplace(ocpp::decimal_from_json(j.at("responseTime")));
     }
     if (j.contains("startTime")) {
         k.startTime.emplace(j.at("startTime").get<std::string>());
     }
     if (j.contains("duration")) {
-        k.duration.emplace(j.at("duration"));
+        k.duration.emplace(ocpp::decimal_from_json(j.at("duration")));
     }
     if (j.contains("customData")) {
         k.customData.emplace(j.at("customData"));
@@ -5086,21 +5088,21 @@ void to_json(json& j, const EnterService& k) {
 /// \brief Conversion from a given json object \p j to a given EnterService \p k
 void from_json(const json& j, EnterService& k) {
     // the required parts of the message
-    k.priority = j.at("priority");
-    k.highVoltage = j.at("highVoltage");
-    k.lowVoltage = j.at("lowVoltage");
-    k.highFreq = j.at("highFreq");
-    k.lowFreq = j.at("lowFreq");
+    k.priority = ocpp::integer_from_json(j.at("priority"));
+    k.highVoltage = ocpp::decimal_from_json(j.at("highVoltage"));
+    k.lowVoltage = ocpp::decimal_from_json(j.at("lowVoltage"));
+    k.highFreq = ocpp::decimal_from_json(j.at("highFreq"));
+    k.lowFreq = ocpp::decimal_from_json(j.at("lowFreq"));
 
     // the optional parts of the message
     if (j.contains("delay")) {
-        k.delay.emplace(j.at("delay"));
+        k.delay.emplace(ocpp::decimal_from_json(j.at("delay")));
     }
     if (j.contains("randomDelay")) {
-        k.randomDelay.emplace(j.at("randomDelay"));
+        k.randomDelay.emplace(ocpp::decimal_from_json(j.at("randomDelay")));
     }
     if (j.contains("rampRate")) {
-        k.rampRate.emplace(j.at("rampRate"));
+        k.rampRate.emplace(ocpp::decimal_from_json(j.at("rampRate")));
     }
     if (j.contains("customData")) {
         k.customData.emplace(j.at("customData"));
@@ -5169,8 +5171,8 @@ void to_json(json& j, const FixedPF& k) {
 /// \brief Conversion from a given json object \p j to a given FixedPF \p k
 void from_json(const json& j, FixedPF& k) {
     // the required parts of the message
-    k.priority = j.at("priority");
-    k.displacement = j.at("displacement");
+    k.priority = ocpp::integer_from_json(j.at("priority"));
+    k.displacement = ocpp::decimal_from_json(j.at("displacement"));
     k.excitation = j.at("excitation");
 
     // the optional parts of the message
@@ -5178,7 +5180,7 @@ void from_json(const json& j, FixedPF& k) {
         k.startTime.emplace(j.at("startTime").get<std::string>());
     }
     if (j.contains("duration")) {
-        k.duration.emplace(j.at("duration"));
+        k.duration.emplace(ocpp::decimal_from_json(j.at("duration")));
     }
     if (j.contains("customData")) {
         k.customData.emplace(j.at("customData"));
@@ -5251,8 +5253,8 @@ void to_json(json& j, const FixedVar& k) {
 /// \brief Conversion from a given json object \p j to a given FixedVar \p k
 void from_json(const json& j, FixedVar& k) {
     // the required parts of the message
-    k.priority = j.at("priority");
-    k.setpoint = j.at("setpoint");
+    k.priority = ocpp::integer_from_json(j.at("priority"));
+    k.setpoint = ocpp::decimal_from_json(j.at("setpoint"));
     k.unit = conversions::string_to_derunit_enum(j.at("unit"));
 
     // the optional parts of the message
@@ -5260,7 +5262,7 @@ void from_json(const json& j, FixedVar& k) {
         k.startTime.emplace(j.at("startTime").get<std::string>());
     }
     if (j.contains("duration")) {
-        k.duration.emplace(j.at("duration"));
+        k.duration.emplace(ocpp::decimal_from_json(j.at("duration")));
     }
     if (j.contains("customData")) {
         k.customData.emplace(j.at("customData"));
@@ -5332,19 +5334,19 @@ void to_json(json& j, const FreqDroop& k) {
 /// \brief Conversion from a given json object \p j to a given FreqDroop \p k
 void from_json(const json& j, FreqDroop& k) {
     // the required parts of the message
-    k.priority = j.at("priority");
-    k.overFreq = j.at("overFreq");
-    k.underFreq = j.at("underFreq");
-    k.overDroop = j.at("overDroop");
-    k.underDroop = j.at("underDroop");
-    k.responseTime = j.at("responseTime");
+    k.priority = ocpp::integer_from_json(j.at("priority"));
+    k.overFreq = ocpp::decimal_from_json(j.at("overFreq"));
+    k.underFreq = ocpp::decimal_from_json(j.at("underFreq"));
+    k.overDroop = ocpp::decimal_from_json(j.at("overDroop"));
+    k.underDroop = ocpp::decimal_from_json(j.at("underDroop"));
+    k.responseTime = ocpp::decimal_from_json(j.at("responseTime"));
 
     // the optional parts of the message
     if (j.contains("startTime")) {
         k.startTime.emplace(j.at("startTime").get<std::string>());
     }
     if (j.contains("duration")) {
-        k.duration.emplace(j.at("duration"));
+        k.duration.emplace(ocpp::decimal_from_json(j.at("duration")));
     }
     if (j.contains("customData")) {
         k.customData.emplace(j.at("customData"));
@@ -5411,9 +5413,9 @@ void to_json(json& j, const Gradient& k) {
 /// \brief Conversion from a given json object \p j to a given Gradient \p k
 void from_json(const json& j, Gradient& k) {
     // the required parts of the message
-    k.priority = j.at("priority");
-    k.gradient = j.at("gradient");
-    k.softGradient = j.at("softGradient");
+    k.priority = ocpp::integer_from_json(j.at("priority"));
+    k.gradient = ocpp::decimal_from_json(j.at("gradient"));
+    k.softGradient = ocpp::decimal_from_json(j.at("softGradient"));
 
     // the optional parts of the message
     if (j.contains("customData")) {
@@ -5487,11 +5489,11 @@ void to_json(json& j, const LimitMaxDischarge& k) {
 /// \brief Conversion from a given json object \p j to a given LimitMaxDischarge \p k
 void from_json(const json& j, LimitMaxDischarge& k) {
     // the required parts of the message
-    k.priority = j.at("priority");
+    k.priority = ocpp::integer_from_json(j.at("priority"));
 
     // the optional parts of the message
     if (j.contains("pctMaxDischargePower")) {
-        k.pctMaxDischargePower.emplace(j.at("pctMaxDischargePower"));
+        k.pctMaxDischargePower.emplace(ocpp::decimal_from_json(j.at("pctMaxDischargePower")));
     }
     if (j.contains("powerMonitoringMustTrip")) {
         k.powerMonitoringMustTrip.emplace(j.at("powerMonitoringMustTrip"));
@@ -5500,7 +5502,7 @@ void from_json(const json& j, LimitMaxDischarge& k) {
         k.startTime.emplace(j.at("startTime").get<std::string>());
     }
     if (j.contains("duration")) {
-        k.duration.emplace(j.at("duration"));
+        k.duration.emplace(ocpp::decimal_from_json(j.at("duration")));
     }
     if (j.contains("customData")) {
         k.customData.emplace(j.at("customData"));
@@ -5628,7 +5630,7 @@ void from_json(const json& j, APN& k) {
         k.apnPassword.emplace(j.at("apnPassword"));
     }
     if (j.contains("simPin")) {
-        k.simPin.emplace(j.at("simPin"));
+        k.simPin.emplace(ocpp::integer_from_json(j.at("simPin")));
     }
     if (j.contains("preferredNetwork")) {
         k.preferredNetwork.emplace(j.at("preferredNetwork"));
@@ -5728,9 +5730,9 @@ void from_json(const json& j, NetworkConnectionProfile& k) {
     // the required parts of the message
     k.ocppInterface = conversions::string_to_ocppinterface_enum(j.at("ocppInterface"));
     k.ocppTransport = conversions::string_to_ocpptransport_enum(j.at("ocppTransport"));
-    k.messageTimeout = j.at("messageTimeout");
+    k.messageTimeout = ocpp::integer_from_json(j.at("messageTimeout"));
     k.ocppCsmsUrl = j.at("ocppCsmsUrl");
-    k.securityProfile = j.at("securityProfile");
+    k.securityProfile = ocpp::integer_from_json(j.at("securityProfile"));
 
     // the optional parts of the message
     if (j.contains("apn")) {
@@ -5786,15 +5788,15 @@ void to_json(json& j, const SetMonitoringData& k) {
 /// \brief Conversion from a given json object \p j to a given SetMonitoringData \p k
 void from_json(const json& j, SetMonitoringData& k) {
     // the required parts of the message
-    k.value = j.at("value");
+    k.value = ocpp::decimal_from_json(j.at("value"));
     k.type = conversions::string_to_monitor_enum(j.at("type"));
-    k.severity = j.at("severity");
+    k.severity = ocpp::integer_from_json(j.at("severity"));
     k.component = j.at("component");
     k.variable = j.at("variable");
 
     // the optional parts of the message
     if (j.contains("id")) {
-        k.id.emplace(j.at("id"));
+        k.id.emplace(ocpp::integer_from_json(j.at("id")));
     }
     if (j.contains("periodicEventStream")) {
         k.periodicEventStream.emplace(j.at("periodicEventStream"));
@@ -5843,11 +5845,11 @@ void from_json(const json& j, SetMonitoringResult& k) {
     k.type = conversions::string_to_monitor_enum(j.at("type"));
     k.component = j.at("component");
     k.variable = j.at("variable");
-    k.severity = j.at("severity");
+    k.severity = ocpp::integer_from_json(j.at("severity"));
 
     // the optional parts of the message
     if (j.contains("id")) {
-        k.id.emplace(j.at("id"));
+        k.id.emplace(ocpp::integer_from_json(j.at("id")));
     }
     if (j.contains("statusInfo")) {
         k.statusInfo.emplace(j.at("statusInfo"));
@@ -5967,7 +5969,7 @@ void to_json(json& j, const CostDimension& k) {
 void from_json(const json& j, CostDimension& k) {
     // the required parts of the message
     k.type = conversions::string_to_cost_dimension_enum(j.at("type"));
-    k.volume = j.at("volume");
+    k.volume = ocpp::decimal_from_json(j.at("volume"));
 
     // the optional parts of the message
     if (j.contains("customData")) {
@@ -6054,10 +6056,10 @@ void from_json(const json& j, TotalPrice& k) {
 
     // the optional parts of the message
     if (j.contains("exclTax")) {
-        k.exclTax.emplace(j.at("exclTax"));
+        k.exclTax.emplace(ocpp::decimal_from_json(j.at("exclTax")));
     }
     if (j.contains("inclTax")) {
-        k.inclTax.emplace(j.at("inclTax"));
+        k.inclTax.emplace(ocpp::decimal_from_json(j.at("inclTax")));
     }
     if (j.contains("customData")) {
         k.customData.emplace(j.at("customData"));
@@ -6161,13 +6163,13 @@ void to_json(json& j, const TotalUsage& k) {
 /// \brief Conversion from a given json object \p j to a given TotalUsage \p k
 void from_json(const json& j, TotalUsage& k) {
     // the required parts of the message
-    k.energy = j.at("energy");
-    k.chargingTime = j.at("chargingTime");
-    k.idleTime = j.at("idleTime");
+    k.energy = ocpp::decimal_from_json(j.at("energy"));
+    k.chargingTime = ocpp::integer_from_json(j.at("chargingTime"));
+    k.idleTime = ocpp::integer_from_json(j.at("idleTime"));
 
     // the optional parts of the message
     if (j.contains("reservationTime")) {
-        k.reservationTime.emplace(j.at("reservationTime"));
+        k.reservationTime.emplace(ocpp::integer_from_json(j.at("reservationTime")));
     }
     if (j.contains("customData")) {
         k.customData.emplace(j.at("customData"));
@@ -6267,16 +6269,16 @@ void from_json(const json& j, TransactionLimit& k) {
 
     // the optional parts of the message
     if (j.contains("maxCost")) {
-        k.maxCost.emplace(j.at("maxCost"));
+        k.maxCost.emplace(ocpp::decimal_from_json(j.at("maxCost")));
     }
     if (j.contains("maxEnergy")) {
-        k.maxEnergy.emplace(j.at("maxEnergy"));
+        k.maxEnergy.emplace(ocpp::decimal_from_json(j.at("maxEnergy")));
     }
     if (j.contains("maxTime")) {
-        k.maxTime.emplace(j.at("maxTime"));
+        k.maxTime.emplace(ocpp::integer_from_json(j.at("maxTime")));
     }
     if (j.contains("maxSoC")) {
-        k.maxSoC.emplace(j.at("maxSoC"));
+        k.maxSoC.emplace(ocpp::integer_from_json(j.at("maxSoC")));
     }
     if (j.contains("customData")) {
         k.customData.emplace(j.at("customData"));
@@ -6333,13 +6335,13 @@ void from_json(const json& j, Transaction& k) {
         k.chargingState.emplace(conversions::string_to_charging_state_enum(j.at("chargingState")));
     }
     if (j.contains("timeSpentCharging")) {
-        k.timeSpentCharging.emplace(j.at("timeSpentCharging"));
+        k.timeSpentCharging.emplace(ocpp::integer_from_json(j.at("timeSpentCharging")));
     }
     if (j.contains("stoppedReason")) {
         k.stoppedReason.emplace(conversions::string_to_reason_enum(j.at("stoppedReason")));
     }
     if (j.contains("remoteStartId")) {
-        k.remoteStartId.emplace(j.at("remoteStartId"));
+        k.remoteStartId.emplace(ocpp::integer_from_json(j.at("remoteStartId")));
     }
     if (j.contains("operationMode")) {
         k.operationMode.emplace(conversions::string_to_operation_mode_enum(j.at("operationMode")));

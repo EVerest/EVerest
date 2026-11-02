@@ -34,13 +34,20 @@ public:
     SapEngine(io::StreamOutputView output_view, const session::SessionConfig& config,
               session::feedback::Callbacks callbacks, bool tls_active);
 
-    void on_packet(io::v2gtp::PayloadType, const io::StreamInputView&);
+    bool on_packet(io::v2gtp::PayloadType, const io::StreamInputView&);
     void on_control_event(const d20::ControlEvent&);
     void on_timeout(d20::TimeoutType);
 
     bool has_outgoing() const;
+    V2gMessageType peek_response_type() const {
+        return outgoing->message_type;
+    }
     std::optional<SeccOutgoing> take_outgoing();
 
+    // Includes a failed negotiation response that is still pending on the wire.
+    bool is_stopping() const {
+        return stopped;
+    }
     bool is_finished() const;
 
     bool is_paused() const {

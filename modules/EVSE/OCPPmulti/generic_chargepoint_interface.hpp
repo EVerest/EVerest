@@ -232,7 +232,7 @@ struct GenericChargePointInterface {
         ConnectorStructure evse_connector_structure;
         ConnectorStructureV16 connector_mapping;
         std::shared_ptr<ocpp_module_common::device_model::EverestDeviceModelStorage> everest_device_model;
-        std::string v16_device_model_config_mappings;
+        std::string v16_ocpp16_key_mappings_path;
         std::int32_t v16_ocpp16_network_config_slot;
         bool v16_enable_legacy_config_migration;
         std::optional<types::charger_information::ChargerInformation> charger_info;

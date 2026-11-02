@@ -69,6 +69,8 @@ class EverestEnvironmentCoreConfiguration:
     template_everest_config_path: Union[
         Path, None]  # Underlying EVerest configuration; will be copied temporarily by EverestCore and adjusted;
     # if none, config is auto-detected by EVerest
+    template_everest_settings_path: Optional[Path] = None  # Manager settings file; copied by EverestCore with
+    # the MQTT prefixes of the instance; if none, the manager uses its default settings
 
 
 @dataclass
@@ -142,7 +144,8 @@ class EverestTestEnvironmentSetup:
                                          self._additional_everest_config_strategies,
                                          standalone_module=self._standalone_module,
                                          manager_extra_args=self._manager_extra_args,
-                                         tmp_path=tmp_path)
+                                         tmp_path=tmp_path,
+                                         settings_path=self._core_config.template_everest_settings_path)
 
         if self._ocpp_config:
             if self._ocpp_config.ocpp_version == OCPPVersion.ocpp16:

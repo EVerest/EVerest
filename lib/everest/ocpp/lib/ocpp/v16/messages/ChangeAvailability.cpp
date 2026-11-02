@@ -7,6 +7,8 @@
 #include <ostream>
 #include <string>
 
+#include <ocpp/common/json_number.hpp>
+
 using json = nlohmann::json;
 
 namespace ocpp {
@@ -27,7 +29,7 @@ void to_json(json& j, const ChangeAvailabilityRequest& k) {
 
 void from_json(const json& j, ChangeAvailabilityRequest& k) {
     // the required parts of the message
-    k.connectorId = j.at("connectorId");
+    k.connectorId = ocpp::integer_from_json(j.at("connectorId"));
     k.type = conversions::string_to_availability_type(j.at("type"));
 
     // the optional parts of the message

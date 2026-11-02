@@ -3,6 +3,8 @@
 
 #include <EnergyManagerImpl.hpp>
 
+#include <fmt/format.h>
+
 #include <chrono>
 #include <fstream>
 

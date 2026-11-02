@@ -1,6 +1,7 @@
 add_library(cbv2g_exi_codec)
-add_library(cbv2g::exi_codec ALIAS cbv2g_exi_codec)
-set_property(TARGET cbv2g_exi_codec PROPERTY EXPORT_NAME exi_codec)
+add_library(everest::cbv2g::exi_codec ALIAS cbv2g_exi_codec)
+set_property(TARGET cbv2g_exi_codec PROPERTY EXPORT_NAME cbv2g::exi_codec)
+set_property(TARGET cbv2g_exi_codec PROPERTY POSITION_INDEPENDENT_CODE ON)
 
 target_sources(cbv2g_exi_codec
     PRIVATE
@@ -22,8 +23,9 @@ target_include_directories(cbv2g_exi_codec
 target_compile_features(cbv2g_exi_codec PRIVATE c_std_99)
 
 add_library(cbv2g_din)
-add_library(cbv2g::din ALIAS cbv2g_din)
-set_property(TARGET cbv2g_din PROPERTY EXPORT_NAME din)
+add_library(everest::cbv2g::din ALIAS cbv2g_din)
+set_property(TARGET cbv2g_din PROPERTY EXPORT_NAME cbv2g::din)
+set_property(TARGET cbv2g_din PROPERTY POSITION_INDEPENDENT_CODE ON)
 
 target_sources(cbv2g_din
     PRIVATE
@@ -43,14 +45,15 @@ target_include_directories(cbv2g_din
 
 target_link_libraries(cbv2g_din
     PUBLIC
-        cbv2g::exi_codec
+        everest::cbv2g::exi_codec
 )
 
 target_compile_features(cbv2g_din PUBLIC c_std_99)
 
 add_library(cbv2g_iso2)
-add_library(cbv2g::iso2 ALIAS cbv2g_iso2)
-set_property(TARGET cbv2g_iso2 PROPERTY EXPORT_NAME iso2)
+add_library(everest::cbv2g::iso2 ALIAS cbv2g_iso2)
+set_property(TARGET cbv2g_iso2 PROPERTY EXPORT_NAME cbv2g::iso2)
+set_property(TARGET cbv2g_iso2 PROPERTY POSITION_INDEPENDENT_CODE ON)
 
 target_sources(cbv2g_iso2
     PRIVATE
@@ -70,14 +73,14 @@ target_include_directories(cbv2g_iso2
 
 target_link_libraries(cbv2g_iso2
     PUBLIC
-        cbv2g::exi_codec
+        everest::cbv2g::exi_codec
 )
 
 target_compile_features(cbv2g_iso2 PUBLIC c_std_99)
 
 add_library(cbv2g_iso20)
-add_library(cbv2g::iso20 ALIAS cbv2g_iso20)
-set_property(TARGET cbv2g_iso20 PROPERTY EXPORT_NAME iso20)
+add_library(everest::cbv2g::iso20 ALIAS cbv2g_iso20)
+set_property(TARGET cbv2g_iso20 PROPERTY EXPORT_NAME cbv2g::iso20)
 
 target_sources(cbv2g_iso20
     PRIVATE
@@ -115,14 +118,14 @@ target_include_directories(cbv2g_iso20
 
 target_link_libraries(cbv2g_iso20
     PUBLIC
-        cbv2g::exi_codec
+        everest::cbv2g::exi_codec
 )
 
 target_compile_features(cbv2g_iso20 PUBLIC c_std_99)
 
 add_library(cbv2g_tp)
-add_library(cbv2g::tp ALIAS cbv2g_tp)
-set_property(TARGET cbv2g_tp PROPERTY EXPORT_NAME tp)
+add_library(everest::cbv2g::tp ALIAS cbv2g_tp)
+set_property(TARGET cbv2g_tp PROPERTY EXPORT_NAME cbv2g::tp)
 
 
 target_sources(cbv2g_tp

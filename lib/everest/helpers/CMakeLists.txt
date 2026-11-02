@@ -18,7 +18,7 @@ target_sources(everest_helpers
         src/phase_rotation.cpp
 )
 
-if (EVEREST_CORE_BUILD_TESTING AND EVEREST_ENABLE_COVERAGE)
+if (BUILD_TESTING AND EVEREST_ENABLE_COVERAGE)
     target_compile_definitions(everest_helpers PUBLIC EVEREST_COVERAGE_ENABLED)
 endif()
 
@@ -61,22 +61,9 @@ if (BUILD_TESTING)
     add_subdirectory(tests)
 endif()
 
-if(DISABLE_EDM)
-    install(
-        TARGETS
-            everest_helpers
-        EXPORT everest-helpers-targets
-        LIBRARY
-    )
-
-    evc_setup_package(
-        NAME everest-helpers
-        EXPORT everest-helpers-targets
-        NAMESPACE everest
-        ADDITIONAL_CONTENT
-            "find_dependency(everest-tls)"
-            "find_dependency(nlohmann_json)"
-            "find_dependency(nlohmann_json_schema_validator)"
-            "find_dependency(fmt)"
-    )
-endif()
+install(
+    TARGETS
+        everest_helpers
+    EXPORT everest-core-targets
+    LIBRARY
+)

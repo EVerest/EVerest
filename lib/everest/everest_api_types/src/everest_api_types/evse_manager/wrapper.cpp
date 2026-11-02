@@ -400,6 +400,24 @@ HlcSessionFailedReasonEnum_External to_external_api(HlcSessionFailedReasonEnum_I
     throw std::out_of_range("Unexpected value for HlcSessionFailedReasonEnum_Internal");
 }
 
+Reservation_Internal to_internal_api(Reservation_External const& val) {
+    Reservation_Internal result;
+    result.reservation_id = val.id;
+    result.id_token = val.id_token;
+    result.parent_id_token = val.parent_id_token;
+    result.expiry_time = val.expiry_time;
+    return result;
+}
+
+Reservation_External to_external_api(Reservation_Internal const& val) {
+    Reservation_External result;
+    result.id = val.reservation_id;
+    result.id_token = val.id_token;
+    result.parent_id_token = val.parent_id_token;
+    result.expiry_time = val.expiry_time;
+    return result;
+}
+
 SessionEvent_Internal to_internal_api(SessionEvent_External const& val) {
     SessionEvent_Internal result;
     result.uuid = val.uuid;
@@ -414,6 +432,7 @@ SessionEvent_Internal to_internal_api(SessionEvent_External const& val) {
     result.charging_state_changed_event = optToInternal(val.charging_state_changed_event);
     result.authorization_event = optToInternal(val.authorization_event);
     result.source = optToInternal(val.source);
+    result.reservation = optToInternal(val.reservation);
     return result;
 }
 
@@ -430,6 +449,7 @@ SessionEvent_External to_external_api(SessionEvent_Internal const& val) {
     result.charging_paused_evse = optToExternal(val.charging_paused_evse);
     result.charging_state_changed_event = optToExternal(val.charging_state_changed_event);
     result.source = optToExternal(val.source);
+    result.reservation = optToExternal(val.reservation);
     return result;
 }
 

@@ -16,7 +16,7 @@ namespace ocpp_multi {
 ///        mirrored; a missing certificate surfaces at connect time through slot failover.
 class V16ConnectionConfigValidator {
 public:
-    explicit V16ConnectionConfigValidator(ocpp::v2::DeviceModelInterface& device_model);
+    explicit V16ConnectionConfigValidator(ocpp::v2::DeviceModelVariablesInterface& device_model);
 
     /// \returns the reasonCode when the write must be rejected
     std::optional<std::string> validate_write(const ocpp::v2::Component& component, const ocpp::v2::Variable& variable,
@@ -28,7 +28,7 @@ private:
                                                                          const std::string& value) const;
     std::optional<std::string> validate_network_configuration_priority_write(const std::string& value) const;
 
-    ocpp::v2::DeviceModelInterface& m_device_model;
+    ocpp::v2::DeviceModelVariablesInterface& m_device_model;
 };
 
 } // namespace ocpp_multi

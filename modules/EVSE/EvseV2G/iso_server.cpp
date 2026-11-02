@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2023 chargebyte GmbH
-// Copyright (C) 2023 Contributors to EVerest
+// Copyright (C) 2023 - 2026 Contributors to EVerest
 #include <cbv2g/common/exi_bitstream.h>
 #include <cbv2g/exi_v2gtp.h> //for V2GTP_HEADER_LENGTHs
 #include <cbv2g/iso_2/iso2_msgDefDatatypes.h>
@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <everest/util/misc/change_tracker.hpp>
+#include <fmt/format.h>
 #include <inttypes.h>
 #include <math.h>
 #include <stdio.h>
@@ -229,6 +230,7 @@ static void check_iso2_charging_profile_values(iso2_PowerDeliveryReqType* req, i
                     //  setting response code is commented because some EVs do not support schedules correctly
                     dlog(DLOG_LEVEL_WARNING,
                          "EV's charging profile is invalid (EV charging profile time exceeds provided schedule)!");
+                    return;
                 } else {
                     /* Now we checked if the current EV interval fits within the EVSE interval, but it fails.
                      * Next step is to check the EVSE interval until we reached the last EVSE interval */
@@ -1130,7 +1132,7 @@ static enum v2g_event handle_iso_payment_service_selection(struct v2g_connection
     /* Check the current response code and check if no external error has occurred */
     next_event = (v2g_event)iso_validate_response_code(&res->ResponseCode, conn);
 
-    if (req->SelectedPaymentOption == iso2_paymentOptionType_Contract) {
+    if (list_element_found && (req->SelectedPaymentOption == iso2_paymentOptionType_Contract)) {
         dlog(DLOG_LEVEL_INFO, "SelectedPaymentOption: Contract");
         conn->ctx->session.iso_selected_payment_option = iso2_paymentOptionType_Contract;
         /* Set next expected req msg */
@@ -1182,6 +1184,12 @@ static enum v2g_event handle_iso_payment_details(struct v2g_connection* conn) {
             goto error_out;
         }
 
+        if (err != 0) {
+            memset(res, 0, sizeof(*res));
+            res->ResponseCode = iso2_responseCodeType_FAILED_CertChainError;
+            goto error_out;
+        }
+
         auto cert_emaid = getEmaidFromContractCert(contract_crt);
         std::string req_emaid{&req->eMAID.characters[0], req->eMAID.charactersLen};
 
@@ -1198,15 +1206,10 @@ static enum v2g_event handle_iso_payment_details(struct v2g_connection* conn) {
             goto error_out;
         }
 
-        if (err != 0) {
-            memset(res, 0, sizeof(*res));
-            res->ResponseCode = iso2_responseCodeType_FAILED_CertChainError;
-            goto error_out;
+        if (conn->pubkey != nullptr) {
+            *conn->pubkey = certificate_public_key(contract_crt.get());
         }
-
-        assert(conn->pubkey != nullptr);
-        *conn->pubkey = certificate_public_key(contract_crt.get());
-        err = (*conn->pubkey == nullptr) ? -1 : 0;
+        err = ((conn->pubkey == nullptr) || (*conn->pubkey == nullptr)) ? -1 : 0;
 
         if (err != 0) {
             memset(res, 0, sizeof(*res));
@@ -1387,8 +1390,8 @@ static enum v2g_event handle_iso_authorization(struct v2g_connection* conn) {
         iso2_fragment.AuthorizationReq_isUsed = 1u;
         memcpy(&iso2_fragment.AuthorizationReq, req, sizeof(*req));
 
-        assert(conn->pubkey != nullptr);
-        const bool bSigRes = check_iso2_signature(&conn->exi_in.iso2EXIDocument->V2G_Message.Header.Signature,
+        const bool bSigRes = (conn->pubkey != nullptr) && (*conn->pubkey != nullptr) &&
+                             check_iso2_signature(&conn->exi_in.iso2EXIDocument->V2G_Message.Header.Signature,
                                                   conn->pubkey->get(), &iso2_fragment);
 
         if (!bSigRes) {

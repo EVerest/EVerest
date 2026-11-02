@@ -149,8 +149,8 @@ void ev_bsp_api::handle_event_cp(std::uint8_t cp) {
 void ev_bsp_api::handle_bsp_measurement(uint16_t cp, [[maybe_unused]] uint8_t pp_1, [[maybe_unused]] uint8_t pp2) {
     // FIXME implement PP correctly
     API_EV_BSP::BspMeasurement data;
-    // The MCU reports the duty as a 16-bit fraction; EVerest wants percent. In EV role on MCS the
-    // MCU synthesizes a fixed 3276 -> 4.9988 %, the 5 % HLC marker of IEC 61851-23-3 Annex CC, rather
+    // The MCU reports the duty as a 16-bit fraction (65535 = 100 %); EVerest wants percent. In EV role on MCS the
+    // MCU synthesizes a fixed 3276 -> 4.9989 %, the 5 % HLC marker of IEC 61851-23-3 Annex CC, rather
     // than an ampacity code.
     //
     // That clears the gate that matters for a DC session: EvManager's iso_wait_pwm_is_running
@@ -158,7 +158,7 @@ void ev_bsp_api::handle_bsp_measurement(uint16_t cp, [[maybe_unused]] uint8_t pp
     // (:42 CHARGING_REGULATED, :182 iec_wait_pwr_ready) - and must not be read as a contradiction,
     // because those are IEC AC basic-signalling paths where the duty encodes an available current.
     // An MCS session is DC and HLC-only, so it never runs them.
-    data.cp_pwm_duty_cycle = cp / 65536. * 100.;
+    data.cp_pwm_duty_cycle = cp / 65535. * 100.;
     API_EVSE_BSP::ProximityPilot pp;
     API_EVSE_BSP::Ampacity amp;
     amp = API_EVSE_BSP::Ampacity::None;

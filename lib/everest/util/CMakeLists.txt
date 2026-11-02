@@ -22,7 +22,7 @@ set_target_properties(everest_util
 )
 
 install(TARGETS everest_util
-    EXPORT everest-core-targets
+    EXPORT everest-base-targets
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
@@ -33,15 +33,6 @@ install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/everest
     DESTINATION include
     FILES_MATCHING PATTERN "*.hpp"
 )
-
-if(DISABLE_EDM)
-    evc_setup_package_no_export(
-        NAME everest-util
-        LIBRARY_NAME util
-        NAMESPACE everest
-        TYPE INTERFACE
-    )
-endif()
 
 if (BUILD_TESTING)
     add_subdirectory(tests)

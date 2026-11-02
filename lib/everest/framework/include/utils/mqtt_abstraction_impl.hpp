@@ -27,6 +27,9 @@
 #include <utils/types.hpp>
 
 namespace Everest {
+/// \brief Maximum nesting depth of arrays and objects in a JSON payload.
+constexpr std::size_t MAX_JSON_NESTING_DEPTH = 128;
+
 /// \brief Contains a payload and the topic it was received on with additional QOS
 struct MessageWithQOS : Message {
     QOS qos;     ///< The Quality of Service level
@@ -36,7 +39,8 @@ struct MessageWithQOS : Message {
 };
 
 ///
-/// \brief Contains a C++ abstraction of MQTT-C and some convenience functionality for using MQTT in EVerest modules
+/// \brief Contains a C++ abstraction of the everest::io MQTT client and some convenience functionality for using MQTT
+/// in EVerest modules
 ///
 class MQTTAbstractionImpl : public MQTTAbstraction {
 public:

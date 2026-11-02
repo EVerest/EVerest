@@ -5,7 +5,10 @@
 
 #include <everest/logging.hpp>
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wpedantic"
 #include <libwebsockets.h>
+#pragma GCC diagnostic pop
 
 #include <atomic>
 #include <chrono>
@@ -461,6 +464,14 @@ int private_key_callback(char* buf, int size, int /*rwflag*/, void* userdata) {
     std::memcpy(buf, password->c_str(), max_copy_chars);
 
     return clamp_to<int>(max_copy_chars);
+}
+
+/// \brief Whether a message grows beyond \p max_size once the \p chunk just received and the \p remaining bytes
+/// announced by the current frame header are added to the \p buffered bytes. Frame lengths come from the peer and
+/// can be close to 2^63, so adding them up could overflow std::size_t. Each length is checked against what is left of
+/// \p max_size instead.
+bool exceeds_max_size(std::size_t buffered, std::size_t chunk, std::size_t remaining, std::size_t max_size) {
+    return buffered > max_size or chunk > max_size - buffered or remaining > max_size - buffered - chunk;
 }
 } // namespace
 
@@ -1180,7 +1191,7 @@ void WebsocketLibwebsockets::poll_message(const std::shared_ptr<WebsocketMessage
         }
     }
 
-    EVLOG_debug << "Queueing message: " << msg->payload;
+    EVLOG_debug << "Queueing message with length: " << msg->payload.size();
     send_message_queue.push(msg);
 
     // Request a write callback
@@ -1437,12 +1448,27 @@ int WebsocketLibwebsockets::process_callback(void* wsi_ptr, int callback_reason,
         }
     } break;
 
-    case LWS_CALLBACK_CLIENT_RECEIVE:
+    case LWS_CALLBACK_CLIENT_RECEIVE: {
+        const auto remaining = lws_remaining_packet_payload(wsi);
+        const auto max_size = this->connection_options.max_incoming_message_size;
+        if (exceeds_max_size(recv_buffered_message.size(), len, remaining, max_size)) {
+            EVLOG_error << "Incoming message exceeds the maximum size of " << max_size
+                        << " bytes, closing the connection";
+            recv_buffered_message.clear();
+            recv_buffered_message.shrink_to_fit();
+            std::string close_reason = "Message Too Big";
+            // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast): needed for appropriate type
+            lws_close_reason(wsi, LWS_CLOSE_STATUS_MESSAGE_TOO_LARGE,
+                             reinterpret_cast<unsigned char*>(close_reason.data()), close_reason.size());
+            // Closes the connection, LWS_CALLBACK_CLIENT_CLOSED then reconnects
+            return -1;
+        }
+
         // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast): needed for appropriate type
         recv_buffered_message.append(reinterpret_cast<char*>(in), reinterpret_cast<char*>(in) + len);
 
-        // Message is complete
-        if (lws_remaining_packet_payload(wsi) <= 0) {
+        // A message can span several frames, only the final one completes it
+        if (remaining == 0 and lws_is_final_fragment(wsi) != 0) {
             on_conn_message(std::move(recv_buffered_message));
             recv_buffered_message.clear();
         }
@@ -1450,7 +1476,7 @@ int WebsocketLibwebsockets::process_callback(void* wsi_ptr, int callback_reason,
         if (false == send_message_queue.empty()) {
             lws_callback_on_writable(data->get_conn());
         }
-        break;
+    } break;
 
     case LWS_CALLBACK_EVENT_WAIT_CANCELLED: {
         if (false == send_message_queue.empty()) {
@@ -1561,6 +1587,13 @@ int WebsocketLibwebsockets::process_callback(void* wsi_ptr, int callback_reason,
     case LWS_CALLBACK_MQTT_UNSUBSCRIBE_TIMEOUT:
     case LWS_CALLBACK_MQTT_SHADOW_TIMEOUT:
     case LWS_CALLBACK_USER:
+    case LWS_CALLBACK_MQTT_QOS2_RX_COMPLETE:
+    case LWS_CALLBACK_HTTP_INTERCEPTOR_CHECK:
+    case LWS_CALLBACK_GET_PSS_SIZE:
+    case LWS_CALLBACK_DHT_VERB_DISPATCH:
+    case LWS_CALLBACK_QT_SERVER_RECEIVE:
+    case LWS_CALLBACK_QT_CLIENT_RECEIVE:
+    case LWS_CALLBACK_CLIENT_ESTABLISHED_EARLY:
         break;
     }
 

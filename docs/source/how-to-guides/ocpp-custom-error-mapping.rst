@@ -4,6 +4,13 @@
 Customize How Errors Reach the CSMS
 ####################################
 
+.. warning::
+
+   The custom error mapping file and the ``CustomErrorMappingPath`` configuration key are currently
+   **experimental**: the file format and its behavior may change without further notice. They are exempt from the
+   stability guarantees and the deprecation period of the EVerest public API until promoted to stable (see
+   :ref:`project-experimental-components`).
+
 This guide shows how to change the way the :ref:`OCPPmulti <everest_modules_OCPPmulti>` module reports EVerest
 errors to the CSMS, using a custom error mapping file. Use it when the CSMS expects your own error codes and texts,
 or when an OCPP 2.x error should be reported on a different component or variable of the device model.

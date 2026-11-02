@@ -207,3 +207,49 @@ TEST_CASE("ConfigServiceCore persists writes to the user-config via its mirror",
         CHECK(after == before);
     }
 }
+
+TEST_CASE("ConfigServiceCore mirrors writes to an explicit --user-config path", "[userconfig_storage]") {
+    const auto tmp_dir = make_temp_dir("everest_userconfig_explicit_path_test");
+    fs::copy(Everest::tests::get_bin_dir() / "valid_module_config_userconfig", tmp_dir, fs::copy_options::recursive);
+    fs::create_directories(tmp_dir / "elsewhere");
+
+    const auto prefix = tmp_dir.string() + "/";
+    const auto config_file = (tmp_dir / "config.yaml").string();
+    const auto default_user_config_file = tmp_dir / "user-config" / "config.yaml";
+    const auto explicit_user_config_file = tmp_dir / "elsewhere" / "user.yaml";
+    const nlohmann::json default_before = Everest::load_yaml(default_user_config_file);
+
+    const auto boot_source =
+        Everest::resolve_boot_source(config_file, "", false, false, "", explicit_user_config_file.string());
+    Everest::ManagerSettings ms(prefix, boot_source);
+    REQUIRE(ms.user_config_file == explicit_user_config_file);
+    ms.db_dir = fs::path("file:test_userconfig_explicit_mirror?mode=memory&cache=shared");
+    const auto bs = Everest::init_database_bootstrap(ms);
+    REQUIRE(bs.module_configs_initialized);
+
+    Everest::config::ConfigServiceCore core(ms, bs.db_connection,
+                                            std::make_unique<UserConfigStorage>(ms.user_config_file));
+
+    ConfigurationParameterIdentifier id;
+    id.module_id = "valid_module";
+    id.configuration_parameter_name = "valid_config_entry";
+    const Everest::config::ConfigParameterUpdate update{id, "explicit_value"};
+    const auto result = core.set_config_parameters(Everest::config::ConfigServiceInterface::ACTIVE_SLOT, {update},
+                                                   Everest::config::Origin{true, std::nullopt});
+    REQUIRE(result.status == Everest::config::SetConfigParameterStatus::Ok);
+
+    const nlohmann::json on_disk = Everest::load_yaml(explicit_user_config_file);
+    CHECK(on_disk.at("active_modules").at("valid_module").at("config_module").at("valid_config_entry") ==
+          "explicit_value");
+    const nlohmann::json default_after = Everest::load_yaml(default_user_config_file);
+    CHECK(default_after == default_before);
+
+    // the next boot with the same --user-config picks up the written value
+    auto mc2 = Everest::ManagerConfig(Everest::ManagerSettings(prefix, boot_source));
+    const auto& config_params =
+        mc2.get_module_configurations().at("valid_module").configuration_parameters.at("!module");
+    const auto it = std::find_if(config_params.begin(), config_params.end(),
+                                 [](const auto& param) { return param.name == "valid_config_entry"; });
+    REQUIRE(it != config_params.end());
+    CHECK(std::get<std::string>(it->value) == "explicit_value");
+}

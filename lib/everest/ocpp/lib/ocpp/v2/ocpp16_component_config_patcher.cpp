@@ -350,8 +350,7 @@ void patch_network_connection_profile(std::map<ComponentKey, std::vector<DeviceM
 
 void patch_component_config_with_ocpp16(std::map<ComponentKey, std::vector<DeviceModelVariable>>& component_configs,
                                         ocpp::v16::ChargePointConfiguration& ocpp16_config,
-                                        const Ocpp16CustomConfigMappings& custom_config_mappings,
-                                        int32_t network_config_slot) {
+                                        const Ocpp16KeyMappings& custom_key_mappings, int32_t network_config_slot) {
 
     const auto config_keys = ocpp16_config.get_all_key_value();
 
@@ -364,8 +363,8 @@ void patch_component_config_with_ocpp16(std::map<ComponentKey, std::vector<Devic
         auto mapping_opt = ocpp::v16::keys::convert_v2(config_key.key.get());
 
         if (!mapping_opt.has_value()) {
-            const auto custom_mapping_it = custom_config_mappings.find(config_key.key.get());
-            if (custom_mapping_it != custom_config_mappings.end()) {
+            const auto custom_mapping_it = custom_key_mappings.find(config_key.key.get());
+            if (custom_mapping_it != custom_key_mappings.end()) {
                 const auto& [comp, var] = custom_mapping_it->second;
                 mapping_opt = std::make_pair(comp, var);
             }

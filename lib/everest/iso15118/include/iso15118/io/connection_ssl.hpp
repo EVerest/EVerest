@@ -10,10 +10,14 @@
 #include <iso15118/io/poll_manager.hpp>
 #include <iso15118/io/sha_hash.hpp>
 
+namespace tls {
+class Connection;
+}
+
 namespace iso15118::io {
 
 // forward declaration of the implementation-detail context. The definition lives
-// in connection_ssl.cpp so that OpenSSL and the tls:: types stay out of public headers.
+// in connection_ssl.cpp so that TLS server details stay private.
 struct SSLContext;
 
 /**
@@ -36,6 +40,7 @@ public:
     ReadResult read(uint8_t* buf, size_t len) final;
 
     void close() final;
+    void half_close() final;
 
     bool is_secure() const final {
         return true;
@@ -46,6 +51,9 @@ public:
     ~ConnectionSSL();
 
 private:
+    friend struct ConnectionSSLTestAccess;
+    tls::Connection& tls_connection();
+
     PollManager& poll_manager;
     std::unique_ptr<SSLContext> ssl;
 
@@ -57,6 +65,8 @@ private:
     // Idempotency guard for close(): guarantees CLOSED is delivered exactly once, on whichever
     // teardown path runs first (session close, accept/handshake failure, peer EOF).
     bool closed{false};
+    bool half_close_requested{false};
+    bool half_closed{false};
 
     void handle_connect();
     void handle_data();

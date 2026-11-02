@@ -7,7 +7,7 @@
 #include <optional>
 
 #include <everest/slac/slac_defs.hpp>
-#include <fmt/core.h>
+#include <fmt/format.h>
 
 #include "amp_map_file.hpp"
 
@@ -291,7 +291,7 @@ void SlacRuntime::configure_fsm_context() {
     }
 
     fsm_ctx->slac_config.provide_telemetry = config.telemetry_enabled;
-    fsm_ctx->slac_config.generate_nmk();
+    fsm_ctx->generate_nmk(fsm_ctx->slac_config.session_nmk);
     std::copy_n(slac_io->mac_address(), fsm_ctx->evse_mac.size(), fsm_ctx->evse_mac.begin());
 }
 

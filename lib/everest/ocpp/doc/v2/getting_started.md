@@ -11,3 +11,7 @@ Libocpp needs registered **callbacks** in order to execute control commands defi
 The implementation must call **event handlers** of libocpp so that the library can track the state of the charging station and trigger OCPP messages accordingly (e.g. MeterValuesRequest , StatusNotificationRequest)
 
 Your reference within libocpp to interact is a single instance to the class ocpp::v2::ChargePoint defined in `v2/charge_point.hpp` for OCPP 2.0.1.
+
+Firmware update status reported before the BootNotification is accepted is held until registration succeeds.
+Only the latest pending status is sent, once. An Installed status generates the FirmwareUpdated security event;
+a FirmwareUpdate boot reason does not generate a second event.

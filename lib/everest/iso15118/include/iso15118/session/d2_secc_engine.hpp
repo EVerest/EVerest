@@ -28,13 +28,20 @@ public:
                  std::optional<d2::PauseContext>& pause_ctx, session::feedback::Callbacks callbacks,
                  d20::Timeouts& timeouts, bool tls_active);
 
-    void on_packet(io::v2gtp::PayloadType, const io::StreamInputView&);
+    bool on_packet(io::v2gtp::PayloadType, const io::StreamInputView&);
     void on_control_event(const d20::ControlEvent&);
     void on_timeout(d20::TimeoutType);
 
     bool has_outgoing() const;
+    V2gMessageType peek_response_type() const {
+        return message_exchange.peek_response_type();
+    }
     std::optional<SeccOutgoing> take_outgoing();
 
+    // Includes a terminal response that is still pending on the wire.
+    bool is_stopping() const {
+        return ctx.session_stopped or ctx.session_paused;
+    }
     bool is_finished() const;
     bool is_paused() const;
     bool is_finished_with_error() const;

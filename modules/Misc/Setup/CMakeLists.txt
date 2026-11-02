@@ -22,7 +22,7 @@ target_link_libraries(${MODULE_NAME}
 
 # ev@c55432ab-152c-45a9-9d2e-7281d50c69c3:v1
 target_compile_features(${MODULE_NAME} PRIVATE cxx_std_17)
-if(EVEREST_CORE_BUILD_TESTING)
+if(BUILD_TESTING)
     include(CTest)
     add_subdirectory(tests)
 endif()

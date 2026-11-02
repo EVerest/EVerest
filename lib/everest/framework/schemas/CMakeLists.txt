@@ -3,6 +3,7 @@ install(
         interface.yaml
         config.yaml
         manifest.yaml
+        settings.yaml
         type.yaml
         error-declaration-list.yaml
         error-object.yaml

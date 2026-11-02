@@ -4,7 +4,7 @@
 #include "powermeterImpl.hpp"
 
 #include "Timeout.hpp"
-#include <fmt/core.h>
+#include <fmt/format.h>
 
 namespace {
 inline std::uint16_t get_u16(const std::vector<std::uint8_t>& vec, std::uint8_t start_index) {
@@ -920,9 +920,6 @@ ast_app_layer::CommandResult powermeterImpl::receive_response() {
     response.reserve(ast_app_layer::PM_AST_MAX_RX_LENGTH);
     serial_device.rx(response, ast_app_layer::PM_AST_SERIAL_RX_INITIAL_TIMEOUT_MS,
                      ast_app_layer::PM_AST_SERIAL_RX_WITHIN_MESSAGE_TIMEOUT_MS);
-
-    EVLOG_critical << "\n\nRECEIVE: " << module::conversions::hexdump(response) << " length: " << response.size()
-                   << "\n\n";
 
     if (response.size() >= 5) {
         ast_app_layer::CommandResult result{};

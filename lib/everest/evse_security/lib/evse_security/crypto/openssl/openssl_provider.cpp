@@ -181,15 +181,15 @@ bool OpenSSLProvider::set_propstr(OSSL_LIB_CTX* libctx, mode_t mode) {
 }
 
 bool OpenSSLProvider::set_mode(OSSL_LIB_CTX* libctx, mode_t mode) {
-    bool result;
     const flags_t f = (libctx == nullptr) ? flags_t::global_custom_provider : flags_t::tls_custom_provider;
+    const bool custom = (mode == mode_t::custom_provider);
 
-    const bool apply = update(f, mode == mode_t::custom_provider);
-    if (apply) {
-        result = set_propstr(libctx, mode);
+    // only fail if the requested mode isn't already set and can't be set
+    if ((custom != is_set(f)) && !set_propstr(libctx, mode)) {
+        return false;
     }
-
-    return result;
+    update(f, custom);
+    return true;
 }
 
 const char* OpenSSLProvider::propquery(mode_t mode) const {

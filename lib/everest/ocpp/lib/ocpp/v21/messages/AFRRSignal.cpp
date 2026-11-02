@@ -8,6 +8,8 @@
 #include <ostream>
 #include <string>
 
+#include <ocpp/common/json_number.hpp>
+
 using json = nlohmann::json;
 
 namespace ocpp {
@@ -32,7 +34,7 @@ void to_json(json& j, const AFRRSignalRequest& k) {
 void from_json(const json& j, AFRRSignalRequest& k) {
     // the required parts of the message
     k.timestamp = ocpp::DateTime(std::string(j.at("timestamp")));
-    k.signal = j.at("signal");
+    k.signal = ocpp::integer_from_json(j.at("signal"));
 
     // the optional parts of the message
     if (j.contains("customData")) {

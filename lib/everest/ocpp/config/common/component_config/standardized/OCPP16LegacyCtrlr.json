@@ -88,21 +88,6 @@
             "type": "integer",
             "minimum": 0
         },
-        "StopTransactionOnEVSideDisconnect": {
-            "variable_name": "StopTransactionOnEVSideDisconnect",
-            "characteristics": {
-                "supportsMonitoring": true,
-                "dataType": "boolean"
-            },
-            "attributes": [
-                {
-                    "type": "Actual",
-                    "mutability": "ReadOnly"
-                }
-            ],
-            "description": "Whether to stop transaction when cable is unplugged on EV side",
-            "type": "boolean"
-        },
         "SupportedFeatureProfiles": {
             "variable_name": "SupportedFeatureProfiles",
             "characteristics": {
@@ -134,22 +119,6 @@
             "description": "Maximum length of the SupportedFeatureProfiles configuration key",
             "type": "integer",
             "minimum": 0
-        },
-        "UnlockConnectorOnEVSideDisconnect": {
-            "variable_name": "UnlockConnectorOnEVSideDisconnect",
-            "characteristics": {
-                "supportsMonitoring": true,
-                "dataType": "boolean"
-            },
-            "attributes": [
-                {
-                    "type": "Actual",
-                    "mutability": "ReadWrite"
-                }
-            ],
-            "description": "Whether to unlock connector when cable is unplugged on EV side",
-            "type": "boolean",
-            "default": true
         },
         "ReserveConnectorZeroSupported": {
             "variable_name": "ReserveConnectorZeroSupported",
@@ -311,21 +280,6 @@
             "type": "boolean",
             "default": false
         },
-        "CustomDisplayCostAndPrice": {
-            "variable_name": "CustomDisplayCostAndPrice",
-            "characteristics": {
-                "supportsMonitoring": true,
-                "dataType": "boolean"
-            },
-            "attributes": [
-                {
-                    "type": "Actual",
-                    "mutability": "ReadOnly"
-                }
-            ],
-            "description": "Whether California Pricing Requirements are supported",
-            "type": "boolean"
-        },
         "DefaultPrice": {
             "variable_name": "DefaultPrice",
             "characteristics": {
@@ -388,21 +342,6 @@
             "description": "Comma-separated list of supported language codes per RFC5646",
             "type": "string",
             "minLength": 1
-        },
-        "CustomMultiLanguageMessages": {
-            "variable_name": "CustomMultiLanguageMessages",
-            "characteristics": {
-                "supportsMonitoring": true,
-                "dataType": "boolean"
-            },
-            "attributes": [
-                {
-                    "type": "Actual",
-                    "mutability": "ReadOnly"
-                }
-            ],
-            "description": "Whether multi-language support for tariffs is available",
-            "type": "boolean"
         },
         "Language": {
             "variable_name": "Language",
@@ -521,7 +460,6 @@
     "required": [
         "GetConfigurationMaxKeys",
         "NumberOfConnectors",
-        "UnlockConnectorOnEVSideDisconnect",
         "ConnectorPhaseRotation"
     ]
 }

@@ -29,11 +29,9 @@ ev_is_python_venv_active(
     RESULT_VAR IS_PYTHON_VENV_ACTIVE
 )
 if(IS_PYTHON_VENV_ACTIVE)
-    get_target_property(SOURCE_DIRECTORY ev_pip_package_everest-testing SOURCE_DIRECTORY)
-    message(STATUS "Installing everest-testing from: ${SOURCE_DIRECTORY}")
-    ev_pip_install_local(
-        PACKAGE_NAME "everest-testing"
-        PACKAGE_SOURCE_DIRECTORY "${SOURCE_DIRECTORY}"
+    ev_install_pip_package(
+        NAME "everest-testing"
+        EDITABLE
     )
 endif()
 
@@ -44,3 +42,11 @@ add_subdirectory(async_api_tests)
 if (TARGET EEBUS)
     add_subdirectory(eebus_tests)
 endif()
+
+add_test(
+    NAME cmake_file_generation
+    COMMAND
+        ${PROJECT_SOURCE_DIR}/cmake/lint/cmake-file-generation.sh
+        ${PROJECT_SOURCE_DIR}
+        ${PROJECT_BINARY_DIR}
+)

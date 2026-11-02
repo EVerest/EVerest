@@ -878,7 +878,8 @@ components:
           type: integer
         last_updated:
           type: string
-          description: 'Timestamp of the last update.'
+          format: date-time
+          description: 'Timestamp of the last update in RFC3339 format.'
         description:
           type: string
         config_file_path:

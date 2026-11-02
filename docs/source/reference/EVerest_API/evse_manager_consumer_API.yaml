@@ -3,7 +3,7 @@ asyncapi: 3.0.0
 id: 'pionix:de:everest:evse_manager_consumer_API'
 info:
   title: 'EVerest API definition for the use of the EVSE manager'
-  version: 1.0.0
+  version: 1.1.0
   description: >-
     API to allow EVerest API clients to use the EvseManager module.
 
@@ -2108,7 +2108,7 @@ components:
           type: integer
           minimum: 0
         timestamp:
-          description: Timestamp of capturing session info
+          description: Timestamp of capturing session info in RFC3339 format
           type: string
           format: date-time
         selected_protocol:
@@ -2122,21 +2122,21 @@ components:
           type: integer
           minimum: 0
         session_start_time:
-          description: Timestamp of session start. Updated at each new session.
+          description: Timestamp of session start in RFC3339 format. Updated at each new session.
           type: string
           format: date-time
         transaction_start_time:
           description: >-
-            Timestamp of transaction start. Updated at each new transaction.
+            Timestamp of transaction start in RFC3339 format. Updated at each new transaction.
           type: string
           format: date-time
         session_end_time:
-          description: Timestamp of session end. Updated at each session end.
+          description: Timestamp of session end in RFC3339 format. Updated at each session end.
           type: string
           format: date-time
         transaction_end_time:
           description: >-
-            Timestamp of transaction end. Updated at each transaction end.
+            Timestamp of transaction end in RFC3339 format. Updated at each transaction end.
           type: string
           format: date-time
         reserved:
@@ -2150,6 +2150,40 @@ components:
             Treated as false when omitted.
           type: boolean
           default: false
+        reservation:
+          description: >-
+            Details of the reservation holding this EVSE. Normally present while reserved is true
+            for a reservation made for this specific EVSE, also after a token matching it has been
+            authorised and until it is used to start a transaction. Absent when the EVSE is held
+            by reservations that are not for a specific EVSE, and possibly briefly when a
+            reservation ends while it is being placed. To find out whether a presented
+            token matches the reservation, compare token.id_token.value of the auth_consumer_API
+            token_validation_status with id_token, or with parent_id_token when set.
+          type: object
+          $ref: '#/components/schemas/Reservation'
+    Reservation:
+      description: >-
+        Reservation placed on an EVSE
+      type: object
+      additionalProperties: true
+      required:
+        - id
+        - id_token
+        - expiry_time
+      properties:
+        id:
+          description: Id of the reservation
+          type: integer
+        id_token:
+          description: Id token the reservation is made for
+          type: string
+        parent_id_token:
+          description: Parent (group) id token the reservation is made for
+          type: string
+        expiry_time:
+          description: Absolute UTC time point when the reservation expires
+          type: string
+          format: date-time
     HlcSessionFailedReasonEnum:
       description: |
         Reason for a higher-level-communication (HLC) session failure event.
@@ -2323,7 +2357,7 @@ components:
           description: Current limit that is used while the delay is active
           type: number
         start_time:
-          description: UTC timestamp when this random delay was started
+          description: Timestamp when this random delay was started in RFC3339 format
           type: string
           format: date-time
     EnableDisableReply:
@@ -2409,7 +2443,7 @@ components:
             time series. The first entry is special as it will be active already now
             even if the timestamp is in the future, so it is good practice to set the
             first entry to current time. The time series can have arbitrary time difference
-            between entries and all timestamps are absolute UTC time.
+            between entries and all timestamps are absolute points in time.
           type: array
           items:
             description: One entry for the time series. Values are positive for import from grid and negative for export to grid.
@@ -2500,15 +2534,15 @@ components:
           description: Maximum power that the vehicle supports [W]
           type: number
         estimated_time_full:
-          description: Estimated time when the vehicle is fully charged
+          description: Estimated time when the vehicle is fully charged in RFC3339 format
           type: string
           format: date-time
         departure_time:
-          description: Time when the vehicle intends to depart (If set by the user)
+          description: Time when the vehicle intends to depart in RFC3339 format (If set by the user)
           type: string
           format: date-time
         estimated_time_bulk:
-          description: Estimated time when the vehicle finished bulk charging (e.g. 80%)
+          description: Estimated time when the vehicle finished bulk charging (e.g. 80%) in RFC3339 format
           type: string
           format: date-time
         evcc_id:
@@ -2617,6 +2651,12 @@ components:
             Additional data for Enabled/Disabled events. Specifies the source of the command that changed the state.
           type: object
           $ref: '#/components/schemas/EnableDisableSource'
+        reservation:
+          description: >-
+            Data for the ReservationStart event. Absent if the EVSE is reserved without a specific
+            reservation, e.g. because of global reservations.
+          type: object
+          $ref: '#/components/schemas/Reservation'
     SessionEventEnum:
       description: |
         Session Event enum
@@ -2635,7 +2675,7 @@ components:
         - ChargingFinished: Charging is finished. Essentially the same as TransactionFinished, but emitted for clarity
         - TransactionFinished: Signaled when the transaction finished. Transaction finishes at the point where one of the preconditions for charging irrevocably becomes false: When a user swipes to stop the transaction and the stop is authorized.
         - SessionFinished: Session finishes at the point that the EVSE is available again (no cable plugged)
-        - ReservationStart: Signaled when a reservation starts
+        - ReservationStart: Signaled when a reservation starts, and again when it is replaced by one with other details
         - ReservationEnd: Signaled when a reservation ends
         - PluginTimeout: Signaled when an EV has been Plugged in but no authorization is present within specified ConnectionTimeout
         - SwitchingPhases: Signals that 1ph/3ph switching was started on AC charging
@@ -2846,7 +2886,10 @@ components:
 
     CommunicationCheck:
       type: boolean
-      description: "Send 'true' at least every 'cfg_communication_check_to_s' seconds to signal module is alive. Send 'false' to stop communication check'"
+      description: >-
+        Send true at least every cfg_communication_check_to_s seconds to signal that the client is alive, otherwise
+        EVerest raises a CommunicationFault, which the next message clears. Send false to stop the check until the
+        module restarts.
     HeartBeatId:
       type: integer
       description: "64bit unsigned integer. The id of every heartbeat increases by 1 and overflows when the maximum representable value is reached"

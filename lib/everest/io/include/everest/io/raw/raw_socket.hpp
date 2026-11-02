@@ -7,6 +7,7 @@
 
 #include <cstdint>
 #include <everest/io/event/unique_fd.hpp>
+#include <everest/io/socket/io_error_record.hpp>
 #include <functional>
 #include <string>
 #include <vector>
@@ -36,7 +37,10 @@ public:
 
     /**
      * @brief Open a RAW socket.
-     * @details Sets the socket non blocking. <br>
+     * @details Sets the socket non blocking and its send buffer to the minimum, so a device that
+     * holds frames reports back-pressure through the fd (see
+     * \ref socket::set_socket_send_buffer_to_min) instead of taking them into a queue the client
+     * cannot see. <br>
      * Implementation for \p ClientPolicy
      * @param[in] if_name Name of the ethernet device
      * @return True on success, false otherwise.
@@ -91,6 +95,7 @@ public:
 
 private:
     event::unique_fd m_fd;
+    socket::io_error_record m_error;
     static constexpr size_t default_buffer_size{65536};
 };
 } // namespace everest::lib::io::raw

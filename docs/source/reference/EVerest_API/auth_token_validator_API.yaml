@@ -3,7 +3,7 @@ asyncapi: 3.0.0
 id: 'pionix:de:everest:auth_token_validator_API'
 info:
   title: 'EVerest API definition for auth token validator - CLIENT side (MODULE)'
-  version: 1.0.0
+  version: 1.1.0
   description: >-
     API for EVerest API clients implementing auth token validator.
 
@@ -127,6 +127,7 @@ components:
         - summary: "Reply validate token."
           payload:
             authorization_status: Accepted
+            tariff_messages: []
             evse_ids:
             - 1
 
@@ -146,6 +147,7 @@ components:
             "validation_result": {
                 "authorization_status": "Accepted",
                 "certificate_status": "Accepted",
+                "tariff_messages": [],
                 "expiry_time": "2019-08-24T14:15:22Z",
                 "parent_id_token": {
                     "value": "string",
@@ -255,7 +257,7 @@ components:
             type: object
             $ref: 'display_message_API.yaml#/components/schemas/MessageContent'
         expiry_time:
-          description: Absolute UTC time point when reservation expires in RFC3339 format
+          description: Absolute time point when reservation expires in RFC3339 format
           type: string
           format: date-time
         parent_id_token:
@@ -306,7 +308,10 @@ components:
 
     CommunicationCheck:
       type: boolean
-      description: "Send 'true' at least every 'cfg_communication_check_to_s' seconds to signal module is alive. Send 'false' to stop communication check'"
+      description: >-
+        Send true at least every cfg_communication_check_to_s seconds to signal that the client is alive, otherwise
+        EVerest raises a CommunicationFault, which the next message clears. Send false to stop the check until the
+        module restarts.
     HeartBeatId:
       type: integer
       description: "64bit unsigned integer. The id of every heartbeat increases by 1 and overflows when the maximum representable value is reached"

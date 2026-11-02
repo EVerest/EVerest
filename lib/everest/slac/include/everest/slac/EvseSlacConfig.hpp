@@ -31,9 +31,10 @@ struct EvseSlacConfig {
     // MAC address of our (EVSE) PLC modem
     MacAddress plc_peer_mac{0x00, 0xB0, 0x52, 0x00, 0x00, 0x01};
 
-    void generate_nmk();
-    void generate_nmk(Nmk& target_nmk);
-    void generate_nmk(std::uint8_t* target_nmk);
+    // Return false when std::random_device was unavailable and the key was seeded from the clock.
+    bool generate_nmk();
+    bool generate_nmk(Nmk& target_nmk);
+    bool generate_nmk(std::uint8_t* target_nmk);
     Nmk session_nmk{};
 
     SetKeyHandlingMode set_key_handling_mode = SetKeyHandlingMode::retry_confirmed;

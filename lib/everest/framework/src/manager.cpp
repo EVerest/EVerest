@@ -27,7 +27,7 @@
 #include <boost/program_options.hpp>
 
 #include <fmt/color.h>
-#include <fmt/core.h>
+#include <fmt/format.h>
 #include <fmt/ranges.h>
 
 #include <configuration_api.hpp>
@@ -525,7 +525,7 @@ void Manager::publish_final_status_and_disconnect(MQTTAbstraction& mqtt_abstract
         // MQTTAbstractionImpl's pre-connect buffer or, if the MQTT main loop has not disconnected
         // yet, sent redundantly. The payload never changes, so publishing it once is enough.
         m_final_lifecycle_status_published = true;
-        Everest::api::lifecycle::LifecycleAPI::publish_shutdown_status(mqtt_abstraction);
+        ::Everest::api::lifecycle::LifecycleAPI::publish_shutdown_status(mqtt_abstraction);
     }
     mqtt_abstraction.disconnect();
 }
@@ -798,7 +798,7 @@ bool Manager::reload_and_update_context(RuntimeContext& ctx) {
 
 namespace {
 // Dump the validated module configurations and manifests as JSON files into dump_path.
-void dump_config_and_manifests(const Everest::ManagerConfig& config, const fs::path& dump_path) {
+void dump_config_and_manifests(const ::Everest::ManagerConfig& config, const fs::path& dump_path) {
     EVLOG_debug << fmt::format("Dumping validated config and manifests into '{}'", dump_path.string());
 
     const auto config_dump_path = dump_path / "config.json";
@@ -880,6 +880,8 @@ int Manager::run() {
     const auto config_opt = parse_string_option(m_vm, "config");
     const auto conf_opt = parse_string_option(m_vm, "conf");
     const auto db_opt = parse_string_option(m_vm, "db");
+    const auto settings_opt = parse_string_option(m_vm, "settings");
+    const auto user_config_opt = parse_string_option(m_vm, "user-config");
     const bool reset_from_yaml = (m_vm.count("reset-from-yaml") != 0);
 
     warn_about_experimental_options(m_vm);
@@ -896,14 +898,14 @@ int Manager::run() {
     const auto config_path = config_opt.empty() ? conf_opt : config_opt;
 
     const bool have_config = not config_path.empty();
-    const auto boot_source = resolve_boot_source(config_path, db_opt, reset_from_yaml, m_vm.count("db-init") != 0);
+    const auto boot_source = resolve_boot_source(config_path, db_opt, reset_from_yaml, m_vm.count("db-init") != 0,
+                                                 settings_opt, user_config_opt);
 
-    // DatabaseOnly runs on built-in defaults and never looks for default.yaml; the other modes resolve
-    // the config file. Without --config the default config is looked up and, if it is absent, the
-    // manager also runs on built-in defaults with an empty config (ms.config_file is then empty).
-    ManagerSettings ms = boot_source.mode == BootMode::DatabaseOnly
-                             ? ManagerSettings(ManagerSettings::WithoutConfig{}, prefix_opt, boot_source.db_path)
-                             : ManagerSettings(prefix_opt, boot_source.config_path, boot_source.db_path);
+    // DatabaseOnly never looks for default.yaml; the other modes resolve the config file. Without --config
+    // the default config is looked up and, if it is absent, the manager runs with an empty config
+    // (ms.config_file is then empty). Settings come from --settings, else from the config's deprecated
+    // settings block, with built-in defaults for everything not set.
+    ManagerSettings ms(prefix_opt, boot_source);
 
     // CLI override for mqtt_everest_prefix (e.g. for parallel test execution).
     if (m_vm.count("mqtt_everest_prefix") != 0) {
@@ -950,12 +952,23 @@ int Manager::run() {
     }
     if (not ms.run_as_user.empty()) {
         EVLOG_info << "EVerest will run as system user: " << ms.run_as_user;
+        EVLOG_warning << "Setting 'run_as_user' is deprecated; start the manager as that user instead.";
     }
     if (ms.runtime_settings.forward_exceptions) {
         EVLOG_info << "Catching and forwarding command exceptions to callers";
     }
     for (const auto& key : ms.deprecated_settings) {
         EVLOG_warning << "Setting '" << key << "' is deprecated and ignored; remove it from the config";
+    }
+    if (not ms.settings_file.empty()) {
+        EVLOG_info << "Loaded settings file at: " << ms.settings_file.string();
+    }
+    if (ms.settings_block_ignored) {
+        EVLOG_warning << "The 'settings' block of the config is ignored because --settings was given";
+    }
+    if (ms.deprecated_settings_block) {
+        EVLOG_warning << "The 'settings' block in the config is deprecated; move it into a settings file and pass "
+                         "it with --settings";
     }
 
     EVLOG_verbose << fmt::format("EVerest prefix was set to {}", ms.runtime_settings.prefix.string());
@@ -1024,9 +1037,8 @@ int Manager::run() {
     // merges back into the config on the next start (the pre-database write behavior).
     std::unique_ptr<everest::config::StorageInterface> persistence_mirror;
     if (boot_source.mode == BootMode::YamlWithInMemoryDb) {
-        if (not ms.config_file.empty()) {
-            const auto user_config_path = ms.config_file.parent_path() / "user-config" / ms.config_file.filename();
-            persistence_mirror = std::make_unique<everest::config::UserConfigStorage>(user_config_path);
+        if (not ms.user_config_file.empty()) {
+            persistence_mirror = std::make_unique<everest::config::UserConfigStorage>(ms.user_config_file);
         } else {
             // No --config and no default.yaml: there is no YAML to mirror into, and the loader would not read
             // a user-config back without a main config file anyway.
@@ -1054,8 +1066,8 @@ int Manager::run() {
         // Exits before that construction need no publish: nothing has claimed everest_running == true
         // yet, so the retained topic still holds whatever the previous run left there.
         LwtCfg lwt_cfg;
-        lwt_cfg.topic = Everest::api::lifecycle::LifecycleAPI::Lwt::get_topic();
-        lwt_cfg.data = Everest::api::lifecycle::LifecycleAPI::Lwt::get_data();
+        lwt_cfg.topic = ::Everest::api::lifecycle::LifecycleAPI::Lwt::get_topic();
+        lwt_cfg.data = ::Everest::api::lifecycle::LifecycleAPI::Lwt::get_data();
         mqtt_abstraction = create_and_connect_mqtt(ms, std::optional<LwtCfg>{lwt_cfg});
     } else {
         mqtt_abstraction = create_and_connect_mqtt(ms, std::nullopt);
@@ -1066,7 +1078,7 @@ int Manager::run() {
 
     const bool retain_topics = (m_vm.count("retain-topics") != 0);
 
-    std::shared_ptr<const Everest::ManagerConfig> config;
+    std::shared_ptr<const ::Everest::ManagerConfig> config;
     std::vector<std::string> standalone_modules;
     std::vector<std::string> ignored_modules;
 
@@ -1091,15 +1103,15 @@ int Manager::run() {
                           const std::string& value) {
             const auto result = config_service->cmd_set_cfg_param(cfg_param_id, value);
             if (result) {
-                if (result->status == Everest::config::SetResponseStatus::Accepted) {
-                    return Everest::config::SetParameterResponse::ModuleReplied_Applied;
-                } else if (result->status == Everest::config::SetResponseStatus::RebootRequired) {
-                    return Everest::config::SetParameterResponse::ModuleReplied_RequiresRestart;
+                if (result->status == ::Everest::config::SetResponseStatus::Accepted) {
+                    return ::Everest::config::SetParameterResponse::ModuleReplied_Applied;
+                } else if (result->status == ::Everest::config::SetResponseStatus::RebootRequired) {
+                    return ::Everest::config::SetParameterResponse::ModuleReplied_RequiresRestart;
                 } else {
-                    return Everest::config::SetParameterResponse::ModuleReplied_Rejected;
+                    return ::Everest::config::SetParameterResponse::ModuleReplied_Rejected;
                 }
             } else {
-                return Everest::config::SetParameterResponse::SetCallFailed;
+                return ::Everest::config::SetParameterResponse::SetCallFailed;
             }
         });
 
@@ -1146,14 +1158,14 @@ int Manager::run() {
         }
     });
 
-    std::unique_ptr<Everest::api::configuration::ConfigurationAPI> configuration_api;
+    std::unique_ptr<::Everest::api::configuration::ConfigurationAPI> configuration_api;
     if (cfg_api_active) {
         if (cfg_api_rw) {
             EVLOG_info << "Starting ConfigurationAPI in read-write mode";
         } else {
             EVLOG_info << "Starting ConfigurationAPI in read-only mode";
         }
-        configuration_api = std::make_unique<Everest::api::configuration::ConfigurationAPI>(
+        configuration_api = std::make_unique<::Everest::api::configuration::ConfigurationAPI>(
             *mqtt_abstraction, *m_config_service_core, not cfg_api_rw);
     }
 
@@ -1183,45 +1195,46 @@ int Manager::run() {
         }
     } lifecycle_wakeup_fd_guard{m_lifecycle_wakeup_fd};
 
-    std::unique_ptr<Everest::api::lifecycle::LifecycleAPI> lifecycle_api;
+    std::unique_ptr<::Everest::api::lifecycle::LifecycleAPI> lifecycle_api;
     if (lfc_api_active) {
         if (lfc_api_rw) {
             EVLOG_info << "Starting LifecycleAPI in read-write mode";
         } else {
             EVLOG_info << "Starting LifecycleAPI in read-only mode";
         }
-        lifecycle_api = std::make_unique<Everest::api::lifecycle::LifecycleAPI>(
+        lifecycle_api = std::make_unique<::Everest::api::lifecycle::LifecycleAPI>(
             *mqtt_abstraction, *m_config_service_core,
-            configuration_api ? (cfg_api_rw ? Everest::api::lifecycle::ConfigurationApiStatus::AvailableRW
-                                            : Everest::api::lifecycle::ConfigurationApiStatus::AvailableRO)
-                              : Everest::api::lifecycle::ConfigurationApiStatus::NotAvailable,
+            configuration_api ? (cfg_api_rw ? ::Everest::api::lifecycle::ConfigurationApiStatus::AvailableRW
+                                            : ::Everest::api::lifecycle::ConfigurationApiStatus::AvailableRO)
+                              : ::Everest::api::lifecycle::ConfigurationApiStatus::NotAvailable,
             not lfc_api_rw,
             [this]() {
                 // Runs on the MQTT worker thread. Decide the reply from thread-safe state predicates here
                 // and record the intent; the main loop performs the actual shutdown in handle_lifecycle_api_request().
-                Everest::api::lifecycle::StopModulesResult ret = Everest::api::lifecycle::StopModulesResult::Rejected;
+                ::Everest::api::lifecycle::StopModulesResult ret =
+                    ::Everest::api::lifecycle::StopModulesResult::Rejected;
                 if (is_idle()) {
-                    ret = Everest::api::lifecycle::StopModulesResult::NoModulesToStop;
+                    ret = ::Everest::api::lifecycle::StopModulesResult::NoModulesToStop;
                 } else if (are_modules_started()) {
                     m_lifecycle_api_request.store(LifecycleApiRequest::Stop);
                     poke_lifecycle_wakeup();
-                    ret = Everest::api::lifecycle::StopModulesResult::Stopping;
+                    ret = ::Everest::api::lifecycle::StopModulesResult::Stopping;
                 }
                 return ret;
             },
             [this]() {
                 // Runs on the MQTT worker thread. Decide the reply and record the  intent;
                 // the main loop performs the actual restart in handle_lifecycle_api_request().
-                Everest::api::lifecycle::RestartModulesResult ret =
-                    Everest::api::lifecycle::RestartModulesResult::Rejected;
+                ::Everest::api::lifecycle::RestartModulesResult ret =
+                    ::Everest::api::lifecycle::RestartModulesResult::Rejected;
                 if (are_modules_started()) {
                     m_lifecycle_api_request.store(LifecycleApiRequest::Restart);
                     poke_lifecycle_wakeup();
-                    ret = Everest::api::lifecycle::RestartModulesResult::Restarting;
+                    ret = ::Everest::api::lifecycle::RestartModulesResult::Restarting;
                 } else if (is_idle()) {
                     m_lifecycle_api_request.store(LifecycleApiRequest::Restart);
                     poke_lifecycle_wakeup();
-                    ret = Everest::api::lifecycle::RestartModulesResult::Starting;
+                    ret = ::Everest::api::lifecycle::RestartModulesResult::Starting;
                 }
                 return ret;
             });
@@ -1658,6 +1671,11 @@ void Manager::handle_start_modules(const RuntimeContext& ctx) {
                                               mqtt_everest_prefix = ms.mqtt_settings.everest_prefix, &status_fifo,
                                               retain_topics](const std::string&, const nlohmann::json& json) {
             EVLOG_debug << fmt::format("received module ready signal for module: {}({})", module_id, json.dump());
+            if (not json.is_boolean()) {
+                EVLOG_warning << fmt::format("Ignoring non-boolean ready signal for module {}: {}", module_id,
+                                             json.dump());
+                return;
+            }
             bool all_modules_ready = false;
             std::size_t modules_spawned = 0;
             const std::size_t modules_ready_count = [&] {
@@ -2028,8 +2046,19 @@ int main(int argc, char* argv[]) {
                        "<prefix>/etc/everest/default.yaml if it exists; otherwise the manager starts with an empty "
                        "configuration on built-in defaults (and exits with no modules unless --into-idle or "
                        "--idle-on-failure is given). Without --db, the config is loaded from YAML on every start "
-                       "and runtime configuration changes are persisted to user-config/<config-name>.yaml.");
+                       "and runtime configuration changes are persisted to the user-config (see --user-config). Its "
+                       "'settings' block is deprecated, use --settings instead.");
     desc.add_options()("conf", po::value<std::string>(), "Deprecated: Same as --config. Do not use both.");
+    desc.add_options()("settings", po::value<std::string>(),
+                       "Full path to a manager settings file (installation paths, MQTT broker and prefixes, "
+                       "telemetry, schema validation). Optional: without it, the deprecated 'settings' block of the "
+                       "config file or the built-in defaults are used. Works with and without --config and --db; "
+                       "when given, the 'settings' block of the config file is ignored.");
+    desc.add_options()("user-config", po::value<std::string>(),
+                       "Full path to the user-config file that is merged into the config on load and, without "
+                       "--db, receives runtime configuration changes. Optional: defaults to "
+                       "user-config/<config-name>.yaml next to the config file. The file may be absent, its directory "
+                       "must exist. Requires --config.");
     desc.add_options()("configuration-api", po::value<std::string>()->implicit_value("ro"),
                        "Experimental: Start the configuration_API. Value must be 'ro' (default) or 'rw' (e.g. '=rw' "
                        "for read-write)");
@@ -2041,7 +2070,8 @@ int main(int argc, char* argv[]) {
                        "is used and the YAML config is authoritative on every start. With --db and --config, the "
                        "database wins when its boot slot holds at least one module; a missing or module-less boot "
                        "slot is seeded from the YAML config. An invalid YAML seeds an empty placeholder slot whose "
-                       "description records the error.");
+                       "description records the error. The database holds no manager settings, pass --settings "
+                       "for non-default ones.");
     desc.add_options()("db-init",
                        "Deprecated, no effect: seeding the database from YAML when its boot slot holds no modules "
                        "is now the default. Ignored unless both --config and --db are given. Use --reset-from-yaml "

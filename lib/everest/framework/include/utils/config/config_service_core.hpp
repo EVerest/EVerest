@@ -3,8 +3,10 @@
 #pragma once
 
 #include <atomic>
+#include <cstdint>
 #include <functional>
 #include <future>
+#include <map>
 #include <memory>
 #include <string>
 #include <thread>
@@ -79,7 +81,8 @@ public:
     // into public ConfigServiceCore methods from a handler is safe (executed inline), but do not
     // block on anything that itself waits for the config service.
     void register_active_slot_update_handler(std::function<void(const ActiveSlotUpdate&)> handler) override;
-    void register_config_update_handler(std::function<void(const ConfigurationUpdate&)> handler) override;
+    std::function<void()>
+    register_config_update_handler(std::function<void(const ConfigurationUpdate&)> handler) override;
 
     // \brief Provide the means, to change module config parameters at runtime.
     // The callback is invoked on the internal actor thread once per updated parameter; its full
@@ -131,7 +134,8 @@ private:
     ActiveSlotStatus m_module_status{ActiveSlotStatus::Stopped};
 
     std::vector<std::function<void(const ActiveSlotUpdate&)>> m_active_slot_handlers;
-    std::vector<std::function<void(const ConfigurationUpdate&)>> m_config_update_handlers;
+    std::map<std::uint64_t, std::function<void(const ConfigurationUpdate&)>> m_config_update_handlers;
+    std::uint64_t m_next_config_update_handler_id{0};
 
     // Actor infrastructure: m_worker_thread drains m_command_queue one task at a
     // time, so all mutable state is touched by a single thread. See the

@@ -53,7 +53,7 @@ SCENARIO("Service selection state handling") {
         }
     }
 
-    GIVEN("Bad case: selected_energy_transfer service is not correct - FAILED_NoEnergyTransferServiceSelected") {
+    GIVEN("Bad case: selected_energy_transfer service was never offered - FAILED_ServiceSelectionInvalid") {
 
         d20::Session session = d20::Session();
 
@@ -69,6 +69,33 @@ SCENARIO("Service selection state handling") {
         req.header.session_id = session.get_id();
         req.header.timestamp = 1691411798;
         req.selected_energy_transfer_service.service_id = dt::ServiceCategory::AC;
+        req.selected_energy_transfer_service.parameter_set_id = 0;
+
+        const auto res = d20::state::handle_request(req, session);
+
+        THEN("ResponseCode: FAILED_ServiceSelectionInvalid, mandatory fields should be set") {
+            REQUIRE(res.response_code == dt::ResponseCode::FAILED_ServiceSelectionInvalid);
+        }
+    }
+
+    GIVEN("Bad case: an offered value-added service as energy transfer service - "
+          "FAILED_NoEnergyTransferServiceSelected") {
+
+        d20::Session session = d20::Session();
+
+        session.offered_services.energy_services = {dt::ServiceCategory::DC};
+        session.offered_services.vas_services = {static_cast<uint16_t>(dt::ServiceCategory::Internet)};
+        session.offered_services.dc_parameter_list[0] = {
+            dt::DcConnector::Extended,
+            dt::ControlMode::Scheduled,
+            dt::MobilityNeedsMode::ProvidedByEvcc,
+            dt::Pricing::NoPricing,
+        };
+
+        message_20::ServiceSelectionRequest req;
+        req.header.session_id = session.get_id();
+        req.header.timestamp = 1691411798;
+        req.selected_energy_transfer_service.service_id = dt::ServiceCategory::Internet;
         req.selected_energy_transfer_service.parameter_set_id = 0;
 
         const auto res = d20::state::handle_request(req, session);

@@ -543,6 +543,9 @@ void to_json(json& j, SessionEvent const& k) noexcept {
     if (k.source) {
         j["source"] = k.source.value();
     }
+    if (k.reservation) {
+        j["reservation"] = k.reservation.value();
+    }
 }
 
 void from_json(json const& j, SessionEvent& k) {
@@ -575,6 +578,9 @@ void from_json(json const& j, SessionEvent& k) {
     }
     if (j.contains("source")) {
         k.source.emplace(j.at("source"));
+    }
+    if (j.contains("reservation")) {
+        k.reservation.emplace(j.at("reservation"));
     }
 }
 
@@ -1474,6 +1480,28 @@ void from_json(json const& j, EvseStateEnum& k) {
                             " could not be converted to enum of type API_V1_0_TYPES_EVSE_MANAGER_EvseStateEnum");
 }
 
+void to_json(json& j, Reservation const& k) noexcept {
+    j = json{
+        {"id", k.id},
+        {"id_token", k.id_token},
+        {"expiry_time", k.expiry_time},
+    };
+
+    if (k.parent_id_token.has_value()) {
+        j["parent_id_token"] = k.parent_id_token.value();
+    }
+}
+
+void from_json(json const& j, Reservation& k) {
+    k.id = j.at("id");
+    k.id_token = j.at("id_token");
+    k.expiry_time = j.at("expiry_time");
+
+    if (j.contains("parent_id_token")) {
+        k.parent_id_token = j.at("parent_id_token");
+    }
+}
+
 void to_json(json& j, SessionInfo const& k) noexcept {
     j = json{
         {"state", k.state},
@@ -1503,6 +1531,9 @@ void to_json(json& j, SessionInfo const& k) noexcept {
     if (k.transaction_end_time.has_value()) {
         j["transaction_end_time"] = k.transaction_end_time.value();
     }
+    if (k.reservation.has_value()) {
+        j["reservation"] = k.reservation.value();
+    }
 }
 
 void from_json(json const& j, SessionInfo& k) {
@@ -1531,6 +1562,9 @@ void from_json(json const& j, SessionInfo& k) {
     }
     if (j.contains("transaction_end_time")) {
         k.transaction_end_time = j.at("transaction_end_time");
+    }
+    if (j.contains("reservation")) {
+        k.reservation.emplace(j.at("reservation"));
     }
 }
 } // namespace everest::lib::API::V1_0::types::evse_manager

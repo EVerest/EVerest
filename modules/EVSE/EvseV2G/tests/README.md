@@ -7,7 +7,7 @@ Building tests:
 $ cd EVerest
 $ mkdir build
 $ cd build
-$ cmake -GNinja -DEVEREST_CORE_BUILD_TESTING=ON ..
+$ cmake -GNinja -DBUILD_TESTING=ON ..
 $ ninja install
 ```
 

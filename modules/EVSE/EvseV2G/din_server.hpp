@@ -60,39 +60,33 @@ struct din_state {
 
 static const struct din_state din_states[] = {
     /* [V2G-DC-437]  Expected req msg after supportedAppProtocolRes */
-    [WAIT_FOR_SESSIONSETUP] = {"Waiting for SessionSetupReq", 1 << V2G_SESSION_SETUP_MSG},
+    {"Waiting for SessionSetupReq", 1 << V2G_SESSION_SETUP_MSG},
     /* [V2G-DC-439] Expected req msg after SessionSetupRes */
-    [WAIT_FOR_SERVICEDISCOVERY] = {"Waiting for ServiceDiscoveryReq, SessionStopReq",
-                                   1 << V2G_SERVICE_DISCOVERY_MSG | 1 << V2G_SESSION_STOP_MSG},
+    {"Waiting for ServiceDiscoveryReq, SessionStopReq", 1 << V2G_SERVICE_DISCOVERY_MSG | 1 << V2G_SESSION_STOP_MSG},
     /* [V2G-DC-441] Expected req msg after ServiceDiscoveryRes */
-    [WAIT_FOR_PAYMENTSERVICESELECTION] = {"Waiting for ServicePaymentSelectionReq, SessionStopReq",
-                                          1 << V2G_PAYMENT_SERVICE_SELECTION_MSG | 1 << V2G_SESSION_STOP_MSG},
+    {"Waiting for ServicePaymentSelectionReq, SessionStopReq",
+     1 << V2G_PAYMENT_SERVICE_SELECTION_MSG | 1 << V2G_SESSION_STOP_MSG},
     /* [V2G-DC-444] [V2G-DC-497] Expected req msg after ServicePaymentSelectionRes */
-    [WAIT_FOR_AUTHORIZATION] = {"Waiting for ContractAuthenticationReq, SessionStopReq",
-                                1 << V2G_AUTHORIZATION_MSG | 1 << V2G_SESSION_STOP_MSG},
+    {"Waiting for ContractAuthenticationReq, SessionStopReq", 1 << V2G_AUTHORIZATION_MSG | 1 << V2G_SESSION_STOP_MSG},
     /* [V2G-DC-498], [V2G-DC-495] Expected req msg after ContractAuthenticationRes*/
-    [WAIT_FOR_CHARGEPARAMETERDISCOVERY] = {"Waiting for ChargeParameterDiscoveryReq, SessionStopReq",
-                                           1 << V2G_CHARGE_PARAMETER_DISCOVERY_MSG | 1 << V2G_SESSION_STOP_MSG},
+    {"Waiting for ChargeParameterDiscoveryReq, SessionStopReq",
+     1 << V2G_CHARGE_PARAMETER_DISCOVERY_MSG | 1 << V2G_SESSION_STOP_MSG},
     /* [V2G-DC-453], [V2G-DC-499] Expected req msg after ChargeParameterDiscoveryRes, CableCheckRes */
-    [WAIT_FOR_CABLECHECK] = {"Waiting for CableCheckReq, SessionStopReq",
-                             1 << V2G_CABLE_CHECK_MSG | 1 << V2G_SESSION_STOP_MSG},
+    {"Waiting for CableCheckReq, SessionStopReq", 1 << V2G_CABLE_CHECK_MSG | 1 << V2G_SESSION_STOP_MSG},
     /* [V2G-DC-455] Expected req msgs after CableCheckRes */
-    [WAIT_FOR_PRECHARGE] = {"Waiting for PreChargeReq, SessionStopReq",
-                            1 << V2G_PRE_CHARGE_MSG | 1 << V2G_SESSION_STOP_MSG},
+    {"Waiting for PreChargeReq, SessionStopReq", 1 << V2G_PRE_CHARGE_MSG | 1 << V2G_SESSION_STOP_MSG},
     /* [V2G-DC-458] Expected req msg after PreChargeRes */
-    [WAIT_FOR_PRECHARGE_POWERDELIVERY] = {"Waiting for PowerDeliveryReq, PreChargeReq, SessionStopRes",
-                                          1 << V2G_POWER_DELIVERY_MSG | 1 << V2G_PRE_CHARGE_MSG |
-                                              1 << V2G_SESSION_STOP_MSG},
+    {"Waiting for PowerDeliveryReq, PreChargeReq, SessionStopRes",
+     1 << V2G_POWER_DELIVERY_MSG | 1 << V2G_PRE_CHARGE_MSG | 1 << V2G_SESSION_STOP_MSG},
     /* [V2G-DC-462] Expected req msg after PowerDeliveryRes (Ready to Charge = true) */
-    [WAIT_FOR_CURRENTDEMAND] = {"Waiting for CurrentDemandReq", 1 << V2G_CURRENT_DEMAND_MSG},
+    {"Waiting for CurrentDemandReq", 1 << V2G_CURRENT_DEMAND_MSG},
     /* [V2G-DC-462], [V2G-DC-465] Expected req msg after PowerDeliveryRes (Ready to Charge = true), CurrentDemandRes */
-    [WAIT_FOR_CURRENTDEMAND_POWERDELIVERY] = {"Waiting for CurrentDemandReq, PowerDeliveryReq",
-                                              1 << V2G_CURRENT_DEMAND_MSG | 1 << V2G_POWER_DELIVERY_MSG},
+    {"Waiting for CurrentDemandReq, PowerDeliveryReq", 1 << V2G_CURRENT_DEMAND_MSG | 1 << V2G_POWER_DELIVERY_MSG},
     /* [V2G-DC-459], [V2G-DC-469] Expected req msg after PowerDeliveryRes, WeldingDetectionRes */
-    [WAIT_FOR_WELDINGDETECTION_SESSIONSTOP] = {"Waiting for WeldingDetectionReq, SessionStopReq ",
-                                               1 << V2G_WELDING_DETECTION_MSG | 1 << V2G_SESSION_STOP_MSG},
-    [WAIT_FOR_SESSIONSTOP] = {"Waiting for SessionStopReq", 1 << V2G_SESSION_STOP_MSG},
-    [WAIT_FOR_TERMINATED_SESSION] = {"Terminate session", 0}};
+    {"Waiting for WeldingDetectionReq, SessionStopReq ", 1 << V2G_WELDING_DETECTION_MSG | 1 << V2G_SESSION_STOP_MSG},
+    {"Waiting for SessionStopReq", 1 << V2G_SESSION_STOP_MSG},
+    {"Terminate session", 0}};
+static_assert(sizeof(din_states) / sizeof(din_states[0]) == WAIT_FOR_TERMINATED_SESSION + 1);
 
 /*!
  * \brief din_handle_request This function handles the incoming request message of a connected EV.

@@ -8,6 +8,8 @@
 #include <ostream>
 #include <string>
 
+#include <ocpp/common/json_number.hpp>
+
 using json = nlohmann::json;
 
 namespace ocpp {
@@ -31,7 +33,7 @@ void to_json(json& j, const ReservationStatusUpdateRequest& k) {
 
 void from_json(const json& j, ReservationStatusUpdateRequest& k) {
     // the required parts of the message
-    k.reservationId = j.at("reservationId");
+    k.reservationId = ocpp::integer_from_json(j.at("reservationId"));
     k.reservationUpdateStatus = conversions::string_to_reservation_update_status_enum(j.at("reservationUpdateStatus"));
 
     // the optional parts of the message

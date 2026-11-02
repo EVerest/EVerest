@@ -26,5 +26,6 @@ public:
     MOCK_METHOD(void, check_integrity, ());
     MOCK_METHOD(bool, update_monitoring_reference, (std::int32_t monitor_id, const std::string& reference_value),
                 (override));
+    MOCK_METHOD(bool, create_network_configuration_slot_from_default_schema, (std::int32_t new_slot), (override));
 };
 } // namespace ocpp::v2

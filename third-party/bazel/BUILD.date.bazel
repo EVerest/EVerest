@@ -12,9 +12,10 @@ cmake(
         "CMAKE_INSTALL_LIBDIR": "lib",
         "BUILD_TZ_LIB": "ON",
         "USE_SYSTEM_TZ_DB": "ON",
-        "HAS_REMOTE_API": "0",
-        "USE_AUTOLOAD": "0",
     },
+    # date-tz declares USE_OS_TZDB=1 as a PUBLIC define; struct tzdb's layout depends on it.
+    # See https://github.com/HowardHinnant/date/issues/324
+    defines = ["USE_OS_TZDB=1"],
     lib_source = ":all_srcs",
     out_static_libs = ["libdate-tz.a"],
     visibility = [

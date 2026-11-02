@@ -29,8 +29,33 @@ struct Session_def : public state_machine_def<Session_def> {
     struct Sounding         : public timeout_ms_state<defs::TT_EVSE_MATCH_MNBC_MS> { };
     struct FinalizeSounding : public timeout_ms_state<FINALIZE_SOUNDING_DELAY_MS> { };
     struct WaitAttenRsp     : public timeout_ms_state<defs::TT_MATCH_RESPONSE_MS> { };
-    struct WaitSlacMatch    : public timeout_ms_state<defs::TT_EVSE_MATCH_SESSION_MS> {  };
     // clang-format on
+    // Besides TT_EVSE_match_session, holds the TT_match_sequence window a completed CM_VALIDATE of
+    // this session's EV arms ([V2G3-A09-89], [V2G3-A09-90]).
+    struct WaitSlacMatch : public timeout_ms_state<defs::TT_EVSE_MATCH_SESSION_MS> {
+        using base = timeout_ms_state<defs::TT_EVSE_MATCH_SESSION_MS>;
+        typedef boost::mpl::vector<SessionAwaitingSlacMatch> flag_list;
+        template <class Event, class Fsm> void on_entry(Event const& e, Fsm& fsm) {
+            base::on_entry(e, fsm);
+            validated = false;
+        }
+        void deadlines(earliest_deadline& next) const {
+            base::deadlines(next);
+            if (validated) {
+                next.offer(validation_window);
+            }
+        }
+        void arm_validation_window(timer::tp now) {
+            validated = true;
+            validation_window.arm(now, std::chrono::milliseconds(defs::TT_MATCH_SEQUENCE_MS));
+        }
+        bool validation_window_expired(timer::tp now) const {
+            return validated and validation_window.expired(now);
+        }
+
+        bool validated{false};
+        timer validation_window;
+    };
     struct MatchComplete : public state<> {
         typedef boost::mpl::vector<SessionMatched> flag_list;
     };

@@ -27,10 +27,10 @@ protected:
     std::unique_ptr<ocpp::v16::ChargePointConfigurationInterface> v2_config;
     std::unique_ptr<MemoryStorage> device_model;
 
-    void createV2Config(ocpp::v2::Ocpp16CustomConfigMappings custom_config_mappings = {}) {
+    void createV2Config(ocpp::v2::Ocpp16KeyMappings custom_key_mappings = {}) {
         std::unique_ptr<ocpp::v2::DeviceModelInterface> proxy = std::make_unique<MemoryStorageProxy>(*device_model);
         v2_config = std::make_unique<ocpp::v16::ChargePointConfigurationDeviceModel>(CONFIG_DIR_V16, std::move(proxy),
-                                                                                     std::move(custom_config_mappings));
+                                                                                     std::move(custom_key_mappings));
     }
 
     void loadConfig(const std::string_view& file) {

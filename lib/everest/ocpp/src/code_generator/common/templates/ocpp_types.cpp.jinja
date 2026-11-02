@@ -11,6 +11,7 @@
 #include <nlohmann/json.hpp>
 
 #include <ocpp/{{namespace}}/ocpp_enums.hpp>
+#include <ocpp/common/json_number.hpp>
 #include <ocpp/common/types.hpp>
 
 namespace ocpp {
@@ -92,7 +93,7 @@ j["{{property.name}}"] = k.{{property.name}}.value();
 {% if property.required %}
 {% if property.type.startswith('std::vector<') %}
         for (const auto& val : j.at("{{property.name}}")) {
-            k.{{property.name}}.push_back(val);
+            k.{{property.name}}.push_back({{ 'val' | number_from_json(property.type | element_type) }});
         }
 {% else %}
         k.{{property.name}} =
@@ -102,7 +103,7 @@ j["{{property.name}}"] = k.{{property.name}}.value();
         {%- if property.type == 'ocpp::DateTime' %}
  ocpp::DateTime(std::string(j.at("{{property.name}}")))
         {%- else %}
- j.at("{{property.name}}")
+ {{ ('j.at("' ~ property.name ~ '")') | number_from_json(property.type) }}
         {%- endif %}
     {%- endif %};
 {% endif %}
@@ -120,7 +121,7 @@ j["{{property.name}}"] = k.{{property.name}}.value();
                 {%- if property.type.endswith('Enum>') %}
                 vec.push_back(conversions::string_to_{{- property.type.replace('std::vector<','').replace('>','') | snake_case}}(val));
                 {%- else %}
-                vec.push_back(val);
+                vec.push_back({{ 'val' | number_from_json(property.type | element_type) }});
                 {%- endif %}
             }
             k.{{property.name}}.emplace(vec);
@@ -150,7 +151,7 @@ j["{{property.name}}"] = k.{{property.name}}.value();
             k.value = value.dump();
         }
 {% else %}
-            k.{{property.name}}.emplace(j.at("{{property.name}}"));
+            k.{{property.name}}.emplace({{ ('j.at("' ~ property.name ~ '")') | number_from_json(property.type) }});
 {% endif %}
         {%- endif %}
 {% endif %}

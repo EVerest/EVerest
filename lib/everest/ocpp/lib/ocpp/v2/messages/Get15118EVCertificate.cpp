@@ -8,6 +8,8 @@
 #include <ostream>
 #include <string>
 
+#include <ocpp/common/json_number.hpp>
+
 using json = nlohmann::json;
 
 namespace ocpp {
@@ -47,7 +49,7 @@ void from_json(const json& j, Get15118EVCertificateRequest& k) {
 
     // the optional parts of the message
     if (j.contains("maximumContractCertificateChains")) {
-        k.maximumContractCertificateChains.emplace(j.at("maximumContractCertificateChains"));
+        k.maximumContractCertificateChains.emplace(ocpp::integer_from_json(j.at("maximumContractCertificateChains")));
     }
     if (j.contains("prioritizedEMAIDs")) {
         const json& arr = j.at("prioritizedEMAIDs");
@@ -102,7 +104,7 @@ void from_json(const json& j, Get15118EVCertificateResponse& k) {
         k.statusInfo.emplace(j.at("statusInfo"));
     }
     if (j.contains("remainingContracts")) {
-        k.remainingContracts.emplace(j.at("remainingContracts"));
+        k.remainingContracts.emplace(ocpp::integer_from_json(j.at("remainingContracts")));
     }
     if (j.contains("customData")) {
         k.customData.emplace(j.at("customData"));

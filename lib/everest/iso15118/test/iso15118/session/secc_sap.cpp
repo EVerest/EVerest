@@ -43,6 +43,14 @@ SCENARIO("SECC SupportedAppProtocol version matching [V2G2-170][V2G2-172]") {
         }
     }
 
+    GIVEN("An ISO 15118-20 offer with matching major but higher minor version") {
+        const auto result = negotiate(make_request(ISO20_DC_PROTOCOL_NAMESPACE, 1, 1, 1, 1));
+        THEN("The negotiation succeeds without minor deviation [V2G20-170][V2G20-1089]") {
+            REQUIRE(result.response.response_code == ResponseCode::OK_SuccessfulNegotiation);
+            REQUIRE(result.response.schema_id.has_value());
+        }
+    }
+
     GIVEN("An ISO 15118-2 offer with a non-matching major version") {
         const auto result = negotiate(make_request(ISO2_NAMESPACE, 3, 0, 1, 1));
         THEN("The negotiation fails (no supported protocol remains)") {

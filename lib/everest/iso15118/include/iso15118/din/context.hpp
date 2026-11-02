@@ -50,6 +50,9 @@ public:
     }
 
     std::tuple<bool, size_t, io::v2gtp::PayloadType, message_din::Type> check_and_clear_response();
+    message_din::Type peek_response_type() const {
+        return response_type;
+    }
     bool has_response() const {
         return response_available;
     }

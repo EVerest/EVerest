@@ -52,7 +52,7 @@ TEST_F(DeviceModelConcurrencyTest, concurrent_access_no_data_race) {
             case 0: {
                 // Locked public read entry point.
                 std::string value;
-                dm->get_variable(component, variable, AttributeEnum::Actual, value);
+                dm->get_variable(component, variable, AttributeEnum::Actual, value, false, UnsetValue::NotSupported);
                 break;
             }
             case 1: {
@@ -120,7 +120,8 @@ TEST_F(DeviceModelConcurrencyTest, concurrent_access_no_data_race) {
     ASSERT_EQ(set_result, SetVariableStatusEnum::Accepted);
 
     std::string value;
-    const auto get_result = dm->get_variable(component, variable, AttributeEnum::Actual, value);
+    const auto get_result =
+        dm->get_variable(component, variable, AttributeEnum::Actual, value, false, UnsetValue::NotSupported);
     ASSERT_EQ(get_result, GetVariableStatusEnum::Accepted);
     ASSERT_EQ(value, "123");
     ASSERT_EQ(dm->get_value<int>(component, variable, AttributeEnum::Actual), 123);

@@ -1,0 +1,56 @@
+$schema: http://json-schema.org/draft-07/schema#
+description: >-
+  Json schema of the EVerest manager settings file, passed to the manager with --settings.
+  Relative paths are resolved against the installation prefix.
+type: object
+additionalProperties: false
+properties:
+  configs_dir:
+    description: Directory that contains EVerest configs
+    type: string
+  schemas_dir:
+    description: Directory that contains the schemas for config, manifest, interface and type files
+    type: string
+  modules_dir:
+    description: Directory that contains the EVerest modules
+    type: string
+  interfaces_dir:
+    description: Directory that contains the interface definitions
+    type: string
+  types_dir:
+    description: Directory that contains the type definitions
+    type: string
+  errors_dir:
+    description: Directory that contains the error definitions
+    type: string
+  logging_config_file:
+    description: Path to the logging configuration file
+    type: string
+  mqtt_broker_socket_path:
+    description: >-
+      Path to the Unix domain socket of the MQTT broker. Mutually exclusive with mqtt_broker_host.
+    type: string
+  mqtt_broker_host:
+    description: Host name or address of the MQTT broker
+    type: string
+  mqtt_broker_port:
+    description: Port of the MQTT broker
+    type: integer
+  mqtt_everest_prefix:
+    description: MQTT topic prefix for EVerest internal communication
+    type: string
+  mqtt_external_prefix:
+    description: MQTT topic prefix for external communication, must differ from mqtt_everest_prefix
+    type: string
+  telemetry_prefix:
+    description: MQTT topic prefix for telemetry
+    type: string
+  telemetry_enabled:
+    description: Enables publishing of telemetry data
+    type: boolean
+  validate_schema:
+    description: Enables schema validation of all variable publishes and command calls
+    type: boolean
+  forward_exceptions:
+    description: Catches exceptions in command handlers and forwards them to the caller
+    type: boolean

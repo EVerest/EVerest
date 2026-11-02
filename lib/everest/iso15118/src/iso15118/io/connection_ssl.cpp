@@ -29,6 +29,7 @@ struct SSLContext {
     std::unique_ptr<tls::Server> server;
     tls::Server::ConnectionPtr connection;
     int listen_fd{-1};
+    std::optional<tls::Connection::result_t> pending_shutdown;
     std::optional<sha512_hash_t> vehicle_cert_hash{std::nullopt};
 };
 
@@ -193,6 +194,17 @@ ReadResult ConnectionSSL::read(uint8_t* buf, size_t len) {
     assert(handshake_complete);
     assert(ssl->connection != nullptr);
 
+    if (half_closed) {
+        // TLS read requires connected state, which shutdown can end; drain the raw socket for EOF
+        // without feeding the finished V2G packet parser.
+        return drain_until_peer_close(ssl->connection->socket());
+    }
+
+    if (half_close_requested) {
+        // Leave TLS records for the pending shutdown retry; raw draining starts only after FIN.
+        return {true, 0};
+    }
+
     std::size_t readbytes = 0;
     const auto result = ssl->connection->read(reinterpret_cast<std::byte*>(buf), len, readbytes, /*timeout_ms=*/0);
 
@@ -312,12 +324,52 @@ void ConnectionSSL::handle_data() {
     call_if_available(event_callback, ConnectionEvent::NEW_DATA);
 }
 
+tls::Connection& ConnectionSSL::tls_connection() {
+    return *ssl->connection;
+}
+
+void ConnectionSSL::half_close() {
+    if (closed or not handshake_complete or ssl->connection == nullptr or half_closed) {
+        return;
+    }
+    half_close_requested = true;
+
+    using Result = tls::Connection::result_t;
+    auto result = Result::success;
+    if (ssl->pending_shutdown.has_value()) {
+        result = ssl->connection->wait_for(*ssl->pending_shutdown, /*timeout_ms=*/0);
+        if (result == Result::timeout) {
+            return;
+        }
+    }
+    if (result == Result::success) {
+        result = ssl->connection->shutdown(/*timeout_ms=*/0);
+    }
+    if (result == Result::want_read or result == Result::want_write) {
+        ssl->pending_shutdown = result;
+        return;
+    }
+    ssl->pending_shutdown.reset();
+    if (result != Result::success) {
+        logf_error("TLS shutdown ended with %s: %s", result_name(result).data(), ssl->connection->last_error().c_str());
+    }
+    half_closed = true;
+
+    // Not close(): it would drop our receive side, hiding the EV's close, and the TLS connection owns the fd.
+    if (::shutdown(ssl->connection->socket(), SHUT_WR) == -1) {
+        logf_error("shutdown(SHUT_WR) failed");
+    }
+
+    logf_info("Sent TCP FIN after TLS shutdown, waiting for the peer's close");
+}
+
 void ConnectionSSL::close() {
     // Idempotent: whichever teardown path runs first delivers CLOSED exactly once.
     if (closed) {
         return;
     }
     closed = true;
+    ssl->pending_shutdown.reset();
 
     if (ssl->listen_fd != -1) {
         // Drop the listener, so a session torn down while still waiting for the TCP connect does not leave
@@ -330,9 +382,12 @@ void ConnectionSSL::close() {
     if (ssl->connection != nullptr) {
         logf_info("Closing TLS connection");
 
-        const auto result = ssl->connection->shutdown(/*timeout_ms=*/0);
-        if (result != tls::Connection::result_t::success && result != tls::Connection::result_t::closed) {
-            logf_error("TLS shutdown returned non-success result");
+        // A requested half-close either completed or exhausted the session's bounded retry window.
+        if (not half_close_requested) {
+            const auto result = ssl->connection->shutdown(/*timeout_ms=*/0);
+            if (result != tls::Connection::result_t::success && result != tls::Connection::result_t::closed) {
+                logf_error("TLS shutdown returned non-success result");
+            }
         }
 
         // Safe from within the accept fd's own poll callback only because listen_fd was already dropped in

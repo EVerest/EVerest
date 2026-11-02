@@ -8,6 +8,8 @@
 #include <ostream>
 #include <string>
 
+#include <ocpp/common/json_number.hpp>
+
 using json = nlohmann::json;
 
 namespace ocpp {
@@ -34,7 +36,7 @@ void to_json(json& j, const SendLocalListRequest& k) {
 
 void from_json(const json& j, SendLocalListRequest& k) {
     // the required parts of the message
-    k.listVersion = j.at("listVersion");
+    k.listVersion = ocpp::integer_from_json(j.at("listVersion"));
     k.updateType = conversions::string_to_update_type(j.at("updateType"));
 
     // the optional parts of the message

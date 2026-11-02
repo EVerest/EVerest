@@ -27,9 +27,9 @@ template <class ResetSm> void select_nmk_for_reset(ResetSm& sm) {
     auto& config = sm.ctx->slac_config;
     if (config.regenerate_key_on_reset) {
         if (config.set_key_handling_mode == fsm::evse::SetKeyHandlingMode::retry_confirmed) {
-            config.generate_nmk(sm.pending_nmk);
+            sm.ctx->generate_nmk(sm.pending_nmk);
         } else {
-            config.generate_nmk(config.session_nmk);
+            sm.ctx->generate_nmk(config.session_nmk);
         }
     } else {
         sm.pending_nmk = config.session_nmk;
@@ -102,7 +102,6 @@ struct send_set_key_req {
         Nmk const& nmk = (fsm.ctx->slac_config.set_key_handling_mode == fsm::evse::SetKeyHandlingMode::retry_confirmed)
                              ? fsm.pending_nmk
                              : fsm.ctx->slac_config.session_nmk;
-        fsm.ctx->log_info("Using SLAC session NMK " + format_session_nmk_for_log(nmk));
         auto msg = everest::lib::slac::fsm::evse::MatchingSessionData::create_cm_set_key_req(nmk);
         fsm.set_key_timer.arm(fsm.ctx->current_time, fsm.ctx->slac_config.set_key_timeout);
         if (not fsm.ctx->send_slac_message(fsm.ctx->slac_config.plc_peer_mac, msg)) {

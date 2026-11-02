@@ -3,9 +3,12 @@
 
 #pragma once
 
+#include <atomic>
+
 #include <everest/util/async/monitor.hpp>
 
 #include <ocpp/v2/message_handler.hpp>
+#include <ocpp/v2/messages/FirmwareStatusNotification.hpp>
 #include <ocpp/v2/messages/UpdateFirmware.hpp>
 
 namespace ocpp::v2 {
@@ -27,6 +30,7 @@ public:
                                                         const bool disable_connectors_during_install = true) = 0;
     virtual void on_firmware_status_notification_request() = 0;
     virtual void on_transaction_finished() = 0;
+    virtual void on_registration_accepted() = 0;
 };
 
 class FirmwareUpdate : public FirmwareUpdateInterface {
@@ -34,9 +38,12 @@ private: // Members
     const FunctionalBlockContext& context;
     AvailabilityInterface& availability;
     SecurityInterface& security;
+    std::atomic<RegistrationStatusEnum>& registration_status;
 
     UpdateFirmwareRequestCallback update_firmware_request_callback;
     std::optional<AllConnectorsUnavailableCallback> all_connectors_unavailable_callback;
+
+    everest::lib::util::monitor<std::optional<FirmwareStatusNotificationRequest>> pending_status;
 
     FirmwareStatusEnum firmware_status;
     // The request ID in the last firmware update status received
@@ -52,13 +59,15 @@ private: // Members
 public:
     FirmwareUpdate(const FunctionalBlockContext& functional_block_context, AvailabilityInterface& availability,
                    SecurityInterface& security, UpdateFirmwareRequestCallback update_firmware_request_callback,
-                   std::optional<AllConnectorsUnavailableCallback> all_connectors_unavailable_callback);
+                   std::optional<AllConnectorsUnavailableCallback> all_connectors_unavailable_callback,
+                   std::atomic<RegistrationStatusEnum>& registration_status);
     void handle_message(const ocpp::EnhancedMessage<MessageType>& message) override;
     void on_firmware_update_status_notification(std::int32_t request_id,
                                                 const FirmwareStatusEnum& firmware_update_status,
                                                 bool disable_connectors_during_install = true) override;
     void on_firmware_status_notification_request() override;
     void on_transaction_finished() override;
+    void on_registration_accepted() override;
 
 private: // Functions
     // Functional Block L: Firmware management

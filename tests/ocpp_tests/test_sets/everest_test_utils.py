@@ -72,7 +72,7 @@ from everest.testing.ocpp_utils.charge_point_utils import (
 )
 
 from ocpp.charge_point import snake_to_camel_case, asdict, remove_nones
-from ocpp.messages import _DecimalEncoder
+from ocpp.messages import Call, _DecimalEncoder, unpack
 from ocpp.v16 import call, call_result
 from ocpp.v201 import call as call201
 from ocpp.v16.enums import Action, DataTransferStatus
@@ -107,6 +107,43 @@ OCPP_VERSION_TO_MULTI_MODE = {
 }
 
 
+class SystemStoreConfigurationStrategy(EverestConfigAdjustmentStrategy):
+    def __init__(self, enabled=True):
+        self.enabled = enabled
+
+    def adjust_everest_configuration(self, everest_config: dict) -> dict:
+        adjusted = deepcopy(everest_config)
+        modules = adjusted["active_modules"]
+        if not self.enabled:
+            modules["system"].setdefault("connections", {}).pop("store", None)
+        else:
+            modules.setdefault("persistent_store", {"module": "PersistentStore"})
+            modules["system"].setdefault("connections", {})["store"] = [
+                {"module_id": "persistent_store", "implementation_id": "main"}
+            ]
+        if "persistent_store" in modules:
+            ocpp_modules = [module for module in modules.values()
+                            if module.get("module") in ("OCPP", "OCPP201", "OCPPmulti")]
+            if len(ocpp_modules) != 1:
+                raise ValueError("SystemStoreConfigurationStrategy requires exactly one OCPP, OCPP201 or OCPPmulti "
+                                 f"module, found {len(ocpp_modules)}")
+            ocpp_module = ocpp_modules[0]
+            # everest-testing's built-in OCPP strategy sets per-test MessageLogPath before everest_config_adaptions.
+            message_log_path = ocpp_module.get("config_module", {}).get("MessageLogPath")
+            if not message_log_path:
+                raise ValueError("SystemStoreConfigurationStrategy requires MessageLogPath in the OCPP module config_module")
+            store_path = Path(message_log_path).parent / "persistent_store.db"
+            modules["persistent_store"].setdefault("config_module", {})["sqlite_db_file_path"] = str(store_path)
+        return adjusted
+
+
+def received_calls(charge_point, action):
+    messages = (unpack(entry.message) for entry in charge_point.message_history.messages
+                if entry.initiator == "Chargepoint")
+    return [message for message in messages
+            if isinstance(message, Call) and message.action == action]
+
+
 class OCPPMultiConfigurationStrategy(EverestConfigAdjustmentStrategy):
     """Rewrites the EVerest config so the OCPP module is the combined `OCPPmulti`
     module instead of legacy `OCPP`/`OCPP201`. Must run AFTER the framework's
@@ -129,6 +166,11 @@ class OCPPMultiConfigurationStrategy(EverestConfigAdjustmentStrategy):
         module_config["config_module"]["Mode"] = OCPP_VERSION_TO_MULTI_MODE[self._ocpp_version]
         if self._ocpp_version == OCPPVersion.ocpp16:
             module_config["config_module"]["EnableLegacyConfigMigration"] = True
+            # Set an individual device model db for the test, otherwise this will create race conditions
+            config_module = module_config["config_module"]
+            device_model_database = Path(config_module["DeviceModelDatabasePath"])
+            config_module.setdefault("EverestDeviceModelDatabasePath",
+                                     str(device_model_database.with_name("everest_device_model_storage.db")))
         return adjusted
 
 

@@ -49,11 +49,11 @@ channels:
       receive_reply_query_module:
         $ref: '#/components/messages/receive_reply_query_module'
 
-  send_ready_beacon:
+  receive_ready_beacon:
     address: 'ready_beacon'
     messages:
-      send_ready_beacon:
-        $ref: '#/components/messages/send_ready_beacon'
+      receive_ready_beacon:
+        $ref: '#/components/messages/receive_ready_beacon'
 
 
 operations:
@@ -94,11 +94,11 @@ operations:
     channel:
       $ref: '#/channels/receive_reply_query_module'
 
-  send_ready_beacon:
-    title: 'Send Ready Beacon'
-    action: send
+  receive_ready_beacon:
+    title: 'Receive Ready Beacon'
+    action: receive
     channel:
-      $ref: '#/channels/send_ready_beacon'
+      $ref: '#/channels/receive_ready_beacon'
     description: >-
       Announces that the entrypoint API can be queried, subject to the conditions
       below. The payload is an empty
@@ -181,9 +181,9 @@ components:
                 type: "display_message"
                 version: 1
 
-    send_ready_beacon:
-      name: send_ready_beacon
-      title: 'Send ready beacon'
+    receive_ready_beacon:
+      name: receive_ready_beacon
+      title: 'Receive ready beacon'
       summary: A beacon to indicate the entrypoint API is ready to be queried
       contentType: application/json
       payload:

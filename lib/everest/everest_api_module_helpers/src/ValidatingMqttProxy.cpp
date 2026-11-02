@@ -18,7 +18,7 @@ void ValidatingMqttProxy::publish(const std::string& topic, const std::string& d
     if (is_topic_valid(topic)) {
         provider.publish(topic, data);
     } else {
-        EVLOG_warning << "ValidatingMqttProxy: Droped '" << data << "' as topic '" << topic << "' invalid";
+        EVLOG_warning << "ValidatingMqttProxy: Dropped data as topic '" << topic << "' is invalid";
     }
 }
 
@@ -26,7 +26,7 @@ void ValidatingMqttProxy::publish(const std::string& topic, bool data) {
     if (is_topic_valid(topic)) {
         provider.publish(topic, data);
     } else {
-        EVLOG_warning << "ValidatingMqttProxy: Droped '" << data << "' as topic '" << topic << "' invalid";
+        EVLOG_warning << "ValidatingMqttProxy: Dropped data as topic '" << topic << "' is invalid";
     }
 }
 

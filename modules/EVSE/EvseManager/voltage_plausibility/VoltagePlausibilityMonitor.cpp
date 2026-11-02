@@ -7,7 +7,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <everest/logging.hpp>
-#include <fmt/core.h>
+#include <fmt/format.h>
 #include <thread>
 
 namespace module {

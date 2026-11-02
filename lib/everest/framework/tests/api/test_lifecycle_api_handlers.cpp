@@ -64,6 +64,17 @@ TEST_CASE("LifecycleAPI stop_modules without a stop_fn falls back to Rejected", 
     CHECK(last_reply(mock).at("status") == "Rejected");
 }
 
+TEST_CASE("LifecycleAPI ignores a request that is not valid UTF-8", "[lifecycle_api]") {
+    MockMQTTAbstraction mock("everest/");
+    FakeConfigService svc;
+    LifecycleAPI api(mock, svc, ConfigurationApiStatus::AvailableRW, /*readonly=*/false);
+    mock.clear_published();
+
+    REQUIRE_NOTHROW(invoke_command(mock, "stop_modules", make_invalid_utf8_request()));
+
+    CHECK(mock.published().empty());
+}
+
 TEST_CASE("LifecycleAPI maps every ActiveSlotStatus to the client-visible execution status", "[lifecycle_api]") {
     MockMQTTAbstraction mock("everest/");
     FakeConfigService svc;

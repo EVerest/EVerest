@@ -12,10 +12,6 @@ option(BUILD_TESTING "Run unit tests" OFF)
 set(CMAKE_PREFIX_PATH "/usr/lib/x86_64-linux-gnu" ${CMAKE_PREFIX_PATH})
 
 find_package(SQLite3 REQUIRED)
-if(NOT TARGET SQLite3::SQLite3) # CMake < 4.3
-  set_target_properties(SQLite::SQLite3 PROPERTIES IMPORTED_GLOBAL TRUE)
-  add_library(SQLite3::SQLite3 ALIAS SQLite::SQLite3)
-endif()
 
 target_link_libraries(${MODULE_NAME}
     PRIVATE
@@ -34,7 +30,7 @@ target_sources(${MODULE_NAME}
 )
 
 # ev@c55432ab-152c-45a9-9d2e-7281d50c69c3:v1
-if(EVEREST_CORE_BUILD_TESTING)
+if(BUILD_TESTING)
     add_subdirectory(tests)
 endif()
 # ev@c55432ab-152c-45a9-9d2e-7281d50c69c3:v1

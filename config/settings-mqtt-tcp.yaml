@@ -1,0 +1,21 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright Pionix GmbH and Contributors to EVerest
+#
+# Example manager settings for an MQTT broker reachable over TCP. Pass it to
+# the manager with --settings, e.g.
+#
+#   manager --config config-sil.yaml --settings settings-mqtt-tcp.yaml
+#
+# The environment variables MQTT_SERVER_ADDRESS and MQTT_SERVER_PORT take
+# precedence over mqtt_broker_host and mqtt_broker_port.
+#
+# The MQTT client only tries the first address a host name resolves to, and
+# localhost usually resolves to ::1 first. Use '127.0.0.1' when the broker
+# listens on IPv4 only.
+#
+# All settings are listed in settings-all-options.yaml.
+
+mqtt_broker_host: 'localhost'
+mqtt_broker_port: 1883
+mqtt_everest_prefix: 'everest'
+mqtt_external_prefix: ''

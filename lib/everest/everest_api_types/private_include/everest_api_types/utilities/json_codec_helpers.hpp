@@ -6,6 +6,9 @@
 #include "nlohmann/json.hpp"
 #include "utilities/constants.hpp"
 
+#include <everest/util/json/nesting_depth.hpp>
+
+#include <stdexcept>
 #include <string>
 #include <string_view>
 
@@ -16,6 +19,9 @@ template <class T> std::string dump_json(T const& val) noexcept {
 }
 
 template <class T> T parse_json(std::string_view val) {
+    if (everest::lib::util::exceeds_json_nesting_depth(val, max_json_nesting_depth)) {
+        throw std::invalid_argument("JSON nesting exceeds the maximum depth");
+    }
     return nlohmann::json::parse(val.begin(), val.end());
 }
 

@@ -10,7 +10,7 @@
 
 #include <everest_api_types/telemetry/codec.hpp>
 #include <everest_api_types/telemetry/json_codec.hpp>
-#include <fmt/core.h>
+#include <fmt/format.h>
 
 #include "everest/logging.hpp"
 #include "slac_io.hpp"

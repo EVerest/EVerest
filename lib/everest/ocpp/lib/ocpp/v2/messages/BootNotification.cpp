@@ -8,6 +8,8 @@
 #include <ostream>
 #include <string>
 
+#include <ocpp/common/json_number.hpp>
+
 using json = nlohmann::json;
 
 namespace ocpp {
@@ -70,7 +72,7 @@ void to_json(json& j, const BootNotificationResponse& k) {
 void from_json(const json& j, BootNotificationResponse& k) {
     // the required parts of the message
     k.currentTime = ocpp::DateTime(std::string(j.at("currentTime")));
-    k.interval = j.at("interval");
+    k.interval = ocpp::integer_from_json(j.at("interval"));
     k.status = conversions::string_to_registration_status_enum(j.at("status"));
 
     // the optional parts of the message

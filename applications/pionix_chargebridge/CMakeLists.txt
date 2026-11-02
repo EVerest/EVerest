@@ -1,15 +1,3 @@
-cmake_minimum_required(VERSION 3.16)
-
-# MQTT support in everest::io is mandatory for this application. everest::io exports no property to
-# query it, so the cache variable (declared in the top level CMakeLists.txt, default ON) is the only
-# signal; if it is not defined at all, MQTT support is assumed to be present. As with ftxui below,
-# skip only this application instead of failing the whole project configuration.
-if(DEFINED EVEREST_IO_WITH_MQTT AND NOT EVEREST_IO_WITH_MQTT)
-    message(WARNING "Not building pionix_chargebridge because everest::io is built without MQTT support. "
-            "Set EVEREST_IO_WITH_MQTT=ON or disable EVEREST_BUILD_APPLICATIONS.")
-    return()
-endif()
-
 # ftxui powers the interactive terminal status UI and is mandatory for this application. It is
 # provided either by the dependency manager (EVEREST_DEPENDENCY_ENABLED_FTXUI) or, for system
 # dependency builds, by find_package(ftxui 6 QUIET) in the top level CMakeLists.txt. If it is not
@@ -28,6 +16,25 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 
+# The config parser on its own, so the tests can feed it configs without the bridges behind it.
+add_library(pionix_chargebridge_config STATIC
+  src/utilities/parse_config.cpp
+  src/utilities/string.cpp
+  src/utilities/type_converters.cpp
+)
+
+target_link_libraries(pionix_chargebridge_config
+  PUBLIC
+    everest::everest_api_types
+    everest::io
+    ryml::ryml
+)
+
+target_include_directories(pionix_chargebridge_config
+  PUBLIC include
+  PUBLIC shared
+)
+
 add_executable(pionix_chargebridge
   src/everest_api/api_connector.cpp
   src/everest_api/evse_bsp_api.cpp
@@ -38,13 +45,10 @@ add_executable(pionix_chargebridge
 
   src/utilities/filesystem.cpp
   src/utilities/logging.cpp
-  src/utilities/parse_config.cpp
   src/utilities/print_config.cpp
   src/utilities/print_status.cpp
-  src/utilities/string.cpp
   src/utilities/symlink.cpp
   src/utilities/sync_udp_client.cpp
-  src/utilities/type_converters.cpp
   src/status_ui.cpp
 
   src/io_bridge.cpp
@@ -60,6 +64,7 @@ add_executable(pionix_chargebridge
 )
 
 target_link_libraries(pionix_chargebridge
+  pionix_chargebridge_config
   everest::io
   everest::everest_api_types
   nlohmann_json::nlohmann_json
@@ -86,15 +91,8 @@ add_custom_command(
 )
 
 
-# GTest is pulled in by the dependency manager only under EVEREST_CORE_BUILD_TESTING, which is not
-# implied by BUILD_TESTING when this project is configured as a dependency. As with ftxui above, skip
-# the tests with a warning instead of failing the configuration.
-if(BUILD_TESTING AND NOT TARGET GTest::gtest_main)
-    message(WARNING "Not building the pionix_chargebridge tests because GTest is not available.")
-elseif(BUILD_TESTING)
-    # The carrier decision and the uptime reboot detection are pure functions in headers, so this
-    # needs neither the application's objects nor any of its dependencies - only the include paths for
-    # the headers and the mirrored protocol definitions they read CbLinkTechnology from.
+if(BUILD_TESTING)
+    # Most tests cover pure functions in headers; parse_config_test links the config parser.
     add_executable(pionix_chargebridge_tests
       test/bsp_status_test.cpp
       test/carrier_policy_test.cpp
@@ -102,6 +100,7 @@ elseif(BUILD_TESTING)
       test/mcs_bsp_test.cpp
       test/heartbeat_reply_test.cpp
       test/mcu_uptime_test.cpp
+      test/parse_config_test.cpp
       test/plc_keepalive_test.cpp
     )
 
@@ -115,8 +114,14 @@ elseif(BUILD_TESTING)
     # switch non-exhaustive. Promoting that warning to an error here is what turns it into a gate.
     target_compile_options(pionix_chargebridge_tests PRIVATE -Werror=switch)
 
+    target_compile_definitions(pionix_chargebridge_tests
+      PRIVATE CB_CONFIG_DIR="${CMAKE_CURRENT_SOURCE_DIR}/config"
+    )
+
     target_link_libraries(pionix_chargebridge_tests
-      PRIVATE GTest::gtest_main
+      PRIVATE
+        pionix_chargebridge_config
+        GTest::gtest_main
     )
 
     include(GoogleTest)

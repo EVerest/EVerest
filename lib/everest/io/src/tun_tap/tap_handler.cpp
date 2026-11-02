@@ -11,6 +11,7 @@
 #include <unistd.h>
 
 #include <linux/if.h>
+#include <linux/if_ether.h>
 #include <linux/if_tun.h>
 
 // TUNSETCARRIER entered the UAPI with Linux 5.0; older sysroots (armv7 cross toolchains) lack it. The ioctl
@@ -100,9 +101,15 @@ std::optional<bool> tap_handler::carrier() const {
 }
 
 bool tap_handler::tx(PayloadT const& data) {
+    if (data.size() < ETH_HLEN) {
+        // Not a frame: the kernel refuses anything shorter than an Ethernet header with EINVAL.
+        // Dropped here, so one such datagram forwarded into the tap does not fail the connection
+        // and take the device down with everything queued behind it.
+        return true;
+    }
     auto res = ::write(m_fd, data.data(), data.size());
     if (res != static_cast<ssize_t>(data.size())) {
-        m_error = errno;
+        m_error = res >= 0 ? EIO : socket::send_failure_code(errno);
         return false;
     }
     m_error = 0;
@@ -117,7 +124,10 @@ bool tap_handler::rx(PayloadT& data) {
     data.resize(m_mtu + ethernet_frame_overhead);
     auto res = ::read(m_fd, data.data(), data.size());
     if (res < 0) {
-        m_error = errno;
+        // Nothing to read is not a device error: a failure is final for the connection, so a
+        // spurious readable wake must not tear the device down (the pty handler filters the same).
+        auto const error = errno;
+        m_error = (error == EAGAIN or error == EWOULDBLOCK) ? 0 : error;
         return false;
     }
 

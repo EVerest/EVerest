@@ -17,6 +17,11 @@ public:
     virtual void publish(const std::string& topic, const std::string& data) = 0;
     virtual void publish(const std::string& topic, bool data) = 0;
 
+    // without this overload, a string literal converts to bool and publishes "true"
+    void publish(const std::string& topic, const char* data) {
+        publish(topic, std::string{data});
+    }
+
     virtual Everest::UnsubscribeToken subscribe(const std::string& topic,
                                                 std::function<void(std::string)> handler) const = 0;
 };

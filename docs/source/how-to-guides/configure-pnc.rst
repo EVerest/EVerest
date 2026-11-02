@@ -27,7 +27,7 @@ Module Configurations
 We need to take a closer look at the configuration of the following modules:
 
 * EvseManager
-* EvseV2G
+* Evse15118D20
 * Auth
 * EvseSecurity
 
@@ -36,12 +36,20 @@ EvseManager
 
 * In case of AC, make sure that `ac_hlc_enabled` is set to `true` in order to allow ISO15118 communication.
 * Make sure `payment_enable_contract` is set to `true`.
+* Set `central_contract_validation_allowed` to `true` if the CSMS validates the contract and no MO root
+  certificates are installed on the charger; otherwise install the MO root certificates (the contract
+  chain is always validated locally first).
 
-EvseV2G
-~~~~~~~~~~~
+Evse15118D20
+~~~~~~~~~~~~
 
-* Make sure `tls_security` is set to `allow` or `force`.
-* Make sure `verify_contract_cert_chain` is set to `true`.
+* Make sure `tls_negotiation_strategy` is set to `ACCEPT_CLIENT_OFFER` or `ENFORCE_TLS`.
+* Make sure `supported_ISO15118_2` is set to `true` (and `supported_ISO15118_20` for ISO 15118-20
+  Plug&Charge, which additionally needs a `V2G20` SECC leaf certificate).
+
+The deprecated EvseV2G module needs `tls_security` set to `allow` or `force` and
+`verify_contract_cert_chain` set to `true` instead; see the
+:ref:`migration guide <howto-iso15118-stack-migration>`.
 
 Auth
 ~~~~~~~~~~~

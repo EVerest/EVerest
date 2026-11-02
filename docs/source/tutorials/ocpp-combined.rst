@@ -267,7 +267,7 @@ device model, so there are two ways to configure OCPP 1.6:
    configuration keys to device model variables via built-in mappings
    (documented in
    `lib/everest/ocpp/config/v16_to_v2_mapping.md <https://github.com/EVerest/everest-core/blob/main/lib/everest/ocpp/config/v16_to_v2_mapping.md>`_).
-   Custom mappings can be provided using the ``DeviceModelConfigMappings``
+   Custom mappings can be provided using the ``Ocpp16KeyMappingsPath``
    configuration parameter.
 
 2. **Legacy JSON with a one-time migration**: For existing OCPP 1.6

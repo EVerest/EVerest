@@ -443,6 +443,19 @@ TEST(tap_carrier, writing_into_the_tap_still_works_while_the_carrier_is_off) {
     EXPECT_TRUE(tap.tx(test_frame())) << "tx with the carrier off: " << std::strerror(tap.get_error());
 }
 
+// A write shorter than an Ethernet header is not a frame; the kernel refuses it with EINVAL. The handler drops it
+// and reports no error, so one runt datagram forwarded into the tap does not fail the connection and take the
+// device down.
+TEST(tap_carrier, a_frame_shorter_than_an_ethernet_header_is_dropped_not_failed) {
+    tap_handler tap;
+    OPEN_TAP_OR_SKIP(tap, "eviocarr_r", "192.0.2.41", true);
+
+    std::vector<std::uint8_t> const runt(13, 0xff);
+    EXPECT_TRUE(tap.tx(runt)) << "the runt was reported as a failed write";
+    EXPECT_EQ(tap.get_error(), 0) << "the runt left an errno: " << std::strerror(tap.get_error());
+    EXPECT_TRUE(tap.tx(test_frame())) << "a frame after the runt: " << std::strerror(tap.get_error());
+}
+
 // A successful open() reports no error whatever the carrier request did: fd_event_client fails the connection on
 // any nonzero policy error after open, and an owner that resets on error would replay the same open() forever.
 TEST(tap_carrier, a_successful_open_reports_no_error) {

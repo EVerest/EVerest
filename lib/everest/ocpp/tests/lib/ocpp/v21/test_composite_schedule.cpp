@@ -440,6 +440,88 @@ TEST_F(CompositeScheduleTestFixtureV21, V21DifferentNumberPhases_StationWide) {
     EXPECT_EQ(actual, expected);
 }
 
+TEST_F(CompositeScheduleTestFixtureV21, V21LimitL2WithoutL3KeepsExplicitValue) {
+    // limit_L2 without limit_L3: limit is phase L1 (K01.FR.147), L2 is kept and L3 takes L1
+    this->load_charging_profiles_for_evse(BASE_JSON_PATH_V21 + "/phase_l2_only/1/", DEFAULT_EVSE_ID);
+
+    const DateTime start_time("2024-01-17T18:00:00.000Z");
+    const DateTime end_time("2024-01-17T18:50:00.000Z");
+
+    EnhancedChargingSchedulePeriod period1;
+    period1.startPeriod = 0;
+    period1.limit = 3000.0;
+    period1.limit_L2 = 2000.0;
+    period1.limit_L3 = 3000.0;
+    period1.numberPhases = 3;
+    period1.stackLevel = 0;
+    EnhancedCompositeSchedule expected;
+    expected.chargingSchedulePeriod = {period1};
+    expected.evseId = DEFAULT_EVSE_ID;
+    expected.duration = 3000;
+    expected.scheduleStart = start_time;
+    expected.chargingRateUnit = ChargingRateUnitEnum::W;
+
+    evse_manager->open_transaction(DEFAULT_EVSE_ID, "f1522902-1170-416f-8e43-9e3bce28fde7");
+    auto actual = handler->calculate_composite_schedule(start_time, end_time, DEFAULT_EVSE_ID, ChargingRateUnitEnum::W,
+                                                        false, false);
+    EXPECT_EQ(actual, expected);
+}
+
+TEST_F(CompositeScheduleTestFixtureV21, V21SinglePhaseTakesMostRestrictivePhase) {
+    // numberPhases 1 with per-phase values: the smallest magnitude wins, for negative discharge limits as well
+    this->load_charging_profiles_for_evse(BASE_JSON_PATH_V21 + "/single_phase_per_phase_values/1/", DEFAULT_EVSE_ID);
+
+    const DateTime start_time("2024-01-17T18:00:00.000Z");
+    const DateTime end_time("2024-01-17T18:50:00.000Z");
+
+    EnhancedChargingSchedulePeriod period1;
+    period1.startPeriod = 0;
+    period1.limit = 3000.0;
+    period1.dischargeLimit = -4000.0;
+    period1.setpoint = 1500.0;
+    period1.numberPhases = 1;
+    period1.operationMode = OperationModeEnum::CentralSetpoint;
+    period1.stackLevel = 0;
+    EnhancedCompositeSchedule expected;
+    expected.chargingSchedulePeriod = {period1};
+    expected.evseId = DEFAULT_EVSE_ID;
+    expected.duration = 3000;
+    expected.scheduleStart = start_time;
+    expected.chargingRateUnit = ChargingRateUnitEnum::W;
+
+    evse_manager->open_transaction(DEFAULT_EVSE_ID, "f1522902-1170-416f-8e43-9e3bce28fde7");
+    auto actual = handler->calculate_composite_schedule(start_time, end_time, DEFAULT_EVSE_ID, ChargingRateUnitEnum::W,
+                                                        false, false);
+    EXPECT_EQ(actual, expected);
+}
+
+TEST_F(CompositeScheduleTestFixtureV21, V21TwoPhasesNoL3) {
+    // A two-phase W total split per phase gets no limit_L3, also when merged with a per-phase period
+    this->load_charging_profiles_for_evse(BASE_JSON_PATH_V21 + "/two_phases/0/", STATION_WIDE_ID);
+    this->load_charging_profiles_for_evse(BASE_JSON_PATH_V21 + "/two_phases/1/", DEFAULT_EVSE_ID);
+
+    const DateTime start_time("2024-01-17T18:00:00.000Z");
+    const DateTime end_time("2024-01-17T18:50:00.000Z");
+
+    EnhancedChargingSchedulePeriod period1;
+    period1.startPeriod = 0;
+    period1.limit = 3500.0;
+    period1.limit_L2 = 3500.0;
+    period1.numberPhases = 2;
+    period1.stackLevel = 0;
+    EnhancedCompositeSchedule expected;
+    expected.chargingSchedulePeriod = {period1};
+    expected.evseId = DEFAULT_EVSE_ID;
+    expected.duration = 3000;
+    expected.scheduleStart = start_time;
+    expected.chargingRateUnit = ChargingRateUnitEnum::W;
+
+    evse_manager->open_transaction(DEFAULT_EVSE_ID, "f1522902-1170-416f-8e43-9e3bce28fde7");
+    auto actual = handler->calculate_composite_schedule(start_time, end_time, DEFAULT_EVSE_ID, ChargingRateUnitEnum::W,
+                                                        false, false);
+    EXPECT_EQ(actual, expected);
+}
+
 TEST_F(CompositeScheduleTestFixtureV21, ZeroDuration) {
     load_charging_profiles_for_evse(BASE_JSON_PATH_V21 + "/station_wide_three_phases/", STATION_WIDE_ID);
     const DateTime start_time("2024-01-17T18:00:00.000Z");

@@ -25,7 +25,8 @@ PYBIND11_MODULE(everestpy, m) {
     // FIXME (aw): add m.doc?
     py::class_<RuntimeSession>(m, "RuntimeSession")
         .def(py::init<>())
-        .def(py::init<const std::string&, const std::string&>());
+        .def(py::init<const std::string&, const std::string&>())
+        .def(py::init<const std::string&, const std::string&, const std::string&>());
 
     py::class_<ModuleInfo::Paths>(m, "ModuleInfoPaths")
         .def_readonly("etc", &ModuleInfo::Paths::etc)

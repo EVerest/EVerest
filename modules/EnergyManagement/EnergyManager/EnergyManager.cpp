@@ -4,7 +4,7 @@
 #include "Broker.hpp"
 #include "BrokerFastCharging.hpp"
 #include "Market.hpp"
-#include <fmt/core.h>
+#include <fmt/format.h>
 #include <optional>
 
 namespace module {

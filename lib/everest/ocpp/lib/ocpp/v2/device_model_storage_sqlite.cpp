@@ -18,6 +18,49 @@ using namespace common;
 
 namespace v2 {
 
+namespace {
+
+/// \brief Reads a Component and a Variable from the six columns NAME, EVSE_ID, CONNECTOR_ID, INSTANCE, NAME and
+/// INSTANCE of the component tables starting at \p first_column
+std::pair<Component, Variable> read_component_variable(StatementInterface& statement, int first_column) {
+    Component component;
+    component.name = statement.column_text(first_column);
+    if (statement.column_type(first_column + 1) != SQLITE_NULL) {
+        EVSE evse;
+        evse.id = statement.column_int(first_column + 1);
+        if (statement.column_type(first_column + 2) != SQLITE_NULL) {
+            evse.connectorId = statement.column_int(first_column + 2);
+        }
+        component.evse = evse;
+    }
+    if (statement.column_type(first_column + 3) != SQLITE_NULL) {
+        component.instance = statement.column_text(first_column + 3);
+    }
+
+    Variable variable;
+    variable.name = statement.column_text(first_column + 4);
+    if (statement.column_type(first_column + 5) != SQLITE_NULL) {
+        variable.instance = statement.column_text(first_column + 5);
+    }
+    return {component, variable};
+}
+
+/// \brief Reads a VariableAttribute from the five columns VALUE, MUTABILITY_ID, PERSISTENT, CONSTANT and TYPE_ID
+/// starting at \p first_column
+VariableAttribute read_attribute(StatementInterface& statement, int first_column) {
+    VariableAttribute attribute;
+    if (statement.column_type(first_column) != SQLITE_NULL) {
+        attribute.value = statement.column_text(first_column);
+    }
+    attribute.mutability = static_cast<MutabilityEnum>(statement.column_int(first_column + 1));
+    attribute.persistent = static_cast<bool>(statement.column_int(first_column + 2));
+    attribute.constant = static_cast<bool>(statement.column_int(first_column + 3));
+    attribute.type = static_cast<AttributeEnum>(statement.column_int(first_column + 4));
+    return attribute;
+}
+
+} // namespace
+
 DeviceModelStorageSqlite::DeviceModelStorageSqlite(const fs::path& db_path, const fs::path& migration_files_path,
                                                    const fs::path& config_path) {
     if (db_path.empty() || migration_files_path.empty() || config_path.empty()) {
@@ -112,29 +155,7 @@ DeviceModelMap DeviceModelStorageSqlite::get_device_model() {
     auto select_stmt = this->db->new_statement(select_query);
 
     while (select_stmt->step() == SQLITE_ROW) {
-        Component component;
-        component.name = select_stmt->column_text(0);
-
-        if (select_stmt->column_type(1) != SQLITE_NULL) {
-            auto evse_id = select_stmt->column_int(1);
-            EVSE evse;
-            evse.id = evse_id;
-            if (select_stmt->column_type(2) != SQLITE_NULL) {
-                evse.connectorId = select_stmt->column_int(2);
-            }
-            component.evse = evse;
-        }
-
-        if (select_stmt->column_type(3) != SQLITE_NULL) {
-            component.instance = select_stmt->column_text(3);
-        }
-
-        Variable variable;
-        variable.name = select_stmt->column_text(4);
-
-        if (select_stmt->column_type(5) != SQLITE_NULL) {
-            variable.instance = select_stmt->column_text(5);
-        }
+        const auto [component, variable] = read_component_variable(*select_stmt, 0);
 
         VariableCharacteristics characteristics;
         VariableMetaData meta_data;
@@ -172,6 +193,28 @@ DeviceModelMap DeviceModelStorageSqlite::get_device_model() {
         }
 
         device_model[component][variable] = meta_data;
+    }
+
+    const std::string attributes_query = "SELECT c.NAME, c.EVSE_ID, c.CONNECTOR_ID, c.INSTANCE, v.NAME, v.INSTANCE, "
+                                         "va.VALUE, va.MUTABILITY_ID, va.PERSISTENT, va.CONSTANT, va.TYPE_ID "
+                                         "FROM VARIABLE_ATTRIBUTE va "
+                                         "JOIN VARIABLE v ON v.ID = va.VARIABLE_ID "
+                                         "JOIN COMPONENT c ON c.ID = v.COMPONENT_ID "
+                                         "ORDER BY va.ID";
+
+    auto attributes_stmt = this->db->new_statement(attributes_query);
+
+    while (attributes_stmt->step() == SQLITE_ROW) {
+        const auto [component, variable] = read_component_variable(*attributes_stmt, 0);
+        const auto component_it = device_model.find(component);
+        if (component_it == device_model.end()) {
+            continue;
+        }
+        const auto variable_it = component_it->second.find(variable);
+        if (variable_it == component_it->second.end()) {
+            continue;
+        }
+        variable_it->second.attributes.push_back(read_attribute(*attributes_stmt, 6));
     }
 
     EVLOG_info << "Successfully retrieved Device Model from DeviceModelStorage";
@@ -212,16 +255,7 @@ DeviceModelStorageSqlite::get_variable_attributes(const Component& component_id,
     select_stmt->bind_int(1, _variable_id);
 
     while (select_stmt->step() == SQLITE_ROW) {
-        VariableAttribute attribute;
-
-        if (select_stmt->column_type(0) != SQLITE_NULL) {
-            attribute.value = select_stmt->column_text(0);
-        }
-        attribute.mutability = static_cast<MutabilityEnum>(select_stmt->column_int(1));
-        attribute.persistent = static_cast<bool>(select_stmt->column_int(2));
-        attribute.constant = static_cast<bool>(select_stmt->column_int(3));
-        attribute.type = static_cast<AttributeEnum>(select_stmt->column_int(4));
-        attributes.push_back(attribute);
+        attributes.push_back(read_attribute(*select_stmt, 0));
     }
 
     return attributes;

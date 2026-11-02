@@ -263,3 +263,109 @@ TEST(SecureGooseFrame, deserialize_edited_payload_throws_invalid_hmac) {
     ASSERT_THROW(goose::frame::SecureGooseFrame frame(serialized, std::vector<std::uint8_t>(key, key + sizeof(key))),
                  std::runtime_error);
 }
+
+namespace {
+
+std::vector<std::uint8_t> test_hmac_key() {
+    std::vector<std::uint8_t> key(48);
+    for (size_t i = 0; i < key.size(); i++) {
+        key[i] = i;
+    }
+    return key;
+}
+
+goose_ethernet::EthernetFrame serialized_secure_frame() {
+    goose::frame::SecureGooseFrame goose_frame;
+    goose_frame.appid[0] = 0x00;
+    goose_frame.appid[1] = 0x01;
+    memset(goose_frame.source_mac_address, 0x00, 6);
+    memset(goose_frame.destination_mac_address, 0x00, 6);
+    goose_frame.vlan_id = 0;
+    goose_frame.priority = 5;
+
+    strcpy(goose_frame.pdu.go_cb_ref, "GO_CB_REF");
+    goose_frame.pdu.time_allowed_to_live = 10000;
+    strcpy(goose_frame.pdu.dat_set, "DAT_SET");
+    strcpy(goose_frame.pdu.go_id, "GO_ID");
+    goose_frame.pdu.timestamp = goose::frame::GooseTimestamp::from_ms(1667349763000);
+    goose_frame.pdu.st_num = 1;
+    goose_frame.pdu.sq_num = 0;
+    goose_frame.pdu.simulation = false;
+    goose_frame.pdu.conf_rev = 0;
+    goose_frame.pdu.ndsCom = 0;
+    goose_frame.pdu.apdu_entries.resize(1);
+    goose_frame.pdu.apdu_entries[0].tag = 0x86;
+    goose_frame.pdu.apdu_entries[0].value = {0, 1};
+
+    return goose_frame.serialize(test_hmac_key());
+}
+
+std::uint16_t header_length(const goose_ethernet::EthernetFrame& frame) {
+    return (frame.payload[2] << 8) | frame.payload[3];
+}
+
+// Rewrites the length fields and the CRC16 in reserve2 that covers them, so only the lengths are wrong.
+void set_header_lengths(goose_ethernet::EthernetFrame& frame, std::uint16_t length, std::uint8_t extended_length) {
+    frame.payload[2] = length >> 8;
+    frame.payload[3] = length & 0xFF;
+    frame.payload[5] = extended_length;
+
+    const std::uint8_t crc_input[] = {0x88,
+                                      0xB8,
+                                      frame.payload[0],
+                                      frame.payload[1],
+                                      frame.payload[2],
+                                      frame.payload[3],
+                                      frame.payload[4],
+                                      frame.payload[5]};
+    std::uint16_t crc = 0xFFFF;
+    for (auto byte : crc_input) {
+        crc ^= byte;
+        for (size_t i = 0; i < 8; i++) {
+            crc = (crc & 0x0001) ? (crc >> 1) ^ 0xA001 : crc >> 1;
+        }
+    }
+    frame.payload[6] = crc >> 8;
+    frame.payload[7] = crc & 0xFF;
+}
+
+} // namespace
+
+TEST(SecureGooseFrame, decode_header_too_short_throws) {
+    goose_ethernet::EthernetFrame frame;
+    frame.ethertype = goose::frame::GOOSE_ETHERTYPE;
+    frame.eth_802_1q_tag = 0xA000;
+    frame.payload = {0x00, 0x01, 0x00, 0x08};
+
+    ASSERT_THROW(goose::frame::SecureGooseFrame goose_frame(frame), std::runtime_error);
+}
+
+TEST(SecureGooseFrame, decode_length_beyond_payload_throws) {
+    auto frame = serialized_secure_frame();
+    set_header_lengths(frame, 0xFFFF, 0x23);
+
+    ASSERT_THROW(goose::frame::SecureGooseFrame goose_frame(frame), std::runtime_error);
+}
+
+TEST(SecureGooseFrame, decode_length_below_header_throws) {
+    auto frame = serialized_secure_frame();
+    set_header_lengths(frame, 7, 0x23);
+
+    ASSERT_THROW(goose::frame::SecureGooseFrame goose_frame(frame), std::runtime_error);
+}
+
+TEST(SecureGooseFrame, decode_extended_length_beyond_payload_throws) {
+    auto frame = serialized_secure_frame();
+    set_header_lengths(frame, header_length(frame), 0xFF);
+
+    ASSERT_THROW(goose::frame::SecureGooseFrame goose_frame(frame, test_hmac_key()), std::runtime_error);
+    ASSERT_THROW(goose::frame::SecureGooseFrame goose_frame(frame), std::runtime_error);
+}
+
+TEST(SecureGooseFrame, decode_with_trailing_padding) {
+    auto frame = serialized_secure_frame();
+    frame.payload.resize(frame.payload.size() + 16, 0);
+
+    goose::frame::SecureGooseFrame goose_frame(frame, test_hmac_key());
+    ASSERT_STREQ(goose_frame.pdu.go_id, "GO_ID");
+}

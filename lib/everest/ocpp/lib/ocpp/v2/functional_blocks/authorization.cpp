@@ -25,6 +25,12 @@ namespace {
 ///
 bool has_duplicate_in_list(const std::vector<ocpp::v2::AuthorizationData>& list);
 bool has_no_token_info(const ocpp::v2::AuthorizationData& item);
+
+ocpp::v2::AuthorizeResponse unknown_authorize_response() {
+    ocpp::v2::AuthorizeResponse response;
+    response.idTokenInfo.status = ocpp::v2::AuthorizationStatusEnum::Unknown;
+    return response;
+}
 } // namespace
 
 ocpp::v2::Authorization::Authorization(const FunctionalBlockContext& context) :
@@ -59,16 +65,20 @@ void ocpp::v2::Authorization::handle_message(const ocpp::EnhancedMessage<Message
 ocpp::v2::AuthorizeResponse
 ocpp::v2::Authorization::authorize_req(const IdToken id_token, const std::optional<ocpp::CiString<10000>>& certificate,
                                        const std::optional<std::vector<OCSPRequestData>>& ocsp_request_data) {
+    return this->send_authorize_req(id_token, certificate, ocsp_request_data).value_or(unknown_authorize_response());
+}
+
+std::optional<ocpp::v2::AuthorizeResponse>
+ocpp::v2::Authorization::send_authorize_req(const IdToken& id_token,
+                                            const std::optional<ocpp::CiString<10000>>& certificate,
+                                            const std::optional<std::vector<OCSPRequestData>>& ocsp_request_data) {
     AuthorizeRequest req;
     req.idToken = id_token;
     req.certificate = certificate;
     req.iso15118CertificateHashData = ocsp_request_data;
 
-    AuthorizeResponse response;
-    response.idTokenInfo.status = AuthorizationStatusEnum::Unknown;
-
     if (!this->context.connectivity_manager.is_websocket_connected()) {
-        return response;
+        return std::nullopt;
     }
 
     const ocpp::Call<AuthorizeRequest> call(req);
@@ -76,7 +86,7 @@ ocpp::v2::Authorization::authorize_req(const IdToken id_token, const std::option
 
     if (future.wait_for(DEFAULT_WAIT_FOR_FUTURE_TIMEOUT) == std::future_status::timeout) {
         EVLOG_warning << "Waiting for Authorize Response future timed out!";
-        return response;
+        return std::nullopt;
     }
 
     EnhancedMessage<MessageType> enhanced_message;
@@ -84,11 +94,11 @@ ocpp::v2::Authorization::authorize_req(const IdToken id_token, const std::option
         enhanced_message = future.get();
     } catch (const EnumConversionException& e) {
         EVLOG_error << "EnumConversionException during handling of message: " << e.what();
-        return response;
+        return std::nullopt;
     }
 
     if (enhanced_message.messageType != MessageType::AuthorizeResponse) {
-        return response;
+        return std::nullopt;
     }
 
     try {
@@ -98,12 +108,12 @@ ocpp::v2::Authorization::authorize_req(const IdToken id_token, const std::option
         EVLOG_error << "EnumConversionException during handling of AuthorizeResponse: " << e.what();
         auto call_error = CallError(enhanced_message.uniqueId, "FormationViolation", e.what(), json({}));
         this->context.message_dispatcher.dispatch_call_error(call_error);
-        return response;
+        return std::nullopt;
     } catch (const json::exception& e) {
         EVLOG_error << "json::exception during handling of AuthorizeResponse: " << e.what();
         auto call_error = CallError(enhanced_message.uniqueId, "FormationViolation", e.what(), json({}));
         this->context.message_dispatcher.dispatch_call_error(call_error);
-        return response;
+        return std::nullopt;
     }
 }
 
@@ -305,6 +315,13 @@ ocpp::v2::Authorization::validate_token(const IdToken id_token, const std::optio
         }
 
         if (id_token_info.has_value()) {
+            if (id_token_info.value().status == AuthorizationStatusEnum::Accepted and
+                id_token_info.value().cacheExpiryDateTime.has_value() and
+                id_token_info.value().cacheExpiryDateTime.value() < DateTime()) {
+                EVLOG_info << "Found entry in local authorization list but expiry date passed";
+                id_token_info.value().status = AuthorizationStatusEnum::Expired;
+            }
+
             if (id_token_info.value().status == AuthorizationStatusEnum::Accepted) {
                 // C14.FR.02: If found in local list we shall start charging without an AuthorizeRequest
                 EVLOG_info << "Found valid entry in local authorization list";
@@ -369,6 +386,10 @@ ocpp::v2::Authorization::validate_token(const IdToken id_token, const std::optio
                                   "AuthCacheDisablePostAuthorize is enabled";
                     response.idTokenInfo = id_token_info;
                     return response;
+                } else if (!is_online) {
+                    EVLOG_info << "Found invalid entry in AuthCache whilst offline: Not authorized";
+                    response.idTokenInfo = id_token_info;
+                    return response;
                 } else {
                     EVLOG_info << "Found invalid entry in AuthCache: Sending new request";
                 }
@@ -393,18 +414,21 @@ ocpp::v2::Authorization::validate_token(const IdToken id_token, const std::optio
     // When set to true this instructs the Charging Station to not issue any AuthorizationRequests, but only use
     // Authorization Cache and Local Authorization List to determine validity of idTokens.
     if (!disabled_remote_auth) {
-        response = this->authorize_req(id_token, certificate, ocsp_request_data);
+        const auto csms_response = this->send_authorize_req(id_token, certificate, ocsp_request_data);
+        if (not csms_response.has_value()) {
+            return unknown_authorize_response();
+        }
 
         if (auth_cache_enabled) {
             try {
-                this->authorization_cache_insert_entry(hashed_id_token, response.idTokenInfo);
+                this->authorization_cache_insert_entry(hashed_id_token, csms_response->idTokenInfo);
             } catch (const everest::db::Exception& e) {
                 EVLOG_error << "Could not insert into authorization cache entry: " << e.what();
             }
             this->trigger_authorization_cache_cleanup();
         }
 
-        return response;
+        return csms_response.value();
     }
 
     EVLOG_info << "Not sending Authorize.req because RemoteAuthorization is disabled";

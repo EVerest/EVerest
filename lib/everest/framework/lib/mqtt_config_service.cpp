@@ -3,6 +3,8 @@
 
 #include <exception>
 
+#include <fmt/format.h>
+
 #include <everest/logging.hpp>
 
 #include <utils/config.hpp>
@@ -285,12 +287,61 @@ Response handle_set_request(const SetRequest& set_request, const std::string& or
     response.response = set_response;
     return response;
 }
+
+std::optional<SetResponseStatus> to_notification_status(SetConfigParameterResultEnum result) {
+    switch (result) {
+    case SetConfigParameterResultEnum::Applied:
+        return SetResponseStatus::Accepted;
+    case SetConfigParameterResultEnum::WillApplyOnRestart:
+        return SetResponseStatus::RebootRequired;
+    default:
+        return std::nullopt;
+    }
+}
+
+std::string config_updates_topic(const MQTTAbstraction& mqtt_abstraction, const std::string& module_id) {
+    return fmt::format("{}modules/{}/config/updates", mqtt_abstraction.get_everest_prefix(), module_id);
+}
+
+/// \brief Sends every accepted change in \p update to each module that may read the changed module's configuration
+void publish_config_update_notifications(MQTTAbstraction& mqtt_abstraction, ConfigServiceInterface& config_svc,
+                                         const ConfigurationUpdate& update) {
+    if (update.slot_id != config_svc.get_active_slot_id()) {
+        return;
+    }
+    const auto module_configs_ptr = config_svc.get_active_module_configurations();
+    if (module_configs_ptr == nullptr) {
+        return;
+    }
+    const auto& module_configs = *module_configs_ptr;
+
+    for (const auto& notice : update.updates) {
+        const auto status = to_notification_status(notice.result);
+        if (not status.has_value()) {
+            continue;
+        }
+        const ConfigUpdateNotification notification{notice.identifier, notice.value, status.value(),
+                                                    update.origin.module_id};
+        const auto& changed_module_id = notice.identifier.module_id;
+        for (const auto& [subscriber_id, subscriber_config] : module_configs) {
+            if (subscriber_id == update.origin.module_id) {
+                continue;
+            }
+            if (not access_allowed(subscriber_config.access, subscriber_id, changed_module_id, AccessMethod::Read)) {
+                continue;
+            }
+            MqttMessagePayload payload{MqttMessageType::ConfigurationRequest, nlohmann::json(notification)};
+            mqtt_abstraction.publish(config_updates_topic(mqtt_abstraction, subscriber_id), payload, QOS::QOS2);
+        }
+    }
+}
 } // namespace
 
 ConfigServiceClient::ConfigServiceClient(std::shared_ptr<MQTTAbstraction> mqtt_abstraction,
                                          const std::string& module_id,
-                                         const std::map<std::string, std::string, std::less<>>& module_names) :
-    m_mqtt_abstraction(mqtt_abstraction), m_origin(module_id), m_module_names(module_names) {
+                                         const std::map<std::string, std::string, std::less<>>& module_names,
+                                         const everest::config::Access& access) :
+    m_mqtt_abstraction(mqtt_abstraction), m_origin(module_id), m_module_names(module_names), m_access(access) {
 }
 
 std::map<ModuleIdType, everest::config::ModuleConfigurationParameters> ConfigServiceClient::get_module_configs() {
@@ -511,6 +562,82 @@ void ConfigServiceClient::mqtt_set_request(const nlohmann::json& data) {
     m_mqtt_abstraction->publish(topic, payload, QOS::QOS2);
 }
 
+std::optional<std::function<void()>> ConfigServiceClient::register_config_update_handler(const std::string& module_id,
+                                                                                         ConfigUpdateHandler handler) {
+    if (m_module_names.find(module_id) == m_module_names.end()) {
+        EVLOG_warning << "Cannot register a configuration update handler for unknown module '" << module_id << "'";
+        return std::nullopt;
+    }
+    if (not access_allowed(m_access, m_origin, module_id, AccessMethod::Read)) {
+        EVLOG_warning << "Cannot register a configuration update handler for module '" << module_id
+                      << "': the access rules of '" << m_origin << "' do not allow reading its configuration";
+        return std::nullopt;
+    }
+    auto update_handlers = m_update_handlers.handle();
+    if (update_handlers->next_id == 0) {
+        const auto mqtt_handler = [this](const std::string& /*topic*/, const nlohmann::json& data) {
+            mqtt_config_update(data);
+        };
+        auto update_token =
+            std::make_shared<TypedHandler>(HandlerType::ConfigurationRequest, std::make_shared<Handler>(mqtt_handler));
+        m_mqtt_abstraction->register_handler(config_updates_topic(*m_mqtt_abstraction, m_origin), update_token,
+                                             QOS::QOS2);
+    }
+    const auto id = update_handlers->next_id++;
+    update_handlers->handlers[module_id].emplace(id, std::move(handler));
+    return [this, module_id, id]() {
+        {
+            auto handle = m_update_handlers.handle();
+            const auto it = handle->handlers.find(module_id);
+            if (it != handle->handlers.end()) {
+                it->second.erase(id);
+            }
+        }
+        // Waits for a notification whose handlers are running
+        std::lock_guard<std::recursive_mutex> dispatch_lock(m_update_dispatch_mutex);
+    };
+}
+
+bool ConfigServiceClient::is_update_handler_registered(const std::string& module_id, std::uint64_t id) {
+    auto handle = m_update_handlers.handle();
+    const auto it = handle->handlers.find(module_id);
+    return it != handle->handlers.end() and it->second.count(id) != 0;
+}
+
+void ConfigServiceClient::mqtt_config_update(const nlohmann::json& data) {
+    ConfigUpdateNotification notification;
+    try {
+        notification = data;
+    } catch (const std::exception& e) {
+        EVLOG_error << "Could not parse configuration update notification: " << e.what();
+        return;
+    }
+
+    std::lock_guard<std::recursive_mutex> dispatch_lock(m_update_dispatch_mutex);
+    // Copied out and invoked without the lock, since a handler may register further handlers
+    std::map<std::uint64_t, ConfigUpdateHandler> handlers;
+    {
+        auto handle = m_update_handlers.handle();
+        const auto it = handle->handlers.find(notification.identifier.module_id);
+        if (it == handle->handlers.end()) {
+            return;
+        }
+        handlers = it->second;
+    }
+
+    for (const auto& [id, handler] : handlers) {
+        if (not is_update_handler_registered(notification.identifier.module_id, id)) {
+            // unregistered by a handler before it
+            continue;
+        }
+        try {
+            handler(notification);
+        } catch (const std::exception& e) {
+            EVLOG_error << "Exception in configuration update handler: " << e.what();
+        }
+    }
+}
+
 MqttConfigServiceHandler::MqttConfigServiceHandler(MQTTAbstraction& mqtt_abstraction,
                                                    ConfigServiceInterface& config_svc) :
     m_mqtt_abstraction(mqtt_abstraction), m_config_svc(config_svc) {
@@ -586,6 +713,19 @@ MqttConfigServiceHandler::MqttConfigServiceHandler(MQTTAbstraction& mqtt_abstrac
     m_get_config_token = std::make_shared<TypedHandler>(HandlerType::ConfigurationRequest,
                                                         std::make_shared<Handler>(global_config_request_handler));
     mqtt_abstraction.register_handler(global_config_request_topic, m_get_config_token, QOS::QOS2);
+
+    m_unregister_config_update_handler =
+        config_svc.register_config_update_handler([&mqtt_abstraction, &config_svc](const ConfigurationUpdate& update) {
+            try {
+                publish_config_update_notifications(mqtt_abstraction, config_svc, update);
+            } catch (const std::exception& e) {
+                EVLOG_error << "Could not publish configuration update notifications: " << e.what();
+            }
+        });
+}
+
+MqttConfigServiceHandler::~MqttConfigServiceHandler() {
+    m_unregister_config_update_handler();
 }
 
 std::optional<Everest::config::SetResponse>
@@ -897,6 +1037,26 @@ void from_json(const nlohmann::json& j, ConfigChangeResult& r) {
         r = ConfigChangeResult::AcceptedRebootRequired();
     } else {
         r = ConfigChangeResult::Rejected(reason);
+    }
+}
+
+void to_json(nlohmann::json& j, const ConfigUpdateNotification& n) {
+    j = {{"identifier", nlohmann::json(n.identifier)},
+         {"value", n.value},
+         {"status", conversions::set_response_status_to_string(n.status)}};
+    if (n.origin.has_value()) {
+        j["origin"] = n.origin.value();
+    }
+}
+
+void from_json(const nlohmann::json& j, ConfigUpdateNotification& n) {
+    n.identifier = j.at("identifier");
+    n.value = j.at("value");
+    n.status = conversions::string_to_set_response_status(j.at("status"));
+    if (j.contains("origin")) {
+        n.origin = j.at("origin").get<std::string>();
+    } else {
+        n.origin.reset();
     }
 }
 

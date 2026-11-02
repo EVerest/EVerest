@@ -71,6 +71,11 @@ public:
         return m_handlers;
     }
 
+    /// \brief Returns every handler ever registered via register_handler(), including unregistered ones.
+    const std::vector<std::pair<std::string, std::shared_ptr<TypedHandler>>>& handler_history() const {
+        return m_handler_history;
+    }
+
     /// \brief Returns the (topic, payload) of the last last-will-testament set via set_lwt(), if any.
     const std::optional<std::pair<std::string, nlohmann::json>>& last_lwt() const {
         return m_lwt;
@@ -109,6 +114,7 @@ public:
     }
 
     void register_handler(const std::string& topic, std::shared_ptr<TypedHandler> handler, QOS /*qos*/) override {
+        m_handler_history.emplace_back(topic, handler);
         m_handlers[topic] = std::move(handler);
     }
 
@@ -169,6 +175,7 @@ private:
     std::vector<std::pair<std::string, nlohmann::json>> m_published;
     std::vector<PublishRecord> m_publish_records;
     std::unordered_map<std::string, std::shared_ptr<TypedHandler>> m_handlers;
+    std::vector<std::pair<std::string, std::shared_ptr<TypedHandler>>> m_handler_history;
     std::optional<std::pair<std::string, nlohmann::json>> m_lwt;
 };
 

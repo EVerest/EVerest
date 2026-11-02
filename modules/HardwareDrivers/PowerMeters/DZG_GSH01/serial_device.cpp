@@ -14,7 +14,7 @@
 #include <sys/select.h>
 #include <sys/time.h>
 
-#include <fmt/core.h>
+#include <fmt/format.h>
 
 namespace {
 std::string hexdump(const std::uint8_t* const msg, int msg_len) {

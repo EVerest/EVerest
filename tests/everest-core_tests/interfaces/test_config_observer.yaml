@@ -1,0 +1,12 @@
+description: >-
+  Test interface that reports the configuration change notifications a module received
+  for the configuration of another module
+cmds:
+  get_received:
+    description: Returns the received notifications in the order of arrival
+    result:
+      description: >-
+        One object per notification, with the keys module_id, parameter, value, status and origin
+      type: array
+      items:
+        type: object

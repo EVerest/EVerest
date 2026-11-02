@@ -19,6 +19,7 @@ struct VariantAccess {
     std::unique_ptr<void, Variant::CustomDeleter>& data;
     iso15118::message_20::Type& type;
     std::string& error;
+    bool& undecodable;
 
     template <typename MessageType, typename CbExiMessageType> void insert_type(const CbExiMessageType& in) {
         assert(data.get() == nullptr);

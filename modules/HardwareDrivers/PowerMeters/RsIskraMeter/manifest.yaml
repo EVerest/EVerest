@@ -49,8 +49,9 @@ config:
   read_meter_values_interval_ms:
     description: How often to read the meter values in milliseconds. The refresh rate of WM3M4C is ~1 second.
     type: integer
-    default: 5000
+    default: 2000
     minimum: 1000
+    maximum: 4000
 provides:
   meter:
     description: Implementation of the driver functionality - deprecated.

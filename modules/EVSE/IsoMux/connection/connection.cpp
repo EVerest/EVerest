@@ -8,6 +8,7 @@
 #include "tools.hpp"
 #include "v2g_server.hpp"
 
+#include <algorithm>
 #include <arpa/inet.h>
 #include <cstring>
 #include <ctype.h>
@@ -16,6 +17,7 @@
 #include <fstream>
 #include <inttypes.h>
 #include <iostream>
+#include <memory>
 #include <net/if.h>
 #include <netinet/in.h>
 #include <poll.h>
@@ -30,11 +32,13 @@
 
 #include "proxy.hpp"
 
-#define DEFAULT_SOCKET_BACKLOG        3
-#define DEFAULT_TCP_PORT              61342
-#define DEFAULT_TLS_PORT              64110
-#define ERROR_SESSION_ALREADY_STARTED 2
-#define CLIENT_FIN_TIMEOUT            3000
+#include <everest/util/async/monitor.hpp>
+
+#define DEFAULT_SOCKET_BACKLOG 3
+#define DEFAULT_TCP_PORT       61342
+#define DEFAULT_TLS_PORT       64110
+#define CLIENT_FIN_TIMEOUT     3000
+#define MAX_CONNECTIONS        4
 
 /*!
  * \brief connection_create_socket This function creates a tcp/tls socket
@@ -277,17 +281,10 @@ ssize_t connection_read(struct v2g_connection* conn, unsigned char* buf, size_t 
 
             int num_of_bytes;
 
-            /* use select for timeout handling */
-            struct timeval tv;
-            fd_set read_fds;
+            /* use poll for timeout handling */
+            struct pollfd read_fd = {conn->conn.socket_fd, POLLIN, 0};
 
-            FD_ZERO(&read_fds);
-            FD_SET(conn->conn.socket_fd, &read_fds);
-
-            tv.tv_sec = conn->ctx->network_read_timeout / 1000;
-            tv.tv_usec = (conn->ctx->network_read_timeout % 1000) * 1000;
-
-            num_of_bytes = select(conn->conn.socket_fd + 1, &read_fds, nullptr, nullptr, &tv);
+            num_of_bytes = poll(&read_fd, 1, static_cast<int>(conn->ctx->network_read_timeout));
 
             if (num_of_bytes == -1) {
                 if (errno == EINTR)
@@ -342,7 +339,8 @@ ssize_t connection_write(struct v2g_connection* conn, unsigned char* buf, size_t
     while (bytes_written < count) {
         int num_of_bytes;
 
-        num_of_bytes = (int)write(conn->conn.socket_fd, &buf[bytes_written], count - bytes_written);
+        // MSG_NOSIGNAL: an EV that closed its socket must surface as EPIPE, not kill the process
+        num_of_bytes = (int)send(conn->conn.socket_fd, &buf[bytes_written], count - bytes_written, MSG_NOSIGNAL);
 
         if (num_of_bytes == -1) {
             if (errno == EINTR)
@@ -359,6 +357,61 @@ ssize_t connection_write(struct v2g_connection* conn, unsigned char* buf, size_t
     }
 
     return (ssize_t)bytes_written;
+}
+
+namespace {
+
+struct ConnectionSlot {
+    int socket_fd;
+    bool in_session;
+};
+
+// connection threads of the TCP and TLS servers, oldest first
+everest::lib::util::monitor<std::vector<ConnectionSlot>> connection_slots;
+
+auto find_slot(std::vector<ConnectionSlot>& slots, int socket_fd) {
+    return std::find_if(slots.begin(), slots.end(),
+                        [socket_fd](const auto& slot) { return slot.socket_fd == socket_fd; });
+}
+
+} // namespace
+
+bool connection_slot_acquire(int socket_fd) {
+    auto slots = connection_slots.handle();
+    if (slots->size() >= MAX_CONNECTIONS) {
+        const auto oldest =
+            std::find_if(slots->begin(), slots->end(), [](const auto& slot) { return not slot.in_session; });
+        if (oldest == slots->end()) {
+            return false;
+        }
+        dlog(DLOG_LEVEL_WARNING, "Too many connections, closing the oldest one without a v2g-session");
+        // wakes its connection thread, which still owns the socket and closes it
+        shutdown(oldest->socket_fd, SHUT_RDWR);
+        slots->erase(oldest);
+    }
+    slots->push_back({socket_fd, false});
+    return true;
+}
+
+void connection_slot_claim_session(int socket_fd) {
+    auto slots = connection_slots.handle();
+    const auto slot = find_slot(*slots, socket_fd);
+    if (slot != slots->end()) {
+        slot->in_session = true;
+    }
+}
+
+bool connection_slot_held(int socket_fd) {
+    auto slots = connection_slots.handle();
+    return find_slot(*slots, socket_fd) != slots->end();
+}
+
+void connection_slot_release(int socket_fd) {
+    auto slots = connection_slots.handle();
+    const auto slot = find_slot(*slots, socket_fd);
+    if (slot != slots->end()) {
+        slots->erase(slot);
+    }
 }
 
 static void wait_for_peer_close(int fd, int timeout_ms) {
@@ -389,7 +442,9 @@ void* connection_handle_tcp(void* data) {
     dlog(DLOG_LEVEL_INFO, "Multiplexer: Closing TCP connection");
 
     /* some EV's did not like the immediate shutdown. Therefore we sleep for 2 seconds */
-    std::this_thread::sleep_for(std::chrono::seconds(2));
+    if (connection_slot_held(conn->conn.socket_fd)) { // evicted connections end without delay
+        std::this_thread::sleep_for(std::chrono::seconds(2));
+    }
 
     if (shutdown(conn->conn.socket_fd, SHUT_WR) == -1) {
         dlog(DLOG_LEVEL_ERROR, "shutdown() failed: %s", strerror(errno));
@@ -399,6 +454,7 @@ void* connection_handle_tcp(void* data) {
     /* wait briefly for peer FIN or timeout */
     wait_for_peer_close(conn->conn.socket_fd, CLIENT_FIN_TIMEOUT);
 
+    connection_slot_release(conn->conn.socket_fd);
     if (close(conn->conn.socket_fd) == -1) {
         dlog(DLOG_LEVEL_ERROR, "close() failed: %s", strerror(errno));
         error_occurred = true;
@@ -416,23 +472,33 @@ void* connection_handle_tcp(void* data) {
  */
 void* connection_handle(void* data) {
     struct v2g_connection* conn = static_cast<struct v2g_connection*>(data);
-    int rv = 0;
 
-    bool iso20{false};
+    const auto release_buffer = [conn](uint8_t* buffer) {
+        free(buffer);
+        conn->buffer = nullptr;
+    };
+    std::unique_ptr<uint8_t, decltype(release_buffer)> buffer{static_cast<uint8_t*>(malloc(DEFAULT_BUFFER_SIZE)),
+                                                              release_buffer};
+    if (not buffer) {
+        return nullptr;
+    }
+    conn->buffer = buffer.get();
 
-    conn->buffer = static_cast<uint8_t*>(malloc(DEFAULT_BUFFER_SIZE));
-    if (not conn->buffer) {
+    const auto handshake = v2g_detect_iso20_support(conn);
+    if (handshake == HandshakeResult::Failed) {
+        dlog(DLOG_LEVEL_ERROR, "No valid SupportedAppProtocolReq received, closing connection");
         return nullptr;
     }
 
-    /* check if the v2g-session is already running in another thread, if not, handle v2g-connection */
-    if (conn->ctx->state == 0) {
-        iso20 = v2g_detect_iso20_support(conn);
-    } else {
-        rv = ERROR_SESSION_ALREADY_STARTED;
-        dlog(DLOG_LEVEL_WARNING, "%s", "Closing tcp-connection. v2g-session is already running");
+    /* claimed only after a valid handshake, so a silent peer cannot lock out the EV */
+    bool session_active{false};
+    if (not conn->ctx->session_active.compare_exchange_strong(session_active, true)) {
+        dlog(DLOG_LEVEL_WARNING, "%s", "Closing connection. v2g-session is already running");
+        return nullptr;
     }
+    connection_slot_claim_session(conn->is_tls_connection ? conn->tls_connection->socket() : conn->conn.socket_fd);
 
+    const bool iso20 = handshake == HandshakeResult::Iso20Offered;
     uint16_t port = conn->ctx->proxy_port_iso2;
     conn->ctx->selected_iso20 = false;
     const bool iso20_proxy_enabled = conn->ctx->iso20_proxy_enabled;
@@ -451,8 +517,10 @@ void* connection_handle(void* data) {
     if (proxy_fd > 0) {
         EVLOG_info << "Connected to proxy module for " << (conn->ctx->selected_iso20 ? "ISO-20" : "ISO-2/DIN");
         conn->proxy(conn, proxy_fd);
+        close(proxy_fd);
     }
 
+    conn->ctx->session_active = false;
     return nullptr;
 }
 
@@ -463,7 +531,9 @@ int connection_proxy(struct v2g_connection* conn, int proxy_fd) {
     int ev_fd = conn->conn.socket_fd;
 
     // SupportedAppProtocolReq message is still in buffer, we need to forward it to the external stack
-    write(proxy_fd, conn->buffer, conn->payload_len + 8);
+    if (not proxy_write(proxy_fd, conn->buffer, conn->payload_len + 8)) {
+        return -1;
+    }
 
     struct pollfd poll_list[2];
     poll_list[0].fd = proxy_fd;
@@ -490,11 +560,13 @@ int connection_proxy(struct v2g_connection* conn, int proxy_fd) {
             // we can read from proxy (connection to local ISO module)
             int nrbytes = read(proxy_fd, buf, sizeof(buf));
 
-            if (nrbytes == 0) {
+            if (nrbytes <= 0) {
                 break;
             }
             // write data to EV
-            nrbytes = conn->write(conn, buf, nrbytes);
+            if (conn->write(conn, buf, nrbytes) != nrbytes) {
+                return -1;
+            }
         }
 
         if (poll_list[0].revents & POLLERR or poll_list[0].revents & POLLHUP or poll_list[0].revents & POLLNVAL) {
@@ -505,11 +577,13 @@ int connection_proxy(struct v2g_connection* conn, int proxy_fd) {
         if (poll_list[1].revents & POLLIN) {
             // we can read from EV
             int nrbytes = conn->read(conn, buf, sizeof(buf), false);
-            if (nrbytes == 0) {
+            if (nrbytes <= 0) {
                 break;
             }
             // write data to proxy
-            nrbytes = write(proxy_fd, buf, nrbytes);
+            if (not proxy_write(proxy_fd, buf, nrbytes)) {
+                return -1;
+            }
         }
 
         if (poll_list[1].revents & POLLERR or poll_list[1].revents & POLLHUP or poll_list[1].revents & POLLNVAL) {
@@ -518,7 +592,6 @@ int connection_proxy(struct v2g_connection* conn, int proxy_fd) {
         }
     }
 
-    close(proxy_fd);
     return 0;
 }
 
@@ -576,11 +649,19 @@ static void* connection_server(void* data) {
                  strerror(errno));
         }
 
+        if (not connection_slot_acquire(conn->conn.socket_fd)) {
+            dlog(DLOG_LEVEL_WARNING, "Too many connections, closing connection");
+            close(conn->conn.socket_fd);
+            continue;
+        }
+
         // store the port to create a udp socket
         conn->ctx->udp_port = ntohs(addr.sin6_port);
 
         if (pthread_create(&conn->thread_id, &attr, connection_handle_tcp, conn) != 0) {
             dlog(DLOG_LEVEL_ERROR, "pthread_create() failed: %s", strerror(errno));
+            connection_slot_release(conn->conn.socket_fd);
+            close(conn->conn.socket_fd);
             continue;
         }
 

@@ -1,0 +1,33 @@
+name: Workflow Security Audit
+
+on:
+  workflow_call:
+    inputs:
+      runner:
+        description: 'Which runner to use'
+        required: false
+        default: 'ubuntu-24.04'
+        type: string
+
+jobs:
+  zizmor:
+    name: zizmor
+    runs-on: ${{ inputs.runner }}
+    permissions:
+      contents: read
+    env:
+      ZIZMOR_VERSION: '1.31.0'
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Install zizmor
+        run: |
+          python3 -m venv "$RUNNER_TEMP/zizmor"
+          "$RUNNER_TEMP/zizmor/bin/pip" install --quiet "zizmor==${ZIZMOR_VERSION}"
+      # Offline: the online audits query the GitHub API and would make the result
+      # depend on rate limits and on the state of third-party repositories.
+      - name: Audit workflows and actions
+        run: |
+          "$RUNNER_TEMP/zizmor/bin/zizmor" --offline --format github .

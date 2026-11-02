@@ -255,6 +255,13 @@ struct EnableDisableSource {
     int32_t enable_priority;
 };
 
+struct Reservation {
+    int32_t id;
+    std::string id_token;
+    std::optional<std::string> parent_id_token;
+    std::string expiry_time;
+};
+
 struct SessionEvent {
     std::string uuid;
     std::string timestamp;
@@ -268,6 +275,7 @@ struct SessionEvent {
     std::optional<ChargingStateChangedEvent> charging_state_changed_event;
     std::optional<AuthorizationEvent> authorization_event;
     std::optional<EnableDisableSource> source;
+    std::optional<Reservation> reservation;
 };
 
 struct HlcSessionFailedEvent {
@@ -320,6 +328,7 @@ struct SessionInfo {
     std::optional<std::string> session_end_time;
     std::optional<std::string> transaction_end_time;
     bool reserved{false};
+    std::optional<Reservation> reservation;
 };
 
 } // namespace everest::lib::API::V1_0::types::evse_manager

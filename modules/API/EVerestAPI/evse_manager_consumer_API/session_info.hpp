@@ -49,12 +49,15 @@ private:
     std::chrono::time_point<date::utc_clock> transaction_start_time_point; ///< Start of the transaction
     std::chrono::time_point<date::utc_clock> transaction_end_time_point;   ///< End of the transaction
 
+    void handle_reservation_start(const types::evse_manager::SessionEvent& session_event);
+    void clear_reservation();
     void handle_session_started(const types::evse_manager::SessionEvent& session_event);
     void handle_session_finished(const types::evse_manager::SessionEvent& session_event);
     void handle_transaction_started(const types::evse_manager::SessionEvent& session_event);
     void handle_transaction_finished(const types::evse_manager::SessionEvent& session_event);
     void set_latest_energy_import_wh(int32_t latest_energy_wh_import);
     void set_latest_energy_export_wh(int32_t latest_export_energy_wh);
+    void update_totals();
     bool is_session_running();
 };
 

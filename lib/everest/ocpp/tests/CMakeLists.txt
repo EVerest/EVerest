@@ -37,6 +37,7 @@ target_include_directories(libocpp_unit_tests PRIVATE
 
 target_link_libraries(libocpp_unit_tests PRIVATE
         ocpp
+        ryml::ryml
         ${GTEST_LIBRARIES}
 )
 

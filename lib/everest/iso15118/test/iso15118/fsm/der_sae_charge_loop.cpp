@@ -355,13 +355,13 @@ SCENARIO("ISO15118-20 der sae ac charge loop state transitions") {
         }
 
         THEN("The present active power taken from the control event is reported back") {
-            const auto& res_mode =
+            const auto res_mode =
                 std::get<Scheduled_DER_Res>(ctx.get_response<ChargeLoopResponse>().value().control_mode);
             REQUIRE(dt::from_RationalNumber(res_mode.present_active_power.value()) == 12000.0f);
         }
 
         THEN("Only the enter service block of the DER control is sent") {
-            const auto& der_control =
+            const auto der_control =
                 std::get<Scheduled_DER_Res>(ctx.get_response<ChargeLoopResponse>().value().control_mode)
                     .der_control_cl_res;
             REQUIRE(der_control.enter_service_cl_res.permit_service == true);
@@ -825,7 +825,7 @@ SCENARIO("ISO15118-20 der sae ac charge loop state transitions") {
                     state_helper.handle_request(make_scheduled_request(ctx.session.get_id()));
                     fsm.feed(d20::Event::V2GTP_MESSAGE);
 
-                    const auto& second_der_control =
+                    const auto second_der_control =
                         std::get<Scheduled_DER_Res>(ctx.get_response<ChargeLoopResponse>().value().control_mode)
                             .der_control_cl_res;
                     REQUIRE(second_der_control.voltage_trip.has_value() == false);
@@ -930,7 +930,7 @@ SCENARIO("ISO15118-20 der sae ac charge loop state transitions") {
                 state_helper.handle_request(make_scheduled_request(ctx.session.get_id()));
                 fsm.feed(d20::Event::V2GTP_MESSAGE);
 
-                const auto& second_mode =
+                const auto second_mode =
                     std::get<Scheduled_DER_Res>(ctx.get_response<ChargeLoopResponse>().value().control_mode);
                 REQUIRE(second_mode.grid_connection_mode.has_value() == false);
                 REQUIRE(second_mode.required_der_operating_mode.has_value() == false);
@@ -963,7 +963,7 @@ SCENARIO("ISO15118-20 der sae ac charge loop state transitions") {
                 state_helper.handle_request(make_scheduled_request(ctx.session.get_id()));
                 fsm.feed(d20::Event::V2GTP_MESSAGE);
 
-                const auto& second_mode =
+                const auto second_mode =
                     std::get<Scheduled_DER_Res>(ctx.get_response<ChargeLoopResponse>().value().control_mode);
                 REQUIRE(second_mode.required_der_operating_mode.has_value() == false);
                 REQUIRE(second_mode.grid_connection_mode.has_value() == false);
@@ -1090,7 +1090,7 @@ SCENARIO("ISO15118-20 der sae ac charge loop state transitions") {
                     state_helper.handle_request(make_dynamic_request(ctx.session.get_id()));
                     fsm.feed(d20::Event::V2GTP_MESSAGE);
 
-                    const auto& second_der_control =
+                    const auto second_der_control =
                         std::get<Dynamic_DER_Res>(ctx.get_response<ChargeLoopResponse>().value().control_mode)
                             .der_control_cl_res;
                     REQUIRE(second_der_control.voltage_trip.has_value() == false);

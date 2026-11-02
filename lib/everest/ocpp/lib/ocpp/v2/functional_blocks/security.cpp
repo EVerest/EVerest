@@ -98,7 +98,7 @@ Security::on_get_15118_ev_certificate_request(const Get15118EVCertificateRequest
         return response;
     }
 
-    EVLOG_debug << "Received Get15118EVCertificateRequest " << request;
+    EVLOG_debug << "Received Get15118EVCertificateRequest";
     auto future_res =
         this->context.message_dispatcher.dispatch_call_async(ocpp::Call<Get15118EVCertificateRequest>(request));
 
@@ -109,7 +109,7 @@ Security::on_get_15118_ev_certificate_request(const Get15118EVCertificateRequest
     }
 
     const auto response_message = future_res.get();
-    EVLOG_debug << "Received Get15118EVCertificateResponse " << response_message.message;
+    EVLOG_debug << "Received Get15118EVCertificateResponse";
     if (response_message.messageType != MessageType::Get15118EVCertificateResponse) {
         response.status = Iso15118EVCertificateStatusEnum::Failed;
         return response;
@@ -550,7 +550,7 @@ void Security::stop_awaiting_certificate_signed() {
 }
 
 void Security::handle_get_installed_certificate_ids_req(Call<GetInstalledCertificateIdsRequest> call) {
-    EVLOG_debug << "Received GetInstalledCertificateIdsRequest: " << call.msg << "\nwith messageId: " << call.uniqueId;
+    EVLOG_debug << "Received GetInstalledCertificateIdsRequest with messageId: " << call.uniqueId;
     GetInstalledCertificateIdsResponse response;
 
     const auto msg = call.msg;
@@ -590,7 +590,7 @@ void Security::handle_get_installed_certificate_ids_req(Call<GetInstalledCertifi
 }
 
 void Security::handle_install_certificate_req(Call<InstallCertificateRequest> call) {
-    EVLOG_debug << "Received InstallCertificateRequest: " << call.msg << "\nwith messageId: " << call.uniqueId;
+    EVLOG_debug << "Received InstallCertificateRequest with messageId: " << call.uniqueId;
 
     const auto msg = call.msg;
     InstallCertificateResponse response;
@@ -615,7 +615,7 @@ void Security::handle_install_certificate_req(Call<InstallCertificateRequest> ca
 }
 
 void Security::handle_delete_certificate_req(Call<DeleteCertificateRequest> call) {
-    EVLOG_debug << "Received DeleteCertificateRequest: " << call.msg << "\nwith messageId: " << call.uniqueId;
+    EVLOG_debug << "Received DeleteCertificateRequest with messageId: " << call.uniqueId;
 
     const auto msg = call.msg;
     DeleteCertificateResponse response;

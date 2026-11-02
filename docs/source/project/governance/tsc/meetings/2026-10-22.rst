@@ -1,0 +1,86 @@
+```rst
+EVerest TSC Meeting - 22 October 2026
+=====================================
+
+
+Attendance
+----------
+
+
+Voting Members
+~~~~~~~~~~~~~~
+
+- [x] (Chair) Marco Möller [Pionix]
+- [ ] Cornelius Claussen [Pionix]
+- [x] Kai-Uwe Hermann [Pionix]
+- [x] Piet Gömpel [Pionix]
+- [x] Moritz Barsnick [chargebyte]
+- [x] Holger Rapp [Qwello]
+- [ ] S. Shankari [NREL]
+
+
+Other Attendees
+~~~~~~~~~~~~~~~
+- Robert de Leeuw [Pionix]
+- Martin Litré [Pionix]
+- Gustavo Ramirez [Kempower]
+- Nuno Costa [Efacec]
+
+
+Agenda
+------
+
+- Highlights of the month
+- EVerest Development Update
+    - Core Updates
+    - Cloud Communication WG
+    - Car Communication WG
+- Vulnerability Management Team Update
+- EVerest stable release 2026.10.0
+    - Release highlights
+    - Compliance testing and federated testing
+    - Status and timeline (rc1 today, testing window until 2026-11-20)
+- EVerest and AFIR
+- OSS in the age of AI: contribution, review and governance
+- EU Roadmap: Smart and Bidirectional Charging (D4E / STF / CoW, sub group 8 on open source)
+
+- Events Recap
+    - EU Workshop: Integration of charging stations in fleet management (Brussels, Oct 7)
+- Upcoming Events
+    - EVerest CPO Forum (online, Nov 3, 17:00 CET)
+    - The Connected Homes Energy Forum (Berlin, Oct 26-27)
+    - Electronica 2026 (Munich, Nov 10-13)
+    - 5th joint meeting of D4E, STF and CoW on bidirectional charging (Brussels, Nov 23)
+    - V2G Leadership Summit (Brussels, Nov 24)
+    - EU Open Source Week 2027 (Brussels, Jan 25 - Feb 1)
+    - FOSDEM 2027 (Brussels, Jan 30-31)
+
+- Next TSC on November 26th 2026 at 5pm CET
+
+Action Items
+------------
+- Send out recording and slides to EVerest mailing list
+- All: test 2026.10.0-rc1 on your hardware and report regressions by 2026-11-20
+- All: consider adding a federated test node; reach out to the TSC for support
+- Release 2026.10.0 before the next TSC (2026-11-26)
+- VMT: publish patch release 2026.02.2 with additional security fixes
+- Tell everest@lists.lfenergy.org where you will show EVerest
+
+
+Recording:
+----------
+- `https://youtu.be/3bN2bqngyTQ <https://youtu.be/3bN2bqngyTQ>`_
+
+
+Notes
+-----
+Decisions:
+- none
+
+Other:
+- 2026.10.0-rc1 published today: about 690 commits, 47 contributors (22 first-time), 3 breaking changes and 13 deprecations with migration guides
+- Release scope: merged C++ ISO 15118 stack (DIN 70121, -2, -20), OCPPmulti (1.6, 2.0.1, 2.1), AC DER / V2X, new EvseSlac module, MCS support, manager overhaul, security hardening
+- AFIR: 11 of 12 charger-side obligations ready; already covers the 1 Jan 2027 ISO 15118-20 mandate
+- OSS and AI: maintainers flooded by PRs; open question how merit-based step-up to committer/maintainer should evolve when review is the bottleneck
+- EU Roadmap SG 8: draft due 7 Nov, presented at V2G Leaders Europe 24 Nov
+```

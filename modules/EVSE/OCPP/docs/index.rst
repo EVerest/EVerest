@@ -439,7 +439,7 @@ The following module configuration parameters are relevant for device model back
   (default: ``device_model_migrations``, resolved against the module share path)
 * **DeviceModelConfigPath**: path to the component-config directory that defines the device model structure
   and optional default values (default: ``component_config``, resolved against the module share path)
-* **DeviceModelConfigMappings**: optional YAML file mapping non-standard OCPP 1.6 keys to device model
+* **Ocpp16KeyMappingsPath**: optional YAML file mapping non-standard OCPP 1.6 keys to device model
   component/variable targets; only used with **"device_model_with_migration"**. The built-in mapping for
   standard OCPP 1.6 keys is documented in
   `lib/everest/ocpp/config/v16_to_v2_mapping.md <https://github.com/EVerest/everest-core/blob/main/lib/everest/ocpp/config/v16_to_v2_mapping.md>`_.

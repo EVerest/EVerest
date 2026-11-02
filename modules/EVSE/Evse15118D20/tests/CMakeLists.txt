@@ -20,6 +20,7 @@ target_sources(${TEST_TARGET_NAME} PRIVATE
     DerSaeRelayTest.cpp
     GridEventTest.cpp
     AcEvFeedbackTest.cpp
+    V2xChargingParametersTest.cpp
     ../charger/der_setup.cpp
     ../charger/der_relay.cpp
     ../charger/der_relay_sae.cpp
@@ -32,7 +33,7 @@ target_link_libraries(${TEST_TARGET_NAME} PRIVATE
     GTest::gtest_main
     everest::log
     everest::framework
-    iso15118::iso15118
+    everest::iso15118
 )
 
 add_test(${TEST_TARGET_NAME} ${TEST_TARGET_NAME})
@@ -55,7 +56,7 @@ target_include_directories(${TEST_TARGET_NAME} PRIVATE
 
 target_link_libraries(${TEST_TARGET_NAME} PRIVATE
     GTest::gtest_main
-    iso15118::iso15118
+    everest::iso15118
     everest::framework
 )
 

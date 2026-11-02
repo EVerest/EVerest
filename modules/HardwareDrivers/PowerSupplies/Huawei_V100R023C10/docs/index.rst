@@ -122,27 +122,18 @@ It is used to test the software stack without needing the actual hardware.
 
 It opens a socket on port 8502 to accept connections from the everest module and receives and answers goose messages.
 
-The mock is built together with the everest module, but can also be build separately if needed.
+The mock is built together with the everest module when ``BUILD_TESTING`` and ``BUILD_ACCEPTANCE_TESTS`` are set to
+``ON`` in cmake. It uses the ``everest::io`` MQTT client, so a standalone build of ``fusion_charger_lib`` does not
+build it.
 The mock is not installed by default but can be if ``INSTALL_FUSION_CHARGER_MOCK`` is set to ``ON`` in cmake.
 
 Note that the mock uses a constant hmac key instead of generating a new one for each charge session.
-
-Build separately from module
-----------------------------
-
-.. code-block:: bash
-
-    cd modules/HardwareDrivers/PowerSupplies/Huawei_V100R023C10/fusion_charger_lib
-    mkdir build
-    cd build
-    cmake ..
-    make -j$(nproc)
 
 Binary is located in:
 
 .. code-block:: bash
 
-    modules/HardwareDrivers/PowerSupplies/Huawei_V100R023C10/fusion_charger_lib/build/fusion-charger-dispenser-library/power_stack_mock/fusion_charger_mock
+    build/modules/HardwareDrivers/PowerSupplies/Huawei_V100R023C10/fusion_charger_lib/fusion-charger-dispenser-library/power_stack_mock/fusion_charger_mock
 
 Mock options
 ------------
@@ -156,8 +147,9 @@ The mock has a few environment variables (enable or disable by setting them to `
 - ``FUSION_CHARGER_MOCK_ETH``: The ethernet interface to use for receiving and sending goose messages. Defaults to
   ``veth0``.
 - ``FUSION_CHARGER_MOCK_PORT``: The Modbus TCP port to listen on. Defaults to ``8502``.
-- ``FUSION_CHARGER_MOCK_MQTT_HOST``: MQTT broker hostname or IP address. When set together with 
-  ``FUSION_CHARGER_MOCK_MQTT_PORT``, the mock will publish power request data via MQTT.
+- ``FUSION_CHARGER_MOCK_MQTT_HOST``: MQTT broker hostname or IP address. When set together with
+  ``FUSION_CHARGER_MOCK_MQTT_PORT``, the mock will publish power request data via MQTT. If the broker is not
+  reachable, the mock keeps running and retries the connection every second.
 - ``FUSION_CHARGER_MOCK_MQTT_PORT``: MQTT broker port. Required together with ``FUSION_CHARGER_MOCK_MQTT_HOST`` to 
   enable MQTT publishing.
 - ``FUSION_CHARGER_MOCK_MQTT_BASE_TOPIC``: Base topic for MQTT publishing. Defaults to ``fusion_charger_mock/``. 

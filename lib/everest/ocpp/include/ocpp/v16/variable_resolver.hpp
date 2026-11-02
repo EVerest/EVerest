@@ -10,7 +10,7 @@
 #include <utility>
 
 #include <ocpp/v2/comparators.hpp>
-#include <ocpp/v2/ocpp16_custom_config_mappings.hpp>
+#include <ocpp/v2/ocpp16_key_mappings.hpp>
 #include <ocpp/v2/ocpp_types.hpp>
 
 namespace ocpp::v16 {
@@ -36,9 +36,9 @@ enum class CVClass {
 ///        1.6 stack (see CVClass::ConnectionConfig): NetworkConfiguration/<slot>, the OCPPCommCtrlr
 ///        profile selectors and the SecurityCtrlr connection fallbacks.
 ///
-/// Custom config mappings must not target these CVs: the key path writes the device model without
+/// Custom key mappings must not target these CVs: the key path writes the device model without
 /// the RebootRequired/reconnect semantics the standardized keys and canonical CVs carry.
-/// load_ocpp16_custom_config_mappings_from_yaml rejects such mappings.
+/// load_ocpp16_key_mappings_from_yaml rejects such mappings.
 bool is_connection_config_cv(const ocpp::v2::Component& component, const ocpp::v2::Variable& variable);
 
 /// \brief Result of a reverse (CV -> 1.6 key) lookup.
@@ -56,7 +56,7 @@ struct ReverseResult {
 ///        including operator-provided custom mappings.
 class VariableResolver {
 public:
-    explicit VariableResolver(ocpp::v2::Ocpp16CustomConfigMappings custom_mappings);
+    explicit VariableResolver(ocpp::v2::Ocpp16KeyMappings custom_mappings);
 
     /// \brief Forward lookup: standard key table first (keys with no v2 mapping yield nullopt), then custom mappings.
     std::optional<std::pair<ocpp::v2::Component, ocpp::v2::Variable>> key_to_cv(const std::string& key) const;
@@ -68,7 +68,7 @@ public:
     CVClass classify(const ocpp::v2::Component& component, const ocpp::v2::Variable& variable) const;
 
 private:
-    ocpp::v2::Ocpp16CustomConfigMappings custom_mappings;
+    ocpp::v2::Ocpp16KeyMappings custom_mappings;
     // ocpp/v2/comparators.hpp ordering keeps instance/evse-qualified CVs distinct
     std::map<std::pair<ocpp::v2::Component, ocpp::v2::Variable>, ReverseResult> custom_reverse;
 };

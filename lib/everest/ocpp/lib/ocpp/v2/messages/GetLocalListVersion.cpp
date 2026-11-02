@@ -8,6 +8,8 @@
 #include <ostream>
 #include <string>
 
+#include <ocpp/common/json_number.hpp>
+
 using json = nlohmann::json;
 
 namespace ocpp {
@@ -60,7 +62,7 @@ void to_json(json& j, const GetLocalListVersionResponse& k) {
 
 void from_json(const json& j, GetLocalListVersionResponse& k) {
     // the required parts of the message
-    k.versionNumber = j.at("versionNumber");
+    k.versionNumber = ocpp::integer_from_json(j.at("versionNumber"));
 
     // the optional parts of the message
     if (j.contains("customData")) {

@@ -52,26 +52,26 @@ void ComplexRegisterRegistry::on_write(std::uint16_t address, const std::vector<
         throw std::runtime_error("Data size must be a multiple of 2 bytes");
     }
 
+    // unit: 2b
+    const std::uint32_t write_start = address;
+    // unit: 2b, exclusive
+    const std::uint32_t write_end = write_start + data.size() / 2;
+
     for (auto& reg : get_all_registers()) {
         // unit: 2b
-        std::uint16_t start_address = reg->get_start_address();
-        // unit: 2b
-        std::uint16_t end_address = start_address + reg->get_size() - 1;
-        // unit: 2b
-        std::uint16_t data_size = data.size() / 2;
+        const std::uint32_t reg_start = reg->get_start_address();
+        // unit: 2b, exclusive
+        const std::uint32_t reg_end = reg_start + reg->get_size();
 
-        // check overlap with write region
-        if (address + data_size <= start_address || address > end_address) { // todo: check this condition
+        if (std::max(write_start, reg_start) >= std::min(write_end, reg_end)) {
             continue;
         }
 
-        // unit 2b
-        std::int32_t vector_offset = address - start_address;
-        if (vector_offset < 0) {
-            auto data_offset = std::vector<std::uint8_t>(data.begin() - vector_offset * 2, data.end());
-            reg->on_write(0, data_offset);
+        if (write_start < reg_start) {
+            const auto skipped_bytes = static_cast<std::ptrdiff_t>(reg_start - write_start) * 2;
+            reg->on_write(0, std::vector<std::uint8_t>(data.begin() + skipped_bytes, data.end()));
         } else {
-            reg->on_write(vector_offset, data);
+            reg->on_write(write_start - reg_start, data);
         }
     }
 }
@@ -84,43 +84,28 @@ std::vector<std::uint8_t> ComplexRegisterRegistry::on_read(std::uint16_t address
     std::vector<std::uint8_t> result(size * 2, 0);
     std::vector<bool> is_empty(size * 2, true);
 
-    std::uint32_t read_start_address_b = address * 2;
-    std::uint32_t read_size_b = size * 2;
+    // byte addresses, end exclusive
+    const std::uint32_t read_start_b = std::uint32_t{address} * 2;
+    const std::uint32_t read_end_b = read_start_b + result.size();
 
     for (auto& reg : get_all_registers()) {
-        // unit: 2b
-        std::uint16_t start_address = reg->get_start_address();
-        // unit: 2b
-        std::uint16_t end_address = start_address + reg->get_size() - 1;
+        const std::uint32_t reg_start_b = std::uint32_t{reg->get_start_address()} * 2;
+        const std::uint32_t reg_end_b = reg_start_b + std::uint32_t{reg->get_size()} * 2;
 
-        // check overlap with read region
-        if (address + size <= start_address || address > end_address) {
+        const std::uint32_t copy_start_b = std::max(read_start_b, reg_start_b);
+        const std::uint32_t copy_end_b = std::min(read_end_b, reg_end_b);
+        if (copy_start_b >= copy_end_b) {
             continue;
         }
 
-        std::uint32_t data_start_address_b = start_address * 2;
-        std::uint32_t data_end_address_b = end_address * 2;
+        const std::vector<std::uint8_t> data = reg->on_read();
+        const std::uint32_t data_end_b = std::min<std::uint32_t>(copy_end_b, reg_start_b + data.size());
 
-        std::vector<std::uint8_t> data = reg->on_read();
-
-        // delete data before read_start_address_b
-        if (read_start_address_b > data_start_address_b) {
-            data.erase(data.begin(), data.begin() + (read_start_address_b - data_start_address_b));
-            data_start_address_b = read_start_address_b;
-        }
-
-        // delete data after read_end_address_b
-        if (read_start_address_b + read_size_b < data_end_address_b) {
-            data.erase(data.begin() + (read_start_address_b + read_size_b - data_start_address_b), data.end());
-            data_end_address_b = read_start_address_b + read_size_b;
-        }
-
-        // copy data to result
-        std::int32_t result_offset = data_start_address_b - read_start_address_b;
-        for (std::uint32_t i = 0; i < data.size(); ++i) {
-            if (is_empty[i + result_offset]) {
-                result[i + result_offset] = data[i];
-                is_empty[i + result_offset] = false;
+        for (std::uint32_t byte_address = copy_start_b; byte_address < data_end_b; ++byte_address) {
+            const std::uint32_t result_index = byte_address - read_start_b;
+            if (is_empty[result_index]) {
+                result[result_index] = data[byte_address - reg_start_b];
+                is_empty[result_index] = false;
             }
         }
     }

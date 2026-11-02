@@ -334,6 +334,10 @@ as link to its dependencies. A fairly simple file that includes
     endif()
 
 
+Without EDM, ``find_package(everest-core)`` picks up an installed everest-core and provides the
+``everest::`` library targets, the interface definitions and the ``ev_add_project()`` machinery. Modules that
+use libocpp or libiso15118 additionally ``find_package(everest-ocpp)`` / ``find_package(everest-iso15118)``.
+
 Adding ``modules/CMakeLists.txt``
 ---------------------------------
 
@@ -358,12 +362,17 @@ handled by EDM.
 
 In order for this to work, you need to add a dependency file for EDM, called
 ``dependencies.yaml``, in the project root directory. For example, listing
-only ``EVerest`` as a dependency looks like this::
+only ``EVerest`` as a dependency, built from the checkout in your workspace,
+looks like this::
 
     ---
     EVerest:
       git: https://github.com/EVerest/EVerest.git
       git_tag: main
+      source_dir: ../EVerest
+
+``source_dir`` is relative to the directory of ``dependencies.yaml``. Without
+it, EDM fetches ``EVerest`` at ``git_tag`` from ``git``.
 
 With the above setup taken care of, you are now ready to build the project.
 

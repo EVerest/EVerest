@@ -333,8 +333,16 @@ void ChargePointImpl::on_websocket_connected(const int configuration_slot,
         this->connection_state_changed_callback(true, configuration_slot, network_connection_profile);
     }
     this->publish_default_price(false);
-    this->message_queue->resume(this->message_queue_resume_delay);
+    const bool reconnected_while_booted = this->connection_state == ChargePointConnectionState::Booted;
+    // Update connection state before resuming, otherwise a fast BootNotification.conf can be dropped as received while
+    // disconnected
     this->connected_callback();
+    this->message_queue->resume(this->message_queue_resume_delay);
+    if (reconnected_while_booted) {
+        // According to spec, a charge point should not send a BootNotification.req after a reconnect, still we send
+        // StatusNotification.req for all connectors. Only after resuming: a paused queue would drop them.
+        this->status->trigger_status_notifications();
+    }
 
     // There has been a successful connection so a subsequent
     // InvalidCSMSCertificate should be logged
@@ -1333,16 +1341,14 @@ void ChargePointImpl::connected_callback() {
         std::lock_guard<std::mutex> lock(this->security_profile_switch_mutex);
         this->security_profile_revert_timer.stop();
     }
-    switch (this->connection_state) {
+    switch (this->connection_state.load()) {
     case ChargePointConnectionState::Disconnected: {
         this->connection_state = ChargePointConnectionState::Connected;
         break;
     }
     case ChargePointConnectionState::Booted: {
-        // on_open in a Booted state can happen after a successful reconnect.
-        // according to spec, a charge point should not send a BootNotification after a reconnect
-        // still we send StatusNotification.req for all connectors after a reconnect
-        this->status->trigger_status_notifications();
+        // on_open in a Booted state can happen after a successful reconnect, on_websocket_connected reports the
+        // connector status once the message queue resumed
         break;
     }
     case ChargePointConnectionState::Pending: {
@@ -1358,7 +1364,7 @@ void ChargePointImpl::connected_callback() {
 }
 
 void ChargePointImpl::message_callback(const std::string& message) {
-    EVLOG_debug << "Received Message: " << message;
+    EVLOG_debug << "Received message with length: " << message.size();
 
     EnhancedMessage<v16::MessageType> enhanced_message;
     try {
@@ -1408,7 +1414,7 @@ void ChargePointImpl::message_callback(const std::string& message) {
             return;
         }
 
-        switch (this->connection_state) {
+        switch (this->connection_state.load()) {
         case ChargePointConnectionState::Disconnected: {
             EVLOG_error << "Received a message in disconnected state, this cannot be correct";
             break;
@@ -1702,8 +1708,16 @@ void ChargePointImpl::handleBootNotificationResponse(ocpp::CallResult<BootNotifi
     }
 
     if (call_result.msg.status == RegistrationStatus::Accepted) {
-        this->connection_state = ChargePointConnectionState::Booted;
         this->message_queue->set_registration_status_accepted();
+        {
+            auto handle = this->pending_firmware_status.handle();
+            auto& pending = *handle;
+            this->connection_state = ChargePointConnectionState::Booted;
+            if (pending.has_value()) {
+                this->send_firmware_update_status_notification(pending.value());
+                pending.reset();
+            }
+        }
 
         if (this->set_system_time_callback != nullptr) {
             this->set_system_time_callback(call_result.msg.currentTime.to_rfc3339());
@@ -2024,7 +2038,7 @@ bool ChargePointImpl::set_powermeter_public_key(const int32_t connector, const s
 }
 
 void ChargePointImpl::handleChangeAvailabilityRequest(ocpp::Call<ChangeAvailabilityRequest> call) {
-    EVLOG_debug << "Received ChangeAvailabilityRequest: " << call.msg << "\nwith messageId: " << call.uniqueId;
+    EVLOG_debug << "Received ChangeAvailabilityRequest with messageId: " << call.uniqueId;
 
     const auto& request = call.msg;
 
@@ -2044,7 +2058,7 @@ void ChargePointImpl::handleChangeAvailabilityRequest(ocpp::Call<ChangeAvailabil
 }
 
 void ChargePointImpl::handleChangeConfigurationRequest(ocpp::Call<ChangeConfigurationRequest> call) {
-    EVLOG_debug << "Received ChangeConfigurationRequest: " << call.msg << "\nwith messageId: " << call.uniqueId;
+    EVLOG_debug << "Received ChangeConfigurationRequest with messageId: " << call.uniqueId;
 
     if (const auto kv = configuration.get(call.msg.key); kv.has_value() && kv->readonly) {
         ChangeConfigurationResponse response;
@@ -2110,7 +2124,7 @@ void ChargePointImpl::switchSecurityProfile(std::int32_t new_security_profile, s
 }
 
 void ChargePointImpl::handleClearCacheRequest(ocpp::Call<ClearCacheRequest> call) {
-    EVLOG_debug << "Received ClearCacheRequest: " << call.msg << "\nwith messageId: " << call.uniqueId;
+    EVLOG_debug << "Received ClearCacheRequest with messageId: " << call.uniqueId;
 
     ClearCacheResponse response;
 
@@ -2133,7 +2147,7 @@ void ChargePointImpl::handleClearCacheRequest(ocpp::Call<ClearCacheRequest> call
 }
 
 void ChargePointImpl::handleDataTransferRequest(ocpp::Call<DataTransferRequest> call) {
-    EVLOG_debug << "Received DataTransferRequest: " << call.msg << "\nwith messageId: " << call.uniqueId;
+    EVLOG_debug << "Received DataTransferRequest with messageId: " << call.uniqueId;
 
     DataTransferResponse response;
 
@@ -2182,7 +2196,7 @@ void ChargePointImpl::handleDataTransferRequest(ocpp::Call<DataTransferRequest> 
 }
 
 void ChargePointImpl::handleGetConfigurationRequest(ocpp::Call<GetConfigurationRequest> call) {
-    EVLOG_debug << "Received GetConfigurationRequest: " << call.msg << "\nwith messageId: " << call.uniqueId;
+    EVLOG_debug << "Received GetConfigurationRequest with messageId: " << call.uniqueId;
 
     const auto response = this->get_configuration_key(call.msg);
     const ocpp::CallResult<GetConfigurationResponse> call_result(response, call.uniqueId);
@@ -2190,7 +2204,7 @@ void ChargePointImpl::handleGetConfigurationRequest(ocpp::Call<GetConfigurationR
 }
 
 void ChargePointImpl::handleRemoteStartTransactionRequest(ocpp::Call<RemoteStartTransactionRequest> call) {
-    EVLOG_debug << "Received RemoteStartTransactionRequest: " << call.msg << "\nwith messageId: " << call.uniqueId;
+    EVLOG_debug << "Received RemoteStartTransactionRequest with messageId: " << call.uniqueId;
 
     RemoteStartTransactionResponse response;
     std::vector<std::int32_t> referenced_connectors;
@@ -2303,40 +2317,8 @@ void ChargePointImpl::handleRemoteStartTransactionRequest(ocpp::Call<RemoteStart
     }
 }
 
-bool ChargePointImpl::validate_against_cache_entries(CiString<20> id_tag) {
-    try {
-        const auto cache_entry_opt = this->database_handler->get_authorization_cache_entry(id_tag);
-        if (!cache_entry_opt.has_value()) {
-            return false;
-        }
-        auto cache_entry = cache_entry_opt.value();
-        const auto expiry_date_opt = cache_entry.expiryDate;
-
-        if (cache_entry.status != AuthorizationStatus::Accepted) {
-            return false;
-        }
-        if (!expiry_date_opt.has_value()) {
-            return true;
-        }
-        const auto expiry_date = expiry_date_opt.value();
-        if (expiry_date < ocpp::DateTime()) {
-            cache_entry.status = AuthorizationStatus::Expired;
-            try {
-                this->database_handler->insert_or_update_authorization_cache_entry(id_tag, cache_entry);
-            } catch (const QueryExecutionException& e) {
-                EVLOG_warning << "Could not insert or update authorization cache entry: " << e.what();
-            }
-            return false;
-        }
-        return true;
-    } catch (const QueryExecutionException& e) {
-        EVLOG_warning << "Could not fetch authorization cache entry: " << e.what();
-    }
-    return false;
-}
-
 void ChargePointImpl::handleRemoteStopTransactionRequest(ocpp::Call<RemoteStopTransactionRequest> call) {
-    EVLOG_debug << "Received RemoteStopTransactionRequest: " << call.msg << "\nwith messageId: " << call.uniqueId;
+    EVLOG_debug << "Received RemoteStopTransactionRequest with messageId: " << call.uniqueId;
 
     RemoteStopTransactionResponse response;
     response.status = RemoteStartStopStatus::Rejected;
@@ -2355,7 +2337,7 @@ void ChargePointImpl::handleRemoteStopTransactionRequest(ocpp::Call<RemoteStopTr
 }
 
 void ChargePointImpl::handleResetRequest(ocpp::Call<ResetRequest> call) {
-    EVLOG_debug << "Received ResetRequest: " << call.msg << "\nwith messageId: " << call.uniqueId;
+    EVLOG_debug << "Received ResetRequest with messageId: " << call.uniqueId;
 
     const auto reset_type = call.msg.type;
     ResetResponse response;
@@ -2499,7 +2481,7 @@ void ChargePointImpl::handleStopTransactionResponse(const EnhancedMessage<v16::M
 }
 
 void ChargePointImpl::handleUnlockConnectorRequest(ocpp::Call<UnlockConnectorRequest> call) {
-    EVLOG_debug << "Received UnlockConnectorRequest: " << call.msg << "\nwith messageId: " << call.uniqueId;
+    EVLOG_debug << "Received UnlockConnectorRequest with messageId: " << call.uniqueId;
     const std::lock_guard<std::mutex> lock(this->stop_transaction_mutex);
 
     UnlockConnectorResponse response;
@@ -2531,7 +2513,7 @@ void ChargePointImpl::handleHeartbeatResponse(CallResult<HeartbeatResponse> call
 }
 
 void ChargePointImpl::handleSetChargingProfileRequest(ocpp::Call<SetChargingProfileRequest> call) {
-    EVLOG_debug << "Received SetChargingProfileRequest: " << call.msg << "\nwith messageId: " << call.uniqueId;
+    EVLOG_debug << "Received SetChargingProfileRequest with messageId: " << call.uniqueId;
 
     // FIXME(kai): after a new profile has been installed we must notify interested parties (energy manager?)
 
@@ -2586,7 +2568,7 @@ void ChargePointImpl::handleSetChargingProfileRequest(ocpp::Call<SetChargingProf
 }
 
 void ChargePointImpl::handleGetCompositeScheduleRequest(ocpp::Call<GetCompositeScheduleRequest> call) {
-    EVLOG_debug << "Received GetCompositeScheduleRequest: " << call.msg << "\nwith messageId: " << call.uniqueId;
+    EVLOG_debug << "Received GetCompositeScheduleRequest with messageId: " << call.uniqueId;
 
     GetCompositeScheduleResponse response;
 
@@ -2625,7 +2607,7 @@ void ChargePointImpl::handleGetCompositeScheduleRequest(ocpp::Call<GetCompositeS
 }
 
 void ChargePointImpl::handleClearChargingProfileRequest(ocpp::Call<ClearChargingProfileRequest> call) {
-    EVLOG_debug << "Received ClearChargingProfileRequest: " << call.msg << "\nwith messageId: " << call.uniqueId;
+    EVLOG_debug << "Received ClearChargingProfileRequest with messageId: " << call.uniqueId;
 
     ClearChargingProfileResponse response;
     response.status = ClearChargingProfileStatus::Unknown;
@@ -2655,7 +2637,7 @@ void ChargePointImpl::handleClearChargingProfileRequest(ocpp::Call<ClearCharging
 }
 
 void ChargePointImpl::handleTriggerMessageRequest(ocpp::Call<TriggerMessageRequest> call) {
-    EVLOG_debug << "Received TriggerMessageRequest: " << call.msg << "\nwith messageId: " << call.uniqueId;
+    EVLOG_debug << "Received TriggerMessageRequest with messageId: " << call.uniqueId;
 
     TriggerMessageResponse response;
     response.status = TriggerMessageStatus::Rejected;
@@ -2704,9 +2686,19 @@ void ChargePointImpl::handleTriggerMessageRequest(ocpp::Call<TriggerMessageReque
     case MessageTrigger::DiagnosticsStatusNotification:
         this->diagnostic_status_notification(this->diagnostics_status, true);
         break;
-    case MessageTrigger::FirmwareStatusNotification:
-        this->firmware_status_notification(this->firmware_status, true, this->disable_connectors_during_install);
+    case MessageTrigger::FirmwareStatusNotification: {
+        auto handle = this->pending_firmware_status.handle();
+        auto& pending = *handle;
+        const auto held = pending.has_value() and pending->request_id == -1;
+        this->firmware_status_notification(this->firmware_status, true,
+                                           held ? pending->disable_connectors_during_install
+                                                : this->disable_connectors_during_install);
+        if (held) {
+            this->reset_firmware_status_if_finished(pending->request_id, pending->status);
+            pending.reset();
+        }
         break;
+    }
     case MessageTrigger::Heartbeat:
         this->heartbeat(true);
         break;
@@ -2762,7 +2754,7 @@ void ChargePointImpl::triggered_status_notification(const std::int32_t connector
 }
 
 void ChargePointImpl::handleGetDiagnosticsRequest(ocpp::Call<GetDiagnosticsRequest> call) {
-    EVLOG_debug << "Received GetDiagnosticsRequest: " << call.msg << "\nwith messageId: " << call.uniqueId;
+    EVLOG_debug << "Received GetDiagnosticsRequest with messageId: " << call.uniqueId;
     GetDiagnosticsResponse response;
     if (this->upload_diagnostics_callback) {
         const auto get_log_response = this->upload_diagnostics_callback(call.msg);
@@ -2775,7 +2767,7 @@ void ChargePointImpl::handleGetDiagnosticsRequest(ocpp::Call<GetDiagnosticsReque
 }
 
 void ChargePointImpl::handleUpdateFirmwareRequest(ocpp::Call<UpdateFirmwareRequest> call) {
-    EVLOG_debug << "Received UpdateFirmwareRequest: " << call.msg << "\nwith messageId: " << call.uniqueId;
+    EVLOG_debug << "Received UpdateFirmwareRequest with messageId: " << call.uniqueId;
     const UpdateFirmwareResponse response;
     if (this->update_firmware_callback) {
         this->update_firmware_callback(call.msg);
@@ -2785,7 +2777,7 @@ void ChargePointImpl::handleUpdateFirmwareRequest(ocpp::Call<UpdateFirmwareReque
 }
 
 void ChargePointImpl::handleExtendedTriggerMessageRequest(ocpp::Call<ExtendedTriggerMessageRequest> call) {
-    EVLOG_debug << "Received ExtendedTriggerMessageRequest: " << call.msg << "\nwith messageId: " << call.uniqueId;
+    EVLOG_debug << "Received ExtendedTriggerMessageRequest with messageId: " << call.uniqueId;
 
     ExtendedTriggerMessageResponse response;
     response.status = TriggerMessageStatusEnumType::Rejected;
@@ -2837,11 +2829,19 @@ void ChargePointImpl::handleExtendedTriggerMessageRequest(ocpp::Call<ExtendedTri
     case MessageTriggerEnumType::BootNotification:
         this->boot_notification(true);
         break;
-    case MessageTriggerEnumType::FirmwareStatusNotification:
-        this->signed_firmware_update_status_notification(this->signed_firmware_status,
-                                                         this->signed_firmware_status_request_id, true,
-                                                         this->disable_connectors_during_install);
+    case MessageTriggerEnumType::FirmwareStatusNotification: {
+        auto handle = this->pending_firmware_status.handle();
+        auto& pending = *handle;
+        const auto held = pending.has_value() and pending->request_id != -1;
+        this->signed_firmware_update_status_notification(
+            this->signed_firmware_status, this->signed_firmware_status_request_id, true,
+            held ? pending->disable_connectors_during_install : this->disable_connectors_during_install);
+        if (held) {
+            this->reset_firmware_status_if_finished(pending->request_id, pending->status);
+            pending.reset();
+        }
         break;
+    }
     case MessageTriggerEnumType::Heartbeat:
         this->heartbeat(true);
         break;
@@ -2945,7 +2945,7 @@ void ChargePointImpl::update_ocsp_cache() {
 }
 
 void ChargePointImpl::handleCertificateSignedRequest(ocpp::Call<CertificateSignedRequest> call) {
-    EVLOG_debug << "Received CertificateSignedRequest: " << call.msg << "\nwith messageId: " << call.uniqueId;
+    EVLOG_debug << "Received CertificateSignedRequest with messageId: " << call.uniqueId;
 
     CertificateSignedResponse response;
     response.status = CertificateSignedStatusEnumType::Rejected;
@@ -2979,7 +2979,7 @@ void ChargePointImpl::handleCertificateSignedRequest(ocpp::Call<CertificateSigne
 }
 
 void ChargePointImpl::handleGetInstalledCertificateIdsRequest(ocpp::Call<GetInstalledCertificateIdsRequest> call) {
-    EVLOG_debug << "Received GetInstalledCertificatesRequest: " << call.msg << "\nwith messageId: " << call.uniqueId;
+    EVLOG_debug << "Received GetInstalledCertificatesRequest with messageId: " << call.uniqueId;
     GetInstalledCertificateIdsResponse response;
     response.status = GetInstalledCertificateStatusEnumType::NotFound;
 
@@ -3073,7 +3073,7 @@ void ChargePointImpl::handleGetLogRequest(ocpp::Call<GetLogRequest> call) {
 }
 
 void ChargePointImpl::handleSignedUpdateFirmware(ocpp::Call<SignedUpdateFirmwareRequest> call) {
-    EVLOG_debug << "Received SignedUpdateFirmwareRequest: " << call.msg << "\nwith messageId: " << call.uniqueId;
+    EVLOG_debug << "Received SignedUpdateFirmwareRequest with messageId: " << call.uniqueId;
     SignedUpdateFirmwareResponse response;
 
     if (this->evse_security->verify_certificate(call.msg.firmware.signingCertificate.get(),
@@ -3221,7 +3221,7 @@ void ChargePointImpl::handleCancelReservationRequest(ocpp::Call<CancelReservatio
 }
 
 void ChargePointImpl::handleSendLocalListRequest(ocpp::Call<SendLocalListRequest> call) {
-    EVLOG_debug << "Received SendLocalListRequest: " << call.msg << "\nwith messageId: " << call.uniqueId;
+    EVLOG_debug << "Received SendLocalListRequest with messageId: " << call.uniqueId;
 
     SendLocalListResponse response;
     response.status = UpdateStatus::Failed;
@@ -3275,7 +3275,7 @@ void ChargePointImpl::handleSendLocalListRequest(ocpp::Call<SendLocalListRequest
 }
 
 void ChargePointImpl::handleGetLocalListVersionRequest(ocpp::Call<GetLocalListVersionRequest> call) {
-    EVLOG_debug << "Received GetLocalListVersionRequest: " << call.msg << "\nwith messageId: " << call.uniqueId;
+    EVLOG_debug << "Received GetLocalListVersionRequest with messageId: " << call.uniqueId;
 
     GetLocalListVersionResponse response;
     if ((this->configuration.getSupportedFeatureProfilesSet().count(
@@ -3605,18 +3605,27 @@ EnhancedIdTagInfo ChargePointImpl::authorize_id_token(CiString<20> id_token, con
         }
 
         if (this->configuration.getAuthorizationCacheEnabled().value_or(false)) {
-            if (this->validate_against_cache_entries(id_token)) {
-                try {
-                    const auto auth_cache_entry = this->database_handler->get_authorization_cache_entry(id_token);
-                    if (auth_cache_entry.has_value()) {
+            try {
+                // marks entries past their expiry date as Expired
+                const auto auth_cache_entry = this->database_handler->get_authorization_cache_entry(id_token);
+                if (auth_cache_entry.has_value()) {
+                    if (auth_cache_entry->status == AuthorizationStatus::Accepted) {
                         EVLOG_info << "Found valid id_tag " << id_token.get() << " in AuthorizationCache";
                         enhanced_id_tag_info.id_tag_info = auth_cache_entry.value();
                         update_tariff_message_if_eligible(enhanced_id_tag_info);
                         return enhanced_id_tag_info;
                     }
-                } catch (const QueryExecutionException& e) {
-                    EVLOG_warning << "Could not request authorization cache entry: " << e.what();
+                    // Invalid means the identifier is unknown (7.2), so AllowOfflineTxForUnknownId still applies
+                    if (!this->connectivity_manager->is_websocket_connected() and
+                        auth_cache_entry->status != AuthorizationStatus::Invalid) {
+                        EVLOG_info << "Found rejected id_tag " << id_token.get()
+                                   << " in AuthorizationCache whilst offline: Not authorized";
+                        enhanced_id_tag_info.id_tag_info = auth_cache_entry.value();
+                        return enhanced_id_tag_info;
+                    }
                 }
+            } catch (const QueryExecutionException& e) {
+                EVLOG_warning << "Could not request authorization cache entry: " << e.what();
             }
         }
     }
@@ -4090,7 +4099,7 @@ void ChargePointImpl::data_transfer_pnc_get_certificate_status(const ocpp::v2::O
 }
 
 void ChargePointImpl::handle_data_transfer_pnc_trigger_message(Call<DataTransferRequest> call) {
-    EVLOG_info << "Received Data Transfer TriggerMessage: " << call.msg << "\nwith messageId: " << call.uniqueId;
+    EVLOG_info << "Received Data Transfer TriggerMessage with messageId: " << call.uniqueId;
 
     DataTransferResponse response;
 
@@ -4117,8 +4126,7 @@ void ChargePointImpl::handle_data_transfer_pnc_trigger_message(Call<DataTransfer
 }
 
 void ChargePointImpl::handle_data_transfer_pnc_certificate_signed(Call<DataTransferRequest> call) {
-    EVLOG_info << "Received Data Transfer CertificateSignedRequest: " << call.msg
-               << "\nwith messageId: " << call.uniqueId;
+    EVLOG_info << "Received Data Transfer CertificateSignedRequest with messageId: " << call.uniqueId;
 
     DataTransferResponse response;
     response.status = DataTransferStatus::Rejected;
@@ -4184,8 +4192,7 @@ void ChargePointImpl::handle_data_transfer_pnc_certificate_signed(Call<DataTrans
 }
 
 void ChargePointImpl::handle_data_transfer_pnc_get_installed_certificates(Call<DataTransferRequest> call) {
-    EVLOG_debug << "Received Data Transfer GetInstalledCertificatesRequest: " << call.msg
-                << "\nwith messageId: " << call.uniqueId;
+    EVLOG_debug << "Received Data Transfer GetInstalledCertificatesRequest with messageId: " << call.uniqueId;
 
     DataTransferResponse response;
 
@@ -4735,21 +4742,49 @@ void ChargePointImpl::on_log_status_notification(std::int32_t request_id, std::s
     }
 }
 
+void ChargePointImpl::send_firmware_update_status_notification(const PendingFirmwareStatus& status) {
+    try {
+        if (status.request_id != -1) {
+            this->signed_firmware_update_status_notification(
+                ocpp::conversions::firmware_status_notification_to_firmware_status_enum_type(status.status),
+                status.request_id, false, status.disable_connectors_during_install);
+        } else {
+            this->firmware_status_notification(
+                ocpp::conversions::firmware_status_notification_to_firmware_status(status.status), false,
+                status.disable_connectors_during_install);
+        }
+        this->reset_firmware_status_if_finished(status.request_id, status.status);
+    } catch (const std::out_of_range& e) {
+        EVLOG_debug << "Could not convert incoming FirmwareStatusNotification to OCPP type";
+    }
+}
+
 void ChargePointImpl::on_firmware_update_status_notification(std::int32_t request_id,
                                                              const FirmwareStatusNotification firmware_update_status,
                                                              const bool disable_connectors_during_install) {
-    try {
-        if (request_id != -1) {
-            this->signed_firmware_update_status_notification(
-                ocpp::conversions::firmware_status_notification_to_firmware_status_enum_type(firmware_update_status),
-                request_id, false, disable_connectors_during_install);
+    {
+        auto handle = this->pending_firmware_status.handle();
+        auto& pending = *handle;
+        const PendingFirmwareStatus status{request_id, firmware_update_status, disable_connectors_during_install};
+        if (this->connection_state == ChargePointConnectionState::Booted) {
+            this->send_firmware_update_status_notification(status);
+            pending.reset();
         } else {
-            this->firmware_status_notification(
-                ocpp::conversions::firmware_status_notification_to_firmware_status(firmware_update_status), false,
-                disable_connectors_during_install);
+            try {
+                if (request_id != -1) {
+                    this->signed_firmware_status =
+                        ocpp::conversions::firmware_status_notification_to_firmware_status_enum_type(
+                            firmware_update_status);
+                    this->signed_firmware_status_request_id = request_id;
+                } else {
+                    this->firmware_status =
+                        ocpp::conversions::firmware_status_notification_to_firmware_status(firmware_update_status);
+                }
+                pending = status;
+            } catch (const std::out_of_range& e) {
+                EVLOG_debug << "Could not convert incoming FirmwareStatusNotification to OCPP type";
+            }
         }
-    } catch (const std::out_of_range& e) {
-        EVLOG_debug << "Could not convert incoming FirmwareStatusNotification to OCPP type";
     }
 
     if (firmware_update_status == FirmwareStatusNotification::InstallationFailed or
@@ -4775,6 +4810,10 @@ void ChargePointImpl::on_firmware_update_status_notification(std::int32_t reques
                           << e.what();
         }
     }
+}
+
+void ChargePointImpl::reset_firmware_status_if_finished(std::int32_t request_id,
+                                                        FirmwareStatusNotification firmware_update_status) {
     if (firmware_update_status == FirmwareStatusNotification::InstallationFailed or
         firmware_update_status == FirmwareStatusNotification::Installed or
         firmware_update_status == FirmwareStatusNotification::InvalidSignature or

@@ -2,7 +2,7 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 
 #include "http_client.hpp"
-#include <fmt/core.h>
+#include <fmt/format.h>
 #include <stdexcept>
 
 namespace module::main {

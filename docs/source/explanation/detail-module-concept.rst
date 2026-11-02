@@ -253,8 +253,6 @@ connect to each other:
 
 ..  code-block:: yaml
 
-    settings:
-      telemetry_enabled: true
     active_modules: # list of module instances
       instance_id_ping_server: # instance ID
         config_module: # list of config parameters

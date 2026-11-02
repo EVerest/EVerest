@@ -44,7 +44,7 @@ bool is_connection_config_cv(const ocpp::v2::Component& component, const ocpp::v
            matches(ControllerComponentVariables::BasicAuthPassword, component, variable);
 }
 
-VariableResolver::VariableResolver(ocpp::v2::Ocpp16CustomConfigMappings custom_mappings) :
+VariableResolver::VariableResolver(ocpp::v2::Ocpp16KeyMappings custom_mappings) :
     custom_mappings(std::move(custom_mappings)) {
     for (const auto& [key, cv] : this->custom_mappings) {
         auto [it, inserted] = custom_reverse.emplace(cv, ReverseResult{key, false});

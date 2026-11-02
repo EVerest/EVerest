@@ -48,6 +48,13 @@ public:
         fire(io::ConnectionEvent::CLOSED);
     }
 
+    void half_close() override {
+        ++half_close_calls;
+        if (half_close_ready) {
+            half_closed = true;
+        }
+    }
+
     bool is_secure() const override {
         return false;
     }
@@ -91,6 +98,9 @@ public:
     io::ReadResult next_read_result{};
     bool closed{false};
     std::vector<uint8_t> written;
+    bool half_closed{false};
+    bool half_close_ready{true};
+    int half_close_calls{0};
 
 private:
     io::ConnectionEventCallback event_callback;

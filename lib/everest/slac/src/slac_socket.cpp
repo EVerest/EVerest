@@ -85,6 +85,9 @@ bool slac_socket::open(std::string const& if_name) {
     try {
         auto socket = open_raw_socket(if_name);
         socket::set_non_blocking(socket);
+        // A modem that holds frames then fills this socket's send memory and the fd stops being
+        // writable (EAGAIN), so the client waits instead of feeding a device queue it cannot see.
+        socket::set_socket_send_buffer_to_min(socket);
         auto result = socket::get_pending_error(socket);
         if (result != 0) {
             set_error_state(m_error_code, m_error_message, result, build_errno_string("Socket pending error", result));
@@ -122,13 +125,15 @@ bool slac_socket::tx(PayloadT const& payload) {
     }
     auto const frame_size = payload.frame_size();
     if (not payload.is_valid() || frame_size > ETH_FRAME_LEN || frame_size > sizeof(*payload.get_raw_message_ptr())) {
-        return false;
+        // A frame that can never go out is dropped: false with no error means "wait for
+        // writable", and a raw socket is always writable, so it would be retried on every pass.
+        return true;
     }
 
     auto const status = ::send(m_fd, payload.get_raw_message_ptr(), frame_size, 0);
     if (status < 0) {
         auto const error_code = errno;
-        if (error_code != EAGAIN && error_code != EWOULDBLOCK) {
+        if (not socket::is_send_backpressure(error_code)) {
             set_error_state(m_error_code, m_error_message, error_code,
                             build_errno_string("Failed to send raw socket payload", error_code));
         }
@@ -153,7 +158,7 @@ bool slac_socket::rx(PayloadT& buffer) {
     if (status <= 0) { // -1 is an error, 0 is a connection closed by the peer
         if (status == -1) {
             auto const error_code = errno;
-            if (error_code != EAGAIN && error_code != EWOULDBLOCK) {
+            if (error_code != EAGAIN && error_code != EWOULDBLOCK && error_code != EINTR) {
                 set_error_state(m_error_code, m_error_message, error_code,
                                 build_errno_string("Failed to receive raw socket payload", error_code));
             }

@@ -53,6 +53,18 @@ ssize_t connection_read(struct v2g_connection* conn, unsigned char* buf, std::si
  * -2 for closed connection */
 ssize_t connection_write(struct v2g_connection* conn, unsigned char* buf, std::size_t count);
 
+/*!
+ * \brief connection_slot_acquire reserves a slot for a connection thread, shared by the TCP and TLS servers.
+ * When all slots are taken, the socket of the oldest connection without a v2g-session is shut down and its slot
+ * handed over.
+ * \param socket_fd identifies the slot, so it must be released before the socket is closed
+ * \return false if no slot is available, the connection must then be closed without starting a thread
+ */
+bool connection_slot_acquire(int socket_fd);
+void connection_slot_claim_session(int socket_fd);
+bool connection_slot_held(int socket_fd);
+void connection_slot_release(int socket_fd);
+
 void* connection_handle_tcp(void* data);
 void* connection_handle(void* data);
 int connection_proxy(struct v2g_connection* conn, int proxy_fd);

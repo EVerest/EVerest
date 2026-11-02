@@ -3,7 +3,7 @@ asyncapi: 3.0.0
 id: 'pionix:de:everest:system_API'
 info:
   title: 'EVerest API definition for the system module'
-  version: 1.0.0
+  version: 1.1.0
   description: >-
     API for EVerest API client implementing the system capabilities OTA update, log upload
     and network configuration.
@@ -816,7 +816,10 @@ components:
 
     CommunicationCheck:
       type: boolean
-      description: "Send 'true' at least every 'cfg_communication_check_to_s' seconds to signal module is alive. Send 'false' to stop communication check'"
+      description: >-
+        Send true at least every cfg_communication_check_to_s seconds to signal that the client is alive, otherwise
+        EVerest raises a CommunicationFault, which the next message clears. Send false to stop the check until the
+        module restarts.
 
     HeartBeatId:
       type: integer

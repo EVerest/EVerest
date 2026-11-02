@@ -26,6 +26,7 @@ public:
     using Variable = ocpp::v2::Variable;
     using AttributeEnum = ocpp::v2::AttributeEnum;
     using GetVariableStatusEnum = ocpp::v2::GetVariableStatusEnum;
+    using UnsetValue = ocpp::v2::UnsetValue;
     using SetVariableStatusEnum = ocpp::v2::SetVariableStatusEnum;
     using VariableMonitoringMeta = ocpp::v2::VariableMonitoringMeta;
     using SetMonitoringData = ocpp::v2::SetMonitoringData;
@@ -78,8 +79,8 @@ public:
     void clear(const std::string_view& component, const std::string_view& variable);
 
     GetVariableStatusEnum get_variable(const Component& component_id, const Variable& variable_id,
-                                       const AttributeEnum& attribute_enum, std::string& value,
-                                       bool allow_write_only = false) const override;
+                                       const AttributeEnum& attribute_enum, std::string& value, bool allow_write_only,
+                                       UnsetValue unset_value) const override;
 
     SetVariableStatusEnum set_value(const Component& component_id, const Variable& variable_id,
                                     const AttributeEnum& attribute_enum, const std::string& value,
@@ -146,6 +147,7 @@ public:
     using Variable = ocpp::v2::Variable;
     using AttributeEnum = ocpp::v2::AttributeEnum;
     using GetVariableStatusEnum = ocpp::v2::GetVariableStatusEnum;
+    using UnsetValue = ocpp::v2::UnsetValue;
     using SetVariableStatusEnum = ocpp::v2::SetVariableStatusEnum;
     using VariableMonitoringMeta = ocpp::v2::VariableMonitoringMeta;
     using SetMonitoringData = ocpp::v2::SetMonitoringData;
@@ -166,9 +168,9 @@ public:
     }
 
     GetVariableStatusEnum get_variable(const Component& component_id, const Variable& variable_id,
-                                       const AttributeEnum& attribute_enum, std::string& value,
-                                       bool allow_write_only) const override {
-        return storage.get_variable(component_id, variable_id, attribute_enum, value, allow_write_only);
+                                       const AttributeEnum& attribute_enum, std::string& value, bool allow_write_only,
+                                       UnsetValue unset_value) const override {
+        return storage.get_variable(component_id, variable_id, attribute_enum, value, allow_write_only, unset_value);
     }
 
     SetVariableStatusEnum set_value(const Component& component_id, const Variable& variable_id,

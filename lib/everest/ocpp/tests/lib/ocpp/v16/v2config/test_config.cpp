@@ -20,6 +20,9 @@
 #include <ocpp/v2/init_device_model_db.hpp>
 #include <ocpp/v2/ocpp16_component_config_patcher.hpp>
 #include <optional>
+#include <string>
+#include <string_view>
+#include <vector>
 
 namespace {
 using namespace ocpp::v16::stubs;
@@ -193,6 +196,55 @@ TEST(V2Mapping, SwitchSecurityProfileConnectionTimeout) {
     var.name = "SwitchSecurityProfileConnectionTimeout";
     auto rev = convert_v2(comp, var, ocpp::v2::AttributeEnum::Actual);
     EXPECT_EQ(rev, "SwitchSecurityProfileConnectionTimeout");
+}
+
+TEST(V2Mapping, KeysWithStandardEquivalentShareTheV2Variable) {
+    using namespace ocpp::v16::keys;
+    using namespace ocpp::v2;
+
+    struct Expected {
+        valid_keys key;
+        std::string_view v16_key;
+        std::string component;
+        std::string variable;
+        std::optional<std::string> instance;
+    };
+    const std::vector<Expected> expected{
+        {valid_keys::StopTransactionOnEVSideDisconnect, "StopTransactionOnEVSideDisconnect", "TxCtrlr",
+         "StopTxOnEVSideDisconnect", std::nullopt},
+        {valid_keys::UnlockConnectorOnEVSideDisconnect, "UnlockConnectorOnEVSideDisconnect", "OCPPCommCtrlr",
+         "UnlockOnEVSideDisconnect", std::nullopt},
+        {valid_keys::CustomDisplayCostAndPrice, "CustomDisplayCostAndPrice", "CustomizationCtrlr",
+         "CustomImplementationEnabled", "org.openchargealliance.costmsg"},
+        {valid_keys::CustomMultiLanguageMessages, "CustomMultiLanguageMessages", "CustomizationCtrlr",
+         "CustomImplementationEnabled", "org.openchargealliance.multilanguage"},
+    };
+
+    for (const auto& e : expected) {
+        SCOPED_TRACE(std::string{e.v16_key});
+        const auto res = convert_v2(e.key);
+        ASSERT_TRUE(res);
+        EXPECT_EQ(res->first.name.get(), e.component);
+        EXPECT_EQ(res->second.name.get(), e.variable);
+        ASSERT_EQ(res->second.instance.has_value(), e.instance.has_value());
+        if (e.instance) {
+            EXPECT_EQ(res->second.instance->get(), e.instance.value());
+        }
+
+        Component comp;
+        comp.name = e.component;
+        Variable var;
+        var.name = e.variable;
+        if (e.instance) {
+            var.instance = e.instance.value();
+        }
+        EXPECT_EQ(convert_v2(comp, var, AttributeEnum::Actual), std::string{e.v16_key});
+
+        comp.name = "OCPP16LegacyCtrlr";
+        var.name = std::string{e.v16_key};
+        var.instance.reset();
+        EXPECT_FALSE(convert_v2(comp, var, AttributeEnum::Actual).has_value());
+    }
 }
 
 // Tests for get_all_key_value() with maxLimit keys.

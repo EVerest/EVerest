@@ -48,9 +48,9 @@ target_sources(${TLS_GTEST_NAME} PRIVATE
 
 target_link_libraries(${TLS_GTEST_NAME} PRIVATE
     GTest::gtest
-    cbv2g::din
-    cbv2g::iso2
-    cbv2g::tp
+    everest::cbv2g::din
+    everest::cbv2g::iso2
+    everest::cbv2g::tp
     everest::framework
     everest::evse_security
     everest::tls
@@ -84,9 +84,9 @@ target_sources(${V2G_MAIN_NAME} PRIVATE
 )
 
 target_link_libraries(${V2G_MAIN_NAME} PRIVATE
-    cbv2g::din
-    cbv2g::iso2
-    cbv2g::tp
+    everest::cbv2g::din
+    everest::cbv2g::iso2
+    everest::cbv2g::tp
     everest::log
     everest::framework
     everest::evse_security
@@ -128,9 +128,9 @@ target_link_libraries(${DIN_SERVER_NAME}
         GTest::gtest_main
         OpenSSL::SSL
         OpenSSL::Crypto
-        cbv2g::din
-        cbv2g::iso2
-        cbv2g::tp
+        everest::cbv2g::din
+        everest::cbv2g::iso2
+        everest::cbv2g::tp
         everest::framework
         everest::evse_security
         everest::tls
@@ -164,7 +164,7 @@ target_sources(${SDP_NAME} PRIVATE
 target_link_libraries(${SDP_NAME}
     PRIVATE
         GTest::gtest_main
-        cbv2g::tp
+        everest::cbv2g::tp
         everest::framework
         everest::tls
         everest::everest_api_types
@@ -202,9 +202,9 @@ target_link_libraries(${V2GCTX_NAME}
         GTest::gtest_main
         OpenSSL::SSL
         OpenSSL::Crypto
-        cbv2g::din
-        cbv2g::iso2
-        cbv2g::tp
+        everest::cbv2g::din
+        everest::cbv2g::iso2
+        everest::cbv2g::tp
         everest::framework
         everest::evse_security
         everest::tls
@@ -245,9 +245,9 @@ target_link_libraries(${ISO_SERVER_NAME}
         GTest::gtest_main
         OpenSSL::SSL
         OpenSSL::Crypto
-        cbv2g::din
-        cbv2g::iso2
-        cbv2g::tp
+        everest::cbv2g::din
+        everest::cbv2g::iso2
+        everest::cbv2g::tp
         everest::framework
         everest::evse_security
         everest::tls
@@ -256,4 +256,7 @@ target_link_libraries(${ISO_SERVER_NAME}
 )
 
 add_test(${ISO_SERVER_NAME} ${ISO_SERVER_NAME})
+# message handlers loop over data coming from the EV,
+# a regression results in a hang instead of a fail, so cap this here
+set_tests_properties(${ISO_SERVER_NAME} PROPERTIES TIMEOUT 60)
 ev_register_test_target(${ISO_SERVER_NAME})

@@ -39,7 +39,7 @@ protected:
     virtual void handle_authorize_response(types::authorization::ProvidedIdToken& provided_token,
                                            types::authorization::ValidationResult& validation_result) override;
     virtual void handle_withdraw_authorization() override;
-    virtual bool handle_reserve(int& reservation_id) override;
+    virtual bool handle_reserve(types::evse_manager::ReserveRequest& request) override;
     virtual void handle_cancel_reservation() override;
     virtual bool handle_pause_charging() override;
     virtual bool handle_resume_charging() override;

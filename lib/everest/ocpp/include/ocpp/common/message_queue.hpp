@@ -540,6 +540,12 @@ public:
         MessageQueue(send_callback, config, {}, databaseHandler) {
     }
 
+    ~MessageQueue() {
+        if (this->worker_thread.joinable()) {
+            this->stop();
+        }
+    }
+
     void start() {
         this->worker_thread = std::thread([this]() {
             while (this->running) {
@@ -862,6 +868,7 @@ public:
         EnhancedMessage<M> enhanced_message;
 
         enhanced_message.message = json::parse(message);
+        enhanced_message.message_size = message.size();
         enhanced_message.uniqueId = this->getMessageId(enhanced_message.message);
         enhanced_message.messageTypeId = this->getMessageTypeId(enhanced_message.message);
 

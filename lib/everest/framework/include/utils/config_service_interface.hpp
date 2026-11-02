@@ -258,7 +258,9 @@ public:
     // further config-service processing while they run: keep them short and do not wait on
     // anything that itself needs the config service.
     virtual void register_active_slot_update_handler(std::function<void(const ActiveSlotUpdate&)> handler) = 0;
-    virtual void register_config_update_handler(std::function<void(const ConfigurationUpdate&)> handler) = 0;
+    /// \returns A function that unregisters \p handler. Once it returned, \p handler is not called any more.
+    virtual std::function<void()>
+    register_config_update_handler(std::function<void(const ConfigurationUpdate&)> handler) = 0;
 
     // --- Module state ---
     virtual void set_modules_stopped() = 0;

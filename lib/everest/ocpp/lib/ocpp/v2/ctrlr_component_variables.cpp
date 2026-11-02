@@ -335,6 +335,12 @@ const ComponentVariable MaxMessageSize = {
         "MaxMessageSize",
     }),
 };
+const ComponentVariable MaxIncomingMessageSize = {
+    ControllerComponents::InternalCtrlr,
+    std::optional<Variable>({
+        "MaxIncomingMessageSize",
+    }),
+};
 const ComponentVariable ResumeTransactionsOnBoot = {
     ControllerComponents::InternalCtrlr,
     std::optional<Variable>({
@@ -1286,12 +1292,6 @@ const ComponentVariable MinimumStatusDuration = {
         "MinimumStatusDuration",
     }),
 };
-const ComponentVariable StopTransactionOnEVSideDisconnect = {
-    ControllerComponents::OCPP16LegacyCtrlr,
-    std::optional<Variable>({
-        "StopTransactionOnEVSideDisconnect",
-    }),
-};
 const RequiredComponentVariable SupportedFeatureProfiles = {
     ControllerComponents::OCPP16LegacyCtrlr,
     std::optional<Variable>({
@@ -1302,12 +1302,6 @@ const ComponentVariable SupportedFeatureProfilesMaxLength = {
     ControllerComponents::OCPP16LegacyCtrlr,
     std::optional<Variable>({
         "SupportedFeatureProfilesMaxLength",
-    }),
-};
-const RequiredComponentVariable UnlockConnectorOnEVSideDisconnect = {
-    ControllerComponents::OCPP16LegacyCtrlr,
-    std::optional<Variable>({
-        "UnlockConnectorOnEVSideDisconnect",
     }),
 };
 const ComponentVariable ReserveConnectorZeroSupported = {
@@ -1370,12 +1364,6 @@ const ComponentVariable ISO15118CertificateManagementEnabled = {
         "ISO15118CertificateManagementEnabled",
     }),
 };
-const ComponentVariable CustomDisplayCostAndPrice = {
-    ControllerComponents::OCPP16LegacyCtrlr,
-    std::optional<Variable>({
-        "CustomDisplayCostAndPrice",
-    }),
-};
 const ComponentVariable DefaultPrice = {
     ControllerComponents::OCPP16LegacyCtrlr,
     std::optional<Variable>({
@@ -1398,12 +1386,6 @@ const ComponentVariable SupportedLanguages = {
     ControllerComponents::OCPP16LegacyCtrlr,
     std::optional<Variable>({
         "SupportedLanguages",
-    }),
-};
-const ComponentVariable CustomMultiLanguageMessages = {
-    ControllerComponents::OCPP16LegacyCtrlr,
-    std::optional<Variable>({
-        "CustomMultiLanguageMessages",
     }),
 };
 const ComponentVariable Language = {
@@ -1729,7 +1711,8 @@ ComponentVariable get_component_variable(const std::int32_t slot, const Variable
     return component_variable;
 }
 
-std::optional<NetworkConnectionProfile> read_profile_from_device_model(DeviceModelInterface& dm, int32_t slot) {
+std::optional<NetworkConnectionProfile> read_profile_from_device_model(DeviceModelVariablesInterface& dm,
+                                                                       int32_t slot) {
     try {
         NetworkConnectionProfile profile;
 
@@ -1868,8 +1851,8 @@ std::optional<NetworkConnectionProfile> read_profile_from_device_model(DeviceMod
     }
 }
 
-bool write_profile_to_device_model(DeviceModelInterface& dm, int32_t slot, const NetworkConnectionProfile& profile,
-                                   const std::string& source) {
+bool write_profile_to_device_model(DeviceModelVariablesInterface& dm, int32_t slot,
+                                   const NetworkConnectionProfile& profile, const std::string& source) {
     try {
         auto set = [&](const Variable& var, const std::string& val) {
             const auto cv = get_component_variable(slot, var);
@@ -1995,7 +1978,7 @@ bool write_profile_to_device_model(DeviceModelInterface& dm, int32_t slot, const
     }
 }
 
-void migrate_from_blob_if_needed(DeviceModelInterface& dm) {
+void migrate_from_blob_if_needed(DeviceModelVariablesInterface& dm) {
     try {
         const auto blob_opt =
             get_optional_value<std::string>(dm, ControllerComponentVariables::NetworkConnectionProfiles);
@@ -2133,7 +2116,7 @@ void migrate_from_blob_if_needed(DeviceModelInterface& dm) {
     }
 }
 
-void clear_slot_in_device_model(DeviceModelInterface& dm, int32_t slot) {
+void clear_slot_in_device_model(DeviceModelVariablesInterface& dm, int32_t slot) {
     static const std::vector<const Variable*> all_vars = {
         &OcppCsmsUrl,
         &SecurityProfile,

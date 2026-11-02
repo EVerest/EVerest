@@ -1,0 +1,8 @@
+interfaces_dir: "interfaces"
+modules_dir: "modules"
+types_dir: "types"
+errors_dir: "errors"
+schemas_dir: "schemas"
+logging_config_file: "logging.ini"
+mqtt_everest_prefix: "settings-file-prefix"
+telemetry_enabled: true

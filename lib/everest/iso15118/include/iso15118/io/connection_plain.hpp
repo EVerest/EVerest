@@ -21,6 +21,7 @@ public:
     ReadResult read(uint8_t* buf, size_t len) final;
 
     void close() final;
+    void half_close() final;
 
     bool is_secure() const final {
         return false;
@@ -44,6 +45,7 @@ private:
     bool connection_open{false};
     // set once the socket is gone, whether we closed it or the peer's EOF was seen in read()
     bool closed{false};
+    bool half_closed{false};
 
     ConnectionEventCallback event_callback{nullptr};
 

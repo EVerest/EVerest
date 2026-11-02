@@ -154,7 +154,7 @@ You could use a real car for this.
 As with basic charging, we first create a new configuration file by
 extending the one we just used for basic charging.
 
-We add an :ref:`ISO 15118 stack <everest_modules_EvseV2G>` as well as a
+We add an :ref:`ISO 15118 stack <everest_modules_Evse15118D20>` as well as a
 :ref:`SLAC module <everest_modules_EvseSlac>`:
 
 .. image:: images/iso-15118-stack.png

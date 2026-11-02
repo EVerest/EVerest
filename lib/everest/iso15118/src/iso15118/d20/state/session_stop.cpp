@@ -25,7 +25,13 @@ message_20::SessionStopResponse handle_request(const message_20::SessionStopRequ
         return res;
     }
 
-    // Todo(sl): Check req.charging_session
+    // [V2G20-1195]: in dynamic control mode only the SECC may initiate a pause ([V2G20-1850]).
+    if (req.charging_session == dt::ChargingSession::Pause and
+        session.get_selected_services().selected_control_mode == dt::ControlMode::Dynamic and
+        not session.secc_pause_notified) {
+        set_response_code(res, dt::ResponseCode::FAILED_PauseNotAllowed);
+        return res;
+    }
 
     set_response_code(res, dt::ResponseCode::OK);
     return res;
@@ -46,38 +52,8 @@ Result SessionStop::feed(Event ev) {
     if (const auto req = variant->get_if<message_20::SessionStopRequest>()) {
         const auto res = handle_request(*req, m_ctx.session);
 
-        std::string ev_termination_code;
-        std::string ev_termination_explanation;
-
-        if (req->ev_termination_code.has_value()) {
-            logf_info("EV termination code: %s", req->ev_termination_code.value().c_str());
-            ev_termination_code = req->ev_termination_code.value();
-        }
-        if (req->ev_termination_explanation.has_value()) {
-            logf_info("EV Termination explanation: %s", req->ev_termination_explanation.value().c_str());
-            ev_termination_explanation = req->ev_termination_explanation.value();
-        }
-
-        if (req->ev_termination_code.has_value() or req->ev_termination_explanation.has_value()) {
-            m_ctx.feedback.ev_termination(ev_termination_code, ev_termination_explanation);
-        }
         m_ctx.respond(res);
-
-        // Todo(sl): Tell the reason why the charger is stopping. Shutdown, Error, etc.
-        if (req->charging_session == message_20::datatypes::ChargingSession::Pause) {
-            m_ctx.session_paused = true;
-            if (not m_ctx.pause_ctx.has_value()) {
-                logf_error("Pause the session but pause_ctx has no value");
-                return {};
-            }
-            m_ctx.pause_ctx->selected_service_parameters = m_ctx.session.get_selected_services();
-            m_ctx.pause_ctx->authorization = m_ctx.session.authorization;
-        } else if (req->charging_session == message_20::datatypes::ChargingSession::Terminate) {
-            m_ctx.session_stopped = true;
-            m_ctx.pause_ctx.reset();
-        }
-
-        mark_session_stop_response(m_ctx, *req, res);
+        apply_session_stop_response(m_ctx, *req, res);
 
         return {};
     } else {
@@ -92,8 +68,40 @@ Result SessionStop::feed(Event ev) {
     }
 }
 
+void apply_session_stop_response(d20::Context& ctx, const message_20::SessionStopRequest& req,
+                                 const message_20::SessionStopResponse& res) {
+    mark_session_stop_response(ctx, req, res);
+
+    // Todo(sl): Tell the reason why the charger is stopping. Shutdown, Error, etc.
+    if (res.response_code >= dt::ResponseCode::FAILED) {
+        ctx.session_stopped = true;
+        ctx.pause_ctx.reset();
+    } else if (req.charging_session == dt::ChargingSession::Pause) {
+        ctx.session_paused = true;
+        if (not ctx.pause_ctx.has_value()) {
+            logf_error("Pause the session but pause_ctx has no value");
+            return;
+        }
+        ctx.pause_ctx->selected_service_parameters = ctx.session.get_selected_services();
+        ctx.pause_ctx->authorization = ctx.session.authorization;
+    } else if (req.charging_session == dt::ChargingSession::Terminate) {
+        ctx.session_stopped = true;
+        ctx.pause_ctx.reset();
+    }
+}
+
 void mark_session_stop_response(d20::Context& ctx, const message_20::SessionStopRequest& req,
                                 const message_20::SessionStopResponse& res) {
+    if (req.ev_termination_code.has_value()) {
+        logf_info("EV termination code: %s", req.ev_termination_code->c_str());
+    }
+    if (req.ev_termination_explanation.has_value()) {
+        logf_info("EV termination explanation: %s", req.ev_termination_explanation->c_str());
+    }
+    if (req.ev_termination_code.has_value() or req.ev_termination_explanation.has_value()) {
+        ctx.feedback.ev_termination(req.ev_termination_code.value_or(""), req.ev_termination_explanation.value_or(""));
+    }
+
     // Only a positive Res that ends the session anchors the CP-oscillator retain time (a
     // ServiceRenegotiation keeps the session running); a FAILED Res ends the session with
     // immediate oscillator-off + SECC-side TCP close instead. Reported once the response

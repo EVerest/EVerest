@@ -6,6 +6,7 @@ import getpass
 import logging
 import os
 import socket
+import sqlite3
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -30,7 +31,7 @@ from everest.testing.ocpp_utils.fixtures import (
     charge_point_v201,
     ftp_server,
 )
-from everest_test_utils import OcppTestConfiguration
+from everest_test_utils import OcppTestConfiguration, SystemStoreConfigurationStrategy, received_calls
 from ocpp.messages import MessageType, unpack
 from ocpp.v201 import call as call201
 from ocpp.v201 import call_result as call_result201
@@ -44,9 +45,42 @@ STATUS_TIMEOUT_S = 10
 @pytest.mark.asyncio
 @pytest.mark.ocpp_version("ocpp2.0.1")
 @pytest.mark.everest_core_config("everest-config-ocpp201.yaml")
+@pytest.mark.everest_config_adaptions(SystemStoreConfigurationStrategy())
+async def test_invalid_pending_installed_request_id(
+    central_system_v201,
+    charge_point_v201: ChargePoint201,
+    test_controller: TestController,
+    test_utility: TestUtility,
+    tmp_path,
+):
+    test_controller.stop()
+    store_path = Path(test_controller._everest_core.everest_config[
+        "active_modules"]["persistent_store"]["config_module"]["sqlite_db_file_path"])
+    assert store_path.is_relative_to(tmp_path)
+    key = "ocpp_pending_installed_request_id"
+    with sqlite3.connect(store_path) as store:
+        store.execute("INSERT OR REPLACE INTO KVS (KEY, VALUE, TYPE) VALUES (?, ?, ?)",
+                      (key, "invalid-request-id", "std::string"))
+    test_utility.messages.clear()
+    test_controller.start()
+    charge_point_v201 = await central_system_v201.wait_for_chargepoint(
+        wait_for_bootnotification=False)
+    assert await wait_for_and_validate(
+        test_utility, charge_point_v201, "BootNotification", {"reason": "PowerUp"})
+    await asyncio.sleep(1)
+    with sqlite3.connect(store_path) as store:
+        assert store.execute("SELECT VALUE FROM KVS WHERE KEY = ?", (key,)).fetchone() is None
+    assert not received_calls(charge_point_v201, "FirmwareStatusNotification")
+
+
+@pytest.mark.asyncio
+@pytest.mark.ocpp_version("ocpp2.0.1")
+@pytest.mark.everest_core_config("everest-config-ocpp201.yaml")
+@pytest.mark.everest_config_adaptions(SystemStoreConfigurationStrategy())
 @pytest.mark.xdist_group(name="FTP")
 async def test_L01_secure_firmware_update_disable_connectors(
     test_config: OcppTestConfiguration,
+    central_system_v201,
     charge_point_v201: ChargePoint201,
     test_controller: TestController,
     test_utility: TestUtility,
@@ -129,15 +163,79 @@ async def test_L01_secure_firmware_update_disable_connectors(
         test_utility,
         charge_point_v201,
         "FirmwareStatusNotification",
-        {"status": "Installed", "requestId": 1},
+        {"status": "InstallRebooting", "requestId": 1},
     )
+
+    await asyncio.to_thread(test_controller._everest_core.process.wait, timeout=15)
+    firmware_statuses = [message.payload["status"] for message in
+                         received_calls(charge_point_v201, "FirmwareStatusNotification")]
+    assert firmware_statuses[-2:] == ["Installing", "InstallRebooting"]
+    assert "Installed" not in firmware_statuses
+
+    test_utility.messages.clear()
+    test_controller.stop()
+    test_controller.start()
+    charge_point_v201 = await central_system_v201.wait_for_chargepoint(
+        wait_for_bootnotification=False)
 
     assert await wait_for_and_validate(
         test_utility,
         charge_point_v201,
-        "FirmwareStatusNotification",
-        {"status": "InstallRebooting", "requestId": 1},
+        "BootNotification",
+        {"reason": "FirmwareUpdate"},
     )
+    assert await wait_for_and_validate(
+        test_utility,
+        charge_point_v201,
+        "FirmwareStatusNotification",
+        {"status": "Installed", "requestId": 1},
+    )
+    assert await wait_for_and_validate(
+        test_utility,
+        charge_point_v201,
+        "SecurityEventNotification",
+        {"type": "FirmwareUpdated"},
+    )
+    await asyncio.sleep(1)
+    security_events = received_calls(charge_point_v201, "SecurityEventNotification")
+    assert sum(message.payload["type"] == "FirmwareUpdated" for message in security_events) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.ocpp_version("ocpp2.0.1")
+@pytest.mark.everest_core_config("everest-config-ocpp201.yaml")
+@pytest.mark.xdist_group(name="FTP")
+@pytest.mark.everest_config_adaptions(SystemStoreConfigurationStrategy(enabled=False))
+async def test_secure_firmware_update_without_store(
+    test_config: OcppTestConfiguration,
+    charge_point_v201: ChargePoint201,
+    test_controller: TestController,
+    test_utility: TestUtility,
+    ftp_server,
+):
+    os.system(
+        f"curl -T {Path(__file__).parent.parent / test_config.firmware_info.update_file} ftp://{getpass.getuser()}:12345@localhost:{ftp_server.port}"
+    )
+    firmware = FirmwareType(
+        location=f"ftp://{getpass.getuser()}:12345@localhost:{ftp_server.port}/firmware_update.pnx",
+        retrieve_date_time=datetime.now(timezone.utc).isoformat(),
+        signing_certificate=open(test_config.certificate_info.mf_root_ca).read(),
+        signature=open(test_config.firmware_info.update_file_signature).read(),
+    )
+    await charge_point_v201.update_firmware(request_id=2, firmware=firmware)
+    assert await wait_for_and_validate(
+        test_utility, charge_point_v201, "UpdateFirmware",
+        call_result201.UpdateFirmware(status=UpdateFirmwareStatusEnumType.accepted),
+    )
+    assert await wait_for_and_validate(
+        test_utility, charge_point_v201, "FirmwareStatusNotification",
+        {"status": "Installed", "requestId": 2}, timeout=60,
+    )
+    await asyncio.to_thread(test_controller._everest_core.process.wait, timeout=15)
+    firmware_statuses = [message.payload["status"] for message in
+                         received_calls(charge_point_v201, "FirmwareStatusNotification")]
+    assert firmware_statuses[-1] == "Installed"
+    assert "InstallRebooting" not in firmware_statuses
 
 
 @pytest.mark.asyncio

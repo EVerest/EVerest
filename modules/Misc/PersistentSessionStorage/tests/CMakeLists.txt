@@ -17,7 +17,7 @@ get_target_property(GENERATED_INCLUDE_DIR generate_cpp_files EVEREST_GENERATED_I
 target_include_directories(${TEST_TARGET_NAME}
     PRIVATE
         ..
-        ${everest-sqlite_SOURCE_DIR}/tests
+        ${everest-core_SOURCE_DIR}/lib/everest/sqlite/tests
         ${GENERATED_INCLUDE_DIR}
 )
 

@@ -346,7 +346,7 @@ components:
         started_after:
           description: >-
             Only records whose session started strictly after this point in
-            time, in RFC3339 format. Compared as an instant, so any UTC offset
+            time, in RFC3339 format. Compared as an instant, so any offset
             may be used. Fractional seconds are compared at millisecond
             precision. A value that is not a timestamp is ignored.
           type: string
@@ -630,7 +630,10 @@ components:
 
     CommunicationCheck:
       type: boolean
-      description: "Send 'true' at least every 'cfg_communication_check_to_s' seconds to signal module is alive. Send 'false' to stop communication check'"
+      description: >-
+        Send true at least every cfg_communication_check_to_s seconds to signal that the client is alive, otherwise
+        EVerest raises a CommunicationFault, which the next message clears. Send false to stop the check until the
+        module restarts.
     HeartBeatId:
       type: integer
       description: "64bit unsigned integer. The id of every heartbeat increases by 1 and overflows when the maximum representable value is reached"

@@ -292,7 +292,7 @@ active_modules:
 
         // Capture the published config update event to verify its contents
         std::optional<ConfigurationUpdate> captured_event;
-        config_service.register_config_update_handler(
+        const auto unregister = config_service.register_config_update_handler(
             [&captured_event](const ConfigurationUpdate& event) { captured_event = event; });
 
         auto result = config_service.set_config_parameters(ConfigServiceInterface::ACTIVE_SLOT, {update}, origin);
@@ -312,6 +312,16 @@ active_modules:
         CHECK(captured_event->updates.front().identifier.configuration_parameter_name == "valid_config_entry");
         CHECK(captured_event->updates.front().value == "accept_me");
         CHECK(captured_event->updates.front().result == SetConfigParameterResultEnum::Applied);
+
+        // An unregistered handler is not called, the others are
+        int remaining_calls = 0;
+        config_service.register_config_update_handler(
+            [&remaining_calls](const ConfigurationUpdate&) { ++remaining_calls; });
+        unregister();
+        captured_event.reset();
+        config_service.set_config_parameters(ConfigServiceInterface::ACTIVE_SLOT, {update}, origin);
+        CHECK(remaining_calls == 1);
+        CHECK_FALSE(captured_event.has_value());
     }
 
     SECTION("Set Parameters: RequiresRestart/Rejected module replies keep the persisted change") {

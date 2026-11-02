@@ -8,6 +8,8 @@
 #include <ostream>
 #include <string>
 
+#include <ocpp/common/json_number.hpp>
+
 using json = nlohmann::json;
 
 namespace ocpp {
@@ -42,7 +44,7 @@ void to_json(json& j, const GetReportRequest& k) {
 
 void from_json(const json& j, GetReportRequest& k) {
     // the required parts of the message
-    k.requestId = j.at("requestId");
+    k.requestId = ocpp::integer_from_json(j.at("requestId"));
 
     // the optional parts of the message
     if (j.contains("componentVariable")) {

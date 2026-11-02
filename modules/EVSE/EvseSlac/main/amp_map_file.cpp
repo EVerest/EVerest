@@ -6,7 +6,7 @@
 #include <stdexcept>
 
 #include <everest/utils/yaml_loader.hpp>
-#include <fmt/core.h>
+#include <fmt/format.h>
 
 namespace module::main {
 

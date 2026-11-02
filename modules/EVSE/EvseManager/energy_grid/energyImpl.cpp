@@ -12,7 +12,7 @@
 #include <cstdlib>
 #include <date/date.h>
 #include <date/tz.h>
-#include <fmt/core.h>
+#include <fmt/format.h>
 #include <string>
 #include <utils/date.hpp>
 #include <utils/formatter.hpp>

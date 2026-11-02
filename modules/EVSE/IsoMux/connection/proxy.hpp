@@ -6,8 +6,10 @@
 #define ISOMUX_PROXY_H
 
 #include <arpa/inet.h>
+#include <cerrno>
 #include <cstddef>
 #include <netinet/in.h>
+#include <sys/socket.h>
 #include <unistd.h>
 
 #include "../tools.hpp"
@@ -56,6 +58,29 @@ inline int proxy_connect(uint16_t port, const char* proxy_if_name = nullptr) {
     }
 
     return sock_fd;
+}
+
+/*!
+ * \brief write all bytes to the local V2G server, retrying partial writes
+ * \param proxy_fd socket returned by proxy_connect()
+ * \param buf data to write
+ * \param count number of bytes to write
+ * \return true if all bytes were written
+ */
+inline bool proxy_write(int proxy_fd, const unsigned char* buf, std::size_t count) {
+    while (count > 0) {
+        // MSG_NOSIGNAL: a server that closed its socket must surface as EPIPE, not kill the process
+        const ssize_t written = send(proxy_fd, buf, count, MSG_NOSIGNAL);
+        if (written < 0 and errno == EINTR) {
+            continue;
+        }
+        if (written <= 0) {
+            return false;
+        }
+        buf += written;
+        count -= static_cast<std::size_t>(written);
+    }
+    return true;
 }
 
 #endif /* ISOMUX_PROXY_H */

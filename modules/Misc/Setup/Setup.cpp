@@ -9,7 +9,7 @@
 
 #include <everest/run_application/run_application.hpp>
 
-#include <fmt/core.h>
+#include <fmt/format.h>
 
 using namespace everest::run_application;
 

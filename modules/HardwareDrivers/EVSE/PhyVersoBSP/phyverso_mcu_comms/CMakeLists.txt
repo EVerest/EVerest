@@ -1,5 +1,3 @@
-cmake_minimum_required(VERSION 3.10)
-
 # set the project name
 project(phyverso_mcu_comms VERSION 0.1)
 # specify the C++ standard

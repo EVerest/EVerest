@@ -28,13 +28,6 @@ cc_test(
             "main/car_simulation.*",
         ],
     ),
-    local_defines = [
-        "BUILD_TZ_LIB=ON",
-        "USE_SYSTEM_TZ_DB=ON",
-        "USE_OS_TZDB=1",
-        "USE_AUTOLOAD=0",
-        "HAS_REMOTE_API=0",
-    ],
     deps = [
         "//lib/everest/framework",
         "//lib/everest/log:liblog",

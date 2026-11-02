@@ -116,8 +116,8 @@ void ConnectorBase::ev_init() {
             [this](const types::powermeter::Powermeter& power) {
                 EVLOG_verbose << log_prefix << "Received powermeter measurement: " << power;
 
-                auto output_voltage = power.voltage_V.value_or(types::units::Voltage{.DC = 0}).DC.value_or(0);
-                auto output_current = power.current_A.value_or(types::units::Current{.DC = 0}).DC.value_or(0);
+                auto output_voltage = power.voltage_V.value_or(types::units::Voltage{}).DC.value_or(0);
+                auto output_current = power.current_A.value_or(types::units::Current{}).DC.value_or(0);
 
                 this->external_provided_data.output_voltage = output_voltage;
                 this->external_provided_data.output_current = output_current;
@@ -127,10 +127,7 @@ void ConnectorBase::ev_init() {
                     return; // do not publish the powermeter values during cable check phase when HACK is enabled
                 }
 
-                types::power_supply_DC::VoltageCurrent export_vc = {
-                    .voltage_V = output_voltage,
-                    .current_A = output_current,
-                };
+                types::power_supply_DC::VoltageCurrent export_vc = {output_voltage, output_current};
 
                 EVLOG_debug << log_prefix << "Publishing voltage/current from powermeter: " << output_voltage << "V "
                             << output_current << "A";
@@ -185,10 +182,7 @@ void ConnectorBase::ev_init() {
 
                 EVLOG_debug << log_prefix << "Publishing voltage/current from OVM: " << voltage << "V 0A";
 
-                types::power_supply_DC::VoltageCurrent export_vc = {
-                    .voltage_V = (float)voltage,
-                    .current_A = 0,
-                };
+                types::power_supply_DC::VoltageCurrent export_vc = {(float)voltage, 0};
 
                 this->impl->publish_voltage_current(export_vc);
             }

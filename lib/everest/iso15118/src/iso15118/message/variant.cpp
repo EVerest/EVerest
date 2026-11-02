@@ -26,6 +26,7 @@ static void handle_sap(VariantAccess& va) {
 
     if (decode_status != 0) {
         va.error = "decode_appHand_exiDocument failed with " + std::to_string(decode_status);
+        va.undecodable = true;
         return;
     }
 
@@ -45,6 +46,7 @@ static void handle_main(VariantAccess& va) {
 
     if (decode_status != 0) {
         va.error = "decode_iso20_exiDocument failed with " + std::to_string(decode_status);
+        va.undecodable = true;
         return;
     }
 
@@ -100,6 +102,7 @@ static void handle_dc(VariantAccess& va) {
 
     if (decode_status != 0) {
         va.error = "decode_iso20_dc_exiDocument failed with " + std::to_string(decode_status);
+        va.undecodable = true;
         return;
     }
 
@@ -135,6 +138,7 @@ static void handle_ac(VariantAccess& va) {
 
     if (decode_status != 0) {
         va.error = "decode_iso20_dc_exiDocument failed with " + std::to_string(decode_status);
+        va.undecodable = true;
         return;
     }
 
@@ -158,6 +162,7 @@ static void handle_ac_iec_der(VariantAccess& va) {
 
     if (decode_status != 0) {
         va.error = "decode_iso20_ac_der_iec_exiDocument failed with " + std::to_string(decode_status);
+        va.undecodable = true;
         return;
     }
 
@@ -181,6 +186,7 @@ static void handle_ac_sae_der(VariantAccess& va) {
 
     if (decode_status != 0) {
         va.error = "decode_iso20_ac_der_sae_exiDocument failed with " + std::to_string(decode_status);
+        va.undecodable = true;
         return;
     }
 
@@ -201,15 +207,13 @@ Variant::Variant(io::v2gtp::PayloadType payload_type, const io::StreamInputView&
 
     if (buffer_view.payload == nullptr or buffer_view.payload_len == 0) {
         error = "empty EXI payload";
+        undecodable = true;
         logf_error("Failed due to: %s\n", error.c_str());
         return;
     }
 
     VariantAccess va{
-        get_exi_input_stream(buffer_view),
-        this->data,
-        this->type,
-        this->error,
+        get_exi_input_stream(buffer_view), this->data, this->type, this->error, this->undecodable,
     };
 
     if (payload_type == PayloadType::SAP) {
@@ -225,7 +229,8 @@ Variant::Variant(io::v2gtp::PayloadType payload_type, const io::StreamInputView&
     } else if (payload_type == io::v2gtp::PayloadType::Part20DerSae) {
         handle_ac_sae_der(va);
     } else {
-        logf_warning("Unknown type");
+        error = "unsupported V2GTP payload type";
+        undecodable = true;
     }
 
     if (data != nullptr) {

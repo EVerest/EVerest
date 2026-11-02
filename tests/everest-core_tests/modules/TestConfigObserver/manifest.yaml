@@ -1,0 +1,13 @@
+description: "Test module that records configuration change notifications of another module"
+metadata:
+  license: "https://opensource.org/licenses/Apache-2.0"
+  authors: ["Piet Gömpel"]
+config:
+  observed_module_id:
+    description: "Module id whose configuration changes are recorded"
+    type: string
+    default: "test_config_target"
+provides:
+  main:
+    description: "Reports the received notifications"
+    interface: "test_config_observer"

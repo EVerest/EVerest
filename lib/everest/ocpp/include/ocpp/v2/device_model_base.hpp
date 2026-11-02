@@ -37,7 +37,8 @@ public:
     T get_value(const Component& component_id, const Variable& variable_id,
                 const AttributeEnum& attribute_enum = AttributeEnum::Actual) const {
         std::string value;
-        const auto status = request_value_internal(component_id, variable_id, attribute_enum, value, true);
+        const auto status =
+            request_value_internal(component_id, variable_id, attribute_enum, value, true, UnsetValue::NotSupported);
 
         if (status != GetVariableStatusEnum::Accepted) {
             EVLOG_critical << "Required value " << variable_id.name << " of component " << component_id.name
@@ -73,7 +74,8 @@ public:
     std::optional<T> get_optional_value(const Component& component_id, const Variable& variable_id,
                                         const AttributeEnum& attribute_enum = AttributeEnum::Actual) const {
         std::string value;
-        const auto status = request_value_internal(component_id, variable_id, attribute_enum, value, true);
+        const auto status =
+            request_value_internal(component_id, variable_id, attribute_enum, value, true, UnsetValue::NotSupported);
 
         if (status != GetVariableStatusEnum::Accepted) {
             return std::nullopt;
@@ -112,7 +114,8 @@ public:
     RequestDeviceModelResponse<T> request_value(const Component& component_id, const Variable& variable_id,
                                                 const AttributeEnum& attribute_enum) const {
         std::string value;
-        const auto status = request_value_internal(component_id, variable_id, attribute_enum, value, false);
+        const auto status =
+            request_value_internal(component_id, variable_id, attribute_enum, value, false, UnsetValue::NotSupported);
 
         if (status != GetVariableStatusEnum::Accepted) {
             return {status, std::nullopt};
@@ -128,7 +131,7 @@ public:
 private:
     virtual GetVariableStatusEnum request_value_internal(const Component& component_id, const Variable& variable_id,
                                                          const AttributeEnum& attribute_enum, std::string& value,
-                                                         bool allow_write_only = false) const = 0;
+                                                         bool allow_write_only, UnsetValue unset_value) const = 0;
 };
 
 } // namespace v2

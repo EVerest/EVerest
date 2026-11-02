@@ -11,9 +11,11 @@
 #include <everest/io/event/timer_fd.hpp>
 #include <everest/io/udp/udp_client.hpp>
 #include <everest/util/misc/observable.hpp>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <protocol/cb_config.h>
+#include <utility>
 
 namespace charge_bridge {
 
@@ -56,6 +58,16 @@ public:
     std::uint8_t link_technology() const;
     std::optional<utilities::chargebridge_telemetry> latest_telemetry() const;
 
+    // cb-host-ports-v1: every heartbeat carries the host's UDP source ports for its CAN and PLC
+    // clients, so the MCU addresses those services without learning the peer from its datagrams
+    // (and without latching a port the host has since closed). The provider is asked right before
+    // each send; {can, plc}, 0 = that bridge has no socket right now.
+    using host_ports = std::pair<std::uint16_t, std::uint16_t>;
+    void set_host_ports_provider(std::function<host_ports()> provider);
+    // A bridge recreated its socket: if the ports changed, a heartbeat goes out now, so the MCU
+    // switches to the new port on this heartbeat instead of on the next tick. No-op otherwise.
+    void announce_host_ports();
+
 private:
     void handle_error_timer();
     void handle_heartbeat_timer();
@@ -65,6 +77,8 @@ private:
     void handle_heartbeat_reply(everest::lib::io::udp::udp_payload const& payload);
     void create_udp_client(std::string const& remote, uint16_t remote_port);
     void handle_ready();
+    // Pulls the current ports into the message; true if they differ from the last sent ones.
+    bool refresh_host_ports();
 
     std::unique_ptr<everest::lib::io::udp::udp_client> m_udp;
     std::uint16_t m_udp_port{0};
@@ -84,6 +98,7 @@ private:
     std::chrono::milliseconds m_connection_to;
     std::function<void(bool)> m_publish_connection_status;
     std::function<void(CbLinkStatusPacket const&)> m_publish_link_status;
+    std::function<host_ports()> m_host_ports;
     std::uint32_t m_mcu_timestamp{0};
     int m_mcu_reset_count{0};
     std::uint8_t m_latched_cb_type{cb_type_not_latched};

@@ -30,9 +30,9 @@ target_link_libraries(${MODULE_NAME} PUBLIC -lpthread)
 
 target_link_libraries(${MODULE_NAME}
     PRIVATE
-        cbv2g::din
-        cbv2g::iso2
-        cbv2g::tp
+        everest::cbv2g::din
+        everest::cbv2g::iso2
+        everest::cbv2g::tp
 )
 
 target_sources(${MODULE_NAME}
@@ -53,4 +53,8 @@ target_sources(${MODULE_NAME}
     PRIVATE
         "connection/tls_connection.cpp"
 )
+
+if(BUILD_TESTING)
+    add_subdirectory(tests)
+endif()
 # ev@c55432ab-152c-45a9-9d2e-7281d50c69c3:v1

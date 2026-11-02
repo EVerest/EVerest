@@ -15,7 +15,7 @@ struct ConfigStub : public ocpp_multi::ConfigInterface {
     std::string DatabasePath{};
     int DelayOcppStart{1};
     bool DelegateNetworkConfigurationToSystem{false};
-    std::string DeviceModelConfigMappings{};
+    std::string Ocpp16KeyMappingsPath{};
     std::string DeviceModelConfigPath{"dm_config"};
     std::string DeviceModelDatabasePath{"dm.db"};
     std::string DeviceModelDatabaseMigrationPath{"device_model_migrations"};
@@ -52,8 +52,8 @@ struct ConfigStub : public ocpp_multi::ConfigInterface {
     [[nodiscard]] bool getDelegateNetworkConfigurationToSystem() const override {
         return DelegateNetworkConfigurationToSystem;
     }
-    [[nodiscard]] std::string getDeviceModelConfigMappings() const override {
-        return DeviceModelConfigMappings;
+    [[nodiscard]] std::string getOcpp16KeyMappingsPath() const override {
+        return Ocpp16KeyMappingsPath;
     }
     [[nodiscard]] std::string getDeviceModelConfigPath() const override {
         return DeviceModelConfigPath;

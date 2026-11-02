@@ -1,0 +1,8 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright Pionix GmbH and Contributors to EVerest
+#
+# Clients of the TCP listener on localhost get every topic except the EVerest
+# internal ones (default mqtt_everest_prefix), which are only reachable over the
+# Unix domain socket. deny is handled before readwrite.
+topic deny everest/#
+topic readwrite #

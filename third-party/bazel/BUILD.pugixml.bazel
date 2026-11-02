@@ -1,0 +1,15 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright Pionix GmbH and Contributors to EVerest
+
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+cc_library(
+    name = "pugixml",
+    srcs = ["pugixml.cpp"],
+    hdrs = [
+        "pugiconfig.hpp",
+        "pugixml.hpp",
+    ],
+    includes = ["."],
+    visibility = ["//visibility:public"],
+)

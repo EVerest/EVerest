@@ -8,6 +8,8 @@
 #include <ostream>
 #include <string>
 
+#include <ocpp/common/json_number.hpp>
+
 using json = nlohmann::json;
 
 namespace ocpp {
@@ -37,7 +39,7 @@ void from_json(const json& j, RemoteStartTransactionRequest& k) {
 
     // the optional parts of the message
     if (j.contains("connectorId")) {
-        k.connectorId.emplace(j.at("connectorId"));
+        k.connectorId.emplace(ocpp::integer_from_json(j.at("connectorId")));
     }
     if (j.contains("chargingProfile")) {
         k.chargingProfile.emplace(j.at("chargingProfile"));

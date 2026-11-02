@@ -3,11 +3,16 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <functional>
+#include <map>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string_view>
 #include <unordered_map>
+
+#include <everest/util/async/monitor.hpp>
 
 #include <utils/config/types.hpp>
 #include <utils/mqtt_abstraction.hpp>
@@ -124,6 +129,15 @@ struct ModuleIdType {
     bool operator<(const ModuleIdType& rhs) const;
 };
 
+/// \brief An accepted change of a configuration parameter of another module
+struct ConfigUpdateNotification {
+    everest::config::ConfigurationParameterIdentifier identifier; ///< The changed configuration parameter
+    std::string value;                                            ///< The string representation of the new value
+    SetResponseStatus status = SetResponseStatus::Accepted; ///< Accepted if the module applied the value at runtime,
+                                                            ///< RebootRequired if it applies on the next start
+    std::optional<std::string> origin; ///< The module that requested the change, empty if it came from outside EVerest
+};
+
 struct ConfigChangeResult {
     SetResponseStatus status;
     std::string reason; ///< only meaningful when status == Rejected
@@ -144,11 +158,14 @@ struct ConfigChangeResult {
 class ConfigServiceClient {
 public:
     using ConfigChangeHandler = std::function<ConfigChangeResult(const std::string& new_value)>;
+    using ConfigUpdateHandler = std::function<void(const ConfigUpdateNotification& notification)>;
 
     /// \brief ConfigService client using the provided \p mqtt_abstraction for the module identified by \p module_id
     /// \p module_names is a mapping of all module ids to module names/types for usage in get_module_configs()
+    /// \p access holds the access rules of the module, checked by register_config_update_handler()
     ConfigServiceClient(std::shared_ptr<MQTTAbstraction> mqtt_abstraction, const std::string& module_id,
-                        const std::map<std::string, std::string, std::less<>>& module_names);
+                        const std::map<std::string, std::string, std::less<>>& module_names,
+                        const everest::config::Access& access);
 
     /// \brief Compiles and \returns all module configs that this module has access to
     std::map<ModuleIdType, everest::config::ModuleConfigurationParameters> get_module_configs();
@@ -170,18 +187,43 @@ public:
     void register_config_change_handler(const std::string& impl_id, const std::string_view param_name,
                                         ConfigChangeHandler handler);
 
+    /// \brief Registers the \p handler to be invoked for every accepted change of a configuration parameter of the
+    /// module \p module_id in the active slot.
+    ///
+    /// Changes are delivered only if the access block of this module allows reading the configuration of
+    /// \p module_id, and only after the configuration service accepted them. Changes that this module requested
+    /// itself are not delivered; their result is the reply to set_config_value(). Changes made before the
+    /// registration are not delivered, so read the current values after registering.
+    /// The handler runs on the MQTT dispatch thread, one notification after the other.
+    /// \returns A function that unregisters the handler. Once it returned, the handler is not called any more. It may
+    /// be called from a handler. std::nullopt if \p module_id is unknown or this module may not read its
+    /// configuration; the handler is not registered then.
+    std::optional<std::function<void()>> register_config_update_handler(const std::string& module_id,
+                                                                        ConfigUpdateHandler handler);
+
 private:
     std::shared_ptr<MQTTAbstraction> m_mqtt_abstraction;
     std::string m_origin;
     std::map<std::string, std::string, std::less<>> m_module_names;
+    everest::config::Access m_access;
     // a key-value (parameter-name to handler) store for each implementation_id
     std::map<std::string, std::map<std::string, ConfigChangeHandler>> m_change_callbacks;
     // Guards m_change_callbacks: register_config_change_handler() may be called from any module
     // thread (e.g. from Python at runtime) while the MQTT dispatch thread reads the map in
     // mqtt_set_request().
     std::mutex m_change_callbacks_mutex;
+    struct UpdateHandlers {
+        // module id of the changed module -> handler id -> handler
+        std::map<std::string, std::map<std::uint64_t, ConfigUpdateHandler>> handlers;
+        std::uint64_t next_id{0};
+    };
+    everest::lib::util::monitor<UpdateHandlers> m_update_handlers;
+    // Held while the handlers of a notification run, so that unregistering can wait for them
+    std::recursive_mutex m_update_dispatch_mutex;
 
     void mqtt_set_request(const nlohmann::json& data);
+    void mqtt_config_update(const nlohmann::json& data);
+    bool is_update_handler_registered(const std::string& module_id, std::uint64_t id);
 };
 
 class MqttConfigServiceHandler {
@@ -192,7 +234,12 @@ public:
     /// \param mqtt_abstraction  MQTT transport for pub/sub and module-to-module set forwarding.
     /// \param config_svc        All domain operations — reads (via get_active_module_configurations) and writes
     ///                          (via set_config_parameters) are routed through this interface.
+    /// Accepted changes of the active slot are sent to every other module whose access block allows reading the
+    /// changed module, except to the module that requested the change.
     MqttConfigServiceHandler(MQTTAbstraction& mqtt_abstraction, ConfigServiceInterface& config_svc);
+    ~MqttConfigServiceHandler();
+    MqttConfigServiceHandler(const MqttConfigServiceHandler&) = delete;
+    MqttConfigServiceHandler& operator=(const MqttConfigServiceHandler&) = delete;
 
     /// \brief This class provides an MQTT interface to modules and uses the ConfigServiceInterface to fulfill incoming
     /// requests. This function allows to request a config parameter change from a module. This function skips
@@ -206,6 +253,7 @@ private:
     MQTTAbstraction& m_mqtt_abstraction;
     std::shared_ptr<TypedHandler> m_get_config_token;
     ConfigServiceInterface& m_config_svc;
+    std::function<void()> m_unregister_config_update_handler;
 };
 
 namespace conversions {
@@ -274,6 +322,10 @@ void from_json(const nlohmann::json& j, GetConfigResult& r);
 void to_json(nlohmann::json& j, const ConfigChangeResult& r);
 
 void from_json(const nlohmann::json& j, ConfigChangeResult& r);
+
+void to_json(nlohmann::json& j, const ConfigUpdateNotification& n);
+
+void from_json(const nlohmann::json& j, ConfigUpdateNotification& n);
 } // namespace config
 } // namespace Everest
 

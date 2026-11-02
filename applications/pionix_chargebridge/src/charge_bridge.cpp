@@ -606,6 +606,34 @@ void charge_bridge::create_internal_runtime() {
                                                                      link_status_cb, m_ready_notify);
                       });
     }
+    wire_host_port_announcements();
+}
+
+// cb-host-ports-v1: the heartbeat carries the host's CAN and PLC UDP source ports, so the MCU serves
+// those sockets without learning them from their datagrams, and a bridge that reopens its socket
+// (error recovery, connection edge, rediscovery) triggers an extra heartbeat so the new port reaches
+// the MCU at once instead of after its slot timeout. Re-run after every create_internal_runtime():
+// a bridge created late must be wired too, and re-setting a handler is harmless. Everything here
+// runs on the event loop thread, which owns the bridges.
+void charge_bridge::wire_host_port_announcements() {
+    if (not m_heartbeat) {
+        return;
+    }
+    m_heartbeat->set_host_ports_provider([this]() {
+        return heartbeat_service::host_ports{m_can_0_client ? m_can_0_client->local_port() : std::uint16_t{0},
+                                             m_plc ? m_plc->local_port() : std::uint16_t{0}};
+    });
+    auto announce = [this]() {
+        if (m_heartbeat) {
+            m_heartbeat->announce_host_ports();
+        }
+    };
+    if (m_can_0_client) {
+        m_can_0_client->set_endpoint_changed_handler(announce);
+    }
+    if (m_plc) {
+        m_plc->set_endpoint_changed_handler(announce);
+    }
 }
 
 // True if the config asks for at least one bridge, i.e. if an empty runtime means something failed.

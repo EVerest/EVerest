@@ -9,7 +9,7 @@ logs::LogIntf log_printf{
     logs::LogFun([](const std::string& message) { printf("WARNING: %s\n", message.c_str()); }),
     logs::LogFun([](const std::string& message) { printf("INFO: %s\n", message.c_str()); }),
     logs::LogFun([](const std::string& message) { printf("DEBUG: %s\n", message.c_str()); }),
-    .verbose = logs::LogFun([](const std::string& message) { printf("VERBOSE: %s\n", message.c_str()); }),
+    logs::LogFun([](const std::string& message) { printf("VERBOSE: %s\n", message.c_str()); }),
 };
 
 }; // namespace logs

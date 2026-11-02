@@ -3,7 +3,7 @@ asyncapi: 3.0.0
 id: 'pionix:de:everest:error_history_consumer_API'
 info:
   title: 'EVerest API definition for error history (consumer)'
-  version: 1.0.0
+  version: 1.1.0
   description: >-
     API for EVerest API clients for error status and history.
 
@@ -381,11 +381,12 @@ components:
         sub_type:
           type: string
         description:
+          description: Description of the error type from its definition in the errors YAML files.
           type: string
           minLength: 2
         message:
+          description: Free text chosen by the raiser of the error; empty if it gave none.
           type: string
-          minLength: 2
         severity:
           description: >-
             Deprecated: will be removed in 2027.04.0. EVerest defines no clear
@@ -395,6 +396,7 @@ components:
         origin:
           $ref: '#/components/schemas/ImplementationIdentifier'
         timestamp:
+          description: Time the error was raised in RFC3339 format
           type: string
           format: date-time
         uuid:
@@ -475,15 +477,20 @@ components:
         - timestamp_to
       properties:
         timestamp_from:
+          description: Start of the time period in RFC3339 format, inclusive
           type: string
           format: date-time
         timestamp_to:
+          description: End of the time period in RFC3339 format, inclusive
           type: string
           format: date-time
 
     CommunicationCheck:
       type: boolean
-      description: "Send 'true' at least every 'cfg_communication_check_to_s' seconds to signal module is alive. Send 'false' to stop communication check'"
+      description: >-
+        Send true at least every cfg_communication_check_to_s seconds to signal that the client is alive, otherwise
+        EVerest raises a CommunicationFault, which the next message clears. Send false to stop the check until the
+        module restarts.
     HeartBeatId:
       type: integer
       description: "64bit unsigned integer. The id of every heartbeat increases by 1 and overflows when the maximum representable value is reached"

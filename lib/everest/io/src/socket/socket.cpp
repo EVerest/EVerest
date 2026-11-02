@@ -582,6 +582,14 @@ void set_socket_send_buffer_to_min(int fd) {
     }
 }
 
+bool is_send_backpressure(int error) {
+    return error == EAGAIN or error == EWOULDBLOCK or error == EINTR or error == ENOBUFS;
+}
+
+int send_failure_code(int error) {
+    return is_send_backpressure(error) ? 0 : error;
+}
+
 int get_pending_error(int fd) {
     int error = 0;
     socklen_t errlen = sizeof(error);

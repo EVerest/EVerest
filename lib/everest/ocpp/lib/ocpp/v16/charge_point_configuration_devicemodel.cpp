@@ -13,7 +13,7 @@
 #include <ocpp/v2/ctrlr_component_variables.hpp>
 #include <ocpp/v2/device_model.hpp>
 #include <ocpp/v2/device_model_interface.hpp>
-#include <ocpp/v2/ocpp16_custom_config_mappings.hpp>
+#include <ocpp/v2/ocpp16_key_mappings.hpp>
 #include <ocpp/v2/ocpp_enums.hpp>
 #include <ocpp/v2/ocpp_types.hpp>
 
@@ -38,7 +38,7 @@ template <size_t L> bool operator==(const CiString<L>& lhs, const std::string_vi
 namespace {
 using namespace ocpp;
 using SetResult = v16::ChargePointConfigurationDeviceModel::SetResult;
-using DeviceModelInterface = v2::DeviceModelInterface;
+using DeviceModelInterface = v2::DeviceModelVariablesInterface;
 using SupportedFeatureProfiles = v16::SupportedFeatureProfiles;
 
 constexpr const std::string_view cost_and_price_feature{"CostAndPrice"};
@@ -169,7 +169,8 @@ template <typename T>
 std::optional<T> get_optional(DeviceModelInterface& storage, const v2::Component& component,
                               const v2::Variable& variable, v2::AttributeEnum attribute, bool writeOnly = false) {
     std::string value;
-    const auto get_result = storage.get_variable(component, variable, attribute, value, writeOnly);
+    const auto get_result =
+        storage.get_variable(component, variable, attribute, value, writeOnly, v2::UnsetValue::NotSupported);
     if (get_result == v2::GetVariableStatusEnum::Accepted) {
         try {
             if constexpr (std::is_same_v<bool, T>) {
@@ -1195,11 +1196,11 @@ std::string ChargePointConfigurationDeviceModel::calculateSupportedMeasurands() 
 // Public methods
 
 ChargePointConfigurationDeviceModel::ChargePointConfigurationDeviceModel(
-    const std::string_view& ocpp_main_path, std::unique_ptr<v2::DeviceModelInterface> device_model_interface,
-    v2::Ocpp16CustomConfigMappings custom_config_mappings_) :
+    const std::string_view& ocpp_main_path, std::unique_ptr<v2::DeviceModelVariablesInterface> device_model_interface,
+    v2::Ocpp16KeyMappings custom_key_mappings_) :
     ChargePointConfigurationBase(ocpp_main_path),
     storage(std::move(device_model_interface)),
-    custom_config_mappings(std::move(custom_config_mappings_)) {
+    custom_key_mappings(std::move(custom_key_mappings_)) {
     const auto profiles = get_optional<std::string>(*storage, keys::valid_keys::SupportedFeatureProfiles);
     const auto measurands = calculateSupportedMeasurands();
     ProfilesSet initial;
@@ -1212,7 +1213,7 @@ ChargePointConfigurationDeviceModel::ChargePointConfigurationDeviceModel(
         get_optional<std::string>(*storage, keys::valid_keys::ContractValidationOffline).has_value();
     const bool cost_and_price_config_present =
         get_optional<std::string>(*storage, keys::valid_keys::CustomDisplayCostAndPrice).has_value();
-    const bool custom_config_present = !custom_config_mappings.empty();
+    const bool custom_key_mappings_present = !custom_key_mappings.empty();
 
     if (pnc_config_present) {
         // add PnC behind the scenes as supported feature profile
@@ -1224,7 +1225,7 @@ ChargePointConfigurationDeviceModel::ChargePointConfigurationDeviceModel(
         initial.insert(conversions::string_to_supported_feature_profiles(cost_and_price_feature));
     }
 
-    if (custom_config_present) {
+    if (custom_key_mappings_present) {
         // add Custom behind the scenes as supported feature profile
         initial.insert(conversions::string_to_supported_feature_profiles(custom_feature));
     }
@@ -1382,22 +1383,24 @@ bool ChargePointConfigurationDeviceModel::shouldExposeKey(keys::valid_keys key) 
 }
 
 std::optional<KeyValue> ChargePointConfigurationDeviceModel::getCustomKeyValue(const std::string& key) {
-    const auto it = custom_config_mappings.find(key);
-    if (it == custom_config_mappings.end()) {
+    const auto it = custom_key_mappings.find(key);
+    if (it == custom_key_mappings.end()) {
         return std::nullopt;
     }
 
     const auto& [component, variable] = it->second;
-    const auto value = get_optional<std::string>(*storage, component, variable, v2::AttributeEnum::Actual);
-    if (!value.has_value()) {
+    if (!key_exists(*storage, component, variable)) {
         return std::nullopt;
     }
 
+    // a known key without a value is reported without one (OCPP 1.6 KeyValue.value)
     KeyValue kv;
     kv.key = key;
     kv.readonly =
         isReadOnly(*storage, component.name.get(), variable.name.get(), v2::AttributeEnum::Actual).value_or(true);
-    kv.value = value.value();
+    if (const auto value = get_optional<std::string>(*storage, component, variable, v2::AttributeEnum::Actual)) {
+        kv.value = value.value();
+    }
     return kv;
 }
 
@@ -1429,7 +1432,7 @@ void ChargePointConfigurationDeviceModel::appendMeterPublicKeyKeyValues(std::vec
 }
 
 void ChargePointConfigurationDeviceModel::appendCustomKeyValues(std::vector<KeyValue>& all) {
-    for (const auto& [ocpp16_key, _] : custom_config_mappings) {
+    for (const auto& [ocpp16_key, _] : custom_key_mappings) {
         const auto kv = getCustomKeyValue(ocpp16_key);
         if (kv.has_value()) {
             all.push_back(std::move(kv.value()));
@@ -1531,8 +1534,8 @@ void ChargePointConfigurationDeviceModel::appendSupportedMeasurandsKeyValue(
 
 std::optional<ConfigurationStatus> ChargePointConfigurationDeviceModel::setCustomKey(const std::string& key,
                                                                                      const std::string& value) {
-    const auto it = custom_config_mappings.find(key);
-    if (it == custom_config_mappings.end()) {
+    const auto it = custom_key_mappings.find(key);
+    if (it == custom_key_mappings.end()) {
         return std::nullopt;
     }
 
@@ -1782,6 +1785,7 @@ ChargePointConfigurationDeviceModel::get_websocket_connection_options(int32_t sl
                                         getIFace(),
                                         getEnableTLSKeylog(),
                                         getTLSKeylogFile()};
+        opts.max_incoming_message_size = static_cast<std::size_t>(getMaxIncomingMessageSize());
         return opts;
     } catch (const ocpp::v2::DeviceModelError& e) {
         EVLOG_error << "Could not configure v1.6 connection options, device model error: " << e.what();
@@ -1928,6 +1932,11 @@ bool ChargePointConfigurationDeviceModel::getVerifyCsmsCommonName() {
 
 int ChargePointConfigurationDeviceModel::getMaxMessageSize() {
     return get_value<int>(*storage, keys::valid_keys::MaxMessageSize);
+}
+
+int ChargePointConfigurationDeviceModel::getMaxIncomingMessageSize() {
+    return get_optional<int>(*storage, keys::valid_keys::MaxIncomingMessageSize)
+        .value_or(static_cast<int>(DEFAULT_MAX_INCOMING_MESSAGE_SIZE));
 }
 
 std::int32_t ChargePointConfigurationDeviceModel::getMaxCompositeScheduleDuration() {
@@ -2186,6 +2195,10 @@ KeyValue ChargePointConfigurationDeviceModel::getMaxCompositeScheduleDurationKey
 
 KeyValue ChargePointConfigurationDeviceModel::getMaxMessageSizeKeyValue() {
     return get_key_value(*storage, keys::valid_keys::MaxMessageSize);
+}
+
+KeyValue ChargePointConfigurationDeviceModel::getMaxIncomingMessageSizeKeyValue() {
+    return get_key_value(*storage, keys::valid_keys::MaxIncomingMessageSize);
 }
 
 KeyValue ChargePointConfigurationDeviceModel::getOcspRequestIntervalKeyValue() {
@@ -3828,6 +3841,7 @@ std::optional<ConfigurationStatus> ChargePointConfigurationDeviceModel::set(cons
         case keys::valid_keys::LogMessagesRaw:
         case keys::valid_keys::MaxCompositeScheduleDuration:
         case keys::valid_keys::MaxMessageSize:
+        case keys::valid_keys::MaxIncomingMessageSize:
         case keys::valid_keys::MessageQueueSizeThreshold:
         case keys::valid_keys::MessageTypesDiscardForQueueing:
         case keys::valid_keys::QueueAllMessages:

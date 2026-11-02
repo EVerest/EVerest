@@ -5,7 +5,7 @@
 #include <algorithm>
 #include <chrono>
 #include <fmt/color.h>
-#include <fmt/core.h>
+#include <fmt/format.h>
 
 #include "IECStateMachine.hpp"
 #include "SessionLog.hpp"
@@ -237,6 +237,12 @@ void EvseManager::init() {
 
     r_bsp->subscribe_request_stop_transaction(
         [this](types::evse_manager::StopTransactionRequest r) { charger->cancel_transaction(r); });
+
+    r_bsp->subscribe_telemetry([this](types::evse_board_support::Telemetry const& telemetry) {
+        if (telemetry.plug_temperature_C.has_value()) {
+            p_dc_external_derate->publish_plug_temperature_C(telemetry.plug_temperature_C.value());
+        }
+    });
 
     r_bsp->subscribe_capabilities([this](types::evse_board_support::HardwareCapabilities const& c) {
         hw_capabilities.apply_when_allowed(c);
@@ -911,9 +917,17 @@ void EvseManager::ready() {
                 Everest::scoped_lock_timeout lock(ev_info_mutex,
                                                   Everest::MutexDescription::EVSE_subscribe_dc_ev_maximum_limits);
 
-                ev_info.maximum_current_limit = l.dc_ev_maximum_current_limit;
-                ev_info.maximum_power_limit = l.dc_ev_maximum_power_limit;
-                ev_info.maximum_voltage_limit = l.dc_ev_maximum_voltage_limit;
+                // Optional in CurrentDemandReq (ISO 15118-2 Table 55, DIN SPEC 70121): an omitted limit keeps the
+                // one negotiated in ChargeParameterDiscovery.
+                if (l.dc_ev_maximum_current_limit.has_value()) {
+                    ev_info.maximum_current_limit = l.dc_ev_maximum_current_limit;
+                }
+                if (l.dc_ev_maximum_power_limit.has_value()) {
+                    ev_info.maximum_power_limit = l.dc_ev_maximum_power_limit;
+                }
+                if (l.dc_ev_maximum_voltage_limit.has_value()) {
+                    ev_info.maximum_voltage_limit = l.dc_ev_maximum_voltage_limit;
+                }
                 p_evse->publish_ev_info(ev_info);
 
                 // Update limits for over voltage monitoring
@@ -1360,6 +1374,7 @@ void EvseManager::ready() {
 
         r_slac[0]->subscribe_dlink_ready([this](const bool value) {
             session_log.evse(true, fmt::format("D-LINK_READY ({})", value));
+            charger->set_dlink_ready(value);
             if (hlc_enabled) {
                 r_hlc[0]->call_dlink_ready(value);
                 charger->get_stopwatch().mark("D-LINK_READY");
@@ -1695,12 +1710,14 @@ Charger::SetupConfig EvseManager::get_charger_setup_config(Charger::ChargeMode c
     charger_setup.ac_hlc_enabled = ac_hlc_enabled;
     charger_setup.ac_hlc_use_5percent = config.ac_hlc_use_5percent;
     charger_setup.ac_enforce_hlc = config.ac_enforce_hlc;
+    charger_setup.ac_limit_slac_init_retries = config.ac_limit_slac_init_retries;
     charger_setup.ac_with_soc_timeout = ac_with_soc_timeout;
     charger_setup.soft_over_current_tolerance_percent = config.soft_over_current_tolerance_percent;
     charger_setup.soft_over_current_measurement_noise_A = config.soft_over_current_measurement_noise_A;
     charger_setup.switch_3ph1ph_delay_s = config.switch_3ph1ph_delay_s;
     charger_setup.switch_3ph1ph_cp_state = config.switch_3ph1ph_cp_state;
     charger_setup.soft_over_current_timeout_ms = config.soft_over_current_timeout_ms;
+    charger_setup.soft_over_current_stale_data_warning_ms = config.soft_over_current_stale_data_warning_ms;
     charger_setup.state_F_after_fault_ms = config.state_F_after_fault_ms;
     charger_setup.reinit_duration_ms = config.reinit_duration_ms;
     charger_setup.reinit_method = config.reinit_method;
@@ -1838,7 +1855,8 @@ bool EvseManager::update_max_current_limit(types::energy::ExternalLimits& limits
     return true;
 }
 
-bool EvseManager::reserve(int32_t id, const bool signal_reservation_event) {
+bool EvseManager::reserve(const types::evse_manager::ReserveRequest& request, const bool signal_reservation_event) {
+    const auto id = request.reservation_id;
     EVLOG_debug << "Reserve called for reservation id " << id
                 << ", signal reservation event: " << signal_reservation_event;
 
@@ -1863,6 +1881,7 @@ bool EvseManager::reserve(int32_t id, const bool signal_reservation_event) {
     Everest::scoped_lock_timeout lock(reservation_mutex, Everest::MutexDescription::EVSE_reserve);
 
     const bool overwrite_reservation = (this->reservation_id == id);
+    const bool details_changed = id >= 0 && this->reservation_details != request.reservation;
 
     if (reserved && this->reservation_id != -1) {
         EVLOG_info << "Rejecting reservation because evse is already reserved for reservation id "
@@ -1875,13 +1894,15 @@ bool EvseManager::reserve(int32_t id, const bool signal_reservation_event) {
         reserved = true;
         if (id >= 0) {
             this->reservation_id = id;
+            this->reservation_details = request.reservation;
         }
 
-        // When overwriting the reservation, don't signal.
-        if ((not overwrite_reservation || this->reservation_id == -1) && signal_reservation_event) {
+        // When overwriting the reservation, only signal changed details (H01.FR.01 replaces by reservation id).
+        if ((not overwrite_reservation || this->reservation_id == -1 || details_changed) && signal_reservation_event) {
             // publish event to other modules
             types::evse_manager::SessionEvent se;
             se.event = types::evse_manager::SessionEventEnum::ReservationStart;
+            se.reservation = this->reservation_details;
 
             // Normally we should signal for each connector when an evse is reserved, but since in this implementation
             // each evse only has one connector, this is sufficient for now.
@@ -1922,6 +1943,7 @@ void EvseManager::cancel_reservation(bool signal_event) {
         EVLOG_debug << "Reservation cancelled";
         reserved = false;
         this->reservation_id = -1;
+        this->reservation_details.reset();
 
         // publish event to other modules
         if (signal_event) {
@@ -2258,10 +2280,10 @@ void EvseManager::cable_check() {
         }
 
         // Verify output is below 60V initially
-        if (not wait_powersupply_DC_below_voltage(CABLECHECK_SAFE_VOLTAGE)) {
-            std::ostringstream oss;
-            oss << "Voltage did not drop below " << CABLECHECK_SAFE_VOLTAGE << "V within timeout.";
-            fail_cable_check(oss.str());
+        if (const auto wait_result = wait_powersupply_DC_below_voltage(CABLECHECK_SAFE_VOLTAGE);
+            not wait_result.condition_met()) {
+            fail_cable_check(describe_powersupply_wait_failure(
+                wait_result, fmt::format("drop below {:.0f} V", CABLECHECK_SAFE_VOLTAGE)));
             return;
         }
         charger->get_stopwatch().mark("<60V");
@@ -2287,11 +2309,12 @@ void EvseManager::cable_check() {
 
             powersupply_DC_on();
 
-            if (not wait_powersupply_DC_voltage_reached(config.cable_check_relays_open_voltage_V)) {
-                std::ostringstream oss;
-                oss << "CableCheck: Voltage did not rise to " << config.cable_check_relays_open_voltage_V
-                    << " V within timeout";
-                fail_cable_check(oss.str());
+            if (const auto wait_result = wait_powersupply_DC_voltage_reached(config.cable_check_relays_open_voltage_V);
+                not wait_result.condition_met()) {
+                fail_cable_check(fmt::format(
+                    "CableCheck: {}",
+                    describe_powersupply_wait_failure(
+                        wait_result, fmt::format("rise to {} V", config.cable_check_relays_open_voltage_V))));
                 return;
             }
 
@@ -2401,10 +2424,11 @@ void EvseManager::cable_check() {
         // Within 2.5s present voltage at side B must be below 60V. As the power supply ramp up speed varies greatly,
         // we can only achieve this by limiting the current to I < cable_check_voltage/110 Ohm. The hard coded limit
         // above fulfills that for all voltage ranges.
-        if (not wait_powersupply_DC_voltage_reached(cable_check_voltage)) {
-            std::ostringstream oss;
-            oss << "CableCheck: Voltage did not rise to " << cable_check_voltage << " V within timeout";
-            fail_cable_check(oss.str());
+        if (const auto wait_result = wait_powersupply_DC_voltage_reached(cable_check_voltage);
+            not wait_result.condition_met()) {
+            fail_cable_check(fmt::format(
+                "CableCheck: {}",
+                describe_powersupply_wait_failure(wait_result, fmt::format("rise to {:.2f} V", cable_check_voltage))));
             return;
         }
 
@@ -2498,11 +2522,11 @@ void EvseManager::cable_check() {
             // CC.4.1.2: We need to wait until voltage is below 60V before sending a CableCheck Finished to the EV
             powersupply_DC_off();
 
-            if (not wait_powersupply_DC_below_voltage(CABLECHECK_SAFE_VOLTAGE)) {
-                std::ostringstream oss;
-                oss << "Voltage did not drop below " << CABLECHECK_SAFE_VOLTAGE << "V within timeout.";
+            if (const auto wait_result = wait_powersupply_DC_below_voltage(CABLECHECK_SAFE_VOLTAGE);
+                not wait_result.condition_met()) {
                 imd_stop();
-                fail_cable_check(oss.str());
+                fail_cable_check(describe_powersupply_wait_failure(
+                    wait_result, fmt::format("drop below {:.0f} V", CABLECHECK_SAFE_VOLTAGE)));
                 return;
             }
             charger->get_stopwatch().mark("VRampDown");
@@ -2654,62 +2678,83 @@ void EvseManager::powersupply_DC_off() {
     power_supply_DC_charging_phase = types::power_supply_DC::ChargingPhase::Other;
 }
 
-bool EvseManager::wait_powersupply_DC_voltage_reached(double target_voltage) {
-    // wait until the voltage has rised to the target value
-    Timeout timeout;
-    timeout.start(10s);
-    bool voltage_ok = false;
-    while (not timeout.reached()) {
-        if (cable_check_should_exit()) {
-            EVLOG_warning << "Cancel cable check wait voltage reached";
-            power_supply_DC_charging_phase = types::power_supply_DC::ChargingPhase::Other;
-            powersupply_DC_off();
-            r_hlc[0]->call_cable_check_finished(false);
-            break;
-        }
-        types::power_supply_DC::VoltageCurrent m;
-        if (powersupply_measurement.wait_for(m, 2000ms)) {
-            if (fabs(m.voltage_V - target_voltage) < 10) {
-                voltage_ok = true;
-                break;
-            }
-        } else {
-            EVLOG_info << "Did not receive voltage measurement from power supply within 2 seconds.";
-            power_supply_DC_charging_phase = types::power_supply_DC::ChargingPhase::Other;
-            powersupply_DC_off();
-            break;
-        }
+std::string EvseManager::describe_powersupply_wait_failure(const PowerSupplyMeasurementWaiter::Result& result,
+                                                           const std::string& goal) {
+    if (not result.last_voltage_V.has_value()) {
+        return fmt::format("no measurement received from the power supply at all within {} s, so it is unknown "
+                           "whether the voltage did {}",
+                           CABLECHECK_VOLTAGE_TIMEOUT.count(), goal);
     }
-    return voltage_ok;
+    return fmt::format("voltage did not {} within timeout, last measured {:.2f} V ({} measurements, {} gaps)", goal,
+                       result.last_voltage_V.value(), result.samples, result.gaps);
 }
 
-bool EvseManager::wait_powersupply_DC_below_voltage(double target_voltage) {
-    // wait until the voltage is below the target voltage
-    Timeout timeout;
-    timeout.start(10s);
-    bool voltage_ok = false;
-    while (not timeout.reached()) {
-        if (cable_check_should_exit()) {
-            EVLOG_warning << "Cancel cable check wait below voltage";
-            power_supply_DC_charging_phase = types::power_supply_DC::ChargingPhase::Other;
-            powersupply_DC_off();
-            r_hlc[0]->call_cable_check_finished(false);
-            break;
-        }
-        types::power_supply_DC::VoltageCurrent m;
-        if (powersupply_measurement.wait_for(m, 2000ms)) {
-            if (m.voltage_V < target_voltage) {
-                voltage_ok = true;
-                break;
+PowerSupplyMeasurementWaiter::Result
+EvseManager::wait_powersupply_DC_measurement(const PowerSupplyMeasurementWaiter::Condition& condition,
+                                             const std::string& goal) {
+
+    const PowerSupplyMeasurementWaiter waiter{
+        std::chrono::duration_cast<std::chrono::milliseconds>(CABLECHECK_VOLTAGE_TIMEOUT),
+        std::chrono::seconds(config.cable_check_measurement_timeout_s)};
+
+    const auto result = waiter.wait(
+        condition,
+        [this](std::chrono::milliseconds timeout) -> std::optional<types::power_supply_DC::VoltageCurrent> {
+            types::power_supply_DC::VoltageCurrent m;
+            if (powersupply_measurement.wait_for(m, timeout)) {
+                return m;
             }
-        } else {
-            EVLOG_info << "Did not receive voltage measurement from power supply within 2 seconds.";
-            power_supply_DC_charging_phase = types::power_supply_DC::ChargingPhase::Other;
-            powersupply_DC_off();
-            break;
-        }
+            return std::nullopt;
+        },
+        [this]() { return cable_check_should_exit(); },
+        [this, &goal](int gaps_so_far) {
+            // Log the gap: it is invisible otherwise and is a strong hint at where a later failure
+            // came from.
+            EVLOG_warning << "No measurement received from power supply within "
+                          << config.cable_check_measurement_timeout_s << " s while waiting for " << goal
+                          << ", still waiting (gap " << gaps_so_far << ").";
+        });
+
+    if (result.stop_reason == PowerSupplyMeasurementWaiter::StopReason::Cancelled) {
+        EVLOG_warning << "Cancel cable check while waiting for " << goal;
+        power_supply_DC_charging_phase = types::power_supply_DC::ChargingPhase::Other;
+        powersupply_DC_off();
+        r_hlc[0]->call_cable_check_finished(false);
     }
-    return voltage_ok;
+
+    return result;
+}
+
+PowerSupplyMeasurementWaiter::Result EvseManager::wait_powersupply_DC_voltage_reached(double target_voltage) {
+    // wait until the voltage has rised to the target value
+    const auto result = wait_powersupply_DC_measurement(
+        [target_voltage](const types::power_supply_DC::VoltageCurrent& m) {
+            return fabs(m.voltage_V - target_voltage) < CABLECHECK_VOLTAGE_REACHED_WINDOW_V;
+        },
+        fmt::format("the voltage to reach {:.2f} V", target_voltage));
+
+    if (not result.condition_met()) {
+        // Only switch the power supply off once we have actually given up: doing so on a measurement
+        // gap would make the target voltage unreachable and turn every stall into a failure.
+        power_supply_DC_charging_phase = types::power_supply_DC::ChargingPhase::Other;
+        powersupply_DC_off();
+    }
+
+    return result;
+}
+
+PowerSupplyMeasurementWaiter::Result EvseManager::wait_powersupply_DC_below_voltage(double target_voltage) {
+    // wait until the voltage is below the target voltage
+    const auto result = wait_powersupply_DC_measurement(
+        [target_voltage](const types::power_supply_DC::VoltageCurrent& m) { return m.voltage_V < target_voltage; },
+        fmt::format("the voltage to drop below {:.2f} V", target_voltage));
+
+    if (not result.condition_met()) {
+        power_supply_DC_charging_phase = types::power_supply_DC::ChargingPhase::Other;
+        powersupply_DC_off();
+    }
+
+    return result;
 }
 
 const std::vector<std::unique_ptr<powermeterIntf>>& EvseManager::r_powermeter_billing() {
@@ -2763,12 +2808,19 @@ types::energy::ExternalLimits EvseManager::get_local_energy_limits() {
 }
 
 void EvseManager::fail_cable_check(const std::string& reason) {
+    // The stopwatch marks of the cable check phase are otherwise only reported once charging actually
+    // starts, so on a failure - exactly the case worth investigating - they would be discarded.
+    EVLOG_info << "CableCheck timing up to the failure: " << charger->get_stopwatch().report_phase();
+
     if (config.charge_mode == "DC") {
         power_supply_DC_charging_phase = types::power_supply_DC::ChargingPhase::Other;
         powersupply_DC_off();
         // CC.4.1.2: We need to wait until voltage is below 60V before sending a CableCheck Finished to the EV
-        if (not wait_powersupply_DC_below_voltage(CABLECHECK_SAFE_VOLTAGE)) {
-            EVLOG_error << "Voltage did not drop below 60V within timeout, sending CableCheck Finished(false) anyway";
+        if (const auto wait_result = wait_powersupply_DC_below_voltage(CABLECHECK_SAFE_VOLTAGE);
+            not wait_result.condition_met()) {
+            EVLOG_error << describe_powersupply_wait_failure(
+                               wait_result, fmt::format("drop below {:.0f} V", CABLECHECK_SAFE_VOLTAGE))
+                        << ", sending CableCheck Finished(false) anyway";
         }
         r_hlc[0]->call_cable_check_finished(false);
     }

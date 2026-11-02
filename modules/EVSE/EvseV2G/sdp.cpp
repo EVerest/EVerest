@@ -329,9 +329,7 @@ int sdp_listen(struct v2g_context* v2g_ctx) {
         uint8_t buffer[SDP_HEADER_LEN + SDP_REQUEST_PAYLOAD_LEN];
         char addrbuf[INET6_ADDRSTRLEN] = {0};
         const char* addr = addrbuf;
-        struct sdp_query sdp_query = {
-            .v2g_ctx = v2g_ctx,
-        };
+        struct sdp_query sdp_query = {v2g_ctx};
         socklen_t addrlen = sizeof(sdp_query.remote_addr);
 
         /* Track V2G communication setup timeout [V2G2-723] */

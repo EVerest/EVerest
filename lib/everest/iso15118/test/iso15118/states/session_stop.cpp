@@ -59,8 +59,33 @@ SCENARIO("Session Stop state handling") {
         }
     }
 
-    // GIVEN("Bad case - Dynamic mode, FAILED_PauseNotAllowed") {} // TODO(sl): EVCC requests Pause, but Secc didnt
-    // initiated
+    GIVEN("Bad case - Dynamic mode, FAILED_PauseNotAllowed") {
+        d20::Session session(d20::SelectedServiceParameters(
+            dt::ServiceCategory::AC, dt::AcConnector::ThreePhase, dt::ControlMode::Dynamic,
+            dt::MobilityNeedsMode::ProvidedByEvcc, dt::Pricing::NoPricing, 230));
+
+        message_20::SessionStopRequest req;
+        req.header.session_id = session.get_id();
+        req.header.timestamp = 1691411798;
+        req.charging_session = dt::ChargingSession::Pause;
+
+        WHEN("The SECC did not initiate a pause") {
+            const auto res = d20::state::handle_request(req, session);
+
+            THEN("ResponseCode: FAILED_PauseNotAllowed [V2G20-1195]") {
+                REQUIRE(res.response_code == dt::ResponseCode::FAILED_PauseNotAllowed);
+            }
+        }
+
+        WHEN("The SECC notified a pause before") {
+            session.secc_pause_notified = true;
+            const auto res = d20::state::handle_request(req, session);
+
+            THEN("ResponseCode: OK") {
+                REQUIRE(res.response_code == dt::ResponseCode::OK);
+            }
+        }
+    }
 
     // GIVEN("Bad case - Scheduled mode , FAILED_PauseNotAllowed") {} // TODO(sl): Check current EVPowerProfileEntry for
     // 0kW

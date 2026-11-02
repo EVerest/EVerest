@@ -158,6 +158,9 @@ The manager handles them and routes responses back to the requesting module's pr
 
 # Runtime set: target module replies to manager
 {everest_prefix}modules/{module_id}/config/set_response
+
+# Change notification: manager informs a module about an accepted change
+{everest_prefix}modules/{module_id}/config/updates
 ```
 
 ### Message Payload Structure
@@ -294,6 +297,32 @@ Topic: `{everest_prefix}modules/{target_module_id}/config/set_response`
     "status_info": "",
     "type": "Set",
     "response": { "status": "Accepted", "status_info": "" }
+  }
+}
+```
+
+#### Change Notification (Manager → Module)
+
+For every parameter change of the active slot that the manager accepted, it publishes a notification to each
+module that may read the changed module's configuration, the changed module included. The module that requested
+the change is not notified; it receives the result as its response. `status` is `Accepted` if the target module
+applied the value at runtime and `RebootRequired` if it applies on the next start. `origin` is the requesting
+module and is omitted for changes from outside EVerest. Notifications are not retained.
+
+Topic: `{everest_prefix}modules/{module_id}/config/updates`
+
+```json
+{
+  "msg_type": "ConfigurationRequest",
+  "data": {
+    "identifier": {
+      "module_id": "<changed_module_id>",
+      "configuration_parameter_name": "<param_name>",
+      "module_implementation_id": "<impl_id>"
+    },
+    "value": "<string_value>",
+    "status": "Accepted",
+    "origin": "<requesting_module_id>"
   }
 }
 ```

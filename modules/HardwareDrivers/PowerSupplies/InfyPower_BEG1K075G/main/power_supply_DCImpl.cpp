@@ -82,6 +82,12 @@ void power_supply_DCImpl::init() {
             }
         });
 
+    mod->acdc.signal_connection.connect([this](bool connected) {
+        std::scoped_lock lock(communication_mutex);
+        can_connected = connected;
+        update_communication_fault();
+    });
+
     mod->acdc.switch_on_off(false);
     mod->acdc.adjust_power_factor(1.0);
     mod->acdc.set_output_mode(InfyCanDevice::OutputMode::Automatic);
@@ -89,6 +95,25 @@ void power_supply_DCImpl::init() {
 
 void power_supply_DCImpl::ready() {
     publish_capabilities(caps);
+
+    std::scoped_lock lock(communication_mutex);
+    is_ready = true;
+    update_communication_fault();
+}
+
+void power_supply_DCImpl::update_communication_fault() {
+    // Errors raised before ready() are not retained.
+    if (not is_ready) {
+        return;
+    }
+    const bool raised = error_state_monitor->is_error_active("power_supply_DC/CommunicationFault", "");
+    if (not can_connected and not raised) {
+        raise_error(error_factory->create_error("power_supply_DC/CommunicationFault", "",
+                                                "No communication with the power module",
+                                                Everest::error::Severity::High));
+    } else if (can_connected and raised) {
+        clear_error("power_supply_DC/CommunicationFault");
+    }
 }
 
 void power_supply_DCImpl::handle_setMode(types::power_supply_DC::Mode& mode,

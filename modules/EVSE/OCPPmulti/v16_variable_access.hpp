@@ -31,8 +31,8 @@ public:
     ///        owner can refresh the OCPP1.6 stack's cached network profiles - mirroring the 2.x SetVariables path.
     using on_connection_config_changed_fn = std::function<void()>;
 
-    V16VariableAccess(const ocpp::v16::VariableResolver& resolver, ocpp::v2::DeviceModelInterface& device_model,
-                      get_keys_fn get_keys, set_key_fn set_key,
+    V16VariableAccess(const ocpp::v16::VariableResolver& resolver,
+                      ocpp::v2::DeviceModelVariablesInterface& device_model, get_keys_fn get_keys, set_key_fn set_key,
                       on_connection_config_changed_fn on_connection_config_changed = nullptr);
 
     std::vector<ocpp::v2::GetVariableResult> get(const std::vector<ocpp::v2::GetVariableData>& requests);
@@ -49,7 +49,7 @@ private:
     void clear_active_slot_override(const ocpp::v2::Component& component, const ocpp::v2::Variable& variable);
 
     const ocpp::v16::VariableResolver& m_resolver;
-    ocpp::v2::DeviceModelInterface& m_device_model;
+    ocpp::v2::DeviceModelVariablesInterface& m_device_model;
     V16ConnectionConfigValidator m_connection_config_validator;
     get_keys_fn m_get_keys;
     set_key_fn m_set_key;

@@ -49,12 +49,10 @@ cmds:
       Call to signal that EVSE is reserved. This can be used to e.g. change
       the color of the HMI LEDs to indicate reservation.
     arguments:
-      reservation_id:
-        description: >-
-          The reservation id (should be added to the TransactionStarted event). Set this to a negative value if there is
-          no specific reservation id for this evse but the evse should still move to a Reserved state because of total
-          global reservations.
-        type: integer
+      request:
+        description: The reservation to place on this EVSE
+        type: object
+        $ref: /evse_manager#/ReserveRequest
     result:
       description: Returns true if the EVSE accepted the reservation, else false.
       type: boolean

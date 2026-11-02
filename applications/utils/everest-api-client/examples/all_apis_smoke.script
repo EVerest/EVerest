@@ -1,0 +1,115 @@
+# Smoke test: send at least one operation from EVERY EVerest API module.
+#
+# Run it against an EVerest started with config-test-all-external-api.yaml:
+#     run_script examples/all_apis_smoke.script
+# The configuration_API and lifecycle_API are served by the manager itself
+# and only when it is started with --configuration-api and --lifecycle-api.
+#
+# Unlike ac_charging_session.script (a real charging flow), this just fires one
+# representative message per API so you can confirm every API client and
+# every module round-trips. It is fire-and-forget: it does not wait for or
+# answer replies, so it never blocks and can be re-run any time. Watch the
+# module logs (or turn mute off) to see each message land.
+#
+# Lines beginning with # are comments (cmd2).
+
+set mute true
+echo ============= EVerest API smoke test: one operation per API module =============
+
+# --- register a client per API module (ids match config-test-all-external-api.yaml) ---
+client_add spy
+client_add evse_board_support bsp_api
+client_add ev_board_support ev_bsp_api
+client_add powermeter powermeter_api
+client_add slac slac_api
+client_add isolation_monitor imd_api
+client_add over_voltage_monitor ovm_api
+client_add power_supply_dc psu_dc_api
+client_add auth_token_provider token_provider_api
+client_add auth_token_validator token_validator_api
+client_add display_message display_message_api
+client_add generic_error_raiser error_raiser_api
+client_add system system_api
+client_add session_cost session_cost_api
+client_add evse_manager_consumer evse_manager_api
+client_add auth_consumer auth_api
+client_add dc_external_derate_consumer ded_api
+client_add error_history_consumer error_history_api
+client_add evse_security_consumer evse_security_api
+client_add session_cost_consumer session_cost_consumer_api
+client_add external_energy_limits_consumer eel_api
+client_add charger_information charger_information_api
+client_add session_storage_consumer session_storage_api
+# entrypoint, configuration and lifecycle are not tied to a module: the id is
+# only a handle for the client.
+client_add entrypoint entrypoint
+client_add configuration configuration
+client_add lifecycle lifecycle
+# ocpp_api needs the standalone BUOcppConsumer running; comment out if absent.
+client_add ocpp_consumer ocpp_api
+
+# ---- provider APIs: publish a representative value ----
+echo [evse_board_support_API]  bsp_api.send_ac_nr_of_phases
+bsp_api.send_ac_nr_of_phases 3
+echo [ev_board_support_API]    ev_bsp_api.send_ev_info
+ev_bsp_api.send_ev_info {"soc":67,"present_voltage":390,"present_current":80,"target_voltage":420,"target_current":80,"maximum_current_limit":120,"minimum_current_limit":10,"maximum_voltage_limit":500,"evcc_id":"aa:bb:cc:dd:ee:ff","battery_capacity":77000,"battery_full_soc":95}
+echo [powermeter_API]          powermeter_api.send_powermeter_values
+powermeter_api.send_powermeter_values {"current_A":{"L1":0,"L2":0,"L3":0,"N":0},"energy_Wh_import":{"L1":0,"L2":0,"L3":0,"total":0},"frequency_Hz":{"L1":50,"L2":50,"L3":50},"meter_id":"THE_POWERMETER","phase_seq_error":false,"power_W":{"L1":0,"L2":0,"L3":0,"total":0},"timestamp":"2026-01-01T00:00:00Z","voltage_V":{"L1":230,"L2":230,"L3":230}}
+echo [slac_API]                slac_api.send_state
+slac_api.send_state "MATCHED"
+echo [isolation_monitor_API]   imd_api.send_isolation_measurement
+imd_api.send_isolation_measurement {"resistance_F_Ohm":1000000,"voltage_V":400}
+echo [over_voltage_monitor_API] ovm_api.send_voltage_measurement_V
+ovm_api.send_voltage_measurement_V 500
+echo [power_supply_DC_API]     psu_dc_api.send_voltage_current
+psu_dc_api.send_voltage_current {"voltage_V":230,"current_A":15}
+echo [auth_token_provider_API] token_provider_api.send_provided_token
+token_provider_api.send_provided_token {"authorization_type":"OCPP","id_token":{"type":"Central","value":"SMOKETEST"}}
+echo [auth_token_validator_API] token_validator_api.send_validate_result_update
+token_validator_api.send_validate_result_update {"connector_id":1,"validation_result":{"authorization_status":"Accepted","tariff_messages":[]}}
+echo [display_message_API]     display_message_api.send_reply_clear_display_message
+display_message_api.send_reply_clear_display_message reply/smoke {"status":"Accepted"}
+echo [generic_error_raiser_API] error_raiser_api.send_raise_error / clear
+error_raiser_api.send_raise_error {"type":"CommunicationFault","sub_type":"smoke","message":"smoke-test"}
+error_raiser_api.send_clear_error {"type":"CommunicationFault","sub_type":"smoke","message":"smoke-test"}
+echo [system_API]              system_api.send_firmware_update_status
+system_api.send_firmware_update_status {"request_id":1,"firmware_update_status":"Idle"}
+echo [session_cost_API]        session_cost_api.send_session_cost
+session_cost_api.send_session_cost {"session_id":"smoke","status":"Running","cost_chunks":[]}
+echo [charger_information_API] charger_information_api.send_reply_get_charger_information
+charger_information_api.send_reply_get_charger_information reply/smoke {"vendor":"Pionix","model":"BelayBox","chargepoint_serial":"SMOKE0001","chargebox_serial":"CB0001","firmware_version":"smoke"}
+
+# ---- consumer APIs: issue a representative request (fire-and-forget; the
+#      reply arrives asynchronously and is just logged) ----
+echo [evse_manager_consumer_API]  evse_manager_api.send_request_get_evse
+evse_manager_api.send_request_get_evse {"headers":{"replyTo":"everest_api/1/evse_manager_consumer/evse_manager_api/e2m/get_evse/smoke"}}
+echo [auth_consumer_API]          auth_api.send_request_get_token_validation_status
+auth_api.send_request_get_token_validation_status {"headers":{"replyTo":"everest_api/1/auth_consumer/auth_api/e2m/get_token_validation_status/smoke"}}
+echo [dc_external_derate_consumer_API] ded_api.send_set_external_derating
+ded_api.send_set_external_derating {"max_export_current_A":15}
+echo [error_history_consumer_API] error_history_api.send_request_get_errors
+error_history_api.send_request_get_errors {"headers":{"replyTo":"everest_api/1/error_history_consumer/error_history_api/e2m/get_errors/smoke"},"payload":{"filter_arguments":{}}}
+echo [evse_security_consumer_API] evse_security_api.send_request_is_ca_certificate_installed
+evse_security_api.send_request_is_ca_certificate_installed {"headers":{"replyTo":"everest_api/1/evse_security_consumer/evse_security_api/e2m/is_ca_certificate_installed/smoke"},"payload":"CSMS"}
+echo [session_cost_consumer_API] session_cost_consumer_api.send_request_get_default_price
+session_cost_consumer_api.send_request_get_default_price {"headers":{"replyTo":"everest_api/1/session_cost_consumer/session_cost_consumer_api/e2m/get_default_price/smoke"}}
+echo [external_energy_limits_consumer_API] eel_api.send_request_get_capabilities
+eel_api.send_request_get_capabilities {"headers":{"replyTo":"everest_api/1/external_energy_limits_consumer/eel_api/e2m/get_capabilities/smoke"}}
+echo [ocpp_consumer_API]         ocpp_api.send_request_get_variables
+ocpp_api.send_request_get_variables {"headers":{"replyTo":"everest_api/1/ocpp_consumer/ocpp_api/e2m/get_variables/smoke"},"payload":{"items":[]}}
+echo [session_storage_consumer_API] session_storage_api.send_request_get_sessions
+session_storage_api.send_request_get_sessions {"headers":{"replyTo":"everest_api/1/session_storage_consumer/session_storage_api/e2m/get_sessions/smoke"},"payload":{"limit":10}}
+
+# ---- entrypoint and manager APIs ----
+echo [entrypoint_API]          entrypoint.send_request_discover
+entrypoint.send_request_discover {"headers":{"replyTo":"everest_api/smoke/discover"}}
+echo [entrypoint_API]          entrypoint.send_request_query_module powermeter
+entrypoint.send_request_query_module powermeter {"headers":{"replyTo":"everest_api/smoke/query_powermeter"}}
+echo [configuration_API]       configuration.send_request_list_all_slots
+configuration.send_request_list_all_slots {"headers":{"replyTo":"everest_api/1/configuration/smoke/list_all_slots"}}
+echo [lifecycle_API]           lifecycle.send_request_get_everest_version
+lifecycle.send_request_get_everest_version {"headers":{"replyTo":"everest_api/1/lifecycle/smoke/get_everest_version"}}
+
+echo ============= Smoke test done: one operation sent per API module =============
+# uncomment to restore live logging:
+# set mute false

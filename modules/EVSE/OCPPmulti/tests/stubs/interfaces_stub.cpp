@@ -1005,8 +1005,8 @@ ModuleAdapter::ModuleAdapter() : m_error_type_map(std::make_shared<Everest::erro
         m_error_type_map, m_error_database, [this](auto&&... args) {});
 
     m_mqtt_abstraction = std::make_shared<MqttStub>();
-    m_config_client =
-        std::make_shared<Everest::config::ConfigServiceClient>(m_mqtt_abstraction, "ocpp", m_module_names);
+    m_config_client = std::make_shared<Everest::config::ConfigServiceClient>(m_mqtt_abstraction, "ocpp", m_module_names,
+                                                                             everest::config::Access{});
 
     m_call_implementations.insert(
         {"allow_firmware_installation", &ModuleAdapter::system_call_allow_firmware_installation});

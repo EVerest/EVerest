@@ -5,6 +5,8 @@
 #include "ftxui/component/screen_interactive.hpp"
 #include "ftxui/dom/table.hpp"
 
+#include <fmt/format.h>
+
 using namespace ftxui;
 
 namespace module {

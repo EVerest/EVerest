@@ -167,3 +167,63 @@ TEST(GoosePDU, encode_decode_test) {
     ASSERT_EQ(decoded.apdu_entries[1].value[2], 0);
     ASSERT_EQ(decoded.apdu_entries[1].value[3], 0);
 }
+
+namespace {
+
+std::vector<std::uint8_t> encoded_pdu_with(std::uint8_t tag, const std::vector<std::uint8_t>& value) {
+    goose::frame::GoosePDU pdu;
+    strcpy(pdu.go_cb_ref, "GO_CB_REF");
+    pdu.time_allowed_to_live = 10000;
+    strcpy(pdu.dat_set, "DAT_SET");
+    strcpy(pdu.go_id, "GO_ID");
+    pdu.timestamp = goose::frame::GooseTimestamp::from_ms(1667349763000);
+    pdu.st_num = 1;
+    pdu.sq_num = 0;
+    pdu.simulation = false;
+    pdu.conf_rev = 0;
+    pdu.ndsCom = 0;
+
+    auto encoded = pdu.serialize();
+    goose::frame::ber::BEREntry root(&encoded);
+    goose::frame::ber::BEREntry replaced{root.tag, {}};
+    while (!root.value.empty()) {
+        goose::frame::ber::BEREntry entry(&root.value);
+        if (entry.tag == tag) {
+            entry.value = value;
+        }
+        replaced.add(entry);
+    }
+    return replaced.encode();
+}
+
+} // namespace
+
+TEST(GoosePDU, decode_string_filling_buffer_without_terminator_throws) {
+    const std::vector<std::uint8_t> value(65, 'A');
+    for (std::uint8_t tag : {0x80, 0x82, 0x83}) {
+        ASSERT_THROW(goose::frame::GoosePDU pdu(encoded_pdu_with(tag, value)), std::runtime_error);
+    }
+}
+
+TEST(GoosePDU, decode_string_filling_buffer_with_terminator) {
+    std::vector<std::uint8_t> value(64, 'A');
+    value.push_back(0);
+
+    goose::frame::GoosePDU pdu(encoded_pdu_with(0x83, value));
+    ASSERT_EQ(strlen(pdu.go_id), 64);
+}
+
+TEST(GoosePDU, decode_string_without_terminator) {
+    const std::vector<std::uint8_t> value{'G', 'O', '_', 'I', 'D'};
+
+    // Prefill the storage so that a missing terminator shows up as trailing bytes. The stores are volatile because
+    // the compiler may otherwise drop them as dead before the constructor runs.
+    alignas(goose::frame::GoosePDU) unsigned char storage[sizeof(goose::frame::GoosePDU)];
+    volatile unsigned char* prefill = storage;
+    for (size_t i = 0; i < sizeof(storage); i++) {
+        prefill[i] = 0xAA;
+    }
+    auto* pdu = new (storage) goose::frame::GoosePDU(encoded_pdu_with(0x83, value));
+    EXPECT_STREQ(pdu->go_id, "GO_ID");
+    pdu->~GoosePDU();
+}

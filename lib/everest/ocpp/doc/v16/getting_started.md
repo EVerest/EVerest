@@ -216,6 +216,15 @@ Some general notes: the "connector" parameter of some of the callbacks refers to
 
   can be used to notify libocpp of a firmware update status notification
 
+  Firmware status reported before the BootNotification is accepted is held until boot completes.
+  The latest pending status is sent once as a SignedFirmwareStatusNotification with its request ID,
+  or as a FirmwareStatusNotification when the request ID is -1.
+  During Pending, a firmware status trigger of the matching kind (TriggerMessage for request ID -1,
+  ExtendedTriggerMessage for a signed status) sends the held status with its
+  disable_connectors_during_install and clears it, so boot acceptance does not send it again.
+  A trigger of the other kind leaves the held status in place.
+  Terminal status returns to Idle after either path sends it.
+
 - on_meter_values(std::int32_t connector, const Powermeter& powermeter)
 
   provides a Powermeter struct to libocpp (for sending meter values during charging sessions or periodically)

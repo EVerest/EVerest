@@ -46,7 +46,7 @@ private: // Members
     const FunctionalBlockContext& context;
 
     // threads and synchronization
-    bool auth_cache_cleanup_required;
+    bool auth_cache_cleanup_required{false};
     std::condition_variable auth_cache_cleanup_cv;
     std::mutex auth_cache_cleanup_mutex;
     std::thread auth_cache_cleanup_thread;
@@ -78,6 +78,11 @@ private: // Functions
     void stop_auth_cache_cleanup_thread();
 
     // Functional Block C: Authorization
+    /// \brief Sends an AuthorizeRequest to the CSMS
+    /// \return The AuthorizeResponse of the CSMS, or std::nullopt if none was received
+    std::optional<AuthorizeResponse>
+    send_authorize_req(const IdToken& id_token, const std::optional<CiString<10000>>& certificate,
+                       const std::optional<std::vector<OCSPRequestData>>& ocsp_request_data);
     void handle_clear_cache_req(Call<ClearCacheRequest> call);
     void cache_cleanup_handler();
 

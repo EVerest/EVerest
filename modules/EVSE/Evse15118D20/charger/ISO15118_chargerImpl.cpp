@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
 #include "ISO15118_chargerImpl.hpp"
-#include <fmt/core.h>
+#include <fmt/format.h>
 #include <fmt/ranges.h>
 
 #include "der_setup.hpp"
@@ -2059,6 +2059,16 @@ void ISO15118_chargerImpl::handle_update_energy_transfer_modes(
             break;
         }
     }
+
+    // Several modes collapse to one -20 service category (AC_single_phase_core and AC_three_phase_core are both
+    // AC); the phase choice is offered per ServiceDetail parameter set from the AC connectors instead.
+    std::vector<dt::ServiceCategory> unique_services;
+    for (const auto service : services) {
+        if (std::find(unique_services.begin(), unique_services.end(), service) == unique_services.end()) {
+            unique_services.push_back(service);
+        }
+    }
+    services = std::move(unique_services);
 
     setup_config.supported_energy_services = services;
 

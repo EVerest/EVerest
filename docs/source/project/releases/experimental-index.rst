@@ -95,3 +95,11 @@ any experimental option it was given.
        Channels, operations and message payloads, including the beacon's election
        and guarantees, may change without further notice. Every API module logs a
        warning at startup.
+   * - ``CustomErrorMappingPath`` configuration key of the
+       :ref:`OCPPmulti module <everest_modules_OCPPmulti>` and the custom error
+       mapping file format (``custom_error_mapping.schema.json``)
+     - 2026.10.0
+     - Overrides how EVerest errors are reported over OCPP 1.6 and 2.x, see
+       :ref:`howto-ocpp-custom-error-mapping`. The file's keys, fields,
+       placeholders and overlay behavior may change without further notice. The
+       module logs a warning at startup when the key is set.

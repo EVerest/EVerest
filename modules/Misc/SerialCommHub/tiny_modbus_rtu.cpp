@@ -13,7 +13,7 @@
 #include <endian.h>
 #include <errno.h>
 #include <fcntl.h>
-#include <fmt/core.h>
+#include <fmt/format.h>
 #include <iomanip>
 #include <ios>
 #include <iostream>

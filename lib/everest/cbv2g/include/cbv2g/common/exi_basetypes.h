@@ -1,7 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 /*
- * Copyright (C) 2022 - 2023 chargebyte GmbH
- * Copyright (C) 2022 - 2023 Contributors to EVerest
+ * Copyright chargebyte GmbH and Contributors to EVerest
  */
 
 /*****************************************************
@@ -62,6 +61,7 @@ typedef struct
     size_t octets_count;
 } exi_binary_t;
 
+// Minimal big-endian bytes, with zero represented by no bytes.
 typedef struct
 {
     uint8_t octets[EXI_BASETYPES_MAX_OCTETS_SUPPORTED];
@@ -76,15 +76,19 @@ typedef struct exi_signed_t
 
 typedef char exi_character_t;
 
+// max_octets counts EXI wire octets.
 int exi_basetypes_convert_to_unsigned(exi_unsigned_t* exi_unsigned, uint32_t value, size_t max_octets);
 int exi_basetypes_convert_64_to_unsigned(exi_unsigned_t* exi_unsigned, uint64_t value);
 
+// max_octets counts EXI wire octets.
 int exi_basetypes_convert_from_unsigned(const exi_unsigned_t* exi_unsigned, uint32_t* value, size_t max_octets);
 int exi_basetypes_convert_64_from_unsigned(const exi_unsigned_t* exi_unsigned, uint64_t* value);
 
+// max_octets counts EXI wire octets.
 int exi_basetypes_convert_to_signed(exi_signed_t* exi_signed, int32_t value, size_t max_octets);
 int exi_basetypes_convert_64_to_signed(exi_signed_t* exi_signed, int64_t value);
 
+// max_octets counts EXI wire octets.
 int exi_basetypes_convert_from_signed(const exi_signed_t* exi_unsigned, int32_t* value, size_t max_octets);
 int exi_basetypes_convert_64_from_signed(const exi_signed_t* exi_unsigned, int64_t* value);
 

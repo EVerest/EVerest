@@ -29,9 +29,9 @@ public:
 
     tls_client_socket() = default;
     tls_client_socket(tls_client_socket const&) = delete;
-    tls_client_socket(tls_client_socket&&) = default;
+    tls_client_socket(tls_client_socket&&) = delete;
     tls_client_socket& operator=(tls_client_socket const&) = delete;
-    tls_client_socket& operator=(tls_client_socket&&) = default;
+    tls_client_socket& operator=(tls_client_socket&&) = delete;
     // Closes the TLS session. The event client destroys the policy to tear a connection down and
     // never calls close(), so without this the peer sees a truncated stream.
     ~tls_client_socket();

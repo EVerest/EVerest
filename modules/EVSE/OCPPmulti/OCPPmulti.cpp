@@ -29,8 +29,8 @@ int ConfigAccess::getDelayOcppStart() const {
 bool ConfigAccess::getDelegateNetworkConfigurationToSystem() const {
     return m_config.DelegateNetworkConfigurationToSystem;
 }
-std::string ConfigAccess::getDeviceModelConfigMappings() const {
-    return m_config.DeviceModelConfigMappings;
+std::string ConfigAccess::getOcpp16KeyMappingsPath() const {
+    return m_config.Ocpp16KeyMappingsPath;
 }
 std::string ConfigAccess::getDeviceModelConfigPath() const {
     return m_config.DeviceModelConfigPath;

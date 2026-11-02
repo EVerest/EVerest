@@ -3,6 +3,8 @@
 
 #include <cstddef>
 
+#include <fmt/format.h>
+
 #include <utils/types.hpp>
 
 TypedHandler::TypedHandler(const std::string& name_, const std::string& id_, HandlerType type_,
