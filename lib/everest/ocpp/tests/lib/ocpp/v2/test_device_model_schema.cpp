@@ -815,6 +815,27 @@ TEST_F(InitDeviceModelDbMonitorTest, component_renamed_by_case_keeps_its_row_and
     EXPECT_EQ(monitor_count(), 1);
 }
 
+/// An empty instance is stored as NULL, like an absent one, so lookups without an instance find the component
+TEST_F(InitDeviceModelDbMonitorTest, component_renamed_by_case_with_an_empty_instance_keeps_no_instance) {
+    auto configs = get_all_component_configs(CONFIG_PATH);
+    initialize(configs);
+
+    auto node = configs.extract(heartbeat_component_key);
+    node.key().name = "OcppCommCtrlr";
+    node.key().instance = "";
+    configs.insert(std::move(node));
+    initialize(configs);
+
+    EXPECT_EQ(
+        spellings("SELECT NAME FROM COMPONENT WHERE NAME = ? COLLATE NOCASE AND INSTANCE IS NULL", "ocppcommctrlr"),
+        std::vector<std::string>{"OcppCommCtrlr"});
+    DeviceModelStorageSqlite storage(db_path);
+    EXPECT_TRUE(storage
+                    .get_variable_attribute(make_component("OCPPCommCtrlr"), make_variable("HeartbeatInterval"),
+                                            AttributeEnum::Actual)
+                    .has_value());
+}
+
 TEST_F(InitDeviceModelDbMonitorTest, variable_renamed_by_case_keeps_its_monitors) {
     auto configs = get_all_component_configs(CONFIG_PATH);
     initialize(configs);

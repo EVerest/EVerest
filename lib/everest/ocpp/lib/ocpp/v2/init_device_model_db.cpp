@@ -402,7 +402,7 @@ void InitDeviceModelDb::update_component_spelling(const ComponentKey& component_
     }
 
     update_statement->bind_text("@name", component_key.name, SQLiteString::Transient);
-    if (component_key.instance.has_value()) {
+    if (component_key.instance.has_value() && !component_key.instance.value().empty()) {
         update_statement->bind_text("@instance", component_key.instance.value(), SQLiteString::Transient);
     } else {
         update_statement->bind_null("@instance");
