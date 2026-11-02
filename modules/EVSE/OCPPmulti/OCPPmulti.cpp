@@ -50,6 +50,9 @@ bool ConfigAccess::getEnableLegacyConfigMigration() const {
 std::string ConfigAccess::getEverestDeviceModelDatabasePath() const {
     return m_config.EverestDeviceModelDatabasePath;
 }
+bool ConfigAccess::getFailOnDeviceModelConflicts() const {
+    return m_config.FailOnDeviceModelConflicts;
+}
 int ConfigAccess::getOcpp16NetworkConfigSlot() const {
     return m_config.Ocpp16NetworkConfigSlot;
 }

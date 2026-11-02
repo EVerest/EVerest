@@ -13,6 +13,7 @@ from everest.testing.ocpp_utils.charge_point_utils import (
 from everest.testing.ocpp_utils.charge_point_v201 import ChargePoint201
 from everest.testing.ocpp_utils.fixtures import central_system_v201, CentralSystem
 from everest.testing.core_utils import EverestConfigAdjustmentStrategy
+from everest.testing.core_utils.probe_module import ProbeModule
 from everest.testing.core_utils.controller.test_controller_interface import (
     TestController,
 )
@@ -267,7 +268,7 @@ async def test_get_base_report(
             mutability=MutabilityEnumType.read_only,
         ),
         variable_characteristics=VariableCharacteristicsType(
-            data_type=DataEnumType.string, supports_monitoring=False
+            data_type=DataEnumType.string, supports_monitoring=True
         ),
     )
 
@@ -283,3 +284,52 @@ async def test_get_base_report(
         ),
         validate_notify_report_data_201,
     )
+
+
+@pytest.fixture
+def config_probe(started_test_controller, everest_core) -> ProbeModule:
+    return ProbeModule(everest_core.get_runtime_session())
+
+
+@pytest.mark.asyncio
+@pytest.mark.ocpp_version("ocpp2.0.1")
+@pytest.mark.everest_config_adaptions(OCPP201ModuleAccessConfigurationAdjustment())
+@pytest.mark.probe_module(access={"config": {"allow_global_read": True, "allow_global_write": True}})
+async def test_configuration_change_from_outside_reaches_get_variables(
+    config_probe: ProbeModule,
+    central_system_v201: CentralSystem,
+    test_utility: TestUtility,
+):
+    """A configuration parameter changed through the configuration service by another module is reported to the
+    OCPP module and shows up in GetVariables without a restart.
+    """
+    config_probe.start()
+    await config_probe.wait_to_be_ready()
+    charge_point_v201 = await central_system_v201.wait_for_chargepoint(
+        wait_for_bootnotification=True
+    )
+
+    result = await config_probe.set_config_value(
+        module_id="connector_1",
+        param_name="session_logging_path",
+        value="/probe/path",
+    )
+    assert result["set_status"] in ("Accepted", "RebootRequired"), result
+
+    # The notification is processed asynchronously
+    attribute_value = None
+    for _ in range(20):
+        response = await charge_point_v201.get_variables_req(
+            get_variable_data=[
+                GetVariableDataType(
+                    component=ComponentType(name="EvseManager", instance="connector_1"),
+                    variable=VariableType(name="session_logging_path"),
+                    attribute_type=AttributeEnumType.actual,
+                ),
+            ]
+        )
+        attribute_value = response.get_variable_result[0]["attribute_value"]
+        if attribute_value == "/probe/path":
+            break
+        await asyncio.sleep(0.5)
+    assert attribute_value == "/probe/path"

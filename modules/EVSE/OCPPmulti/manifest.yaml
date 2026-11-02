@@ -104,11 +104,21 @@ config:
     default: false
   EverestDeviceModelDatabasePath:
     description: >-
-      OCPP 2.0.1
-      Path to the SQLite databse for the EVerest device model. This database stores components and variables
-      like EVSE and Connector that are closely related to EVerest and therefore not owned and managed by libocpp.
+      Deprecated. Path to the EVerest device model database of earlier versions. At the first start, the module
+      takes it over into the database at DeviceModelDatabasePath and renames it to *.migrated. An empty path skips
+      the takeover.
     type: string
     default: everest_device_model_storage.db
+  FailOnDeviceModelConflicts:
+    description: >-
+      OCPP 1.6 and 2.x
+      If true, the module does not start when the device model has conflicts: a variable that the component config
+      (DeviceModelConfigPath) defines and EVerest or another runtime owner registers as well, or that two runtime
+      owners register. If false (default), such a variable keeps the definition of the component config or of the
+      owner that registered it first, and the conflicts are logged as an error at every start, so a station with an
+      outdated component config stays reachable for the CSMS.
+    type: boolean
+    default: false
   GridSupportHeartbeatS:
     description: Interval (seconds) at which the current active DER directive set is republished per EVSE. 0 disables the heartbeat.
     type: integer

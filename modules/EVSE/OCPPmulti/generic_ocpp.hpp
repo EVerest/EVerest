@@ -41,7 +41,7 @@
 #include <ocpp/v21/messages/NotifyDERAlarm.hpp>
 #include <ocpp/v21/messages/SetDERControl.hpp>
 
-#include <everest/ocpp_module_common/device_model/everest_device_model_storage.hpp>
+#include <everest/ocpp_module_common/device_model/everest_device_model.hpp>
 #include <everest/ocpp_module_common/error_handling.hpp>
 #include <everest/ocpp_module_common/transaction_handler.hpp>
 
@@ -131,6 +131,7 @@ struct ConfigInterface {
     [[nodiscard]] virtual bool getEnableLegacyConfigMigration() const = 0;
     [[nodiscard]] virtual int getOcpp16NetworkConfigSlot() const = 0;
     [[nodiscard]] virtual std::string getEverestDeviceModelDatabasePath() const = 0;
+    [[nodiscard]] virtual bool getFailOnDeviceModelConflicts() const = 0;
     [[nodiscard]] virtual int getGridSupportHeartbeatS() const = 0;
     [[nodiscard]] virtual std::string getMessageLogPath() const = 0;
     [[nodiscard]] virtual int getMessageQueueResumeDelay() const = 0;
@@ -138,6 +139,14 @@ struct ConfigInterface {
     [[nodiscard]] virtual std::string getRequestCompositeScheduleUnit() const = 0;
     [[nodiscard]] virtual int getResetStopDelay() const = 0;
     [[nodiscard]] virtual std::string getUserConfigPath() const = 0;
+};
+
+/// \brief The device model objects that the charge points refer to. GenericOcpp creates them in ready(). Their owner
+/// declares them before the charge point, so that they outlive it.
+struct DeviceModelSources {
+    // thread safe - used by libocpp and GenericOcpp
+    std::unique_ptr<module::device_model::EverestDeviceModel> everest_device_model;
+    std::unique_ptr<module::device_model::ConfigServiceAccess> config_service_access;
 };
 
 class GenericOcpp : public GenericOcppInterface, public GenericChargePointCallbacks {
@@ -166,6 +175,7 @@ private:
     ConfigInterface& mv_config;
     provides_t mv_provides;
     requires_t mv_requires;
+    DeviceModelSources& mv_device_model_sources;
     std::shared_ptr<const module::custom_error_mapping::CustomFileErrorMapping> mv_custom_error_mapping;
     std::filesystem::path mv_custom_error_mapping_path;
 
@@ -191,9 +201,6 @@ private:
     /// \brief Fails all pending configure_network promises so a ConnectivityManager blocked on one of the
     /// futures does not have to run into its NetworkConfigTimeout during shutdown.
     void drain_pending_network_config_requests();
-
-    // these need to be thread safe - used by libocpp and this object
-    std::shared_ptr<module::device_model::EverestDeviceModelStorage> m_everest_device_model_storage;
 
     // needs to be thread safe - used by v2_chargepoint and this object
     std::unique_ptr<module::TransactionHandler> m_transaction_handler;
@@ -245,8 +252,13 @@ public:
     using ConfigServiceClient = std::shared_ptr<Everest::config::ConfigServiceClient>;
 
     GenericOcpp(GenericChargePointInterface& charge_point, const ModuleInfo& info, ConfigInterface& config,
-                const provides_t& provides, const requires_t& requires) :
-        mv_charge_point(charge_point), mv_info(info), mv_config(config), mv_provides(provides), mv_requires(requires) {
+                const provides_t& provides, const requires_t& requires, DeviceModelSources& device_model_sources) :
+        mv_charge_point(charge_point),
+        mv_info(info),
+        mv_config(config),
+        mv_provides(provides),
+        mv_requires(requires),
+        mv_device_model_sources(device_model_sources) {
     }
 
     ~GenericOcpp() override;
@@ -493,9 +505,8 @@ protected:
     void push_active_directive_sets();
 
     /// \brief Populate m_grid_support_by_evse from the connections' framework mappings. An unmapped
-    /// connection, or one mapping an already-served EVSE, is logged and excluded. Clearing an unwired
-    /// EVSE's DER controller is disable_other_der_ctrlrs' job, in the EverestDeviceModelStorage
-    /// constructor.
+    /// connection, or one mapping an already-served EVSE, is logged and excluded. An unwired EVSE gets no DER
+    /// controller registered.
     void init_grid_support_routing();
 
     /// \brief Resolve the grid_support connection mapped to \p evse_id, or nullptr if none.

@@ -18,9 +18,10 @@ target_sources(ocpp_module_common
         src/error_placeholders.cpp
         src/transaction_handler.cpp
         src/v16/conversions.cpp
-        src/device_model/composed_device_model_storage.cpp
+        src/device_model/config_service_binding.cpp
         src/device_model/definitions.cpp
-        src/device_model/everest_device_model_storage.cpp
+        src/device_model/device_model_conflicts.cpp
+        src/device_model/everest_device_model.cpp
 )
 
 target_include_directories(ocpp_module_common

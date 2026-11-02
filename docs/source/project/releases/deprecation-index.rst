@@ -154,3 +154,11 @@ to the corresponding migration guide.
      - :ref:`Migrate from EvseV2G and IsoMux to Evse15118D20
        <howto-iso15118-stack-migration>`. The module logs a deprecation warning
        at startup.
+   * - :ref:`OCPPmulti <everest_modules_OCPPmulti>` configuration option
+       ``EverestDeviceModelDatabasePath``
+     - 2027.04.0
+     - 2027.10.0
+     - Nothing to migrate by hand. At the first start the module takes the
+       database over into ``DeviceModelDatabasePath`` and renames it to
+       ``*.migrated``, see :ref:`howto-ocpp-storage-migration`. Remove the
+       option from the configuration afterwards.
