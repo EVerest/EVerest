@@ -477,6 +477,14 @@ bool apply_enter_service(sae::EnterServiceCPDRes& out, const gs::Directive& d) {
         return false;
     }
     const auto& es = d.enter_service.value();
+    // AMD1 Table 1 restricts EnterServiceDelay, EnterServiceRandomizedDelay and EnterServiceRampTime to >= 0.
+    const auto is_valid_time = [](const std::optional<float>& s) {
+        return not s.has_value() or (std::isfinite(s.value()) and s.value() >= 0.0f);
+    };
+    if (not is_valid_time(es.delay) or not is_valid_time(es.random_delay) or not is_valid_time(es.ramp_rate)) {
+        warn_rejected(d, "enter_service delay, random_delay and ramp_rate must be finite and >= 0");
+        return false;
+    }
     if (es.delay.has_value() and not es.ramp_rate.has_value()) {
         warn_rejected(d, "enter_service delay requires ramp_rate");
         return false;

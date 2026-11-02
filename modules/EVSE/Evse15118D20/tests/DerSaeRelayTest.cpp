@@ -4,8 +4,10 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <limits>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <iso15118/d20/config.hpp>
@@ -741,6 +743,53 @@ TEST(DerSaeRelayTest, enter_service_with_delay_but_no_ramp_is_rejected) {
 
     expect_default_baseline(out.der_control);
     EXPECT_FALSE(out.der_control.enter_service.permit_service);
+}
+
+TEST(DerSaeRelayTest, enter_service_ramp_rate_seconds_pass_through) {
+    // OCPP 2.1 EnterServiceType.rampRate and AMD1 Table 1 EnterServiceRampTime are both seconds.
+    for (const float ramp_s : {300.0f, 0.0f}) {
+        SCOPED_TRACE(ramp_s);
+        auto d = make_directive(DT::EnterService, "es");
+        auto es = make_enter_service(253.0f, 207.0f, 50.2f, 49.8f);
+        es.delay = 60.0f;
+        es.ramp_rate = ramp_s;
+        d.enter_service = es;
+        const auto out = map_active_directives_to_sae_der_control(make_set({d}), NOMINAL_V, NOMINAL_HZ);
+
+        const auto& out_es = out.der_control.enter_service;
+        EXPECT_TRUE(out_es.permit_service);
+        ASSERT_TRUE(out_es.enter_service_ramp_time.has_value());
+        EXPECT_FLOAT_EQ(out_es.enter_service_ramp_time.value(), ramp_s);
+    }
+}
+
+TEST(DerSaeRelayTest, enter_service_negative_or_non_finite_times_are_rejected) {
+    // AMD1 Table 1 restricts EnterServiceDelay, EnterServiceRandomizedDelay and EnterServiceRampTime to >= 0.
+    const auto valid = [] {
+        auto es = make_enter_service(253.0f, 207.0f, 50.2f, 49.8f);
+        es.delay = 60.0f;
+        es.random_delay = 10.0f;
+        es.ramp_rate = 300.0f;
+        return es;
+    };
+    for (const float bad : {-1.0f, std::numeric_limits<float>::quiet_NaN(), std::numeric_limits<float>::infinity()}) {
+        auto ramp = valid();
+        ramp.ramp_rate = bad;
+        auto delay = valid();
+        delay.delay = bad;
+        auto random_delay = valid();
+        random_delay.random_delay = bad;
+        for (const auto& [field, es] :
+             {std::pair{"ramp_rate", ramp}, std::pair{"delay", delay}, std::pair{"random_delay", random_delay}}) {
+            SCOPED_TRACE(std::string(field) + " = " + std::to_string(bad));
+            auto d = make_directive(DT::EnterService, "es");
+            d.enter_service = es;
+            const auto out = map_active_directives_to_sae_der_control(make_set({d}), NOMINAL_V, NOMINAL_HZ);
+
+            expect_default_baseline(out.der_control);
+            EXPECT_FALSE(out.der_control.enter_service.permit_service);
+        }
+    }
 }
 
 TEST(DerSaeRelayTest, response_curve_with_eleven_points_is_rejected) {
