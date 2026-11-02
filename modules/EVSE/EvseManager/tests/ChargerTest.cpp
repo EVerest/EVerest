@@ -786,6 +786,59 @@ TEST_F(ChargerTest, DisableDuringWaitingForAuthentication) {
     EXPECT_EQ(last_event, SessionEventEnum::Disabled);
 }
 
+// A fatal error while waiting for authorization holds the session in X1 without PWM. Once the error
+// clears, T_step_EF wakes the EV up and the session continues in WaitingForAuthentication.
+TEST_F(ChargerTest, FatalErrorWhileWaitingForAuthenticationHoldsTheSession) {
+    auto& ctx = charger->get_shared_context();
+    auto& cfg = charger->get_config_context();
+    cfg.charge_mode = Charger::ChargeMode::DC;
+    cfg.sleep_before_enabling_pwm_hlc_mode_ms = 0;
+    int slac_resets{0};
+    charger->signal_slac_reset.connect([&slac_resets] { ++slac_resets; });
+
+    ctx.session_active = true;
+    ctx.flag_ev_plugged_in = true;
+    ctx.shutdown_type = ShutdownType::EmergencyShutdown;
+    ctx.current_state = Charger::EvseState::WaitingForAuthentication;
+    charger->run_state_machine();
+
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::WaitingForAuthentication);
+    EXPECT_TRUE(charger->get_internal_context().auth_hold_on_error);
+    EXPECT_FALSE(ctx.pwm_running);
+    EXPECT_EQ(slac_resets, 1);
+
+    charger->run_state_machine();
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::WaitingForAuthentication);
+    EXPECT_EQ(slac_resets, 1) << "SLAC is reset once per hold";
+
+    ctx.shutdown_type = ShutdownType::None;
+    charger->run_state_machine();
+
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::T_step_EF);
+    EXPECT_FALSE(charger->get_internal_context().auth_hold_on_error);
+    EXPECT_EQ(charger->get_internal_context().t_step_EF_return_state, Charger::EvseState::WaitingForAuthentication);
+    EXPECT_FALSE(ctx.pwm_running) << "no 5% before E/F";
+}
+
+// An unplug during the error hold ends the session as before.
+TEST_F(ChargerTest, UnplugDuringErrorHoldEndsTheSession) {
+    auto& ctx = charger->get_shared_context();
+    charger->get_config_context().charge_mode = Charger::ChargeMode::DC;
+
+    ctx.session_active = true;
+    ctx.flag_ev_plugged_in = true;
+    ctx.shutdown_type = ShutdownType::EmergencyShutdown;
+    ctx.current_state = Charger::EvseState::WaitingForAuthentication;
+    charger->run_state_machine();
+    ASSERT_TRUE(charger->get_internal_context().auth_hold_on_error);
+
+    ctx.flag_ev_plugged_in = false;
+    charger->run_state_machine();
+
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::Idle);
+    EXPECT_FALSE(charger->get_internal_context().auth_hold_on_error);
+}
+
 // Test that disabling while in Idle (no session) immediately transitions to Disabled
 TEST_F(ChargerTest, DisableDuringIdle) {
     constexpr EnableDisableSource disable_source{Enable_source::CSMS, Enable_state::Disable, 100};

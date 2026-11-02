@@ -268,6 +268,7 @@ void Charger::run_state_machine() {
                 internal_context.dc_statistics_printed = false;
                 internal_context.slac_retries = 0;
                 internal_context.slac_retries_exhausted = false;
+                internal_context.auth_hold_on_error = false;
                 internal_context.wakeup_link_deadline.reset();
                 hlc_failed = false;
             }
@@ -329,7 +330,9 @@ void Charger::run_state_machine() {
                 // Skip the SLAC readiness sleep and do not enable 5 percent PWM if the EV is
                 // already unplugged: the checks directly below this initialization will bail
                 // out to Finished in the same state machine pass.
-                if (hlc_use_5percent_current_session and shared_context.flag_ev_plugged_in) {
+                // Nor during the error hold below: X1 until the error clears, then E/F before the next 5 percent.
+                if (hlc_use_5percent_current_session and shared_context.flag_ev_plugged_in and
+                    shared_context.shutdown_type == ShutdownType::None and not internal_context.auth_hold_on_error) {
                     // FIXME: wait for SLAC to be ready. Teslas are really fast with sending the first slac packet after
                     // enabling PWM.
                     std::this_thread::sleep_for(
@@ -344,13 +347,6 @@ void Charger::run_state_machine() {
                         stopwatch.mark("HLC_PWM_5%_ON");
                     }
                 }
-            }
-
-            // Errors prevent charging? -> wait here, we cannot go to paused etc because we are not authorized yet
-            if (stop_charging_on_fatal_error_internal()) {
-                signal_slac_reset();
-                set_state(EvseState::Finished);
-                break;
             }
 
             if (not shared_context.flag_ev_plugged_in) {
@@ -371,6 +367,29 @@ void Charger::run_state_machine() {
                 // Stop requested (e.g. board support stop button or OCPP remote stop) before
                 // authorization/transaction started: go straight to Finished, same as above.
                 set_state(EvseState::Finished);
+                break;
+            }
+
+            // Errors prevent charging: hold the session in X1 without a data link. Errors that latch until unplug
+            // keep it here until the unplug check above ends the session.
+            if (stop_charging_on_fatal_error_internal()) {
+                if (not internal_context.auth_hold_on_error) {
+                    internal_context.auth_hold_on_error = true;
+                    session_log.evse(false, "Fatal error while waiting for authorization: hold in X1 until it clears");
+                    cp_state_X1();
+                    signal_slac_reset();
+                }
+                break;
+            }
+
+            if (internal_context.auth_hold_on_error) {
+                // [V2G3-M07-04]: X1 -> E/F -> X1/X2 wakes the EV up for a new matching.
+                internal_context.auth_hold_on_error = false;
+                session_log.evse(false, "Fatal error cleared while waiting for authorization: restart via E/F");
+                internal_context.t_step_EF_return_state = EvseState::WaitingForAuthentication;
+                internal_context.t_step_EF_return_pwm = 0.;
+                internal_context.t_step_EF_return_ampere = 0.;
+                shared_context.current_state = EvseState::T_step_EF;
                 break;
             }
 
