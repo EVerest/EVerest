@@ -17,6 +17,7 @@ using namespace types::evse_manager;
 // class that provides access to internal state from the Charger class
 struct ChargerDerived : public Charger {
     using Charger::Charger;
+    using Charger::get_config_context;
     using Charger::get_enable_disable_source_table;
     using Charger::get_hlc_use_5percent_current_session;
     using Charger::get_shared_context;
