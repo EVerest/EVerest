@@ -13,6 +13,22 @@
 namespace ocpp::v2 {
 
 namespace {
+/// \returns the reference of a Delta monitor, none when it is unset or cannot be evaluated
+template <DataEnum T>
+std::optional<decltype(to_specific_type_auto<T>(std::string{}))>
+get_delta_reference(const VariableMonitoringMeta& monitor_meta) {
+    if (!monitor_meta.reference_value.has_value() || monitor_meta.reference_value->empty()) {
+        return std::nullopt;
+    }
+    try {
+        return to_specific_type_auto<T>(monitor_meta.reference_value.value());
+    } catch (const std::exception& e) {
+        EVLOG_warning << "Reference [" << monitor_meta.reference_value.value() << "] of delta monitor "
+                      << monitor_meta.monitor.id << " cannot be evaluated and is ignored: " << e.what();
+        return std::nullopt;
+    }
+}
+
 template <DataEnum T>
 bool triggers_monitor(const VariableMonitoringMeta& monitor_meta, const std::string& value_old,
                       const std::string& value_new) {
@@ -20,9 +36,9 @@ bool triggers_monitor(const VariableMonitoringMeta& monitor_meta, const std::str
         return (value_old != value_new);
     } else {
         if (monitor_meta.monitor.type == MonitorEnum::Delta) {
-            // N07.FR.18: a monitor set while the variable had no value triggers on the first value, which becomes the
-            // reference
-            if (!monitor_meta.reference_value.has_value() || monitor_meta.reference_value->empty()) {
+            const auto raw_val_reference = get_delta_reference<T>(monitor_meta);
+            // N07.FR.18: a monitor without a reference triggers on the first value, which becomes the reference
+            if (!raw_val_reference.has_value()) {
                 if (value_new.empty()) {
                     return false;
                 }
@@ -30,8 +46,7 @@ bool triggers_monitor(const VariableMonitoringMeta& monitor_meta, const std::str
                 static_cast<void>(to_specific_type_auto<T>(value_new));
                 return true;
             }
-            auto raw_val_reference = to_specific_type_auto<T>(monitor_meta.reference_value.value());
-            auto delta = std::abs(raw_val_reference - to_specific_type_auto<T>(value_new));
+            auto delta = std::abs(raw_val_reference.value() - to_specific_type_auto<T>(value_new));
             return (delta > monitor_meta.monitor.value);
         }
 

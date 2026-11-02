@@ -1113,6 +1113,58 @@ TEST_F(DeviceModelTest, test_numeric_delta_monitor_triggers_on_the_first_value_a
     clear_all_monitors(*dm, interval.component, interval.variable.value());
 }
 
+/// N07.FR.18: a stored reference that cannot be evaluated is ignored, so the next value that can be evaluated is
+/// reported and becomes the reference
+TEST_F(DeviceModelTest, test_numeric_delta_monitor_triggers_on_the_first_value_after_an_unparsable_reference) {
+    const auto& interval = ControllerComponentVariables::AlignedDataInterval;
+    const auto& enabled = ControllerComponentVariables::MonitoringCtrlrEnabled;
+    clear_all_monitors(*dm, interval.component, interval.variable.value());
+    ASSERT_EQ(dm->set_value(interval.component, interval.variable.value(), AttributeEnum::Actual, "900", "test"),
+              SetVariableStatusEnum::Accepted);
+    ASSERT_EQ(dm->set_value(enabled.component, enabled.variable.value(), AttributeEnum::Actual, "true", "test"),
+              SetVariableStatusEnum::Accepted);
+
+    everest::lib::util::monitor<std::vector<EventData>> sent_events;
+    const auto sent = [&sent_events]() { return *sent_events.handle(); };
+    MonitoringUpdater updater(
+        *dm,
+        [&sent_events](const std::vector<EventData>& events) {
+            auto handle = sent_events.handle();
+            handle->insert(handle->end(), events.begin(), events.end());
+        },
+        []() { return false; });
+    updater.start_monitoring();
+
+    const auto results = dm->set_monitors(
+        {make_monitor_request(interval.component, interval.variable.value(), MonitorEnum::Delta, 50.0F, 3)});
+    ASSERT_EQ(results.size(), 1);
+    ASSERT_EQ(results[0].status, SetMonitoringStatusEnum::Accepted);
+    const auto monitor_id = results[0].id.value();
+    const auto reference = [&]() {
+        return dm->get_variable_meta_data(interval.component, interval.variable.value())
+            ->monitors.at(monitor_id)
+            .reference_value;
+    };
+    ASSERT_TRUE(dm->update_monitor_reference(monitor_id, "N/A"));
+
+    // 920 deviates only 20 from 900, but the reference N/A cannot be evaluated: 920 is the first value
+    ASSERT_EQ(dm->set_value(interval.component, interval.variable.value(), AttributeEnum::Actual, "920", "test"),
+              SetVariableStatusEnum::Accepted);
+    updater.process_triggered_monitors();
+    ASSERT_EQ(sent().size(), 1);
+    EXPECT_EQ(sent()[0].actualValue, "920");
+    EXPECT_EQ(reference(), "920");
+
+    // 940 deviates only 20 from 920: no trigger
+    ASSERT_EQ(dm->set_value(interval.component, interval.variable.value(), AttributeEnum::Actual, "940", "test"),
+              SetVariableStatusEnum::Accepted);
+    updater.process_triggered_monitors();
+    EXPECT_EQ(sent().size(), 1);
+
+    updater.stop_monitoring();
+    clear_all_monitors(*dm, interval.component, interval.variable.value());
+}
+
 /// N07.FR.18: a Delta event dropped while offline does not move the reference, so the CSMS still learns of the change
 TEST_F(DeviceModelTest, test_numeric_delta_monitor_reference_kept_when_event_dropped_offline) {
     const auto& interval = ControllerComponentVariables::AlignedDataInterval;
