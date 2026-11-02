@@ -50,7 +50,6 @@ bool variable_has_same_attributes(const std::vector<DbVariableAttribute>& attrib
 bool variable_has_same_monitors(const std::vector<VariableMonitoringMeta>& monitors1,
                                 const std::vector<VariableMonitoringMeta>& monitors2);
 bool is_characteristics_different(const VariableCharacteristics& c1, const VariableCharacteristics& c2);
-bool is_same_variable(const DeviceModelVariable& v1, const DeviceModelVariable& v2);
 bool is_variable_different(const DeviceModelVariable& v1, const DeviceModelVariable& v2);
 bool is_monitor_different(const VariableMonitoringMeta& meta1, const VariableMonitoringMeta& meta2);
 // Spec based monitor duplicate detection
@@ -1650,16 +1649,6 @@ bool is_characteristics_different(const VariableCharacteristics& c1, const Varia
 }
 
 ///
-/// \brief Check if the two variables are the same given their unique properties (name and instance, ignoring case).
-/// \param v1   Variable 1
-/// \param v2   Variable 2
-/// \return True if they are the same variable.
-///
-bool is_same_variable(const DeviceModelVariable& v1, const DeviceModelVariable& v2) {
-    return iequals(v1.name, v2.name) && iequals(v1.instance.value_or(""), v2.instance.value_or(""));
-}
-
-///
 /// \brief Check if the two given variables are different from eachother.
 /// \param v1   Variable 1
 /// \param v2   Variable 2
@@ -1748,5 +1737,9 @@ std::string get_variable_name_for_logging(const DeviceModelVariable& variable) {
     return variable_name;
 }
 } // namespace
+
+bool is_same_variable(const DeviceModelVariable& v1, const DeviceModelVariable& v2) {
+    return iequals(v1.name, v2.name) && iequals(v1.instance.value_or(""), v2.instance.value_or(""));
+}
 
 } // namespace ocpp::v2

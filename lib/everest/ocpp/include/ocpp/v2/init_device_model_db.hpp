@@ -94,6 +94,11 @@ struct DeviceModelVariable {
     std::vector<VariableMonitoringMeta> monitors;
 };
 
+///
+/// \brief Check if the two variables are the same given their unique properties (name and instance, ignoring case).
+///
+bool is_same_variable(const DeviceModelVariable& v1, const DeviceModelVariable& v2);
+
 /// \brief Convert from json to a ComponentKey struct.
 /// The to_json is not implemented as we don't need to write the component config to a json file.
 void from_json(const json& j, ComponentKey& c);
