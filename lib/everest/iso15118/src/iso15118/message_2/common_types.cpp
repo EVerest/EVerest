@@ -151,7 +151,7 @@ PhysicalValue to_physical_value(double value, Unit unit) {
     // ISO 15118-2 PhysicalValueType constrains the multiplier to -3..3.
     multiplier = std::clamp(multiplier, -3, 3);
     // Guard the int16 Value range in case the clamped multiplier cannot represent the magnitude.
-    double scaled = value * pow(10, -multiplier);
+    double scaled = std::round(value * pow(10, -multiplier));
     scaled = std::clamp(scaled, static_cast<double>(std::numeric_limits<int16_t>::min()),
                         static_cast<double>(std::numeric_limits<int16_t>::max()));
     out.multiplier = static_cast<int8_t>(multiplier);

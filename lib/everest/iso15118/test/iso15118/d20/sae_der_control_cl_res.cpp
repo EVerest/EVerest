@@ -53,7 +53,7 @@ size_t count_lines(const std::vector<std::pair<LogLevel, std::string>>& lines, L
 
 constexpr auto UNPAIRED_DELAY_LINE = "enter_service_delay is configured without enter_service_ramp_time";
 
-// The rational number mantissa is built by integer truncation, so the recovered value carries a small
+// The rational number mantissa keeps four significant digits, so the recovered value carries a small
 // relative error.
 constexpr auto TOLERANCE = 1e-3f;
 constexpr float NOMINAL_VOLTAGE_V = 230.0f;
