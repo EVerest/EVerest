@@ -1020,6 +1020,11 @@ std::optional<ocpp::v2::DERControlEnum> to_ocpp_der_control(const types::grid_su
         EVLOG_warning << "DirectiveType '" << types::grid_support::directive_type_to_string(der_control)
                       << "' has no OCPP DERControl mapping yet (ISO 15118-20 AMD1-only value); skipping";
         return std::nullopt;
+    case types::grid_support::DirectiveType::FixedWatt:
+        // EVerest-only: OCPP 2.1 DERControlEnum has no fixed active-power control. Every AC_DER_SAE EV that
+        // supports constant watt reports it, so this is expected each session and logs at debug only.
+        EVLOG_debug << "DirectiveType 'FixedWatt' has no OCPP DERControl equivalent (EVerest-only value); skipping";
+        return std::nullopt;
     }
     throw std::out_of_range("Could not convert DERControl");
 }
@@ -1147,12 +1152,16 @@ ocpp::v2::ChargingNeeds to_ocpp_charging_needs(const types::iso15118::ChargingNe
         der_charging_params.nominalVoltage = der.nominal_voltage;
         der_charging_params.nominalVoltageOffset = der.nominal_voltage_offset;
         if (der.ev_supported_dercontrol.has_value()) {
-            der_charging_params.evSupportedDERControl.emplace();
-            der_charging_params.evSupportedDERControl->reserve(der.ev_supported_dercontrol->size());
+            std::vector<ocpp::v2::DERControlEnum> supported;
+            supported.reserve(der.ev_supported_dercontrol->size());
             for (const auto& der_control : der.ev_supported_dercontrol.value()) {
                 if (const auto mapped = to_ocpp_der_control(der_control); mapped.has_value()) {
-                    der_charging_params.evSupportedDERControl->emplace_back(mapped.value());
+                    supported.emplace_back(mapped.value());
                 }
+            }
+            // evSupportedDERControl has minItems 1, so a list with nothing OCPP can name stays unset.
+            if (not supported.empty()) {
+                der_charging_params.evSupportedDERControl = std::move(supported);
             }
         }
     }
@@ -2424,7 +2433,9 @@ ocpp::v21::NotifyDERAlarmRequest to_ocpp_notify_der_alarm(const types::grid_supp
     ocpp::v21::NotifyDERAlarmRequest request;
     const auto control_type = to_ocpp_der_control(alarm.directive_type.value());
     if (not control_type.has_value()) {
-        throw std::invalid_argument("GridAlarm.directive_type has no OCPP controlType mapping (ISO-only value)");
+        throw std::invalid_argument("GridAlarm.directive_type " +
+                                    types::grid_support::directive_type_to_string(alarm.directive_type.value()) +
+                                    " has no OCPP controlType mapping");
     }
     request.controlType = control_type.value();
     request.gridEventFault = to_ocpp_grid_event_fault(alarm.fault);

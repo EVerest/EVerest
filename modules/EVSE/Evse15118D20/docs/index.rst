@@ -146,8 +146,9 @@ The SAE relay maps the directive table onto the inert default grid code, so a
 directive that leaves the set falls back to the shipped default rather than
 lingering: ``HVMustTrip``, ``HVMayTrip``, ``HVMomCess``, ``LVMustTrip``,
 ``LVMayTrip``, ``LVMomCess``, ``HFMustTrip``, ``HFMayTrip``, ``LFMustTrip``,
-``VoltVar``, ``WattVar``, ``FixedVar``, ``VoltWatt``, ``FreqDroop``,
-``LimitMaxDischarge``, ``FixedPFAbsorb``, ``FixedPFInject`` and ``EnterService``.
+``VoltVar``, ``WattVar``, ``FixedVar``, ``VoltWatt``, ``FixedWatt``,
+``FreqDroop``, ``LimitMaxDischarge``, ``FixedPFAbsorb``, ``FixedPFInject`` and
+``EnterService``.
 ``FixedPFAbsorb`` and ``FixedPFInject`` share the single ``ConstantPowerFactor``
 element, so one wins and the other is shadowed. Each Annex M element takes one
 writer: the lowest priority wins, array order breaks ties, and shadowed
@@ -169,8 +170,14 @@ knows nothing about OCPP:
   Hz, so no volt conversion happens.
 - ``EnterService`` voltage bands and the VoltVar ``ReferenceVoltage`` pass through
   in volts, because AMD1 Table 1 gives them in volts and so does ``grid_support``.
-- The ``FixedVar`` setpoint sign is inverted into ``VarSetpoint``. The two sign
-  conventions are opposed and [V2G20-3183] mandates the conversion.
+- The ``FixedVar`` setpoint sign is inverted into ``VarSetpoint``, and the
+  ``FixedWatt`` setpoint sign into ``WattSetpoint`` (Table M.26, negative
+  discharges). Each pair of sign conventions is opposed and [V2G20-3183]
+  mandates the conversion.
+- ``FixedWatt`` accepts only the active-power units ``PctMaxW`` and
+  ``PctWAvail`` and a setpoint within -100..100 (AMD1 Table 94); anything else
+  rejects the directive. It is an EVerest-only directive with no OCPP 2.1
+  DERControl equivalent; see "Known gaps" for who can send it.
 - The directive ``priority`` is forwarded into every written element that carries
   one; ``EnterService`` has none. A value outside the Annex M ``uint16`` range is
   omitted with a warning rather than wrapped.
@@ -185,7 +192,9 @@ The DER control functions the EV supports are surfaced in
 learns what the EV supports without the EVSE guessing. For AC_DER_IEC they come
 from what the EV negotiates during service selection; for AC_DER_SAE from the
 ``SupportedModes`` bitmap in the charge parameter discovery request
-([V2G20-3409]). See "Known gaps" for what a SAE session leaves out.
+([V2G20-3409]). Constant watt is reported as ``FixedWatt``, which has no OCPP
+counterpart and is left out of the OCPP ``evSupportedDERControl``. See "Known
+gaps" for what a SAE session leaves out.
 
 Discharge power limits follow ISO 15118-20 8.3.5.2.1: negative when the
 ``negative_bidirectional_limits`` config key is set, with nominal discharge power
@@ -363,6 +372,13 @@ Known gaps
   ``OvervoltageFaultRideThrough``, ``UndervoltageFaultRideThrough``,
   ``MaximumLevelDCInjection``, ``DSOQSetpoint``, ``DSOCosPhiSetpoint``,
   ``PowerMonitoringMustTrip`` and ``Gradients`` exist in Annex L or in OCPP only.
+- No producer in the tree sends ``FixedWatt``: OCPP cannot carry it, and
+  OCPPmulti is the only caller of ``set_active_directives``. Each call replaces
+  the whole active set, so a ``FixedWatt`` directive must come from the module
+  that owns that set. One sent by a second module alongside OCPPmulti is
+  overwritten by the next OCPP update, and ``ConstantWatt`` reverts to disabled.
+- Table M.26 also allows ``WattSetpoint`` in percent of the EV's maximum
+  configured apparent power; ``grid_support`` ``DERUnit`` has no such unit.
 - The SAE relay writes the single-phase fields only; every ``_L2`` and ``_L3``
   counterpart stays unset.
 - ``LimitMaxDischarge`` is approximated: ``pct_max_discharge_power`` lands in

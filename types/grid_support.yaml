@@ -4,8 +4,9 @@ types:
     description: |-
       Kind of DER control directive. Each value selects one DER control mode:
       enter-service gating, a frequency- or voltage-dependent curve, a fixed
-      power-factor or reactive-power setpoint, ramp-rate limits, a trip /
-      momentary-cessation / ride-through profile, or a DSO-commanded setpoint.
+      power-factor, reactive-power or active-power setpoint, ramp-rate limits,
+      a trip / momentary-cessation / ride-through profile, or a DSO-commanded
+      setpoint.
 
       EnterService: Enter-service criteria (voltage/frequency window and ramp) gating reconnection after a disconnect.
       FreqDroop: Frequency-droop active-power response to frequency deviation.
@@ -13,6 +14,7 @@ types:
       FixedPFAbsorb: Fixed power factor applied while absorbing (charging) active power.
       FixedPFInject: Fixed power factor applied while injecting (discharging) active power.
       FixedVar: Fixed reactive-power setpoint.
+      FixedWatt: Fixed active-power setpoint. EVerest-only, no OCPP 2.1 DERControl equivalent, no in-tree producer yet.
       Gradients: Ramp-rate / open-loop response-time limits applied to setpoint changes.
       HFMustTrip: High-frequency must-trip curve (mandatory disconnect thresholds).
       HFMayTrip: High-frequency may-trip / ride-through curve.
@@ -43,6 +45,7 @@ types:
       - FixedPFAbsorb
       - FixedPFInject
       - FixedVar
+      - FixedWatt
       - Gradients
       - HFMustTrip
       - HFMayTrip
@@ -259,6 +262,31 @@ types:
         description: Unit of the setpoint value.
         type: string
         $ref: /grid_support#/DERUnit
+  FixedWattParams:
+    description: >-
+      Fixed active-power (watt) parameters. Scheduling and priority are carried
+      by the enclosing Directive.
+    type: object
+    additionalProperties: false
+    required:
+      - setpoint
+      - unit
+    properties:
+      setpoint:
+        description: >-
+          Active power setpoint, expressed in the unit given by the unit field.
+          Negative = charging, positive = discharging (injecting); the Annex M
+          relay inverts the sign for ConstantWatt.WattSetpoint (Table M.26).
+          Range -100..100 per ISO 15118-20 AMD1 Table 94.
+        type: number
+        minimum: -100
+        maximum: 100
+      unit:
+        description: >-
+          Unit of the setpoint value: PctMaxW or PctWAvail. The Annex M relay
+          rejects any other unit.
+        type: string
+        $ref: /grid_support#/DERUnit
   FreqDroopParams:
     description: >-
       Frequency droop parameters. Scheduling and priority are carried by the
@@ -333,6 +361,7 @@ types:
         FreqDroop                         -> freq_droop
         FixedPFAbsorb, FixedPFInject      -> fixed_pf
         FixedVar                          -> fixed_var
+        FixedWatt                         -> fixed_watt
         Gradients                         -> gradient
         LimitMaxDischarge                 -> limit_max_discharge
         FreqWatt, VoltWatt, VoltVar,      -> curve
@@ -350,6 +379,7 @@ types:
 
       The 6 payload-less values (ZeroCurrent and the five below it) are ISO
       15118-20 AMD1 AC-DER values with no OCPP DERControl mapping in v1.
+      FixedWatt has no OCPP DERControl mapping either; it is EVerest-only.
     type: object
     additionalProperties: false
     required:
@@ -410,6 +440,10 @@ types:
         description: Fixed reactive-power payload.
         type: object
         $ref: /grid_support#/FixedVarParams
+      fixed_watt:
+        description: Fixed active-power payload.
+        type: object
+        $ref: /grid_support#/FixedWattParams
       gradient:
         description: Gradient payload.
         type: object
