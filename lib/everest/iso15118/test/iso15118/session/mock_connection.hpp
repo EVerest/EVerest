@@ -56,7 +56,7 @@ public:
     }
 
     bool is_secure() const override {
-        return false;
+        return secure;
     }
 
     std::optional<io::sha512_hash_t> get_vehicle_cert_hash() const override {
@@ -97,6 +97,7 @@ public:
 
     io::ReadResult next_read_result{};
     bool closed{false};
+    bool secure{false};
     std::vector<uint8_t> written;
     bool half_closed{false};
     bool half_close_ready{true};
