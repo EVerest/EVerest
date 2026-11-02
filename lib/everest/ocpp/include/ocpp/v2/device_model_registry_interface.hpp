@@ -71,14 +71,14 @@ enum class RegistrationRejectionReason {
     AlreadyDefined,
     /// \brief The variable has no attributes
     NoAttributes,
-    /// \brief The owner is VARIABLE_OWNER_COMPONENT_CONFIG, which only libocpp uses
+    /// \brief The owner is VARIABLE_OWNER_COMPONENT_CONFIG or VARIABLE_OWNER_OCPP_STACK, which only libocpp uses
     ReservedOwner,
     /// \brief The component or the variable has an empty instance, or the component an EVSE or connector id of 0.
     /// Monitors and stored values key an absent instance as '' and an absent id as 0, so they could not tell them
     /// apart; the component config rejects them for the same reason.
     InvalidNameKey,
     /// \brief libocpp writes the variable from its own state, AuthCacheCtrlr.Storage, the AvailabilityState of an EVSE
-    /// or any variable of a NetworkConfiguration slot for example, so only the component config defines it
+    /// or any variable of a NetworkConfiguration slot for example, so only the component config or libocpp defines it
     ReservedVariable,
 };
 
@@ -105,8 +105,9 @@ public:
     /// one definition: a variable that the component config or another runtime owner defines already is rejected.
     /// A variable with an empty instance, or of a component with an empty instance or an EVSE or connector id of 0, is
     /// rejected as well, and so is a second definition of a variable in \p components.
-    /// The owner VARIABLE_OWNER_COMPONENT_CONFIG is reserved for libocpp and rejected, and so are the variables that
-    /// libocpp writes from its own state, see RegistrationRejectionReason::ReservedVariable.
+    /// The owners VARIABLE_OWNER_COMPONENT_CONFIG and VARIABLE_OWNER_OCPP_STACK are reserved for libocpp and rejected,
+    /// and so are the variables that libocpp writes from its own state, see
+    /// RegistrationRejectionReason::ReservedVariable.
     /// The variable listeners are notified of each Actual value that differs from the one \p owner registered before
     /// for the same variable.
     /// \p components is the full set of \p owner: the monitors and stored values of a variable that \p owner
@@ -123,13 +124,13 @@ public:
 
     /// \brief Removes everything that \p owner registered. The monitors and stored values of its variables are kept
     /// for its next registration. Returns once the calls to the provider of \p owner in
-    /// progress on other threads returned; a provider may call it from its set_value. The reserved owner is ignored.
+    /// progress on other threads returned; a provider may call it from its set_value. The reserved owners are ignored.
     virtual void unregister_components(const std::string& owner) = 0;
 
     /// \brief Reports a value that \p owner of a registered variable changed itself. Updates the model in
     /// memory and notifies the variable listeners; the provider is not called. The value must fit the data type and
     /// the allowed values of the variable, otherwise it is rejected. minLimit and maxLimit are not checked: they bound
-    /// what the CSMS may set, not what the owner reports. The reserved owner is rejected.
+    /// what the CSMS may set, not what the owner reports. The reserved owners are rejected.
     ///
     /// A change the owner makes while a write to the same attribute is in progress races with that write. To resolve
     /// it, the owner passes \p applied_write: the id of the last write to the attribute that it had applied when the

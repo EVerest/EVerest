@@ -31,17 +31,19 @@ struct VariableMonitoringPeriodic {
 };
 
 /// \brief The owner of the variables the component config defines, OCPPCommCtrlr.HeartbeatInterval or
-/// SecurityCtrlr.Identity for example. DeviceModel holds their values in memory and persists them itself. A variable of
-/// the component config that the storage reports with another owner, the EVerest device model of the OCPP modules for
-/// example, is held by the storage of that owner, which changes its value without DeviceModel.
+/// SecurityCtrlr.Identity for example. DeviceModel holds their values in memory and persists them itself.
 inline constexpr auto VARIABLE_OWNER_COMPONENT_CONFIG = "COMPONENT_CONFIG";
+
+/// \brief The owner of the variables libocpp registers from its own state where the component config leaves them out:
+/// the AvailabilityState of the ChargingStation, every EVSE and every Connector. Reserved, like
+/// VARIABLE_OWNER_COMPONENT_CONFIG: register_components rejects both.
+inline constexpr auto VARIABLE_OWNER_OCPP_STACK = "OCPP_STACK";
 
 /// \brief Helper struct that combines VariableCharacteristics, VariableMonitoring and the VariableAttribute(s)
 struct VariableMetaData {
     VariableCharacteristics characteristics;
     std::unordered_map<std::int64_t, VariableMonitoringMeta> monitors;
-    /// \brief The owner of the variable: VARIABLE_OWNER_COMPONENT_CONFIG unless the storage or a registration names
-    /// another
+    /// \brief The owner of the variable: VARIABLE_OWNER_COMPONENT_CONFIG unless a registration names another
     std::string owner{VARIABLE_OWNER_COMPONENT_CONFIG};
     /// \brief The attributes of the variable with their current values
     std::vector<VariableAttribute> attributes;
