@@ -412,8 +412,8 @@ private: // Functions
 
     ///
     /// \brief Deletes the monitors of the component config variables matching \p variable_condition, custom
-    /// monitors included. Monitors are keyed by name, so they are not removed together with their variable rows.
-    /// Monitors with an owner belong to a variable registered at runtime and are kept.
+    /// monitors included. Monitors are keyed by name, so they are not removed together with their variable rows, and
+    /// every monitor with the name key of a matching variable is deleted, also one on a variable registered at runtime.
     /// \param variable_condition   SQL condition on the variable (alias v) or component (alias c), using \@id
     /// \param id                   The value bound to \@id
     ///
