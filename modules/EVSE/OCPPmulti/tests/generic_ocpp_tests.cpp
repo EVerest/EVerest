@@ -4,6 +4,9 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
+#include <memory>
+#include <optional>
+#include <stdexcept>
 #include <string>
 
 #include <generic_ocpp.hpp>
@@ -250,6 +253,152 @@ TEST(GenericOcppTester, errorUsesOcppEvseIdWhenEverestIdsDiffer) {
     ocpp.cb_error_handler(not_served);
 
     EXPECT_EQ(event_evse_ids, (std::vector<std::int32_t>{2, 2, 2, 2}));
+}
+
+TEST(GenericOcppTester, duplicateEverestEvseIdIsRejected) {
+    stubs::ChargePointStub chargepoint;
+    stubs::ConfigStub config;
+    stubs::ModuleInterfaces interfaces;
+
+    interfaces.add_evse_manager("evse_manager_1", 2);
+    interfaces.add_evse_manager("evse_manager_2", 2);
+
+    stubs::GenericOcppTester ocpp(chargepoint, interfaces.get_module_info(), config, interfaces.get_provides(),
+                                  interfaces.get_requires());
+    ocpp.init();
+
+    interfaces.publish_ready(0, true);
+    interfaces.publish_ready(1, true);
+    EXPECT_THROW(ocpp.ready(interfaces.get_config_service_client()), std::runtime_error);
+}
+
+// EVerest evse ids 2 and 3, i.e. OCPP evse ids 1 and 2
+class GenericOcppEvseIdTester : public testing::Test {
+protected:
+    stubs::ChargePointStub chargepoint;
+    stubs::ConfigStub config;
+    stubs::ModuleInterfaces interfaces;
+    ocpp_multi::GenericChargePointInterface::ConnectorStructure init_evse_connector_structure;
+    ocpp_multi::GenericChargePointInterface::ConnectorStructureV16 init_connector_mapping;
+    std::unique_ptr<stubs::GenericOcppTester> ocpp;
+
+    void SetUp() override {
+        using ::testing::_;
+
+        interfaces.add_charger_information("info");
+        interfaces.add_data_transfer("data_transfer");
+        interfaces.add_display_message("display");
+        interfaces.add_evse_energy_sink("energy_node_0", 0);
+        interfaces.add_evse_energy_sink("energy_node_2", 2);
+        interfaces.add_evse_manager("evse_manager_1", 2);
+        interfaces.add_evse_manager("evse_manager_2", 3);
+        interfaces.add_extensions_15118("evsev2g");
+        interfaces.add_reservation("reservation");
+
+        chargepoint.load_store("default_store.json");
+
+        EXPECT_CALL(chargepoint, init(_)).Times(1).WillOnce([this](const auto& args) {
+            init_evse_connector_structure = args.evse_connector_structure;
+            init_connector_mapping = args.connector_mapping;
+        });
+        EXPECT_CALL(chargepoint, get_all_composite_schedules(600, _)).Times(1);
+        EXPECT_CALL(chargepoint, set_message_queue_resume_delay(std::chrono::seconds(config.MessageQueueResumeDelay)))
+            .Times(1);
+        EXPECT_CALL(chargepoint, start(_, _, false)).Times(1);
+        EXPECT_CALL(chargepoint, connect_websocket()).Times(1);
+
+        ocpp = std::make_unique<stubs::GenericOcppTester>(chargepoint, interfaces.get_module_info(), config,
+                                                          interfaces.get_provides(), interfaces.get_requires());
+        ocpp->init();
+        interfaces.publish_ready(0, true);
+        interfaces.publish_ready(1, true);
+        ocpp->ready(interfaces.get_config_service_client());
+    }
+
+    static ocpp::v2::EnhancedCompositeSchedule composite_schedule(std::int32_t evse_id) {
+        ocpp::v2::EnhancedChargingSchedulePeriod period;
+        period.startPeriod = 0;
+        period.limit = 16.0F;
+        ocpp::v2::EnhancedCompositeSchedule schedule;
+        schedule.evseId = evse_id;
+        schedule.chargingRateUnit = ocpp::v2::ChargingRateUnitEnum::A;
+        schedule.chargingSchedulePeriod = {period};
+        return schedule;
+    }
+};
+
+TEST_F(GenericOcppEvseIdTester, connectorStructureUsesOcppEvseIds) {
+    EXPECT_EQ(init_evse_connector_structure,
+              (ocpp_multi::GenericChargePointInterface::ConnectorStructure{{1, 1}, {2, 1}}));
+    EXPECT_EQ(init_connector_mapping,
+              (ocpp_multi::GenericChargePointInterface::ConnectorStructureV16{{1, {{1, 1}}}, {2, {{1, 2}}}}));
+}
+
+TEST_F(GenericOcppEvseIdTester, externalLimitsReachSinkOfEverestEvse) {
+    std::vector<int> called_sinks;
+    for (const int sink : {0, 1}) {
+        interfaces.subscribe_var(
+            "external_energy_limits", "call_set_external_limits", sink,
+            [&called_sinks, sink](const auto&, const auto&, const auto&) { called_sinks.push_back(sink); });
+    }
+
+    ocpp->set_external_limits({composite_schedule(0), composite_schedule(1), composite_schedule(2)});
+
+    EXPECT_EQ(called_sinks, (std::vector<int>{0, 1}));
+}
+
+TEST_F(GenericOcppEvseIdTester, reserveNowUsesEverestEvseId) {
+    std::optional<json> call_args;
+    interfaces.subscribe_var("reservation", "call_reserve_now",
+                             [&call_args](const auto&, const auto&, const auto& data) { call_args = data; });
+
+    ocpp::v2::ReserveNowRequest request;
+    request.id = 1;
+    request.evseId = 1;
+    ocpp->cb_reserve_now(request);
+
+    ASSERT_TRUE(call_args.has_value());
+    EXPECT_EQ(call_args->at("request").at("evse_id"), 2);
+}
+
+TEST_F(GenericOcppEvseIdTester, provideTokenUsesEverestEvseId) {
+    std::optional<json> provided_token;
+    interfaces.subscribe_var("auth_provider", "provided_token",
+                             [&provided_token](const auto&, const auto&, const auto& data) { provided_token = data; });
+
+    ocpp_multi::GenericChargePointCallbacks::IdToken id_token{};
+    id_token.token.idToken = "TOKEN";
+    id_token.token.type = "ISO14443";
+    id_token.evse_id = 2;
+    ocpp->cb_provide_token(id_token);
+
+    ASSERT_TRUE(provided_token.has_value());
+    EXPECT_EQ(provided_token->at("connectors"), json::array({3}));
+}
+
+TEST_F(GenericOcppEvseIdTester, changeAvailabilityUsesOcppEvseId) {
+    using ::testing::Truly;
+
+    EXPECT_CALL(chargepoint, on_change_availability(Truly([](const ocpp::v2::ChangeAvailabilityRequest& request) {
+                    return request.evse.has_value() && request.evse->id == 2;
+                })))
+        .Times(1);
+
+    types::ocpp::ChangeAvailabilityRequest request;
+    request.operational_status = types::ocpp::OperationalStatusEnumType::Inoperative;
+    request.evse = types::ocpp::EVSE{3};
+    ocpp->handle_change_availability(request);
+}
+
+TEST_F(GenericOcppEvseIdTester, changeAvailabilityForUnservedEvseIsRejected) {
+    using ::testing::_;
+
+    EXPECT_CALL(chargepoint, on_change_availability(_)).Times(0);
+
+    types::ocpp::ChangeAvailabilityRequest request;
+    request.operational_status = types::ocpp::OperationalStatusEnumType::Inoperative;
+    request.evse = types::ocpp::EVSE{1};
+    ocpp->handle_change_availability(request);
 }
 
 TEST_F(GenericOcppProvidesTester, errorTypeNotRemapped) {

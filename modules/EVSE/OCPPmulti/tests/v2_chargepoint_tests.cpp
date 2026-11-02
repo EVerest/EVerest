@@ -11,6 +11,9 @@
 
 #include <chrono>
 #include <future>
+#include <vector>
+
+#include <everest/ocpp_module_common/error_handling.hpp>
 
 namespace {
 
@@ -393,6 +396,50 @@ TEST_F(ChargePointV2Test, transactionStartedWithoutReservationKeepsReservation) 
     EXPECT_CALL(*m_libocpp, on_reservation_cleared(_, _)).Times(0);
 
     m_chargepoint.on_event_transaction_started(EVSE_ID, CONNECTOR_ID, transaction_started_event(std::nullopt));
+}
+
+TEST_F(ChargePointV2Test, errorEventUsesOcppEvseId) {
+    Everest::error::Error error;
+    error.type = "evse_board_support/MREC2GroundFailure";
+    error.origin.mapping = Mapping{3, 2};
+
+    std::vector<ocpp::v2::EventData> events;
+    EXPECT_CALL(*m_libocpp, on_event(_)).WillOnce(SaveArg<0>(&events));
+
+    m_chargepoint.on_event(ChargePointV2::EventInfo{1, EVSE_ID, false, error});
+
+    ASSERT_EQ(events.size(), 1);
+    ASSERT_TRUE(events[0].component.evse.has_value());
+    EXPECT_EQ(events[0].component.evse->id, EVSE_ID);
+    EXPECT_EQ(events[0].component.evse->connectorId, 2);
+}
+
+TEST_F(ChargePointV2Test, errorEventWithoutMappingUsesOcppEvseId) {
+    Everest::error::Error error;
+    error.type = ocpp_module_common::EVSE_MANAGER_INOPERATIVE_ERROR;
+
+    std::vector<ocpp::v2::EventData> events;
+    EXPECT_CALL(*m_libocpp, on_event(_)).WillOnce(SaveArg<0>(&events));
+
+    m_chargepoint.on_event(ChargePointV2::EventInfo{1, 2, false, error});
+
+    ASSERT_EQ(events.size(), 1);
+    ASSERT_TRUE(events[0].component.evse.has_value());
+    EXPECT_EQ(events[0].component.evse->id, 2);
+    EXPECT_FALSE(events[0].component.evse->connectorId.has_value());
+}
+
+TEST_F(ChargePointV2Test, stationErrorEventHasNoEvse) {
+    Everest::error::Error error;
+    error.type = "evse_board_support/MREC2GroundFailure";
+
+    std::vector<ocpp::v2::EventData> events;
+    EXPECT_CALL(*m_libocpp, on_event(_)).WillOnce(SaveArg<0>(&events));
+
+    m_chargepoint.on_event(ChargePointV2::EventInfo{1, 0, false, error});
+
+    ASSERT_EQ(events.size(), 1);
+    EXPECT_FALSE(events[0].component.evse.has_value());
 }
 
 // a registered variable listener receives changes reported by libocpp
