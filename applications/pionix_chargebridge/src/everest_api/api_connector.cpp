@@ -114,6 +114,7 @@ bool api_connector::unregister_events(everest::lib::io::event::fd_event_handler&
 void api_connector::set_cb_tx(tx_ftor const& handler) {
     m_tx = handler;
     m_evse_bsp.set_cb_tx(handler);
+    m_ovm.set_cb_tx(handler);
     m_ev_bsp.set_cb_tx(handler);
 }
 
