@@ -786,6 +786,40 @@ TEST_F(ChargerTest, DisableDuringWaitingForAuthentication) {
     EXPECT_EQ(last_event, SessionEventEnum::Disabled);
 }
 
+// An emergency shutdown ends the HLC session: its permission to close must not survive into a resume, where
+// PrepareCharging would otherwise request power before the new session's cable check.
+TEST_F(ChargerTest, EmergencyShutdownWithdrawsHlcContactorPermission) {
+    for (const auto mode : {Charger::ChargeMode::AC, Charger::ChargeMode::DC}) {
+        auto& ctx = charger->get_shared_context();
+        charger->get_config_context().charge_mode = mode;
+        ctx.hlc_allow_close_contactor = true;
+        ctx.shutdown_type = ShutdownType::EmergencyShutdown;
+        ctx.last_shutdown_type = ShutdownType::None;
+
+        EXPECT_TRUE(charger->stop_charging_on_fatal_error());
+        EXPECT_FALSE(ctx.hlc_allow_close_contactor) << "mode " << static_cast<int>(mode);
+    }
+}
+
+// An error shutdown keeps the HLC session. DC resumes through a new cable check, so the permission is withdrawn;
+// AC keeps it for the session that continues.
+TEST_F(ChargerTest, ErrorShutdownWithdrawsHlcContactorPermissionForDcOnly) {
+    auto& ctx = charger->get_shared_context();
+
+    charger->get_config_context().charge_mode = Charger::ChargeMode::DC;
+    ctx.hlc_allow_close_contactor = true;
+    ctx.shutdown_type = ShutdownType::ErrorShutdown;
+    ctx.last_shutdown_type = ShutdownType::None;
+    EXPECT_TRUE(charger->stop_charging_on_fatal_error());
+    EXPECT_FALSE(ctx.hlc_allow_close_contactor);
+
+    charger->get_config_context().charge_mode = Charger::ChargeMode::AC;
+    ctx.hlc_allow_close_contactor = true;
+    ctx.last_shutdown_type = ShutdownType::None;
+    EXPECT_TRUE(charger->stop_charging_on_fatal_error());
+    EXPECT_TRUE(ctx.hlc_allow_close_contactor);
+}
+
 // Test that disabling while in Idle (no session) immediately transitions to Disabled
 TEST_F(ChargerTest, DisableDuringIdle) {
     constexpr EnableDisableSource disable_source{Enable_source::CSMS, Enable_state::Disable, 100};
