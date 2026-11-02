@@ -274,13 +274,6 @@ def probe_module(
     implement_command(
         module,
         skip_implementation,
-        "ProbeModuleConnectorA",
-        "set_free_service",
-        lambda arg: None,
-    )
-    implement_command(
-        module,
-        skip_implementation,
         "ProbeModuleIso15118Extensions",
         "set_get_certificate_response",
         lambda arg: None,
@@ -382,13 +375,6 @@ def probe_module(
         "ProbeModuleConnectorB",
         "force_unlock",
         lambda arg: True,
-    )
-    implement_command(
-        module,
-        skip_implementation,
-        "ProbeModuleConnectorB",
-        "set_free_service",
-        lambda arg: None,
     )
     implement_command(
         module,

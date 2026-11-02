@@ -35,6 +35,17 @@ config:
     description: Set to true to enable contract (aka plug and charge) authorization
     type: boolean
     default: true
+  free_service:
+    description: >-
+      Set to true to advertise the charge service as free of charge (FreeService in the ISO 15118 / DIN 70121
+      ServiceDiscoveryRes). ServiceDiscoveryRes is sent before authorization, so this means free of charge for
+      all drivers at this EVSE. It is about billing, not authorization: it is independent of
+      disable_authentication and of the auth providers and validators, and it has to match what the CSMS
+      actually bills. Can be changed at runtime via the configuration service; a change applies from the next
+      session on. Has no effect without HLC.
+    type: boolean
+    default: false
+    mutability: ReadWrite
   ac_nominal_voltage:
     description: Nominal AC voltage between phase and neutral in Volt
     type: number

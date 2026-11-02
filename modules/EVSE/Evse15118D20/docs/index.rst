@@ -53,9 +53,9 @@ Free service
 
 The ``FreeService`` flag of the charge service in ``ServiceDiscoveryRes`` (DIN
 70121 and ISO 15118-2) and of the energy transfer services (ISO 15118-20)
-follows the ``set_free_service`` command. It defaults to ``false`` and applies
-from the next session on. The value is not persisted, so it falls back to
-``false`` when the module restarts.
+follows the ``set_free_service`` command, which EvseManager drives from its
+``free_service`` config key. It defaults to ``false`` and applies from the next
+session on.
 
 Plug and Charge
 ===============

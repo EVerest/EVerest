@@ -402,6 +402,12 @@ void EvseManager::ready() {
         session_setup.force_external_payment = false;
         update_hlc_session_setup(session_setup);
 
+        {
+            std::scoped_lock lock(free_service_mutex);
+            r_hlc[0]->call_set_free_service(config.free_service);
+            free_service_forwarding = true;
+        }
+
         r_hlc[0]->subscribe_hlc_session_failed([this](types::evse_manager::HlcSessionFailedReasonEnum reason) {
             types::evse_manager::HlcSessionFailedEvent ev;
             ev.uuid = charger->get_session_id();
@@ -3045,6 +3051,15 @@ void EvseManager::set_external_derating(types::dc_external_derate::ExternalDerat
     if (hlc_enabled and config.charge_mode == "DC") {
         push_powersupply_capabilities_to_hlc();
     }
+}
+
+EvseManager::ConfigChangeResult EvseManager::on_free_service_changed(const bool& value) {
+    std::scoped_lock lock(free_service_mutex);
+    rw_config.free_service = value;
+    if (free_service_forwarding) {
+        r_hlc[0]->call_set_free_service(value);
+    }
+    return ConfigChangeResult::Accepted();
 }
 
 EvseManager::ConfigChangeResult EvseManager::on_keep_cable_locked_changed(const bool& value) {

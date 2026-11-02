@@ -62,6 +62,7 @@
 namespace module {
 
 struct RwConf {
+    bool free_service;
     bool keep_cable_locked;
 };
 
@@ -77,12 +78,15 @@ struct RwConfUpdate {
     // executing your module code, so guard rw_config with a mutex both here
     // and wherever your module accesses config or rw_config
     // e.g.
-    // ConfigChangeResult on_keep_cable_locked_changed(const bool& value) override {
+    // ConfigChangeResult on_free_service_changed(const bool& value) override {
     //     std::scoped_lock lock(config_mutex);
-    //     rw_config.keep_cable_locked = value;
+    //     rw_config.free_service = value;
     //     return ConfigChangeResult::Accepted();
     // }
 
+    virtual ConfigChangeResult on_free_service_changed(const bool& /* value */) {
+        return ConfigChangeResult::Rejected("handler not implemented");
+    }
     virtual ConfigChangeResult on_keep_cable_locked_changed(const bool& /* value */) {
         return ConfigChangeResult::Rejected("handler not implemented");
     }
@@ -169,9 +173,10 @@ struct Conf {
     bool debug_emit_cp_state_hpav_frames;
     std::string debug_cp_state_hpav_device;
 
+    const bool& free_service;
     const bool& keep_cable_locked;
 
-    Conf(const RwConf& rw) : keep_cable_locked(rw.keep_cable_locked) {
+    Conf(const RwConf& rw) : free_service(rw.free_service), keep_cable_locked(rw.keep_cable_locked) {
     }
 };
 
@@ -305,6 +310,11 @@ public:
     std::unique_ptr<IECStateMachine> bsp;
     std::unique_ptr<ErrorHandling> error_handling;
     std::unique_ptr<PersistentStore> store;
+
+    ConfigChangeResult on_free_service_changed(const bool& value) override;
+    // Guards rw_config.free_service; the handler may fire before ready() can forward to the HLC stack.
+    std::mutex free_service_mutex;
+    bool free_service_forwarding{false};
 
     ConfigChangeResult on_keep_cable_locked_changed(const bool& value) override;
     // Guards rw_config, bsp_connector_type and the bsp hand-over; the handler runs on a config service
