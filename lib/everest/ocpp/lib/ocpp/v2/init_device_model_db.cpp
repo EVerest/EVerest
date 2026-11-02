@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <fstream>
 #include <map>
+#include <set>
 #include <sstream>
 #include <string>
 
@@ -1431,21 +1432,27 @@ void check_integrity(const std::map<ComponentKey, std::vector<DeviceModelVariabl
 }
 
 ///
-/// \brief Check that no two components, and no two variables of one component, share a name key.
+/// \brief Check that no two variables of one component share a name key.
 ///
-/// Monitors and stored values compare names and instances case-insensitively, so components or variables that
-/// differ only in case would share them.
+/// Monitors and stored values compare names and instances case-insensitively, so variables that differ only in case
+/// would share them. Components are keyed by ComponentKey, which compares them the same way.
 ///
 /// \throws ComponentConfigNameKeyError for the first pair that shares a name key.
 ///
 void check_name_keys_are_unique(const std::map<ComponentKey, std::vector<DeviceModelVariable>>& component_configs) {
+    const auto name_key_less = [](const DeviceModelVariable* l, const DeviceModelVariable* r) {
+        if (!iequals(l->name, r->name)) {
+            return iless(l->name, r->name);
+        }
+        return iless(l->instance.value_or(""), r->instance.value_or(""));
+    };
     for (const auto& [component_key, variables] : component_configs) {
-        for (auto variable = variables.begin(); variable != variables.end(); ++variable) {
-            const auto earlier = std::find_if(variables.begin(), variable,
-                                              [&variable](const auto& v) { return is_same_variable(v, *variable); });
-            if (earlier != variable) {
-                throw ComponentConfigNameKeyError("Variables " + get_variable_name_for_logging(*earlier) + " and " +
-                                                  get_variable_name_for_logging(*variable) + " of component " +
+        std::set<const DeviceModelVariable*, decltype(name_key_less)> name_keys(name_key_less);
+        for (const auto& variable : variables) {
+            const auto [earlier, inserted] = name_keys.insert(&variable);
+            if (!inserted) {
+                throw ComponentConfigNameKeyError("Variables " + get_variable_name_for_logging(**earlier) + " and " +
+                                                  get_variable_name_for_logging(variable) + " of component " +
                                                   get_component_name_for_logging(component_key) + " share a name key");
             }
         }
