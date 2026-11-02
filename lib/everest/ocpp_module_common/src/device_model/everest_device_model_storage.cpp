@@ -2,6 +2,7 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 
 #include <algorithm>
+#include <stdexcept>
 #include <string_view>
 
 #include <everest/logging.hpp>
@@ -781,7 +782,14 @@ EverestDeviceModelStorage::EverestDeviceModelStorage(
             }
         }
 
-        component_configs[component_key] = build_everest_config_variables(module_config);
+        // Component names and instances are case-insensitive, so module ids that differ only in case collide
+        const auto [existing, inserted] =
+            component_configs.emplace(component_key, build_everest_config_variables(module_config));
+        if (!inserted) {
+            throw std::runtime_error("Module " + module_id_type.module_id + " of type " + module_id_type.module_type +
+                                     " maps to the same device model component as module " +
+                                     existing->first.instance.value_or("") + " of type " + existing->first.name);
+        }
     }
 
     ocpp::v2::InitDeviceModelDb init_device_model_db(db_path, migration_files_path);
