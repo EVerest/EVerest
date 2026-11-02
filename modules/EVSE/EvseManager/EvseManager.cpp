@@ -1266,8 +1266,11 @@ void EvseManager::ready() {
     charger->signal_max_current.connect([this](float ampere) {
         // The charger changed the max current setting. Forward to HLC
         if (hlc_enabled) {
-            if (not selected_d20_energy_service.has_value() and ampere >= 0.0) {
-                r_hlc[0]->call_update_ac_max_current(ampere); // ISO-2
+            if (not selected_d20_energy_service.has_value()) {
+                // ISO-2 has no discharge direction, so a negative target is not forwarded.
+                if (ampere >= 0.0f) {
+                    r_hlc[0]->call_update_ac_max_current(ampere); // ISO-2
+                }
                 return;
             }
 
