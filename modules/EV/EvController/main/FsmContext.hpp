@@ -5,6 +5,7 @@
 #include "CurvePlayer.hpp"
 #include "EvController.hpp" // for Conf, ev_managerImplBase, ev_board_supportIntf, etc.
 #include "Events.hpp"
+#include "IsoStart.hpp"
 #include "SocIntegrator.hpp" // for OnBatteryFull enum cached on FsmContext
 #include "StateBase.hpp"
 
@@ -34,10 +35,11 @@ namespace ev_API = everest::lib::API; // for ev_API::Topics
 // ev-cli generated `*Intf` types, whose `call_*` methods are non-virtual and need a real
 // ModuleAdapter, so tests can record calls without mocking the interfaces.
 //
-// Functions are grouped by peer, each group carrying one `present` flag, and
+// Functions are grouped by peer. Each optional peer carries one `present` flag, and
 // build_peer_actions sets a peer's functions and its flag in the same block. By
 // construction `present == true` IFF every function of that peer is wired, so a
-// partially wired peer cannot be expressed and one check replaces 14 null tests.
+// partially wired peer cannot be expressed and one check replaces the null tests.
+// The ISO 15118 session runs in-process and is always wired, so IsoPeer has no flag.
 struct BspPeer {
     std::function<void(::types::ev_board_support::EvCpState)> set_cp;
     std::function<void(bool)> allow_power_on;
@@ -55,14 +57,12 @@ struct BspPeer {
 };
 
 struct IsoPeer {
-    std::function<bool(::types::iso15118::EnergyTransferMode, ::types::iso15118::PaymentOption,
-                       int32_t /*departure_time_s*/, double /*e_amount_kwh*/, bool /*force_payment_option*/)>
-        start_charging;
+    std::function<bool(const IsoStart&)> start_charging;
+    // Why a session of this mode cannot run, or std::nullopt when it can.
+    std::function<std::optional<std::string>(API_types::ev_controller::ChargeMode)> cannot_run;
     std::function<void()> stop_charging;
     std::function<void()> pause_charging;
     std::function<void(float /*soc_pct*/)> update_soc;
-    std::function<void()> enable_sae_j2847_v2g_v2h;
-    std::function<void(const ::types::iso15118::DcEvBPTParameters&)> set_bpt_dc_params;
     std::function<void(const ::types::iso15118::DcEvParameters&)> set_dc_params;
     // Terminate the V2G session immediately, with no SessionStop exchange.
     std::function<void()> abort_charging;
@@ -73,7 +73,10 @@ struct IsoPeer {
     // The present values the EV measures. Absent fields keep their last value
     // at the consumer, so a partial update is additive rather than a reset.
     std::function<void(const ::types::iso15118::EvPresentValues&)> update_present_values;
-    bool present{false};
+    // Called on the loop thread before an event tagged with a session (Event::iso_session)
+    // reaches the FSM. False drops it: the session ended or was replaced. `ended` marks the
+    // session's own IsoV2GFinished, which also releases it.
+    std::function<bool(std::uint32_t /*session*/, bool /*ended*/)> admit;
 };
 
 struct SlacPeer {
@@ -183,9 +186,9 @@ struct SimVars {
     // unstable resume. The first-session path (SlacMatching -> V2GNegotiating)
     // leaves this false and starts immediately.
     bool resume_awaiting_pwm{false};
-    // Tracks whether a V2G comm session is live. The ISO15118_ev module runs one
-    // session per start_charging and publishes v2g_session_finished (->
-    // IsoV2GFinished) when each session's loop returns, including on a pause.
+    // Tracks whether a V2G comm session is live. The ISO 15118 session runs once
+    // per start_charging and ends with IsoV2GFinished when its loop returns,
+    // including on a pause.
     // Set when start_charging is issued (FsmContext::iso_start_charging),
     // cleared on IsoV2GFinished (EvCtlRuntime::apply_passthrough_vars) and reset
     // on a fresh plug (Plugged::enter). The EV must not begin a resume (BCB
@@ -368,7 +371,7 @@ public:
     // A payload without a target_active_power leaves the limit unchanged.
     void note_evse_ac_target_power(const ::types::iso15118::AcTargetPower& target_power);
 
-    // ISO 15118 shortcuts (guard peer_actions.iso.present)
+    // ISO 15118 shortcuts
     bool iso_start_charging(API_types::ev_controller::ChargeMode,
                             std::optional<API_types::ev_controller::PaymentOption>, int32_t departure_time_s,
                             int32_t e_amount_wh);

@@ -18,11 +18,11 @@ namespace api = API_types::ev_controller;
 namespace {
 
 // Issue the ISO start_charging request with the (resumed) session parameters.
-// Returns false when there is no charge mode or the wired peer rejects the
-// start (or the peer is absent / AcIec), in which case the caller routes into
-// Faulted. No deadline follows: the ISO peer times each step (SETUP_TIMEOUT,
-// the per-message and ongoing timeouts of ISO 15118-2 and -20) and always
-// ends with v2g_session_finished.
+// Returns false when there is no charge mode or the session rejects the start
+// (or the mode is AcIec), in which case the caller routes into Faulted. No
+// deadline follows: the ISO 15118 session times each step (SETUP_TIMEOUT, the
+// per-message and ongoing timeouts of ISO 15118-2 and -20) and always ends
+// with IsoV2GFinished.
 bool start_iso_charging(FsmContext& ctx) {
     const auto cm = ctx.vars.charge_mode();
     return cm && ctx.iso_start_charging(*cm, ctx.vars.payment(), ctx.vars.departure_time_s, ctx.vars.e_amount_wh);
@@ -36,7 +36,7 @@ void V2GNegotiating::enter() {
     // the charging PWM. Defer start_charging until a PWM-running BspMeasurement
     // arrives, mirroring EvManager's iso_wait_pwm_is_running step -- issuing it
     // before the SECC is ready races its handshake and leaves the resume
-    // hanging. No ISO peer times this wait, so a 60 s deadline does: a SECC
+    // hanging. The ISO 15118 session does not time this wait, so a 60 s deadline does: a SECC
     // that never re-applies PWM faults via StateDeadline -> V2GTimeout instead
     // of hanging. Only start_charging is deferred. The first-session path
     // (SlacMatching -> V2GNegotiating) leaves the flag false and starts now.
@@ -56,8 +56,8 @@ void V2GNegotiating::enter() {
         ctx.publish_e2m_state(api::FsmState::V2GNegotiating);
         return;
     }
-    // start_iso_charging returns false when there is no mode or the ISO peer is
-    // not wired (or for AcIec, which has no ISO session); each indicates a
+    // start_iso_charging returns false when there is no mode, for AcIec (which
+    // has no ISO session) or when the session refuses the start; each indicates a
     // misconfiguration when we reach this state, and no session would ever end
     // the wait. Route into Faulted on the next on_wake flush via a synthetic
     // InternalFault, carrying the descriptive message on the payload so it cannot
@@ -101,7 +101,7 @@ StateBase::Result V2GNegotiating::on_event(EventType ev) {
         // later V2GNegotiating.
         ctx.vars.resume_awaiting_pwm = false;
         // DC ISO splits the charge-loop entry into two milestones, mirroring
-        // EvManager. The ISO15118_ev module publishes ev_power_ready back in
+        // EvManager. The ISO 15118 session reports ev_power_ready back in
         // ChargeParameterDiscovery (before CableCheck) and dc_power_on later in
         // PreCharge. EvManager gates on these separately: ev_power_ready ->
         // ISO_POWER_READY asserts CP=C and HOLDS (it does NOT start drawing
@@ -175,6 +175,7 @@ StateBase::Result V2GNegotiating::on_event(EventType ev) {
     case EK::Enable:
     case EK::IsoDerNegotiated:
     case EK::IsoDerControl:
+    case EK::IsoWeldingDetectionFailed:
     case EK::EvInfo:
     case EK::SlacState:
     case EK::DcEvsePresentCurrent:

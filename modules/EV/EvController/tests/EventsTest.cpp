@@ -45,6 +45,7 @@ TEST_CASE("kind_of maps every variant alternative to its EventKind", "[evctl][ev
     CHECK(kind_of(Event{IsoPowerDeliveryStoppedEvt{}}) == EventKind::IsoPowerDeliveryStopped);
     CHECK(kind_of(Event{IsoDerNegotiatedEvt{}}) == EventKind::IsoDerNegotiated);
     CHECK(kind_of(Event{IsoDerControlEvt{}}) == EventKind::IsoDerControl);
+    CHECK(kind_of(Event{IsoWeldingDetectionFailedEvt{}}) == EventKind::IsoWeldingDetectionFailed);
     CHECK(kind_of(Event{BeginSessionEvt{}}) == EventKind::BeginSession);
     CHECK(command_verb(EventKind::InternalFault).empty());
     CHECK(kind_of(Event{StateDeadlineEvt{}}) == EventKind::StateDeadline);

@@ -57,6 +57,7 @@ enum class EventKind {
     DcEvsePresentVoltage,
     IsoDerNegotiated,
     IsoDerControl,
+    IsoWeldingDetectionFailed,
     // Internal
     InternalFault,
     BeginSession,
@@ -104,6 +105,10 @@ struct IsoDcPowerOnEvt {};
 struct IsoPauseFromChargerEvt {};
 // The SECC accepted PowerDelivery(Stop): the EV may open its contactor and set CP B.
 struct IsoPowerDeliveryStoppedEvt {};
+// The EV gave up on welding detection; the session ends with its own IsoV2GFinished.
+struct IsoWeldingDetectionFailedEvt {
+    ::types::iso15118::WeldingDetectionFailure failure{};
+};
 // The current plug generation, so an event queued before a replug is ignored.
 struct BeginSessionEvt {
     std::uint32_t plug_generation{0};
@@ -130,10 +135,9 @@ struct SlacStatePayload {
     std::string state;
 };
 
-// DC live present-current / present-voltage forwards from the SECC. A producer
-// publishing dc_evse_present_current / dc_evse_present_voltage on the
-// ISO15118_ev requirement routes these into vars so the SoC integrator
-// switches from open-loop fallback to closed-loop live current.
+// DC live present-current / present-voltage forwards from the SECC. The ISO
+// 15118 session routes these into vars so the SoC integrator switches from
+// open-loop fallback to closed-loop live current.
 struct DcEvsePresentCurrentPayload {
     double current_a;
 };
@@ -159,18 +163,20 @@ struct ClearErrorCmd {
     std::optional<std::string> sub_type;
 };
 
-using EventPayload = std::variant<
-    EnableCmd, DisableCmd, API_types::ev_controller::SetSocParams, API_types::ev_controller::SessionConfigParams,
-    StopSessionCmd, PauseSessionCmd, ResumeSessionCmd, API_types::ev_controller::SetChargingCurrentParams,
-    API_types::ev_controller::SetPresentValuesParams, InternalFault, API_types::ev_controller::BcbToggleParams,
-    RaiseErrorCmd, ClearErrorCmd, QueryStateCmd, BspEventPayload, BspMeasurementPayload, EvInfoPayload,
-    SlacStatePayload, IsoPowerReadyEvt, IsoAcMaxCurrentEvt, IsoAcTargetPowerEvt, IsoStopFromChargerEvt,
-    IsoV2GFinishedEvt, IsoDcPowerOnEvt, IsoPauseFromChargerEvt, IsoPowerDeliveryStoppedEvt, DcEvsePresentCurrentPayload,
-    DcEvsePresentVoltagePayload, IsoDerNegotiatedEvt, IsoDerControlEvt, BeginSessionEvt, StateDeadlineEvt, ShutdownEvt>;
+using EventPayload =
+    std::variant<EnableCmd, DisableCmd, API_types::ev_controller::SetSocParams,
+                 API_types::ev_controller::SessionConfigParams, StopSessionCmd, PauseSessionCmd, ResumeSessionCmd,
+                 API_types::ev_controller::SetChargingCurrentParams, API_types::ev_controller::SetPresentValuesParams,
+                 InternalFault, API_types::ev_controller::BcbToggleParams, RaiseErrorCmd, ClearErrorCmd, QueryStateCmd,
+                 BspEventPayload, BspMeasurementPayload, EvInfoPayload, SlacStatePayload, IsoPowerReadyEvt,
+                 IsoAcMaxCurrentEvt, IsoAcTargetPowerEvt, IsoStopFromChargerEvt, IsoV2GFinishedEvt, IsoDcPowerOnEvt,
+                 IsoPauseFromChargerEvt, IsoPowerDeliveryStoppedEvt, DcEvsePresentCurrentPayload,
+                 DcEvsePresentVoltagePayload, IsoDerNegotiatedEvt, IsoDerControlEvt, IsoWeldingDetectionFailedEvt,
+                 BeginSessionEvt, StateDeadlineEvt, ShutdownEvt>;
 
 // One variant alternative per EventKind value. If a future alternative is
 // added without a matching EventKind (or vice versa) this fails to compile.
-static_assert(std::variant_size_v<EventPayload> == 33,
+static_assert(std::variant_size_v<EventPayload> == 34,
               "EventPayload alternatives and EventKind values must stay in lockstep");
 
 namespace detail {
@@ -184,6 +190,9 @@ EventPayload default_payload_for(EventKind kind);
 
 struct Event {
     EventPayload payload;
+    // The in-process ISO 15118 session that produced this event, or 0 when no session did.
+    // The loop admits a session's event only while that session is the live one.
+    std::uint32_t iso_session{0};
 
     Event() : payload(EnableCmd{}) {
     }

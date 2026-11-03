@@ -27,11 +27,9 @@ std::string to_string(::types::iso15118::EnergyTransferMode m) {
     return ::types::iso15118::energy_transfer_mode_to_string(m);
 }
 
-std::string to_string(const ::types::iso15118::SelectedPaymentOption& o) {
-    if (o.payment_option) {
-        return ::types::iso15118::payment_option_to_string(*o.payment_option);
-    }
-    return "unset";
+std::string to_string(everest::lib::API::V1_0::types::ev_controller::PaymentOption o) {
+    using PO = everest::lib::API::V1_0::types::ev_controller::PaymentOption;
+    return o == PO::Contract ? "Contract" : "ExternalPayment";
 }
 
 } // namespace
@@ -68,12 +66,17 @@ void MockBoardSupport::call_set_rcd_error(double rcd_current_mA) {
 
 // ---- MockIso15118Ev -----------------------------------------------------
 
-bool MockIso15118Ev::call_start_charging(::types::iso15118::EnergyTransferMode mode,
-                                         ::types::iso15118::SelectedPaymentOption payment, double departure_time,
-                                         double e_amount) {
+bool MockIso15118Ev::call_start_charging(const IsoStart& start) {
+    const auto mode = transfer_mode(start);
     std::ostringstream os;
-    os << "start_charging(mode=" << to_string(mode) << ",payment=" << to_string(payment)
-       << ",departure_time=" << to_string(departure_time) << ",e_amount=" << to_string(e_amount) << ")";
+    os << "start_charging(mode=" << (mode ? to_string(*mode) : std::string{"none"})
+       << ",payment=" << to_string(start.payment) << ",departure_time=" << start.departure_time_s
+       << ",e_amount=" << start.e_amount_wh;
+    if (start.bpt) {
+        os << ",bpt_power=" << to_string(start.bpt->discharge_max_power_limit)
+           << ",bpt_current=" << to_string(start.bpt->discharge_max_current_limit);
+    }
+    os << ")";
     records.emplace_back(os.str());
     return next_start_charging_result;
 }
@@ -100,14 +103,6 @@ void MockIso15118Ev::call_set_dc_params(const ::types::iso15118::DcEvParameters&
        << ",min_voltage_limit=" << to_string(params.min_voltage_limit.value_or(-1))
        << ",energy_capacity=" << to_string(params.energy_capacity.value_or(-1)) << ")";
     records.emplace_back(os.str());
-}
-
-void MockIso15118Ev::call_set_bpt_dc_params(const ::types::iso15118::DcEvBPTParameters&) {
-    records.emplace_back("set_bpt_dc_params(...)");
-}
-
-void MockIso15118Ev::call_enable_sae_j2847_v2g_v2h() {
-    records.emplace_back("enable_sae_j2847_v2g_v2h()");
 }
 
 void MockIso15118Ev::call_update_soc(double soc) {

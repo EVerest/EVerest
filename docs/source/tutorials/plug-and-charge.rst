@@ -28,7 +28,7 @@ Certificates for ISO 15118 communication
 The EVerest install ships a test PKI under ``etc/everest/certs`` of the install
 prefix (sources in ``config/certs``): CA certificates in ``certs/ca`` and client
 certificates, private keys and password files in ``certs/client``. The EV
-simulation (``Ev15118``) and the charger (``EvseV2G``, ``Evse15118D20``) use it,
+simulation (``EvController``, ``Ev15118``) and the charger (``EvseV2G``, ``Evse15118D20``) use it,
 so no extra setup is needed for Plug&Charge in the software in the loop.
 
 CMake generates this PKI at configure time when all of these hold:
@@ -36,7 +36,7 @@ CMake generates this PKI at configure time when all of these hold:
 - ``ISO15118_2_GENERATE_AND_INSTALL_CERTIFICATES`` is ``ON``, the default;
 - edm is enabled; packaging builds with ``DISABLE_EDM=ON``, such as Yocto, get no
   development keys;
-- at least one of ``Ev15118``, ``EvseV2G`` and ``Evse15118D20`` is built.
+- at least one of ``EvController``, ``Ev15118``, ``EvseV2G`` and ``Evse15118D20`` is built.
 
 Configure fails if the generation fails, and says why when it skips it.
 

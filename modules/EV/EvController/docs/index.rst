@@ -8,9 +8,14 @@ Simplified EV simulator with a versioned, typed MQTT API and an ``fsm::v2``
 state machine. Coexists with ``EvManager`` and is targeted as its replacement.
 Acts as the EV-side counterpart of
 ``EvseManager`` for software-in-the-loop (SIL) testing: it drives the simulated
-board support (``YetiSimulator``) and speaks to the ISO 15118 stack
-(``EvseV2G`` / ``Evse15118D20``) through the standard ``ISO15118_ev`` and
-``ev_slac`` interfaces.
+board support (``YetiSimulator``) through ``ev_board_support``, matches through
+``ev_slac``, and runs the EV side of ISO 15118 in-process on libiso15118's
+``ev::Controller`` against the charger's ``EvseV2G`` / ``Evse15118D20``. Every
+ISO mode runs in-process: ISO 15118-20 DC, DC BPT, MCS, MCS BPT, AC, AC BPT and
+AC DER (IEC and SAE), and ISO 15118-2 / DIN SPEC 70121 AC and DC with EIM or
+Plug&Charge. The session is set up by the library code ``Ev15118`` also uses
+(``lib/everest/iso15118_ev_session``). ``configure_session`` rejects an ISO mode
+that ``supported_protocols`` cannot offer.
 
 Architecture overview
 =====================
@@ -56,7 +61,7 @@ Module layout
 ::
 
     modules/EV/EvController/
-    ├── manifest.yaml              # provides ev_manager; requires ev_board_support, ISO15118_ev, ev_slac, kvs
+    ├── manifest.yaml              # provides ev_manager; requires ev_board_support, ev_slac, kvs
     ├── EvController.{cpp,hpp}     # ev-cli generated module shell (init/ready/shutdown)
     ├── ev_manager/                # provided-interface impl (currently a thin stub)
     ├── main/
@@ -118,7 +123,7 @@ Configuration
     Maximum voltage allowed by the EV. Default: ``900``.
 
 ``dc_min_voltage_limit``
-    Minimum voltage accepted by the EV in Volt. Sent to the ISO peer for DC
+    Minimum voltage accepted by the EV in Volt. Sent by the ISO session for DC
     sessions. Default: ``150``.
 
 ``dc_energy_capacity``
@@ -217,6 +222,61 @@ Configuration
     ``false`` for tests that need to observe the initial ``Disabled`` state
     before driving enable.
 
+``hlc_device``
+    Ethernet device of the ISO 15118 session. ``auto`` picks the first
+    interface with an IPv6 link-local address when a session starts.
+    Default: ``auto``.
+
+``evcc_id``
+    EVCC identifier sent in ISO 15118-20 SessionSetup, 1 to 255 characters.
+    Default: ``02:00:00:00:00:01``.
+
+``supported_protocols``
+    Comma-separated protocols offered in the SAP handshake, highest priority
+    first, from ``ISO15118_20``, ``ISO15118_2`` and ``DIN70121``. The module
+    fails at startup on an empty list, an unknown name or a repeated one.
+    Default: ``ISO15118_20``.
+
+``response_timeout_ms``
+    ISO 15118 response watchdog in milliseconds; ``0`` uses the per-message
+    timeouts of the specification. Default: ``0``.
+
+ISO 15118 session keys taken over from ``Ev15118``
+    ``authorization_timeout_ms``, ``control_mode``, ``tls``,
+    ``allow_pnc_without_tls``, ``tls_version``, ``verify_server_certificate``,
+    ``enable_tls_key_logging``, ``tls_key_logging_path``, ``pki_path``,
+    ``v2g_root_cert_path``, ``device_cert_chain_path``, ``device_key_path``,
+    ``device_key_password_path``,
+    the ``pnc_*`` contract and OEM provisioning keys, ``pnc_force_cert_install``,
+    ``pnc_contract_store_dir``, ``ac_max_charge_power_w``,
+    ``ac_min_charge_power_w``, the five AC and DC discharge limits,
+    ``sae_inverter_profile_path``, ``cpd_rounds``,
+    ``der_stop_on_unsupported_functions`` and ``der_stop_on_invalid_control``
+    mean what they mean in ``Ev15118``; see the manifest. The differences:
+
+    - ``device`` is ``hlc_device``.
+    - ``enable_pnc`` is gone: a session's ``payment`` selects it. ``Contract``
+      offers Plug&Charge (with ``force_payment_option``, enforces it);
+      ``ExternalPayment`` or none offers EIM only.
+    - ``iso2_ac_e_amount_wh`` is the session's ``e_amount_wh``;
+      ``iso2_ac_ev_max_voltage_v`` and ``iso2_ac_ev_max_current_a`` are
+      ``ac_nominal_voltage`` and ``max_current_a``; ``min_current_a`` is new.
+    - ``ac_phase_count`` is gone: the AC charge power keys are totals across
+      three lines, and a single-phase session (``three_phases: false``) asks
+      for one line and a third of them. The discharge power keys are not
+      divided.
+    - The twelve ``der_*`` IEC function flags are one list,
+      ``der_iec_functions``.
+    - A session's ``bpt`` discharge limits override ``dc_max_discharge_power_w``
+      and ``dc_max_discharge_current_a`` for that session.
+
+``supported_protocols`` per mode
+    A ``-20`` mode offers the list as configured, so a charger without
+    ISO 15118-20 can fall back to an earlier protocol; an ``Iso2`` mode leaves
+    ``ISO15118_20`` out. AC modes leave ``DIN70121`` out, which is DC only. A
+    ``-20`` mode needs ``ISO15118_20`` in the list and an ``Iso2`` mode needs a
+    protocol left, or ``configure_session`` rejects it.
+
 Migrating a config from EvManager
 ---------------------------------
 
@@ -247,13 +307,11 @@ CB-EVAL board's EV side:
        default_session: '{"mode":"DcIso2"}'
        dc_target_current: 5
        dc_target_voltage: 444
+       supported_protocols: ISO15118_2
      connections:
        ev_board_support:
          - module_id: ev_bsp_1
            implementation_id: main
-       ev:
-         - module_id: iso15118_ev
-           implementation_id: ev
        slac:
          - module_id: ev_slac
            implementation_id: main
@@ -286,26 +344,26 @@ Requires
     peer gates its simulation loop on ``enable``, so ``set_cp_state`` only
     reaches the EVSE while it is armed.
 
-``ev`` (``interface: ISO15118_ev``, optional, 0..1)
-    EV-side ISO 15118 peer (``Ev15118``), which talks to the charger's
-    ``EvseV2G`` / ``Evse15118D20``. Subscribes to
-    ``ev_power_ready``, ``stop_from_charger``, ``v2g_session_finished``,
-    ``dc_power_on``, ``pause_from_charger``, ``power_delivery_stopped``,
-    ``ac_evse_max_current``, ``ac_evse_target_power``,
-    ``dc_evse_present_current``, ``dc_evse_present_voltage``,
-    ``der_negotiated_functions``, ``der_control_received`` and
-    ``welding_detection_failed`` (logged as an error and reported on
-    ``e2m/fault`` as ``ChargerFault``; the session end follows as
-    ``v2g_session_finished``). An ``ac_evse_max_current`` or
-    ``ac_evse_target_power`` is kept as the EVSE AC limit in every state of
-    a session, before the state sees it, and is cleared when the session
-    ends; ``Charging`` applies it. Of several limits queued together only
-    the newest reaches the state, and a current or phase count the board
-    already has is not sent again. Invokes
-    ``start_charging``, ``stop_charging``, ``pause_charging``,
-    ``abort_charging``, ``update_soc``, ``enable_sae_j2847_v2g_v2h``,
-    ``set_bpt_dc_params``, ``set_dc_params``, ``cp_state_changed``,
-    ``update_present_values``.
+The ISO 15118 session (in-process, ``main/IsoSession.cpp``)
+    Not a requirement: each ``start_charging`` builds a libiso15118
+    ``ev::Controller`` on the loop thread and runs its ``loop()`` on a worker
+    thread until the session ends. The Controller's feedback (power ready, DC
+    power on, stop and pause from the charger, ``power_delivery_stopped``, DC
+    present values, AC limits, DER summaries and welding failure) is enqueued
+    as events tagged with their session, and the worker's last act is the
+    session's ``IsoV2GFinished``. The loop admits a tagged event only while
+    its session is the live one, so an event of an ended or replaced session
+    never reaches the FSM. A welding failure is reported on ``e2m/fault`` as
+    ``ChargerFault``; the session end follows. An EVSE AC maximum current or
+    target power is kept as the EVSE AC limit in every state of a session,
+    before the state sees it, and is cleared when the session ends;
+    ``Charging`` applies it. Of several limits queued together only the
+    newest reaches the state, and a current or phase count the board already
+    has is not sent again. A start while the previous
+    session still runs is rejected. A session that ends with
+    ``SessionStop(Pause)`` is resumed by the next start, which presents a
+    contract the paused session installed; a stop, an abort or pilot E/F
+    discards the pause.
 
 ``slac`` (``interface: ev_slac``, optional, 0..1)
     PLC SLAC peer. Subscribes to ``state`` (translated to a string). Invokes
@@ -370,7 +428,7 @@ Inbound suffixes (``m2e/*``):
        Unknown ``mode`` is rejected; fields foreign to a mode are ignored.
        Accepted in **any** state and **not** fed to the FSM: intercepted on
        the loop thread, validated (curve non-empty + strictly monotonic;
-       ISO/SLAC peer presence for ISO modes), then latched into
+       SLAC peer presence and ``supported_protocols`` for ISO modes), then latched into
        ``ctx.configured_session`` with an **Accepted** ``command_ack``
        (or **Rejected** with a reason, leaving the prior latch intact).
        The latched config is consumed at every ``plug``; reconfiguring
@@ -430,15 +488,15 @@ Outbound suffixes (``e2m/*``):
 - ``bsp_event``: peer BSP events as a typed ``BspEventKind``
 - ``slac_state``: SLAC peer state as a typed ``SlacStateKind``
 - ``iso_session_event``: ``IsoSessionEvent`` (kind + optional ``dc_voltage_v``
-  and ``dc_current_a``) on each ISO lifecycle edge the ISO peer reports:
+  and ``dc_current_a``) on each ISO lifecycle edge the ISO session reports:
   ``PowerReady``, ``DcPowerOn``, ``StopFromCharger``, ``PauseFromCharger`` and
   ``V2GFinished``. Published on the way past the FSM, so an edge a state ignores
   still reaches the topic.
 - ``der_negotiated_functions``: ``DerNegotiatedFunctions`` with ``flavor``
   (``IEC`` or ``SAE``) and ``functions`` (negotiated function names), forwarded
-  from the ISO peer.
+  from the ISO session.
 - ``der_control``: ``DerControl`` with ``flavor`` and ``source``
-  (``ChargeParameterDiscovery`` or ``ChargeLoop``), plus the ISO peer's optional
+  (``ChargeParameterDiscovery`` or ``ChargeLoop``), plus the ISO session's optional
   ``permit_service``, ``enabled_functions``, ``problems``, ``dso_q_setpoint``
   (var) and ``dso_cos_phi_setpoint``. Absent fields remain absent.
 - ``fault``: ``FaultReport`` (type + optional message + optional
@@ -498,7 +556,7 @@ pilot is pending, treat E/F alike as a charger fault, whichever produced it:
 they call ``abort_charging``,
 ``allow_power_on(false)``, CP B and SLAC ``reset``, in that order, publish
 ``e2m/fault`` with type ``ChargerFault`` and message ``pilot E`` or
-``pilot F``, then enter ``ChargerFault``. Optional ISO and SLAC peers are
+``pilot F``, then enter ``ChargerFault``. An optional SLAC peer is
 skipped when absent. ``Disabled`` and ``Faulted`` ignore E/F.
 
 ``ChargerFault`` waits for A or a BSP measurement with 4 < duty < 97 percent,
@@ -530,7 +588,7 @@ resumes while its retain time ([V2G-DC-968], about 1.5 s) still holds the PWM
 is seen. The pilot-B start of AC does not apply here: the X1 after a stop is
 not a wake-up. An ``AcIec`` session configured during the stopped one starts
 as on a plug instead. A charger that never wakes the EV leaves it waiting in
-``Plugged``, where ``stop_session`` stops the ISO peer and ends the wait held
+``Plugged``, where ``stop_session`` stops the ISO session and ends the wait held
 with no session. Stopping's 10 s deadline also completes a charger stop
 whose session never reported its end; EvManager waits for that end with no
 limit. A stop the EV started (``stop_session``, an ``on_battery_full`` stop)
@@ -547,7 +605,7 @@ resumes while its retain time still holds the PWM is seen; a PWM that went
 off again by then is waited for, under a fresh 1 h watchdog where EvManager
 waits with no limit. ``stop_session`` stops a pause as EvManager's
 ``iso_stop_charging``: through ``Stopping`` while the session is live,
-otherwise at once, after ``stop_charging`` on the ISO peer, held in
+otherwise at once, after the ISO session is told to stop, held in
 ``Plugged`` with CP B and power off. ``BcbToggling`` takes a stop the same
 way.
 
@@ -660,9 +718,9 @@ Per-state reference
      - ``iso_start_charging(mode, …)``; with no ``charge_mode`` or on
        rejection enqueues a synthetic ``InternalFault`` with
        ``message="iso_start_charging rejected"`` → ``Faulted``. No deadline
-       follows the start: ``Ev15118`` times each step (its setup timeout,
+       follows the start: the ISO 15118 session times each step (its setup timeout,
        then each message and ongoing timeout of ISO 15118-2 and -20) and
-       always ends with ``v2g_session_finished``. The 60 s deadline guards
+       always ends with ``IsoV2GFinished``. The 60 s deadline guards
        only the resume's wait for PWM, before any session runs, and faults
        with ``V2GTimeout`` and ``no PWM to resume the session``.
        ``IsoV2GFinished`` ends the session in ``Plugged`` with no session.
@@ -699,7 +757,7 @@ Per-state reference
        only when no ISO session is still active**, or at once for
        ISO 15118-20 AC, which reports no accepted PowerDelivery(Stop). During
        any other ISO pause teardown CP is **held at C** until the SECC accepts
-       PowerDelivery(Stop) (peer var ``power_delivery_stopped`` →
+       PowerDelivery(Stop) (ISO session event ``power_delivery_stopped`` →
        ``IsoPowerDeliveryStopped``), then lowered to B. ``IsoV2GFinished``
        re-asserts B for a session that ends without one. ``stop_session``
        enters ``Stopping`` while a session is live; with none it calls
@@ -767,7 +825,7 @@ session.
   (``EvCtlRuntime``, before the FSM feed). It distinguishes a live ISO session from one that
   has already torn down.
 - **CP release on an accepted PowerDelivery(Stop)**: ``Paused`` and
-  ``Stopping`` hold CP=C until the ISO peer publishes
+  ``Stopping`` hold CP=C until the ISO session reports
   ``power_delivery_stopped``, then drop to B (``Paused.cpp``,
   ``Stopping.cpp``). The SECC's ISO 15118-2 implementation waits up to 1.5 s
   for CP=B after a WeldingDetectionReq (or a non-pause SessionStopReq),
@@ -937,12 +995,12 @@ Configure an ISO 15118-20 AMD1 AC DER session before pilot presence:
     {"mode":"AcIsoD20DerIec","params":{"charging_current_a":16,"three_phases":true}}
 
 Publish this payload to ``m2e/configure_session``. Use mode ``AcIsoD20DerSae``
-for SAE DER. The mode selects ``AC_DER_IEC`` or ``AC_DER_SAE`` on the ISO peer;
+for SAE DER. The mode selects ``AC_DER_IEC`` or ``AC_DER_SAE`` in the ISO session;
 payment, departure time, requested energy and AC current/curve options behave
-as in ``AcIsoD20``. The ISO peer supplies its configured DER profile. A rejected
-``start_charging`` transitions to ``Faulted`` with type ``Internal`` and message
-``iso_start_charging rejected``. The ISO command returns only a boolean, so a
-profile-specific diagnostic remains in the ISO peer's log.
+as in ``AcIsoD20``. ``der_iec_functions`` and ``sae_inverter_profile_path``
+supply the DER profile. A rejected start transitions to ``Faulted`` with type
+``Internal`` and message ``iso_start_charging rejected``; the reason is in the
+module log.
 
 Negotiated functions and received controls appear on
 ``e2m/der_negotiated_functions`` and ``e2m/der_control``.
@@ -1256,7 +1314,7 @@ underflow symmetrically to the overshoot clamp at ``battery_capacity_wh``.
 After integrating and clamping, SoC is derived from
 ``battery_charge_wh / battery_capacity_wh * 100``. ``e2m/ev_info`` and
 internal ``ev_info`` are published, and ``iso_update_soc(soc_pct)`` is called
-every tick; the call is a no-op unless the ISO peer is connected.
+every tick; the call is a no-op unless an ISO 15118 session is running.
 
 ``on_battery_full`` policy
 ~~~~~~~~~~~~~~~~~~~~~~~~~~

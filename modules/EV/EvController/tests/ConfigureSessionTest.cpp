@@ -132,14 +132,25 @@ TEST_CASE("configure_session interceptor latch/reject contract", "[evctl][config
         CHECK(ack.reason->find("ev_slac") != std::string::npos);
     }
 
-    SECTION("ISO mode with no iso peer rejected") {
+    SECTION("ISO mode the session cannot run rejected with the session's reason") {
         auto ctx = fx.make_ctx();
-        ctx->peer_actions.iso.present = false;
+        fx.mocks.iso.next_cannot_run = "supported_protocols offers no ISO 15118-2 or DIN SPEC 70121";
 
-        ctx->configure_session(api::SessionConfigParams{api::AcIso2SessionParams{}});
+        ctx->configure_session(api::SessionConfigParams{api::DcIso2SessionParams{}});
 
         CHECK_FALSE(ctx->configured_session.has_value());
-        CHECK(last_ack(fx.sink, fx.topics).status == api::CommandAckStatus::Rejected);
+        auto ack = last_ack(fx.sink, fx.topics);
+        CHECK(ack.status == api::CommandAckStatus::Rejected);
+        CHECK(ack.reason == fx.mocks.iso.next_cannot_run);
+    }
+
+    SECTION("a mode with no ISO session does not ask it") {
+        auto ctx = fx.make_ctx();
+        fx.mocks.iso.next_cannot_run = "unused";
+
+        ctx->configure_session(api::SessionConfigParams{api::AcIecSessionParams{}});
+
+        CHECK(ctx->configured_session.has_value());
     }
 
     SECTION("reconfigure replaces a prior latched config") {

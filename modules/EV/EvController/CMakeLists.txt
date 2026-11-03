@@ -17,6 +17,8 @@ target_link_libraries(${MODULE_NAME}
         everest::framework
         everest::util
         everest::io
+        everest::iso15118_ev
+        everest::iso15118_ev_session
         Threads::Threads
 )
 # ev@bcc62523-e22b-41d7-ba2f-825b493a3c97:v1
@@ -35,6 +37,7 @@ target_sources(${MODULE_NAME}
         "main/Events.cpp"
         "main/EvCtlRuntime.cpp"
         "main/FsmContext.cpp"
+        "main/IsoSession.cpp"
         "main/PeerSubscriptions.cpp"
         "main/RampInterpolator.cpp"
         "main/CurvePlayer.cpp"

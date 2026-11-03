@@ -207,12 +207,11 @@ TEST_CASE("V2GNegotiating::enter routes to Faulted when iso_start_charging retur
     using namespace module;
     using EK = module::EventKind;
 
-    SECTION("missing iso peer in an ISO mode carries message on the InternalFault") {
+    SECTION("a start the session refuses in an ISO mode carries message on the InternalFault") {
         TestFixture fx;
         auto ctx = fx.make_ctx();
         set_mode(*ctx, api::ChargeMode::DcIso2);
-        // Model a missing iso peer so iso_start_charging short-circuits to false.
-        ctx->peer_actions.iso = {};
+        fx.mocks.iso.next_start_charging_result = false;
 
         V2GNegotiating s{*ctx};
         s.enter();
@@ -286,35 +285,20 @@ TEST_CASE("transition_to_fault replaces last_fault when the software fault type 
 TEST_CASE("PeerActions presence implies all of a peer's functions are callable", "[evctl][peers]") {
     TestFixture fx;
 
-    SECTION("present iso peer: every iso function is invocable, not null") {
+    SECTION("iso peer: every iso function is invocable, not null") {
         auto ctx = fx.make_ctx();
-        REQUIRE(ctx->peer_actions.iso.present);
         // Each iso function is set; calling them must not throw a bad_function_call.
         CHECK(static_cast<bool>(ctx->peer_actions.iso.start_charging));
         CHECK(static_cast<bool>(ctx->peer_actions.iso.stop_charging));
         CHECK(static_cast<bool>(ctx->peer_actions.iso.pause_charging));
         CHECK(static_cast<bool>(ctx->peer_actions.iso.update_soc));
-        CHECK(static_cast<bool>(ctx->peer_actions.iso.enable_sae_j2847_v2g_v2h));
-        CHECK(static_cast<bool>(ctx->peer_actions.iso.set_bpt_dc_params));
+        CHECK(static_cast<bool>(ctx->peer_actions.iso.cannot_run));
         set_mode(*ctx, api::ChargeMode::DcIso2);
         // iso_start_charging reaches the wired peer (returns the mock's result).
         CHECK(ctx->iso_start_charging(api::ChargeMode::DcIso2, std::nullopt, 0, 0));
         REQUIRE_NOTHROW(ctx->iso_stop_charging());
         REQUIRE_NOTHROW(ctx->iso_pause_charging());
         REQUIRE_NOTHROW(ctx->iso_update_soc(42.0f));
-    }
-
-    SECTION("absent iso peer: iso shortcuts no-op / return false, same as before") {
-        auto ctx = fx.make_ctx();
-        ctx->peer_actions.iso = {};
-        REQUIRE_FALSE(ctx->peer_actions.iso.present);
-        set_mode(*ctx, api::ChargeMode::DcIso2);
-        fx.mocks.iso.clear();
-        CHECK_FALSE(ctx->iso_start_charging(api::ChargeMode::DcIso2, std::nullopt, 0, 0));
-        REQUIRE_NOTHROW(ctx->iso_stop_charging());
-        REQUIRE_NOTHROW(ctx->iso_pause_charging());
-        REQUIRE_NOTHROW(ctx->iso_update_soc(42.0f));
-        CHECK(fx.mocks.iso.records.empty());
     }
 
     SECTION("absent slac peer: trigger returns false") {

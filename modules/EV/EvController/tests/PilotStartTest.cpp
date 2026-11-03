@@ -266,19 +266,19 @@ TEST_CASE("EvController repeated pilot faults have no further effects", "[evctl]
     }
 }
 
-TEST_CASE("EvController pilot faults work without optional peers", "[evctl][pilot-start]") {
+TEST_CASE("EvController pilot faults work without the optional SLAC peer", "[evctl][pilot-start]") {
     TestFixture fx;
     auto ctx = fx.make_ctx();
-    ctx->peer_actions.iso = {};
     ctx->peer_actions.slac = {};
     fsm::v2::FSM<StateBase> machine{std::make_unique<Unplugged>(*ctx)};
     machine.feed(pilot_event(Pilot::A));
     REQUIRE(machine.get_current_state_id() == api::FsmState::Plugged);
     fx.mocks.bsp.clear();
+    fx.mocks.iso.clear();
     machine.feed(pilot_event(Pilot::F));
     CHECK(machine.get_current_state_id() == api::FsmState::ChargerFault);
     CHECK(fx.mocks.bsp.records == std::vector<std::string>{"allow_power_on(value=false)", "set_cp_state(cp_state=B)"});
-    CHECK(fx.mocks.iso.records.empty());
+    CHECK(fx.mocks.iso.records == std::vector<std::string>{"abort_charging()", "cp_state_changed(cp_state=B)"});
     CHECK(fx.mocks.slac.records.empty());
 }
 

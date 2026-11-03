@@ -6,11 +6,7 @@
 
 #include <generated/types/board_support_common.hpp>
 #include <generated/types/evse_manager.hpp>
-#include <generated/types/iso15118.hpp>
 #include <generated/types/slac.hpp>
-
-#include <everest/logging.hpp>
-#include <fmt/format.h>
 
 namespace module {
 
@@ -28,63 +24,6 @@ void setup_peer_subscriptions(EvCtlRuntime& rt, EvController& mod) {
     if (!mod.r_slac.empty()) {
         mod.r_slac[0]->subscribe_state([&rt](const ::types::slac::State& s) {
             rt.enqueue(Event{SlacStatePayload{::types::slac::state_to_string(s)}});
-        });
-    }
-
-    // ISO 15118: optional.
-    if (!mod.r_ev.empty()) {
-        auto* iso = mod.r_ev[0].get();
-
-        // Bool-valued: only forward the positive edge to the FSM.
-        iso->subscribe_ev_power_ready([&rt](const bool& ready) {
-            if (ready) {
-                rt.enqueue(Event{IsoPowerReadyEvt{}});
-            }
-        });
-
-        // void()-valued (no payload): single-shot edges from the charger side.
-        iso->subscribe_stop_from_charger([&rt]() { rt.enqueue(Event{IsoStopFromChargerEvt{}}); });
-        iso->subscribe_v2g_session_finished([&rt]() { rt.enqueue(Event{IsoV2GFinishedEvt{}}); });
-        iso->subscribe_dc_power_on([&rt]() { rt.enqueue(Event{IsoDcPowerOnEvt{}}); });
-        iso->subscribe_pause_from_charger([&rt]() { rt.enqueue(Event{IsoPauseFromChargerEvt{}}); });
-        iso->subscribe_power_delivery_stopped([&rt]() { rt.enqueue(Event{IsoPowerDeliveryStoppedEvt{}}); });
-
-        // AC negotiation values: the EVSE-communicated AC current ceiling
-        // (ac_evse_max_current) and target power are forwarded with their
-        // payloads so the FSM can clamp the applied charge current against
-        // them.
-        iso->subscribe_ac_evse_max_current([&rt](const double& max_current) {
-            rt.enqueue(Event{IsoAcMaxCurrentEvt{static_cast<float>(max_current)}});
-        });
-        iso->subscribe_ac_evse_target_power([&rt](const ::types::iso15118::AcTargetPower& target_power) {
-            rt.enqueue(Event{IsoAcTargetPowerEvt{target_power}});
-        });
-
-        // DC live present current / voltage from the SECC. Forwarded into the
-        // SoC integrator's closed-loop input: a reported present current
-        // populates vars.evse_dc_present_current_a (the open-loop fallback is
-        // used while it stays nullopt).
-        iso->subscribe_dc_evse_present_current(
-            [&rt](const double& a) { rt.enqueue(Event{DcEvsePresentCurrentPayload{a}}); });
-        iso->subscribe_dc_evse_present_voltage(
-            [&rt](const double& v) { rt.enqueue(Event{DcEvsePresentVoltagePayload{v}}); });
-
-        iso->subscribe_der_negotiated_functions([&rt](const ::types::iso15118::DerNegotiatedFunctions& value) {
-            rt.enqueue(Event{IsoDerNegotiatedEvt{value}});
-        });
-        iso->subscribe_der_control_received(
-            [&rt](const ::types::iso15118::DerControlReceived& value) { rt.enqueue(Event{IsoDerControlEvt{value}}); });
-
-        // The session ends with its own v2g_session_finished; this only reports why.
-        iso->subscribe_welding_detection_failed([&rt](const ::types::iso15118::WeldingDetectionFailure& failure) {
-            const auto message =
-                fmt::format("welding detection failed after {} cycles, last voltage {}", failure.cycles,
-                            failure.last_voltage_V ? fmt::format("{:g} V", *failure.last_voltage_V) : "unknown");
-            EVLOG_error << message;
-            if (auto* ctx = rt.ctx_ptr()) {
-                ctx->publish_e2m_fault(API_types::ev_controller::FaultReport{
-                    API_types::ev_controller::FaultType::ChargerFault, message, std::nullopt});
-            }
         });
     }
 }
