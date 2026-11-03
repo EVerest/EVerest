@@ -32,6 +32,11 @@ function(trailbook_ev_generate_api_doc)
         trailbook_${args_TRAILBOOK_NAME}
         TRAILBOOK_INSTANCE_SOURCE_DIRECTORY
     )
+    get_target_property(
+        TRAILBOOK_CURRENT_BINARY_DIR
+        trailbook_${args_TRAILBOOK_NAME}
+        TRAILBOOK_CURRENT_BINARY_DIR
+    )
     get_filename_component(
         GENERATOR_SOURCE_DIRECTORY
         "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/../../applications/utils/everest-api-client"
@@ -64,7 +69,16 @@ function(trailbook_ev_generate_api_doc)
         "${ASSETS_DIRECTORY}/everest-api.js"
     )
 
-    set(STAMP_FILE "${CMAKE_CURRENT_BINARY_DIR}/generate_api_doc_${args_TRAILBOOK_NAME}.check_done")
+    # Next to the instance source directory, so the two are deleted together.
+    # A missing byproduct does not make the Makefile generator rerun the
+    # command, so a stamp outliving one of the pages is dropped here.
+    set(STAMP_FILE "${TRAILBOOK_CURRENT_BINARY_DIR}/generate_api_doc.check_done")
+    foreach(GENERATED_FILE IN LISTS GENERATED_FILES)
+        if(NOT EXISTS "${GENERATED_FILE}")
+            file(REMOVE "${STAMP_FILE}")
+            break()
+        endif()
+    endforeach()
     add_custom_command(
         OUTPUT
             ${STAMP_FILE}
