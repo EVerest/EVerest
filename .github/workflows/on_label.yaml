@@ -29,6 +29,7 @@ jobs:
           permission-contents: write
           permission-metadata: read
           permission-pull-requests: write
+          permission-workflows: write
 
       - name: Check actor permissions
         id: check-permissions
