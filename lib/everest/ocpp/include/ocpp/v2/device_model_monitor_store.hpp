@@ -59,13 +59,20 @@ public:
     void remove_if(const std::function<bool(const StoredMonitor&)>& remove, const std::string& reason);
 
 private:
+    using StoredMonitors = std::map<std::int32_t, StoredMonitor>;
+
     void insert(StoredMonitor monitor);
     /// \brief Removes the monitor from the storage, and from memory only if that succeeded
     void remove(std::int32_t monitor_id);
+    /// \brief Like remove(std::int32_t)
+    /// \return The monitor after \p it
+    StoredMonitors::iterator remove(StoredMonitors::iterator it);
     void forget(std::int32_t monitor_id);
+    /// \return The monitor after \p it
+    StoredMonitors::iterator forget(StoredMonitors::iterator it);
 
     DeviceModelStorageInterface& storage;
-    std::map<std::int32_t, StoredMonitor> monitors;
+    StoredMonitors monitors;
     std::map<std::pair<Component, Variable>, std::set<std::int32_t>> by_variable;
 };
 

@@ -2,7 +2,7 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 
 #include <algorithm>
-#include <vector>
+#include <iterator>
 
 #include <everest/database/exceptions.hpp>
 #include <everest/logging.hpp>
@@ -80,14 +80,8 @@ ClearMonitoringStatusEnum MonitorStore::clear(const std::int32_t monitor_id, con
 
 std::int32_t MonitorStore::clear_custom() {
     const auto deleted = this->storage.clear_custom_variable_monitors();
-    std::vector<std::int32_t> custom;
-    for (const auto& [id, stored] : this->monitors) {
-        if (stored.monitor.type == VariableMonitorType::CustomMonitor) {
-            custom.push_back(id);
-        }
-    }
-    for (const auto id : custom) {
-        this->forget(id);
+    for (auto it = this->monitors.begin(); it != this->monitors.end();) {
+        it = it->second.monitor.type == VariableMonitorType::CustomMonitor ? this->forget(it) : std::next(it);
     }
     return deleted;
 }
@@ -173,17 +167,15 @@ void MonitorStore::reconcile(const std::string& owner, const Component& componen
 }
 
 void MonitorStore::remove_if(const std::function<bool(const StoredMonitor&)>& remove, const std::string& reason) {
-    std::vector<std::int32_t> removed;
-    for (const auto& [id, stored] : this->monitors) {
-        if (remove(stored)) {
-            removed.push_back(id);
+    for (auto it = this->monitors.begin(); it != this->monitors.end();) {
+        const auto& stored = it->second;
+        if (not remove(stored)) {
+            ++it;
+            continue;
         }
-    }
-    for (const auto id : removed) {
-        const auto& stored = this->monitors.at(id);
-        EVLOG_warning << "Removing monitor " << id << " of " << stored.component << "." << stored.variable << ": "
-                      << reason;
-        this->remove(id);
+        EVLOG_warning << "Removing monitor " << it->first << " of " << stored.component << "." << stored.variable
+                      << ": " << reason;
+        it = this->remove(it);
     }
 }
 
@@ -194,32 +186,43 @@ void MonitorStore::insert(StoredMonitor monitor) {
 }
 
 void MonitorStore::remove(const std::int32_t monitor_id) {
+    const auto it = this->monitors.find(monitor_id);
+    if (it != this->monitors.end()) {
+        this->remove(it);
+    }
+}
+
+MonitorStore::StoredMonitors::iterator MonitorStore::remove(const StoredMonitors::iterator it) {
+    const auto monitor_id = it->first;
     try {
         const auto status = this->storage.clear_variable_monitor(monitor_id, true);
         if (status != ClearMonitoringStatusEnum::Accepted and status != ClearMonitoringStatusEnum::NotFound) {
             EVLOG_warning << "Could not remove monitor " << monitor_id << " from the storage";
-            return;
+            return std::next(it);
         }
     } catch (const everest::db::Exception& e) {
         EVLOG_error << "Could not remove monitor " << monitor_id << " from the storage: " << e.what();
-        return;
+        return std::next(it);
     }
-    this->forget(monitor_id);
+    return this->forget(it);
 }
 
 void MonitorStore::forget(const std::int32_t monitor_id) {
     const auto it = this->monitors.find(monitor_id);
-    if (it == this->monitors.end()) {
-        return;
+    if (it != this->monitors.end()) {
+        this->forget(it);
     }
+}
+
+MonitorStore::StoredMonitors::iterator MonitorStore::forget(const StoredMonitors::iterator it) {
     const auto ids_it = this->by_variable.find({it->second.component, it->second.variable});
     if (ids_it != this->by_variable.end()) {
-        ids_it->second.erase(monitor_id);
+        ids_it->second.erase(it->first);
         if (ids_it->second.empty()) {
             this->by_variable.erase(ids_it);
         }
     }
-    this->monitors.erase(it);
+    return this->monitors.erase(it);
 }
 
 } // namespace v2
