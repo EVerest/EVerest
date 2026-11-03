@@ -87,6 +87,13 @@ gs::FixedVarParams make_fixed_var(float setpoint, gs::DERUnit unit) {
     return fv;
 }
 
+gs::FixedWattParams make_fixed_watt(float setpoint, gs::DERUnit unit) {
+    gs::FixedWattParams fw{};
+    fw.setpoint = setpoint;
+    fw.unit = unit;
+    return fw;
+}
+
 gs::ActiveDirectiveSet make_set(std::vector<gs::Directive> directives) {
     gs::ActiveDirectiveSet set{};
     set.evse_id = 1;
@@ -501,6 +508,83 @@ TEST(DerSaeRelayTest, fixed_var_accepts_configured_active_power_unit) {
     EXPECT_FALSE(out.der_control.reactive_power_support.constant_var.enable);
 }
 
+TEST(DerSaeRelayTest, fixed_watt_enables_constant_watt_with_negated_setpoint) {
+    // grid_support: positive setpoint discharges. Table M.26: negative WattSetpoint discharges.
+    auto d = make_directive(DT::FixedWatt, "fw", 4);
+    d.fixed_watt = make_fixed_watt(50.0f, gs::DERUnit::PctMaxW);
+    const auto out = map_active_directives_to_sae_der_control(make_set({d}), NOMINAL_V, NOMINAL_HZ);
+
+    const auto& cw = out.der_control.active_power_support.constant_watt;
+    EXPECT_TRUE(cw.enable);
+    ASSERT_TRUE(cw.priority.has_value());
+    EXPECT_EQ(cw.priority.value(), 4u);
+    EXPECT_FLOAT_EQ(cw.watt_setpoint, -50.0f);
+    EXPECT_FALSE(cw.watt_setpoint_L2.has_value());
+    EXPECT_FALSE(cw.watt_setpoint_L3.has_value());
+    EXPECT_EQ(cw.unit, sae::DERUnit::PercentageEVMaximumConfiguredActivePower);
+    EXPECT_TRUE(out.unmapped.empty());
+}
+
+TEST(DerSaeRelayTest, fixed_watt_pct_w_avail_writes_available_active_power_unit) {
+    auto d = make_directive(DT::FixedWatt, "fw");
+    d.fixed_watt = make_fixed_watt(-20.0f, gs::DERUnit::PctWAvail);
+    const auto out = map_active_directives_to_sae_der_control(make_set({d}), NOMINAL_V, NOMINAL_HZ);
+
+    const auto& cw = out.der_control.active_power_support.constant_watt;
+    EXPECT_TRUE(cw.enable);
+    EXPECT_FLOAT_EQ(cw.watt_setpoint, 20.0f);
+    EXPECT_EQ(cw.unit, sae::DERUnit::PercentageEVMaximumAvailableActivePower);
+}
+
+TEST(DerSaeRelayTest, fixed_watt_without_payload_or_with_non_active_power_unit_is_rejected) {
+    const auto missing = make_directive(DT::FixedWatt, "fw-missing");
+    auto out = map_active_directives_to_sae_der_control(make_set({missing}), NOMINAL_V, NOMINAL_HZ);
+    expect_default_baseline(out.der_control);
+    EXPECT_TRUE(out.unmapped.empty());
+
+    for (const auto unit :
+         {gs::DERUnit::PctMaxVar, gs::DERUnit::PctVarAvail, gs::DERUnit::PctEffectiveV, gs::DERUnit::Not_Applicable}) {
+        auto bad = make_directive(DT::FixedWatt, "fw-bad");
+        bad.fixed_watt = make_fixed_watt(50.0f, unit);
+        out = map_active_directives_to_sae_der_control(make_set({bad}), NOMINAL_V, NOMINAL_HZ);
+        expect_default_baseline(out.der_control);
+        EXPECT_TRUE(out.unmapped.empty());
+    }
+}
+
+TEST(DerSaeRelayTest, fixed_watt_setpoint_outside_table_94_range_is_rejected) {
+    for (const auto setpoint : {150.0f, -100.5f}) {
+        auto bad = make_directive(DT::FixedWatt, "fw-range");
+        bad.fixed_watt = make_fixed_watt(setpoint, gs::DERUnit::PctMaxW);
+        const auto out = map_active_directives_to_sae_der_control(make_set({bad}), NOMINAL_V, NOMINAL_HZ);
+        expect_default_baseline(out.der_control);
+    }
+
+    for (const auto setpoint : {100.0f, -100.0f}) {
+        auto edge = make_directive(DT::FixedWatt, "fw-edge");
+        edge.fixed_watt = make_fixed_watt(setpoint, gs::DERUnit::PctMaxW);
+        const auto out = map_active_directives_to_sae_der_control(make_set({edge}), NOMINAL_V, NOMINAL_HZ);
+        EXPECT_TRUE(out.der_control.active_power_support.constant_watt.enable);
+        EXPECT_FLOAT_EQ(out.der_control.active_power_support.constant_watt.watt_setpoint, -setpoint);
+    }
+}
+
+TEST(DerSaeRelayTest, lowest_priority_fixed_watt_wins_and_other_is_shadowed) {
+    auto low_prec = make_directive(DT::FixedWatt, "fw5", 5);
+    low_prec.fixed_watt = make_fixed_watt(10.0f, gs::DERUnit::PctMaxW);
+    auto high_prec = make_directive(DT::FixedWatt, "fw2", 2);
+    high_prec.fixed_watt = make_fixed_watt(30.0f, gs::DERUnit::PctMaxW);
+    const auto out = map_active_directives_to_sae_der_control(make_set({low_prec, high_prec}), NOMINAL_V, NOMINAL_HZ);
+
+    const auto& cw = out.der_control.active_power_support.constant_watt;
+    EXPECT_TRUE(cw.enable);
+    EXPECT_FLOAT_EQ(cw.watt_setpoint, -30.0f);
+    ASSERT_TRUE(cw.priority.has_value());
+    EXPECT_EQ(cw.priority.value(), 2u);
+    ASSERT_EQ(out.shadowed_ids.size(), 1u);
+    EXPECT_EQ(out.shadowed_ids[0], "fw5");
+}
+
 TEST(DerSaeRelayTest, directive_priority_is_forwarded) {
     const auto d = make_curve_directive(DT::VoltVar, gs::DERUnit::PctMaxVar, {pt(92.0f, 44.0f), pt(108.0f, -44.0f)},
                                         std::nullopt, "vv", 3);
@@ -734,6 +818,18 @@ TEST(DerSaeRelayTest, inert_functions_lists_everything_for_the_default_control) 
     EXPECT_NE(std::find(inert.begin(), inert.end(), "VoltVar"), inert.end());
     EXPECT_NE(std::find(inert.begin(), inert.end(), "EnterService"), inert.end());
     EXPECT_NE(std::find(inert.begin(), inert.end(), "OverVoltageMustTrip"), inert.end());
+    EXPECT_NE(std::find(inert.begin(), inert.end(), "LimitMaxDischargePower"), inert.end());
+    EXPECT_NE(std::find(inert.begin(), inert.end(), "ConstantWatt"), inert.end());
+}
+
+TEST(DerSaeRelayTest, inert_functions_drops_a_mapped_constant_watt) {
+    auto d = make_directive(DT::FixedWatt, "fw");
+    d.fixed_watt = make_fixed_watt(50.0f, gs::DERUnit::PctMaxW);
+    const auto out = map_active_directives_to_sae_der_control(make_set({d}), NOMINAL_V, NOMINAL_HZ);
+
+    const auto inert = module::inert_sae_der_functions(out.der_control);
+
+    EXPECT_EQ(std::find(inert.begin(), inert.end(), "ConstantWatt"), inert.end());
     EXPECT_NE(std::find(inert.begin(), inert.end(), "LimitMaxDischargePower"), inert.end());
 }
 
