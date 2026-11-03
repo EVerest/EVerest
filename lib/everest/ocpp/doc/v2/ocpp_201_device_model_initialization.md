@@ -40,11 +40,7 @@ The values of registered variables are held in memory too, see
 memory. The only exceptions are the variables of another storage, such as the EVerest storage, described below.
 
 A write goes to the database first. Memory is only updated once the database has accepted the write. If the database
-rejects it, the request is rejected and memory keeps the old value. A storage that answers `RebootRequired` holds the
-new value for the next start; memory is updated and the listeners are notified like for `Accepted`, so a read returns
-the value written, as for a variable whose owner answers `RebootRequired`. The value takes effect only at the next
-start. OCPP 2.x leaves open what a read returns in the meantime. The SQLite storage of libocpp does not answer
-`RebootRequired`.
+rejects it, the request is rejected and memory keeps the old value.
 
 Attributes that are not persistent are the exception. A write to such an attribute only changes the value in memory
 and is lost on restart. At the next start, the attribute gets the value stored in the database again. That is usually
@@ -55,13 +51,30 @@ persistent unless its `persistent` flag is set to false.
 Because values are loaded only once, edit the database only while the charging station software is stopped. Changes
 made while it runs are not seen until the next start.
 
+### Writes answered with RebootRequired
+
+Memory always holds the value in effect. A write answered with `RebootRequired`, by a storage or by the owner of a
+registered variable, is held by whoever answered it for the next start. Until then nothing changes: memory keeps the old
+value, no listener is notified and no monitor is triggered. Whoever answered `RebootRequired` must keep to this as well:
+a storage that holds variables of another owner must keep returning the value in effect on reads, and the owner of a
+registered variable must not report the held value with `notify_value_changed`.
+
+A GetVariables.req returns the old value until the charging station restarts, which may be much later, for example once
+no session is in progress; OCPP 2.x leaves open what a read returns in the meantime. A later write reaches the storage
+or owner like any other, also one that writes the value in effect, so it replaces the held value.
+The SQLite storage of libocpp does not answer `RebootRequired`.
+
+The OCPP 1.6 key `CentralSystemURI` does not follow this rule: libocpp stores the new value at once and answers
+ChangeConfiguration.req with `RebootRequired`, so GetConfiguration.req returns the new value before the restart.
+
 ### Variables held by another storage
 
 Besides the component config, a storage can deliver variables of its own with a `VariableMetaData::owner` other than
 `COMPONENT_CONFIG`, because it changes their values without going through `DeviceModel`. The EVerest storage of the OCPP
 modules is one: it builds its components at startup from the EVSEs and the module configurations. `DeviceModel` keeps
-no copy of their values: it reads every value from that storage and sends every write to it, so after a write that the
-storage answered with `RebootRequired`, the storage decides which value is reported until the next start. The
+no copy of their values: it reads every value from that storage and sends every write to it. Such a storage must
+keep reporting the value in effect after a write it answered with `RebootRequired`, see
+[Writes answered with RebootRequired](#writes-answered-with-rebootrequired); the EVerest storage does. The
 `VariableMetaData::owner` of such a variable names its storage, not the owner of a registration: the values of
 registered variables are held in memory and kept current with `notify_value_changed`. Variables with the owner
 `COMPONENT_CONFIG`, the default, belong to the OCPP storage and are held in memory as described above.
@@ -185,9 +198,11 @@ What happens then depends on whether the owner registered a `VariableValueProvid
   values itself: libocpp does not store them in the database, and removes a value it stored while the owner registered
   the variable without a provider. The provider is called synchronously on the thread of the write, a SetVariables.req
   for example, without a deadline, so a provider that forwards to another process enforces its own timeout, well within
-  the message timeout of the CSMS. Its answer is returned as it is. `Accepted` and `RebootRequired` mean that the owner
-  applied exactly the written value, and libocpp stores it in memory, so the owner does not report it; an owner that
-  would apply another value, a clamped one for example, rejects the write.
+  the message timeout of the CSMS. Its answer is returned as it is. `Accepted` means that the owner applied exactly
+  the written value, and libocpp stores it in memory, so the owner does not report it; an owner that would apply
+  another value, a clamped one for example, rejects the write. `RebootRequired` means that the owner holds the value
+  for the next start and registers with it then, see
+  [Writes answered with RebootRequired](#writes-answered-with-rebootrequired).
 - Without a provider, libocpp stores the values of persistent attributes itself, and the owner learns of writes through
   the variable listeners.
 
