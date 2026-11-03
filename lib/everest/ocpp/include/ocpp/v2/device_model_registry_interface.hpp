@@ -31,10 +31,14 @@ public:
     /// sets no deadline, so a provider answers in time itself, well within the message timeout of the CSMS, and
     /// rejects a write it cannot complete by then. Calls are not serialised, also not for one variable.
     ///
-    /// Accepted and RebootRequired mean that the owner applied exactly \p value: DeviceModel then stores it in memory,
-    /// so the owner does not report it. An owner that would apply another value, a clamped one for example, rejects
-    /// the write. When writes to one variable overlap, the model keeps the value of the one with the highest
-    /// \p write_id, so an owner applies them in that order too.
+    /// Accepted means that the owner applied exactly \p value: DeviceModel then stores it in memory, so the owner does
+    /// not report it. An owner that would apply another value, a clamped one for example, rejects the write.
+    /// RebootRequired means that the owner holds \p value for the next start and registers with it then. DeviceModel
+    /// keeps the value in effect until then, and so must the owner: it does not report the held value with
+    /// notify_value_changed before the next start.
+    ///
+    /// When writes to one variable overlap, the model keeps the value of the one with the highest \p write_id, so an
+    /// owner applies them in that order too.
     /// \param source The source of the value (e.g. 'csms', 'internal')
     /// \param write_id The id of this write, which the owner passes to notify_value_changed, see there
     virtual SetVariableStatusEnum set_value(const Component& component, const Variable& variable,

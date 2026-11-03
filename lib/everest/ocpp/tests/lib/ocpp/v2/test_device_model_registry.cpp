@@ -195,14 +195,30 @@ TEST_F(DeviceModelRegistryTest, rejected_write_leaves_memory_unchanged) {
     EXPECT_TRUE(changes.empty());
 }
 
-TEST_F(DeviceModelRegistryTest, reboot_required_write_is_stored_in_memory) {
+TEST_F(DeviceModelRegistryTest, reboot_required_write_leaves_memory_unchanged) {
     register_config_view();
     provider->result = SetVariableStatusEnum::RebootRequired;
 
     EXPECT_EQ(dm->set_value(config_component, timeout, AttributeEnum::Actual, "90", "csms"),
               SetVariableStatusEnum::RebootRequired);
     EXPECT_EQ(provider->received(), std::vector<std::string>{"90"});
-    EXPECT_EQ(get(config_component, timeout), "90");
+    EXPECT_EQ(get(config_component, timeout), "60");
+    EXPECT_TRUE(changes.empty());
+}
+
+TEST_F(DeviceModelRegistryTest, value_in_effect_written_after_reboot_required_reaches_the_provider) {
+    register_config_view();
+    provider->result = SetVariableStatusEnum::RebootRequired;
+    EXPECT_EQ(dm->set_value(config_component, timeout, AttributeEnum::Actual, "90", "csms"),
+              SetVariableStatusEnum::RebootRequired);
+
+    provider->result = SetVariableStatusEnum::Accepted;
+    EXPECT_EQ(dm->set_value(config_component, timeout, AttributeEnum::Actual, "60", "csms"),
+              SetVariableStatusEnum::Accepted);
+    const std::vector<std::string> expected{"90", "60"};
+    EXPECT_EQ(provider->received(), expected);
+    EXPECT_EQ(get(config_component, timeout), "60");
+    EXPECT_TRUE(changes.empty());
 }
 
 TEST_F(DeviceModelRegistryTest, report_without_write_id_during_a_write_is_overwritten_by_the_write) {

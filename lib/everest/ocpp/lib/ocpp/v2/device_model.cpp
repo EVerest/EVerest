@@ -653,7 +653,7 @@ SetVariableStatusEnum DeviceModel::forward_to_provider(Lock lock, const Composed
     } catch (const std::exception& e) {
         EVLOG_error << "Provider of " << component << "." << variable << " failed to set the value: " << e.what();
     }
-    if (status == SetVariableStatusEnum::Accepted or status == SetVariableStatusEnum::RebootRequired) {
+    if (status == SetVariableStatusEnum::Accepted) {
         this->store_provided_value(owner, write_id, component, variable, attribute_enum, value, source);
     }
     return status;
@@ -690,7 +690,7 @@ DeviceModel::AppliedWrite DeviceModel::apply(const ComposedVariable& composed, c
         return applied;
     }
     applied.status = this->persist(composed, component, variable, attribute_enum, value, source, *attribute);
-    if (applied.status != SetVariableStatusEnum::Accepted and applied.status != SetVariableStatusEnum::RebootRequired) {
+    if (applied.status != SetVariableStatusEnum::Accepted) {
         return applied;
     }
 

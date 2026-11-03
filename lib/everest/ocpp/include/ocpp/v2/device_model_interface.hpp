@@ -106,11 +106,10 @@ public:
     ///        SetVariables from the CSMS only: libocpp passes true for its own writes and for CSMS messages whose
     ///        purpose is to set a ReadOnly variable, such as SetMonitoringBase and SetMonitoringLevel; a write to a
     ///        variable that a runtime owner registered reaches that owner.
-    /// \return Accepted when the value is applied, RebootRequired when it is set but takes effect at the next start.
-    ///         Both store the value in memory and notify the variable listeners, whoever owns the variable, so a read
-    ///         returns the value written. Any other result notifies no listener and leaves the value DeviceModel holds
-    ///         unchanged. A variable that the storage of another owner holds is always read from that storage, which
-    ///         decides what it reports until the next start.
+    /// \return Accepted when the value is applied: DeviceModel stores it in memory and notifies the variable
+    ///         listeners. RebootRequired when the value is held for the next start: until then, the value in effect is
+    ///         kept, so reads return it and no listener is notified, whoever owns the variable. Any other result also
+    ///         leaves the value unchanged.
     virtual SetVariableStatusEnum set_value(const Component& component_id, const Variable& variable_id,
                                             const AttributeEnum& attribute_enum, const std::string& value,
                                             const std::string& source, bool allow_read_only_update = false) = 0;
