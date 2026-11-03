@@ -8,6 +8,16 @@ namespace module {
 // Note should any of these configuration items be read-write then
 // add a mutex to protect access
 
+bool ConfigAccess::getAuthEnabled() const {
+    std::scoped_lock lock(m_rw_config_mutex);
+    return m_rw_config.AuthEnabled;
+}
+
+void ConfigAccess::setAuthEnabled(bool auth_enabled) {
+    std::scoped_lock lock(m_rw_config_mutex);
+    m_rw_config.AuthEnabled = auth_enabled;
+}
+
 std::string ConfigAccess::getChargePointConfigPath() const {
     return m_config.ChargePointConfigPath;
 }
@@ -128,6 +138,14 @@ void OCPPmulti::ready() {
     // invoke_ready(*p_session_cost);
 
     m_ocpp.ready(module::get_config_service_client());
+}
+
+OCPPmulti::ConfigChangeResult OCPPmulti::on_AuthEnabled_changed(const bool& value) {
+    auto result = m_ocpp.on_auth_enabled_config_changed(value);
+    if (result.status != Everest::config::SetResponseStatus::Rejected) {
+        m_config.setAuthEnabled(value);
+    }
+    return result;
 }
 
 void OCPPmulti::shutdown() {

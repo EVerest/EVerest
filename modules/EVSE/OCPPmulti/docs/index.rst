@@ -690,6 +690,42 @@ scanned for placeholders again. The character limits of the OCPP fields, 255 for
 For example, ``"tech_info": "${severity} ${type} on EVSE ${evse}: ${message}"`` is reported as
 ``High evse_board_support/MREC3HighTemperature on EVSE 1: Temperature above limit``.
 
+.. _handwritten_ocppmulti_free-charging:
+
+Free charging with AuthCtrlr.Enabled
+====================================
+
+The CSMS can switch the charging station into free charging by setting the variable ``AuthCtrlr.Enabled``
+(boolean, ReadWrite, default ``true``): with **SetVariables.req** in OCPP 2.x, or with the configuration key
+**AuthEnabled**, which maps onto the same variable, in OCPP 1.6. The value is persisted in the device model and read
+from it at startup.
+
+While it is ``false``:
+
+* every session that waits for an authorisation is authorised: when the EVSE manager signals the session event
+  ``AuthRequired``, the module publishes a prevalidated token of type ``NoAuthorization`` through its
+  **auth_provider**, so the Auth module still applies reservations and the connection timeout. The token is
+  published at plug-in, so it also authorises a Plug&Charge EV, which then charges without its contract. The token
+  value is empty in OCPP 2.x, as the specification requires, and ``FREESERVICE`` in OCPP 1.6, where
+  **StartTransaction.req** needs a non-empty idTag. A **StartTransaction.conf** or **TransactionEventResponse** that
+  does not accept it neither pauses nor stops the transaction
+* a presented token is accepted without **Authorize** request
+* a transaction that starts (OCPP 1.6) or whose idToken is reported (OCPP 2.x) is neither paused nor stopped by a
+  reply that does not accept the token, and the token is not cached. Once it is ``true`` again, transactions are
+  handled as usual, even with a token that was accepted while it was ``false``
+
+Setting it to ``false`` also authorises the sessions that already wait for an authorisation.
+
+The module parameter ``AuthEnabled`` switches free charging locally, for example through the EVerest
+Configuration API (see :ref:`exp-configuration-service`). It can be changed at runtime and mirrors
+``AuthCtrlr.Enabled`` in both directions: a change of the parameter sets ``AuthCtrlr.Enabled``, and a change of
+``AuthCtrlr.Enabled``, for example by the CSMS, is written back to the parameter. Like every module parameter, it
+is also reported to the CSMS as the variable ``AuthEnabled`` of the component named after the module, with the
+module id as instance; setting that variable has the same effect. The device model is the source of truth: at
+startup the parameter is overwritten with ``AuthCtrlr.Enabled``. A change is rejected while OCPP has not started or
+is shutting down, and when the device model does not provide ``AuthCtrlr.Enabled``, as with the OCPP 1.6 JSON
+configuration backend.
+
 .. _handwritten_ocppmulti_suspend-reason-reporting:
 
 Suspend reason reporting in OCPP 1.6

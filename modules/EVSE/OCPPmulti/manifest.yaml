@@ -1,5 +1,18 @@
 description: A OCPP charge point / charging station module, (supporting 1.6, 2.0.1, 2.1)
 config:
+  AuthEnabled:
+    description: >-
+      OCPP 1.6
+      OCPP 2.0.1
+      Local switch for free charging: false authorises every session without a token, like AuthCtrlr.Enabled false
+      (configuration key AuthEnabled in OCPP 1.6). Mirrors AuthCtrlr.Enabled in both directions: a change here sets
+      AuthCtrlr.Enabled, and a change of AuthCtrlr.Enabled, for example by the CSMS, is written back here. The
+      device model is the source of truth: at startup this value is overwritten with AuthCtrlr.Enabled. A change is
+      rejected while OCPP has not started or is shutting down, and with the OCPP 1.6 JSON configuration backend,
+      which does not support AuthEnabled.
+    type: boolean
+    default: true
+    mutability: ReadWrite
   ChargePointConfigPath:
     description: >-
       OCPP 1.6

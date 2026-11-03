@@ -103,6 +103,7 @@ struct GenericOcppTester : public ocpp_multi::GenericOcpp {
     using ocpp_multi::GenericOcpp::ready_transaction_handler;
     using ocpp_multi::GenericOcpp::set_external_limits;
     using ocpp_multi::GenericOcpp::wait_all_ready;
+    using ocpp_multi::GenericOcpp::wait_for_device_model_writes;
 
     // access to variables
     using ocpp_multi::GenericOcpp::evse_evcc_id;

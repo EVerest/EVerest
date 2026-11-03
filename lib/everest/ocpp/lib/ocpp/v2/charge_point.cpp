@@ -276,6 +276,7 @@ void ChargePoint::on_authorized(const std::int32_t evse_id, const std::int32_t /
 
     // set id_token of enhanced_transaction and send TransactionEvent(Updated) with id_token
     transaction->set_id_token_sent();
+    transaction->id_token_unvalidated = not this->authorization->is_auth_ctrlr_enabled();
     this->transaction->transaction_event_req(TransactionEventEnum::Updated, ocpp::DateTime(),
                                              transaction->get_transaction(), TriggerReasonEnum::Authorized,
                                              transaction->get_seq_no(), std::nullopt, std::nullopt, id_token,

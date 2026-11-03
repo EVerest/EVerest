@@ -19,6 +19,8 @@ struct EnhancedTransaction : public Transaction {
     }
 
     bool id_token_sent = false;
+    /// @brief The idToken was reported while AuthCtrlr.Enabled was false, so it was not validated
+    bool id_token_unvalidated = false;
     std::int32_t connector_id = 0;
     std::int32_t seq_no = 0;
     std::optional<float> active_energy_import_start_value;

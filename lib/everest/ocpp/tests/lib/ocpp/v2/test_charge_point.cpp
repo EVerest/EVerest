@@ -1413,4 +1413,64 @@ INSTANTIATE_TEST_SUITE_P(MalformedPayloads, ChargePointCsmsReplyTestFixtureV2,
                          testing::Values("{}", "12345", R"("Accepted")", R"({"status": null})",
                                          R"({"status": "test"})"));
 
+/// \brief C01.FR.01: TransactionEvent.conf with an idToken status other than Accepted
+class ChargePointInvalidIdTokenTestFixtureV2 : public ChargePointCsmsReplyTestFixtureV2 {
+public:
+    void set_variable(const ComponentVariable& cv, const std::string& value) {
+        device_model->set_value(cv.component, cv.variable.value(), AttributeEnum::Actual, value, "TEST", true);
+    }
+
+    /// \brief Starts a transaction with an idToken and answers its TransactionEvent.req with status Invalid
+    void start_transaction_rejected_by_csms() {
+        IdToken id_token;
+        id_token.idToken = "TOKEN";
+        id_token.type = IdTokenEnumStringType::Local;
+        charge_point->on_transaction_started(DEFAULT_EVSE_ID, 1, "session-id", ocpp::DateTime(),
+                                             TriggerReasonEnum::Authorized, MeterValue(), id_token, {}, {}, {},
+                                             ChargingStateEnum::EVConnected);
+
+        while (const auto call = csms.next_sent_message(std::chrono::seconds(5))) {
+            const std::string message_id = call->at(MESSAGE_ID);
+            if (call->at(CALL_ACTION) == "TransactionEvent") {
+                charge_point->handle_message(
+                    message_queue->receive(R"([3, ")" + message_id + R"(", {"idTokenInfo": {"status": "Invalid"}}])"));
+                return;
+            }
+            message_queue->receive(R"([3, ")" + message_id + R"(", {}])");
+        }
+        ADD_FAILURE() << "charging station did not send TransactionEvent";
+    }
+};
+
+TEST_F(ChargePointInvalidIdTokenTestFixtureV2, InvalidIdTokenStopsTransactionWhileAuthCtrlrEnabled) {
+    set_variable(ControllerComponentVariables::AuthCtrlrEnabled, "true");
+    set_variable(ControllerComponentVariables::StopTxOnInvalidId, "true");
+
+    EXPECT_CALL(stop_transaction_callback_mock, Call(DEFAULT_EVSE_ID, ReasonEnum::DeAuthorized));
+    start_transaction_rejected_by_csms();
+}
+
+TEST_F(ChargePointInvalidIdTokenTestFixtureV2, InvalidIdTokenKeepsTransactionWhileAuthCtrlrDisabled) {
+    set_variable(ControllerComponentVariables::AuthCtrlrEnabled, "false");
+    set_variable(ControllerComponentVariables::StopTxOnInvalidId, "true");
+
+    EXPECT_CALL(stop_transaction_callback_mock, Call).Times(0);
+    EXPECT_CALL(pause_charging_callback_mock, Call).Times(0);
+    start_transaction_rejected_by_csms();
+}
+
+TEST_F(ChargePointInvalidIdTokenTestFixtureV2, InvalidIdTokenStopsTransactionAfterAuthCtrlrReenabled) {
+    set_variable(ControllerComponentVariables::AuthCtrlrEnabled, "false");
+    set_variable(ControllerComponentVariables::StopTxOnInvalidId, "true");
+    IdToken id_token;
+    id_token.idToken = "TOKEN";
+    id_token.type = IdTokenEnumStringType::Local;
+    EXPECT_EQ(charge_point->validate_token(id_token, std::nullopt, std::nullopt).idTokenInfo.status,
+              AuthorizationStatusEnum::Accepted);
+    set_variable(ControllerComponentVariables::AuthCtrlrEnabled, "true");
+
+    EXPECT_CALL(stop_transaction_callback_mock, Call(DEFAULT_EVSE_ID, ReasonEnum::DeAuthorized));
+    start_transaction_rejected_by_csms();
+}
+
 } // namespace ocpp::v2

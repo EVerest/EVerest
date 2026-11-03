@@ -18,6 +18,7 @@ target_sources(${TEST_TARGET_NAME}
     external_limits_tests.cpp
     grid_support_conversions_test.cpp
     network_conversions_test.cpp
+    no_authorization_test.cpp
     transaction_handler_tests.cpp
 )
 

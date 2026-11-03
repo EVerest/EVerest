@@ -25,6 +25,9 @@ namespace conversions_v16 = ocpp_module_common::v16::conversions;
 namespace {
 
 // mapping between v1.6 and v2.x configuration keys
+constexpr const auto AUTH_ENABLED_CONFIG_KEY = "AuthEnabled";
+constexpr const auto AUTH_ENABLED_COMPONENT = "AuthCtrlr";
+constexpr const auto AUTH_ENABLED_VARIABLE = "Enabled";
 constexpr const auto CENTRAL_CONTRACT_VALIDATION_ALLOWED_CONFIG_KEY = "CentralContractValidationAllowed";
 constexpr const auto CENTRAL_CONTRACT_VALIDATION_ALLOWED_COMPONENT = "ISO15118Ctrlr";
 constexpr const auto CENTRAL_CONTRACT_VALIDATION_ALLOWED_VARIABLE = "CentralContractValidationAllowed";
@@ -181,7 +184,11 @@ void ChargePointV16::cb_generic_configuration_key_changed(const ocpp::v16::KeyVa
     if (key_value.value) {
         ocpp::v2::SetVariableData data;
         bool send{false};
-        if (key_value.key == CONNECTION_TIMEOUT_CONFIG_KEY) {
+        if (key_value.key == AUTH_ENABLED_CONFIG_KEY) {
+            data.component = {AUTH_ENABLED_COMPONENT};
+            data.variable = {AUTH_ENABLED_VARIABLE};
+            send = true;
+        } else if (key_value.key == CONNECTION_TIMEOUT_CONFIG_KEY) {
             data.component = {CONNECTION_TIMEOUT_COMPONENT};
             data.variable = {CONNECTION_TIMEOUT_VARIABLE};
             send = true;

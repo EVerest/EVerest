@@ -58,6 +58,7 @@ target_link_libraries(ocpp_module_common
     PUBLIC
         everest::ocpp
         everest::framework
+        everest::util
     PRIVATE
         everest::ocpp_conversions
         nlohmann_json_schema_validator::validator
