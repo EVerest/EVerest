@@ -204,7 +204,7 @@ ASN1_SEQUENCE(Asn1CtlValidity) = {ASN1_SIMPLE(Asn1CtlValidity, notBefore, ASN1_G
             throw std::runtime_error("CTL: missing validity");
         }
         dst.not_before.value = read_generalized_time(a.validity->notBefore, "notBefore");
-        dst.not_after.value  = read_generalized_time(a.validity->notAfter,  "notAfter");
+        dst.not_after.value = read_generalized_time(a.validity->notAfter, "notAfter");
 
         const int n = sk_Asn1CtlRootEntry_num(a.rootCertificates);
         dst.roots.reserve(static_cast<std::size_t>(n));
