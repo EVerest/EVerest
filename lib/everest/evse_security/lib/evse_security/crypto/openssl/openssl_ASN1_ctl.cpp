@@ -189,13 +189,22 @@ ASN1_SEQUENCE(Asn1CtlValidity) = {ASN1_SIMPLE(Asn1CtlValidity, notBefore, ASN1_G
         dst.ctl_version = read_bounded_u8(a.ctlVersion, "ctlVersion");
         dst.sequence_number = read_bounded_u16(a.sequenceNumber, "sequenceNumber");
 
-        const char* nb = reinterpret_cast<const char*>(a.validity->notBefore->data);
-        const char* na = reinterpret_cast<const char*>(a.validity->notAfter->data);
-        if (!nb || !na || std::strlen(nb) != 15 || std::strlen(na) != 15) {
-            throw std::runtime_error("bad GeneralizedTime length");
+        auto read_generalized_time = [](const ASN1_GENERALIZEDTIME* t, const char* field) {
+            if (t == nullptr || t->data == nullptr || t->length != 15) {
+                throw std::runtime_error(std::string("CTL: bad ") + field + " GeneralizedTime length");
+            }
+            std::string out(reinterpret_cast<const char*>(t->data), static_cast<std::size_t>(t->length));
+            if (out.back() != 'Z') {
+                throw std::runtime_error(std::string("CTL: ") + field + " is not Z-terminated");
+            }
+            return out;
+        };
+
+        if (a.validity == nullptr) {
+            throw std::runtime_error("CTL: missing validity");
         }
-        dst.not_before.value.assign(nb, 15);
-        dst.not_after.value.assign(na, 15);
+        dst.not_before.value = read_generalized_time(a.validity->notBefore, "notBefore");
+        dst.not_after.value  = read_generalized_time(a.validity->notAfter,  "notAfter");
 
         const int n = sk_Asn1CtlRootEntry_num(a.rootCertificates);
         dst.roots.reserve(static_cast<std::size_t>(n));
