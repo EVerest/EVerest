@@ -50,6 +50,18 @@ struct VariableMetaData {
 using VariableMap = std::map<Variable, VariableMetaData>;
 using DeviceModelMap = std::map<Component, VariableMap>;
 
+/// \brief The entry of \p variable of \p component in a model keyed by component, then by variable, or nullptr
+template <typename Model>
+auto find_in_model(Model& model, const Component& component, const Variable& variable)
+    -> decltype(&model.begin()->second.begin()->second) {
+    const auto component_it = model.find(component);
+    if (component_it == model.end()) {
+        return nullptr;
+    }
+    const auto variable_it = component_it->second.find(variable);
+    return variable_it == component_it->second.end() ? nullptr : &variable_it->second;
+}
+
 class DeviceModelError : public std::exception {
 public:
     [[nodiscard]] const char* what() const noexcept override {

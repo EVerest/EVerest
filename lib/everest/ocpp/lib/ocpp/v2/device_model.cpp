@@ -759,25 +759,15 @@ void DeviceModel::recompose() {
 
 const VariableMetaData* DeviceModel::find_in_component_config(const Component& component,
                                                               const Variable& variable) const {
-    const auto component_it = this->component_config.find(component);
-    if (component_it == this->component_config.end()) {
-        return nullptr;
-    }
-    const auto variable_it = component_it->second.find(variable);
-    return variable_it == component_it->second.end() ? nullptr : &variable_it->second;
+    return find_in_model(this->component_config, component, variable);
 }
 
 ComposedVariable* DeviceModel::find_variable(const Component& component, const Variable& variable) {
-    const auto component_it = this->view.find(component);
-    if (component_it == this->view.end()) {
-        return nullptr;
-    }
-    const auto variable_it = component_it->second.find(variable);
-    return variable_it == component_it->second.end() ? nullptr : &variable_it->second;
+    return find_in_model(this->view, component, variable);
 }
 
 const ComposedVariable* DeviceModel::find_variable(const Component& component, const Variable& variable) const {
-    return const_cast<DeviceModel*>(this)->find_variable(component, variable);
+    return find_in_model(this->view, component, variable);
 }
 
 bool DeviceModel::create_network_configuration_slot_from_default_schema(std::int32_t new_slot) {
@@ -877,8 +867,7 @@ ComponentRegistrationResult DeviceModel::register_components_of(const std::strin
                     {component, variable, RegistrationRejectionReason::AlreadyDefined, in_config->owner});
                 continue;
             }
-            if (const auto component_it = registration.variables.find(component);
-                component_it != registration.variables.end() and component_it->second.count(variable) != 0) {
+            if (find_in_model(registration.variables, component, variable) != nullptr) {
                 EVLOG_error << "Owner " << owner << " registered " << component << "." << variable
                             << " twice: the second definition is ignored";
                 result.rejected.push_back({component, variable, RegistrationRejectionReason::AlreadyDefined, owner});

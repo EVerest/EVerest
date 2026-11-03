@@ -58,18 +58,6 @@ std::string read_owner(StatementInterface& statement, int column) {
     return statement.column_text_nullable(column).value_or(VARIABLE_OWNER_COMPONENT_CONFIG);
 }
 
-VariableMetaData* find_variable(DeviceModelMap& device_model, const Component& component, const Variable& variable) {
-    const auto component_it = device_model.find(component);
-    if (component_it == device_model.end()) {
-        return nullptr;
-    }
-    const auto variable_it = component_it->second.find(variable);
-    if (variable_it == component_it->second.end()) {
-        return nullptr;
-    }
-    return &variable_it->second;
-}
-
 constexpr auto NAME_KEY_CONDITION =
     "COMPONENT_NAME = @component_name AND COMPONENT_INSTANCE = @component_instance AND EVSE_ID = @evse_id AND "
     "CONNECTOR_ID = @connector_id AND VARIABLE_NAME = @variable_name AND VARIABLE_INSTANCE = @variable_instance";
@@ -283,7 +271,7 @@ DeviceModelMap DeviceModelStorageSqlite::get_device_model() {
 
     while (attributes_stmt->step() == SQLITE_ROW) {
         const auto [component, variable] = read_component_variable(*attributes_stmt, 0);
-        auto* meta_data = find_variable(device_model, component, variable);
+        auto* meta_data = find_in_model(device_model, component, variable);
         if (meta_data == nullptr) {
             continue;
         }
