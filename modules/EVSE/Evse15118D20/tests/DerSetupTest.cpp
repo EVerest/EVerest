@@ -189,7 +189,7 @@ TEST(DerSetupTest, sae_zero_reactive_power_matches_absent) {
     EXPECT_TRUE(equal(zero.reactive_power_limits.maximum_var_injection_during_charging, dt::RationalNumber{0, 0}));
 }
 
-// from_float keeps 4 significant digits and truncates, so 230 * 0.88 encodes as 202.3 and not 202.4.
+// from_float keeps 4 significant digits and rounds, so 230 * 0.88 encodes as 202.4.
 TEST(DerSetupTest, sae_grid_limits_derive_from_nominal_voltage) {
     const auto ac = make_ac_limits(7400.0f, 11000.0f);
 
@@ -200,7 +200,7 @@ TEST(DerSetupTest, sae_grid_limits_derive_from_nominal_voltage) {
     EXPECT_TRUE(equal(grid.nominal_voltage, dt::from_float(230.0f)));
     EXPECT_TRUE(equal(grid.nominal_voltage_offset, dt::RationalNumber{0, 0}));
     EXPECT_TRUE(equal(grid.maximum_voltage, dt::RationalNumber{2530, -1}));
-    EXPECT_TRUE(equal(grid.minimum_voltage, dt::RationalNumber{2023, -1}));
+    EXPECT_TRUE(equal(grid.minimum_voltage, dt::RationalNumber{2024, -1}));
     EXPECT_FALSE(grid.min_frequency.has_value());
     EXPECT_FALSE(grid.max_frequency.has_value());
 }

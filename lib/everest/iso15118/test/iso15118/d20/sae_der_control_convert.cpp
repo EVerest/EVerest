@@ -22,11 +22,9 @@ namespace {
 
 constexpr auto TOLERANCE = 0.01f;
 constexpr float NOMINAL_VOLTAGE_V = 230.0f;
-// from_float keeps four significant digits and truncates, so volt magnitude values need a
-// relative tolerance rather than an absolute one.
+// from_float keeps four significant digits, so volt magnitude values need a relative tolerance
+// rather than an absolute one.
 constexpr auto RELATIVE_TOLERANCE = 1e-3f;
-// The rational number encoding keeps four significant digits, so single decimal inputs land one digit short.
-constexpr auto COARSE_TOLERANCE = 0.05f;
 
 float value_of(const dt::RationalNumber& in) {
     return dt::from_RationalNumber(in);
@@ -153,10 +151,10 @@ SCENARIO("The default SAE DER control converts onto the wire") {
                          WithinRel(241.5f, RELATIVE_TOLERANCE));
             REQUIRE_THAT(value_of(out.enter_service_cpd_res.enter_service_voltage_low),
                          WithinRel(210.91f, RELATIVE_TOLERANCE));
-            REQUIRE_THAT(value_of(out.enter_service_cpd_res.enter_service_frequency_high),
-                         WithinAbs(50.1f, COARSE_TOLERANCE));
-            REQUIRE_THAT(value_of(out.enter_service_cpd_res.enter_service_frequency_low),
-                         WithinAbs(49.5f, COARSE_TOLERANCE));
+            REQUIRE(out.enter_service_cpd_res.enter_service_frequency_high.value == 5010);
+            REQUIRE(out.enter_service_cpd_res.enter_service_frequency_high.exponent == -2);
+            REQUIRE(out.enter_service_cpd_res.enter_service_frequency_low.value == 4950);
+            REQUIRE(out.enter_service_cpd_res.enter_service_frequency_low.exponent == -2);
 
             REQUIRE(out.enter_service_cpd_res.enter_service_ramp_time.has_value() == false);
         }
