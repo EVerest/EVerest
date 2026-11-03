@@ -399,35 +399,26 @@ private: // Functions
     void delete_variable_monitor(const VariableMonitoringMeta& monitor, const std::int64_t& variable_id);
 
     ///
-    /// \brief Deletes the monitors of the component config variables matching \p variable_condition, custom
-    /// monitors included. Monitors are keyed by name, so they are not removed together with their variable rows.
-    /// Monitors with an owner belong to a variable registered at runtime and are kept.
-    /// \param variable_condition   SQL condition on the variable (alias v) or component (alias c), using \@id
-    /// \param id                   The value bound to \@id
-    ///
-    void delete_monitors(const std::string& variable_condition, const std::uint64_t id);
-
-    ///
     /// \brief Get all components with its variables (and characteristics / attributes) from the database.
     /// \return A map of Components with it Variables.
     ///
     std::map<ComponentKey, std::vector<DeviceModelVariable>> get_all_components_from_db();
 
     ///
-    /// \brief Warn about components that exist in the database but are not declared in the
-    ///        component config (no JSON file present on this install). The orphan rows are
-    ///        intentionally kept so per-slot components such as NetworkConfiguration_<N>
-    ///        survive missing JSON files and the legacy NetworkConnectionProfiles blob can
-    ///        still migrate into them on a later boot.
+    /// \brief Removes the components that exist in the database but not in the component config, with their
+    ///        variables, so that the database mirrors the config files. A NetworkConfiguration component is kept:
+    ///        the migration of the legacy NetworkConnectionProfiles blob creates the slots it needs from the
+    ///        embedded default schema, without a config file.
     /// \param component_config  The component config.
     /// \param db_components     The components in the database.
     ///
-    void warn_about_components_missing_from_config(
+    void remove_components_missing_from_config(
         const std::map<ComponentKey, std::vector<DeviceModelVariable>>& component_config,
         const std::map<ComponentKey, std::vector<DeviceModelVariable>>& db_components);
 
     ///
-    /// \brief Remove a component from the database.
+    /// \brief Remove a component from the database, with its variables. Monitors are keyed by name and stay, like
+    ///        when a variable is removed: they apply again when an owner registers the variable at runtime.
     /// \param component    The component to remove.
     /// \return True on success.
     ///

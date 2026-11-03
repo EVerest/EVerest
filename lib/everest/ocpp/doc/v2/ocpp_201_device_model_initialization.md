@@ -70,14 +70,16 @@ ChangeConfiguration.req with `RebootRequired`, so GetConfiguration.req returns t
 
 To update a component, just place the correct json component config in the `component_config/custom` or 
 `component_config/standardized` folder. When restarting the software, it will:
-- Check if there are Components in the database that are not in the component config's. Those are kept in the
-  database, together with their variables and monitors, and a warning is logged for each of them.
+- Check if there are Components in the database that are not in the component config's. Those are removed from the
+  database with their variables, and a warning is logged for each of them. Their monitors are kept, see below. A
+  `NetworkConfiguration` component is kept: the migration of the legacy `NetworkConnectionProfiles` blob creates the
+  slots it needs from an embedded default schema, without a config file.
 - Check if there are Components in the component config's that are not in the database. Those will be added.
 - Check if anything has changed inside the Component (`Variable`, `Characteristics` or `Attributes`). 
   Those will be removed, changed or added to the database as well. 
   
-Note: When the `evse_id` or `connector_id` of a component is changed, the component with the new key is added. The
-component with the old key, including its monitors, stays in the database and is reported by the warning above.
+Note: When the `evse_id` or `connector_id` of a component is changed, the component with the new key is added and
+the component with the old key is removed, like any other component without a config file.
 
 Note: OCPP requires EVSE and Connector numbering starting from 1 counting upwards.
 
@@ -114,8 +116,8 @@ config, and the variables only the custom config defines would be removed with t
 Monitors are not linked to variable rows. Removing a variable from the component config keeps its monitors, custom
 monitors included, so they apply when an owner registers the variable at runtime; the values of the variable are not
 kept. See [Components registered at runtime](#components-registered-at-runtime) for when such monitors are removed.
-Components that are no longer configured are kept with their monitors, see
-[Update component config](#update-component-config).
+Removing a whole component config file removes the component the same way: its variables go, its monitors stay,
+see [Update component config](#update-component-config).
 `DeviceModelStorageSqlite::get_device_model` returns the component tables without monitors, and `get_all_monitors`
 returns all monitors.
 

@@ -19,6 +19,9 @@
 const static std::string STANDARDIZED_COMPONENT_CONFIG_DIR = "standardized";
 const static std::string CUSTOM_COMPONENT_CONFIG_DIR = "custom";
 const static std::string OCPP16_LEGACY_CTRLR_COMPONENT_CONFIG = "OCPP16LegacyCtrlr";
+/// \brief The component of a network connection profile slot, which the migration of the legacy
+/// NetworkConnectionProfiles blob creates without a config file
+const static std::string NETWORK_CONFIGURATION_COMPONENT = "NetworkConfiguration";
 const static std::string DEFAULT_SOURCE = "default";
 // An attribute is persistent and not constant unless its component config says otherwise.
 constexpr bool DEFAULT_PERSISTENT = true;
@@ -159,15 +162,6 @@ void InitDeviceModelDb::initialize_database(
 
     const auto& configs = augmented.has_value() ? *augmented : component_configs;
 
-    // Components in the database that no longer have a matching entry in the component
-    // config (e.g. NetworkConfiguration_<N>.json was removed from the install) are kept
-    // in place and reported via a warning. Pruning these rows used to drop migration
-    // targets, so the operator could end up with a populated NetworkConnectionProfiles
-    // blob and no per-slot components to migrate it into.
-    if (this->database_exists) {
-        warn_about_components_missing_from_config(configs, existing_components);
-    }
-
     // Check if the config is consistent.
     check_name_keys_are_unique(configs);
     check_integrity(configs);
@@ -175,19 +169,11 @@ void InitDeviceModelDb::initialize_database(
     // Starting a transaction makes this a lot faster (inserting all components takes a few seconds without it and a
     // few milliseconds if it is done inside a transaction).
     std::unique_ptr<TransactionInterface> transaction = database->begin_transaction();
-    insert_components(configs, existing_components);
-
-    // If the caller explicitly opts out of the OCPP16LegacyCtrlr fallback, also remove any stale entry that may have
-    // been injected by an older version of this function.
-    if (!inject_ocpp16_legacy_ctrlr_fallback && !config_files_contain_ocpp16_legacy_ctrlr &&
-        db_contains_ocpp16_legacy_ctrlr) {
-        const auto it = std::find_if(existing_components.begin(), existing_components.end(), [](const auto& c) {
-            return c.first.name == OCPP16_LEGACY_CTRLR_COMPONENT_CONFIG;
-        });
-        if (it != existing_components.end()) {
-            remove_component_from_db(it->first);
-        }
+    if (this->database_exists) {
+        // Covers an OCPP16LegacyCtrlr that an earlier start injected: without the fallback, no config defines it
+        remove_components_missing_from_config(configs, existing_components);
     }
+    insert_components(configs, existing_components);
 
     transaction->commit();
 }
@@ -963,22 +949,6 @@ void InitDeviceModelDb::delete_variable_monitor(const VariableMonitoringMeta& mo
     }
 }
 
-void InitDeviceModelDb::delete_monitors(const std::string& variable_condition, const std::uint64_t id) {
-    const std::string delete_query =
-        std::string("DELETE FROM VARIABLE_MONITORING WHERE ID IN (SELECT vm.ID FROM VARIABLE_MONITORING vm ") +
-        MONITOR_VARIABLE_JOIN + " WHERE " + variable_condition + ")";
-    try {
-        auto delete_stmt = this->database->new_statement(delete_query);
-        delete_stmt->bind_int("@id", static_cast<int>(id));
-        if (delete_stmt->step() != SQLITE_DONE) {
-            throw InitDeviceModelDbError("Can not delete monitors: " +
-                                         std::string(this->database->get_error_message()));
-        }
-    } catch (const QueryExecutionException& e) {
-        throw InitDeviceModelDbError("Delete monitors error: " + std::string(e.what()));
-    }
-}
-
 std::map<ComponentKey, std::vector<DeviceModelVariable>> InitDeviceModelDb::get_all_components_from_db() {
     /* clang-format off */
     const std::string statement =
@@ -1132,26 +1102,35 @@ bool component_exists_in_config(const std::map<ComponentKey, std::vector<DeviceM
 }
 } // namespace
 
-void InitDeviceModelDb::warn_about_components_missing_from_config(
+void InitDeviceModelDb::remove_components_missing_from_config(
     const std::map<ComponentKey, std::vector<DeviceModelVariable>>& component_config,
     const std::map<ComponentKey, std::vector<DeviceModelVariable>>& db_components) {
     for (const auto& component : db_components) {
-        if (!component_exists_in_config(component_config, component.first)) {
-            std::ostringstream identifier;
-            identifier << component.first.name;
-            if (component.first.instance.has_value() && !component.first.instance.value().empty()) {
-                identifier << " (instance=" << component.first.instance.value() << ")";
-            }
-            if (component.first.evse_id.has_value()) {
-                identifier << " (evse_id=" << component.first.evse_id.value();
-                if (component.first.connector_id.has_value()) {
-                    identifier << ", connector_id=" << component.first.connector_id.value();
-                }
-                identifier << ")";
-            }
-            EVLOG_warning << "Component " << identifier.str()
-                          << " is present in the device model database but has no matching component config file";
+        if (component_exists_in_config(component_config, component.first)) {
+            continue;
         }
+        std::ostringstream identifier;
+        identifier << component.first.name;
+        if (component.first.instance.has_value() && !component.first.instance.value().empty()) {
+            identifier << " (instance=" << component.first.instance.value() << ")";
+        }
+        if (component.first.evse_id.has_value()) {
+            identifier << " (evse_id=" << component.first.evse_id.value();
+            if (component.first.connector_id.has_value()) {
+                identifier << ", connector_id=" << component.first.connector_id.value();
+            }
+            identifier << ")";
+        }
+        if (component.first.name == NETWORK_CONFIGURATION_COMPONENT) {
+            EVLOG_info << "Component " << identifier.str()
+                       << " has no component config file and is kept: the migration of the network connection "
+                          "profiles creates it without one";
+            continue;
+        }
+        EVLOG_warning << "Component " << identifier.str()
+                      << " has no component config file any more and is removed from the device model database with "
+                         "its variables; its monitors are kept";
+        remove_component_from_db(component.first);
     }
 }
 
@@ -1169,8 +1148,6 @@ bool InitDeviceModelDb::remove_component_from_db(const ComponentKey& component) 
         EVLOG_error << "Can not delete component " << component.name << ": no id given";
         return false;
     }
-
-    delete_monitors("c.ID = @id", component.db_id.value());
 
     delete_statement->bind_int("@component_id", static_cast<int>(component.db_id.value()));
 
