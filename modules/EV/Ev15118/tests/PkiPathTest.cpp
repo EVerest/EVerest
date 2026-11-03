@@ -13,9 +13,9 @@
 #include <framework/ModuleAdapter.hpp>
 
 #include "ISO15118_evImpl.hpp"
-#include "fake_controller.hpp"
 #include "module_driver.hpp"
-#include "test_contract.hpp"
+#include <everest/iso15118_ev_session/fake_controller.hpp>
+#include <everest/iso15118_ev_session/test_contract.hpp>
 
 namespace {
 

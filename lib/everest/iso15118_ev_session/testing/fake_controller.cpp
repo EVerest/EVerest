@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
-#include "fake_controller.hpp"
+#include <everest/iso15118_ev_session/fake_controller.hpp>
 
 #include <functional>
 #include <mutex>
@@ -114,6 +114,12 @@ void install_contract(const std::string& chain_pem, const std::string& key_pem, 
 void offer_ac_evse_max_current(float current) {
     if (const auto* feedback = running_feedback()) {
         feedback->ac_evse_max_current(current);
+    }
+}
+
+void stop_power_delivery() {
+    if (const auto* feedback = running_feedback()) {
+        feedback->power_delivery_stopped();
     }
 }
 
