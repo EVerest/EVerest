@@ -759,6 +759,18 @@ void ISO15118_chargerImpl::ready() {
 
     apply_active_der_directives();
 
+    if (mod->config.device == "auto") {
+        // Resolved once by the controller; there is no device name to watch.
+        controller->set_interface_present(true);
+    } else {
+        // The controller outlives the watcher (see the member order), so the callback needs no lock.
+        device_watcher = std::make_unique<NetworkDeviceWatcher>(
+            mod->config.device, [c = controller.get()](bool present) { c->set_interface_present(present); });
+        if (not device_watcher->start()) {
+            controller->set_interface_present(true);
+        }
+    }
+
     try {
         controller->loop();
     } catch (const std::exception& e) {
