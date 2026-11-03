@@ -40,11 +40,10 @@ active_modules:
     module: Auth
   ev_manager:
     config_module:
+      hlc_device: auto
+      supported_protocols: ISO15118_2
       connector_id: 1
     connections:
-      ev:
-        - implementation_id: ev
-          module_id: iso15118_car
       ev_board_support:
         - implementation_id: board_support
           module_id: ev_manager_driver
@@ -123,12 +122,6 @@ active_modules:
         - implementation_id: energy_grid
           module_id: connector_1
     module: EnergyNode
-  iso15118_car:
-    config_module:
-      device: auto
-      supported_protocols: ISO15118_2
-    connections: {}
-    module: Ev15118
   iso15118_charger:
     config_module:
       device: auto
@@ -244,10 +237,7 @@ active_modules:
         - id: ev_manager
           interface: ev_manager
           type: provide
-      top:
-        - id: ev
-          interface: ISO15118_ev
-          type: requirement
+      top: []
   ev_manager_driver:
     position:
       x: 73
@@ -374,18 +364,6 @@ active_modules:
         - id: energy_grid
           interface: energy
           type: provide
-  iso15118_car:
-    position:
-      x: 53
-      y: 23
-    terminals:
-      bottom:
-        - id: ev
-          interface: ISO15118_ev
-          type: provide
-      left: []
-      right: []
-      top: []
   iso15118_charger:
     position:
       x: -5

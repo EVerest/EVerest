@@ -45,7 +45,7 @@ and ``tls`` variants, ``config-sil-mcs.yaml``, ``config-sil-energy-management.ya
 ``config-sil-ocpp.yaml`` and its ``API``, ``custom-extension`` and ``pnc`` variants,
 ``config-sil-ocpp201.yaml``, ``config-sil-ocpp201-pnc.yaml``, and the three
 ``config-sil-two-evse`` configurations (base, ``dc`` and ``rpcapi``).
-The ISO 15118 configurations also use this pair: ``config-sil-evsev2g``,
+The in-process ISO 15118 configurations also use this pair: ``config-sil-evsev2g``,
 ``config-sil-dc-evsev2g``, ``config-sil-dc-tls-evsev2g``,
 ``config-sil-ac-d20-plaintext``, ``config-sil-dc-d20-plaintext``,
 ``config-sil-dc-d20-tls``, ``config-sil-ac-bpt-d20``, ``config-sil-dc-bpt-d20``

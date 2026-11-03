@@ -1,4 +1,4 @@
-# DC ISO 15118-2 SIL over TLS 1.2: C++ EVCC (Ev15118) against the Evse15118D20 SECC, EIM.
+# DC ISO 15118-2 SIL over TLS 1.2: EvController's in-process EV session against the Evse15118D20 SECC, EIM.
 # DIN SPEC 70121 is plaintext only and therefore not offered here.
 active_modules:
   iso15118_charger:
@@ -15,15 +15,6 @@ active_modules:
       security:
         - module_id: evse_security
           implementation_id: main
-  iso15118_car:
-    module: Ev15118
-    config_module:
-      device: auto
-      response_timeout_ms: 8000
-      supported_protocols: ISO15118_2
-      tls: require
-      # ISO 15118-2 uses TLS 1.2 without a client certificate.
-      tls_version: "1.2"
   evse_manager:
     module: EvseManager
     config_module:
@@ -72,6 +63,11 @@ active_modules:
   ev_manager:
     module: EvController
     config_module:
+      hlc_device: auto
+      response_timeout_ms: 8000
+      supported_protocols: ISO15118_2
+      tls: require
+      tls_version: "1.2"
       connector_id: 1
       dc_target_current: 20
       dc_target_voltage: 400
@@ -79,9 +75,6 @@ active_modules:
       ev_board_support:
         - module_id: ev_manager_driver
           implementation_id: board_support
-      ev:
-        - module_id: iso15118_car
-          implementation_id: ev
       slac:
         - module_id: slac
           implementation_id: ev
