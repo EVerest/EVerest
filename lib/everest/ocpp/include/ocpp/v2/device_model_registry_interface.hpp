@@ -109,6 +109,9 @@ public:
     /// libocpp writes from its own state, see RegistrationRejectionReason::ReservedVariable.
     /// The variable listeners are notified of each Actual value that differs from the one \p owner registered before
     /// for the same variable.
+    /// \p components is the full set of \p owner: the monitors and stored values of a variable that \p owner
+    /// registered before and that is not part of the new registration, because it is not listed or rejected, are
+    /// removed. unregister_components keeps them.
     /// \param provider Receives the writes to the registered variables. Without a provider, writes are applied to the
     /// model like writes to any other variable. A write that is in progress while \p owner registers again is not
     /// stored, the registered value stays. DeviceModel shares the ownership of the provider until \p owner is
@@ -118,7 +121,8 @@ public:
                                                             const std::vector<RegisteredComponent>& components,
                                                             std::shared_ptr<VariableValueProvider> provider) = 0;
 
-    /// \brief Removes everything that \p owner registered. Returns once the calls to the provider of \p owner in
+    /// \brief Removes everything that \p owner registered. The monitors and stored values of its variables are kept
+    /// for its next registration. Returns once the calls to the provider of \p owner in
     /// progress on other threads returned; a provider may call it from its set_value. The reserved owner is ignored.
     virtual void unregister_components(const std::string& owner) = 0;
 

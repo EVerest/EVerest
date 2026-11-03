@@ -162,6 +162,12 @@ removes the monitors of variables that nobody defines and the stored values of v
 remarks). This is why every owner must register before the first `start`. A later `start`, a restart of the charging
 station at runtime, removes nothing, so an owner may unregister and register again in the meantime.
 
+An owner that registers again while the process runs replaces its earlier registration with its full set. The monitors
+and stored values of the variables it registered before and that are not part of the new registration, because it no
+longer lists them or because they are rejected, are removed at once. This is how a configuration change at runtime that
+drops variables removes their monitors. A variable that moves to another owner at runtime therefore loses its monitors
+and stored values, while one that moves across a restart keeps them.
+
 ### Ownership
 
 Every variable has exactly one definition: the component config or one runtime owner. Ownership is per variable, so

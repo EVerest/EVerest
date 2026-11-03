@@ -891,8 +891,20 @@ ComponentRegistrationResult DeviceModel::register_components_of(const std::strin
         }
     }
 
+    std::set<std::pair<Component, Variable>> dropped;
+    if (previous_it != this->registrations.end()) {
+        for (const auto& [component, variables] : previous_it->second.variables) {
+            for (const auto& [variable, meta_data] : variables) {
+                if (find_in_model(registration.variables, component, variable) == nullptr) {
+                    dropped.emplace(component, variable);
+                }
+            }
+        }
+    }
+
     this->registrations.insert_or_assign(owner, std::move(registration));
     this->recompose();
+    this->remove_monitors_and_values_of_dropped_variables(owner, dropped);
 
     struct RegisteredValueChange {
         Component component;
@@ -939,7 +951,8 @@ VariableMetaData DeviceModel::build_registered_variable(const std::string& owner
 
     // A provider keeps the values of its variables: a stored value would be stale once the owner registers without one
     if (with_provider) {
-        this->stored_values.remove_of_provided_variable(owner, component, variable);
+        this->stored_values.remove_of_variable(
+            component, variable, "owner " + owner + " registers it with a provider, which keeps its values");
     } else {
         this->stored_values.restore(owner, component, variable, meta_data, [&](const std::string& value) {
             return fits_data_type(meta_data.characteristics, value);
@@ -957,6 +970,22 @@ VariableMetaData DeviceModel::build_registered_variable(const std::string& owner
             return is_monitor_valid(meta_data, type, value, component, variable);
         });
     return meta_data;
+}
+
+void DeviceModel::remove_monitors_and_values_of_dropped_variables(
+    const std::string& owner, const std::set<std::pair<Component, Variable>>& dropped) {
+    if (dropped.empty()) {
+        return;
+    }
+    const auto reason = "owner " + owner + " no longer registers the variable";
+    this->monitors.remove_if(
+        [&dropped](const StoredMonitor& stored) {
+            return dropped.count({stored.component, stored.variable}) != 0;
+        },
+        reason);
+    for (const auto& [component, variable] : dropped) {
+        this->stored_values.remove_of_variable(component, variable, reason);
+    }
 }
 
 void DeviceModel::remove_monitors_and_values_of_absent_variables() {

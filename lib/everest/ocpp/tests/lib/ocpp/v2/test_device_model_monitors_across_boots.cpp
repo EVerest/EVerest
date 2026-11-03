@@ -225,6 +225,53 @@ TEST_F(DeviceModelMonitorsAcrossBootsTest, monitor_of_a_variable_of_another_owne
     EXPECT_TRUE(stored_monitor(id).has_value());
 }
 
+TEST_F(DeviceModelMonitorsAcrossBootsTest, monitor_is_removed_when_its_owner_registers_again_without_the_variable) {
+    register_variables({make_registered_variable(level.name), make_registered_variable(other.name)});
+    const auto dropped = set_monitor(make_request(component, level, 100));
+    const auto kept = set_monitor(make_request(component, other, 100));
+
+    register_variables({make_registered_variable(other.name)});
+    EXPECT_FALSE(stored_monitor(dropped).has_value());
+    EXPECT_TRUE(stored_monitor(kept).has_value());
+    EXPECT_EQ(monitor_ids(component, other), std::vector<std::int32_t>{kept});
+
+    register_variables({make_registered_variable(level.name), make_registered_variable(other.name)});
+    EXPECT_TRUE(monitor_ids(component, level).empty());
+}
+
+TEST_F(DeviceModelMonitorsAcrossBootsTest, monitor_is_removed_when_its_variable_is_rejected_at_a_new_registration) {
+    register_variables({make_registered_variable(level.name), make_registered_variable(other.name)});
+    const auto id = set_monitor(make_request(component, level, 100));
+
+    auto without_attributes = make_registered_variable(level.name);
+    without_attributes.attributes.clear();
+    RegisteredComponent registered;
+    registered.component = component;
+    registered.variables = {without_attributes, make_registered_variable(other.name)};
+    const auto result = dm->register_components(OWNER, {registered}, nullptr);
+    ASSERT_EQ(result.rejected.size(), 1);
+    EXPECT_EQ(result.rejected.at(0).reason, RegistrationRejectionReason::NoAttributes);
+    EXPECT_FALSE(stored_monitor(id).has_value());
+}
+
+TEST_F(DeviceModelMonitorsAcrossBootsTest, monitor_is_kept_when_its_owner_registers_the_variable_again) {
+    register_variables({make_registered_variable(level.name)});
+    const auto id = set_monitor(make_request(component, level, 100));
+
+    register_variables({make_registered_variable(level.name)});
+    EXPECT_EQ(monitor_ids(component, level), std::vector<std::int32_t>{id});
+}
+
+TEST_F(DeviceModelMonitorsAcrossBootsTest, monitor_is_kept_when_its_owner_unregisters_and_registers_again) {
+    register_variables({make_registered_variable(level.name)});
+    const auto id = set_monitor(make_request(component, level, 100));
+
+    dm->unregister_components(OWNER);
+    EXPECT_TRUE(stored_monitor(id).has_value());
+    register_variables({make_registered_variable(level.name)});
+    EXPECT_EQ(monitor_ids(component, level), std::vector<std::int32_t>{id});
+}
+
 TEST_F(DeviceModelMonitorsAcrossBootsTest, monitor_that_no_longer_fits_is_removed) {
     register_variables({make_registered_variable(level.name)});
     const auto threshold = set_monitor(make_request(component, level, 500, 3));

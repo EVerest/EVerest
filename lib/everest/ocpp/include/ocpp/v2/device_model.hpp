@@ -7,6 +7,7 @@
 #include <map>
 #include <mutex>
 #include <optional>
+#include <set>
 #include <string>
 
 #include <everest/logging.hpp>
@@ -95,6 +96,10 @@ private:
     VariableMetaData build_registered_variable(const std::string& owner, const Component& component,
                                                const RegisteredVariable& registered_variable,
                                                std::vector<VariableAttribute> attributes, bool with_provider);
+
+    /// \brief Removes the monitors and stored values of the variables that \p owner no longer registers
+    void remove_monitors_and_values_of_dropped_variables(const std::string& owner,
+                                                         const std::set<std::pair<Component, Variable>>& dropped);
 
     /// \brief The attribute of a variable with its current value, read from the storage for a variable that its
     /// backing keeps there

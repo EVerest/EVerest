@@ -268,6 +268,27 @@ TEST_F(DeviceModelStoredValuesTest, stored_value_is_removed_when_the_variable_ge
     EXPECT_EQ(get(enabled), "true");
 }
 
+TEST_F(DeviceModelStoredValuesTest, stored_value_is_removed_when_its_owner_registers_again_without_the_variable) {
+    ASSERT_TRUE(register_der({make_enabled(), make_vendor_available()}).rejected.empty());
+    ASSERT_EQ(dm->set_value(der, enabled, AttributeEnum::Actual, "false", "csms"), SetVariableStatusEnum::Accepted);
+
+    ASSERT_TRUE(register_der({make_vendor_available()}).rejected.empty());
+    EXPECT_TRUE(stored_values().empty());
+
+    ASSERT_TRUE(register_der({make_enabled(), make_vendor_available()}).rejected.empty());
+    EXPECT_EQ(get(enabled), "true");
+}
+
+TEST_F(DeviceModelStoredValuesTest, stored_value_is_kept_when_its_owner_unregisters_and_registers_again) {
+    ASSERT_TRUE(register_der({make_enabled()}).rejected.empty());
+    ASSERT_EQ(dm->set_value(der, enabled, AttributeEnum::Actual, "false", "csms"), SetVariableStatusEnum::Accepted);
+
+    dm->unregister_components(OWNER);
+    EXPECT_EQ(stored_values().size(), 1);
+    ASSERT_TRUE(register_der({make_enabled()}).rejected.empty());
+    EXPECT_EQ(get(enabled), "false");
+}
+
 TEST_F(DeviceModelStoredValuesTest, delta_monitor_is_kept_when_its_value_is_restored) {
     auto without_initial_value = make_enabled();
     without_initial_value.attributes.at(0).value.reset();
