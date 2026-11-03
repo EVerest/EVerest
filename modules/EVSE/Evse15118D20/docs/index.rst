@@ -184,6 +184,12 @@ knows nothing about OCPP:
   Hz, so no volt conversion happens.
 - ``EnterService`` voltage bands and the VoltVar ``ReferenceVoltage`` pass through
   in volts, because AMD1 Table 1 gives them in volts and so does ``grid_support``.
+- ``EnterService`` ``delay``, ``random_delay`` and ``ramp_rate`` pass through in
+  seconds into ``EnterServiceDelay``, ``EnterServiceRandomizedDelay`` and
+  ``EnterServiceRampTime`` (OCPP 2.1 ``EnterServiceType.rampRate``, AMD1
+  Table 1). A negative or non-finite value rejects the directive, since AMD1
+  Table 1 allows only values >= 0, and ``delay`` without ``ramp_rate`` rejects it
+  per [V2G20-3365].
 - The ``FixedVar`` setpoint sign is inverted into ``VarSetpoint``, and the
   ``FixedWatt`` setpoint sign into ``WattSetpoint`` (Table M.26, negative
   discharges). Each pair of sign conventions is opposed and [V2G20-3183]
@@ -398,10 +404,8 @@ Known gaps
 - ``LimitMaxDischarge`` is approximated: ``pct_max_discharge_power`` lands in
   ``PercentageValue`` clamped to 0..100 and rounded, not rescaled against the
   EV's maximum discharge power.
-- ``grid_support`` ``ramp_rate`` (%/s) is copied into ``EnterServiceRampTime``
-  (s) unconverted, by decision, and needs a follow-up. It reaches
-  ``EnterServiceRampTime`` only when paired with ``delay``; alone it is dropped at
-  debug, and ``delay`` without ``ramp_rate`` rejects the directive.
+- ``grid_support`` ``ramp_rate`` without ``delay`` has no Annex M target and is
+  dropped at debug.
 
 DER flavor selection
 ====================

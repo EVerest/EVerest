@@ -217,13 +217,15 @@ types:
         description: Low frequency threshold, in hertz.
         type: number
       delay:
-        description: Delay before entering service, in seconds.
+        description: Delay before entering service, in seconds, >= 0 (AMD1 Table 1).
         type: number
       random_delay:
-        description: Additional randomized delay, in seconds.
+        description: Additional randomized delay, in seconds, >= 0 (AMD1 Table 1).
         type: number
       ramp_rate:
-        description: Ramp rate applied when entering service, as percent of nameplate active power per second (%/s).
+        description: >-
+          Enter service ramp time, in seconds, >= 0, as OCPP 2.1 EnterServiceType.rampRate
+          ("Enter service ramp rate in seconds") and AMD1 Table 1 EnterServiceRampTime.
         type: number
   FixedPFParams:
     description: >-
