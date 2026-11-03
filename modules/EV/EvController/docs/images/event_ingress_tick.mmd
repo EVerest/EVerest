@@ -4,7 +4,7 @@ sequenceDiagram
     participant Ramp as RampInterpolator
     participant Soc as SocIntegrator
     participant Ctx as FsmContext
-    participant Iso as ISO15118_ev
+    participant Iso as IsoSession
     participant E2M as e2m/ev_info
 
     Note over Runtime,E2M: tick_fd fires every tick_interval_ms while Charging

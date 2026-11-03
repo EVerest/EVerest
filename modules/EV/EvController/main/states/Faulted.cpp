@@ -84,6 +84,7 @@ StateBase::Result Faulted::on_event(EventType ev) {
     case EK::BspMeasurement:
     case EK::IsoDerNegotiated:
     case EK::IsoDerControl:
+    case EK::IsoWeldingDetectionFailed:
     case EK::EvInfo:
     case EK::SlacState:
     case EK::DcEvsePresentCurrent:

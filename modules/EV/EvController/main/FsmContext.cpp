@@ -188,11 +188,9 @@ void FsmContext::set_cp(::types::ev_board_support::EvCpState s) {
     // The HLC stack has no board support connection, so it only learns the CP
     // state the vehicle applied by being told. Reporting it at all is what
     // enables the peer's CP-dependent checks, e.g. C/D before CableCheckReq.
-    // Guarded on the ISO peer independently of the BSP: either peer may be
-    // absent, and the CP state is the same fact for both.
-    if (peer_actions.iso.present) {
-        peer_actions.iso.cp_state_changed(to_iso_cp_state(s));
-    }
+    // Reported whether or not a BSP peer is wired: the CP state is the same
+    // fact for both.
+    peer_actions.iso.cp_state_changed(to_iso_cp_state(s));
 }
 
 void FsmContext::allow_power_on(bool on) {
@@ -289,52 +287,12 @@ bool FsmContext::iso_start_charging(API_types::ev_controller::ChargeMode mode,
                                     std::optional<API_types::ev_controller::PaymentOption> payment_opt,
                                     int32_t departure, int32_t e_amount) {
     using CM = API_types::ev_controller::ChargeMode;
-    using ETM = ::types::iso15118::EnergyTransferMode;
-
-    // BPT applies only to D20 modes: non-D20 modes ignore the session bpt.
-    const auto session_bpt = vars.bpt();
-    const bool bpt_active = session_bpt.has_value() && (mode == CM::AcIsoD20 || mode == CM::DcIsoD20);
-    // MCS applies only to DcIsoD20: Plugged rejects mcs on other modes; here
-    // we still gate on the mode so unexpected callers don't silently flip etm.
-    const bool mcs_active = vars.mcs_enabled() && mode == CM::DcIsoD20;
-
-    ETM etm;
-    switch (mode) {
-    case CM::AcIsoD20DerIec:
-        etm = ETM::AC_DER_IEC;
-        break;
-    case CM::AcIsoD20DerSae:
-        etm = ETM::AC_DER_SAE;
-        break;
-    case CM::AcIec:
-        return false;
-    case CM::AcIso2:
-        etm = vars.three_phases ? ETM::AC_three_phase_core : ETM::AC_single_phase_core;
-        break;
-    case CM::AcIsoD20:
-        etm = bpt_active ? ETM::AC_BPT : (vars.three_phases ? ETM::AC_three_phase_core : ETM::AC_single_phase_core);
-        break;
-    case CM::DcIso2:
-        etm = ETM::DC_extended;
-        break;
-    case CM::DcIsoD20:
-        if (mcs_active) {
-            etm = bpt_active ? ETM::MCS_BPT : ETM::MCS;
-        } else {
-            etm = bpt_active ? ETM::DC_BPT : ETM::DC;
-        }
-        break;
-    }
-    // The ISO peer's presence flag implies every iso_* function is wired
-    // (build_peer_actions sets them together), so the inner sub-calls below
-    // need no separate guards.
-    if (!peer_actions.iso.present) {
+    if (!is_iso_mode(mode)) {
         return false;
     }
 
     // DC modes report the EV's DC limits/targets to the SECC. Without this the
-    // EV's target_current stays 0 and the SECC commands 0 A. BPT/MCS modes set
-    // these too; the bpt_active block below additionally adds discharge params.
+    // EV's target_current stays 0 and the SECC commands 0 A.
     if (mode == CM::DcIso2 || mode == CM::DcIsoD20) {
         ::types::iso15118::DcEvParameters dc_params{};
         dc_params.target_current = static_cast<float>(cfg.dc_target_current);
@@ -347,23 +305,16 @@ bool FsmContext::iso_start_charging(API_types::ev_controller::ChargeMode mode,
         peer_actions.iso.set_dc_params(dc_params);
     }
 
-    if (bpt_active) {
-        peer_actions.iso.enable_sae_j2847_v2g_v2h();
-        ::types::iso15118::DcEvBPTParameters internal_bpt{};
-        internal_bpt.discharge_max_current_limit = session_bpt->discharge_max_current_limit;
-        internal_bpt.discharge_max_power_limit = session_bpt->discharge_max_power_limit;
-        internal_bpt.discharge_target_current = session_bpt->discharge_target_current;
-        internal_bpt.discharge_minimal_soc = session_bpt->discharge_minimal_soc;
-        peer_actions.iso.set_bpt_dc_params(internal_bpt);
-    }
-
-    auto payment = payment_opt.value_or(API_types::ev_controller::PaymentOption::ExternalPayment);
-    auto internal_payment = (payment == API_types::ev_controller::PaymentOption::Contract)
-                                ? ::types::iso15118::PaymentOption::Contract
-                                : ::types::iso15118::PaymentOption::ExternalPayment;
-    // The interface takes EAmount in kWh.
-    const bool started =
-        peer_actions.iso.start_charging(etm, internal_payment, departure, e_amount / 1000.0, vars.force_payment_option);
+    IsoStart start;
+    start.mode = mode;
+    start.payment = payment_opt.value_or(API_types::ev_controller::PaymentOption::ExternalPayment);
+    start.force_payment_option = vars.force_payment_option;
+    start.departure_time_s = departure;
+    start.e_amount_wh = e_amount;
+    start.three_phases = vars.three_phases;
+    start.bpt = vars.bpt();
+    start.mcs = vars.mcs_enabled();
+    const bool started = peer_actions.iso.start_charging(start);
     if (started) {
         // A V2G comm session is live. The resume gate in Paused waits
         // for this session's IsoV2GFinished before starting a new one.
@@ -373,21 +324,14 @@ bool FsmContext::iso_start_charging(API_types::ev_controller::ChargeMode mode,
 }
 
 void FsmContext::iso_abort_charging() {
-    if (peer_actions.iso.present) {
-        peer_actions.iso.abort_charging();
-    }
+    peer_actions.iso.abort_charging();
 }
 
 void FsmContext::iso_stop_charging() {
-    if (peer_actions.iso.present) {
-        peer_actions.iso.stop_charging();
-    }
+    peer_actions.iso.stop_charging();
 }
 
 void FsmContext::iso_end_session() {
-    if (!peer_actions.iso.present) {
-        return;
-    }
     if (vars.abort_on_stop) {
         peer_actions.iso.abort_charging();
         return;
@@ -396,9 +340,6 @@ void FsmContext::iso_end_session() {
 }
 
 void FsmContext::iso_report_present_values(float power_w) {
-    if (!peer_actions.iso.present) {
-        return;
-    }
     const auto mode = vars.charge_mode();
     if (!mode) {
         return;
@@ -424,15 +365,11 @@ void FsmContext::iso_report_present_values(float power_w) {
 }
 
 void FsmContext::iso_pause_charging() {
-    if (peer_actions.iso.present) {
-        peer_actions.iso.pause_charging();
-    }
+    peer_actions.iso.pause_charging();
 }
 
 void FsmContext::iso_update_soc(float pct) {
-    if (peer_actions.iso.present) {
-        peer_actions.iso.update_soc(pct);
-    }
+    peer_actions.iso.update_soc(pct);
 }
 
 // ---- SLAC shortcut -----------------------------------------------------
@@ -587,9 +524,15 @@ bool FsmContext::validate_session_config(const API_types::ev_controller::Session
     }
 
     const api::ChargeMode mode = api::mode_of(sp);
-    if (is_iso_mode(mode) && (!peer_actions.iso.present || !peer_actions.slac.present)) {
-        reject_reason = "no ev_slac peer";
-        return false;
+    if (is_iso_mode(mode)) {
+        if (!peer_actions.slac.present) {
+            reject_reason = "no ev_slac peer";
+            return false;
+        }
+        if (auto reason = peer_actions.iso.cannot_run(mode)) {
+            reject_reason = std::move(*reason);
+            return false;
+        }
     }
     return true;
 }

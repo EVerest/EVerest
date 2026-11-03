@@ -231,6 +231,7 @@ StateBase::Result Plugged::on_event(EventType ev) {
     case EK::Enable:
     case EK::IsoDerNegotiated:
     case EK::IsoDerControl:
+    case EK::IsoWeldingDetectionFailed:
     case EK::EvInfo:
     case EK::SlacState:
     case EK::DcEvsePresentCurrent:

@@ -105,6 +105,9 @@ struct KindVisitor {
     EventKind operator()(const IsoDerControlEvt&) const {
         return EventKind::IsoDerControl;
     }
+    EventKind operator()(const IsoWeldingDetectionFailedEvt&) const {
+        return EventKind::IsoWeldingDetectionFailed;
+    }
     EventKind operator()(const BeginSessionEvt&) const {
         return EventKind::BeginSession;
     }
@@ -182,6 +185,8 @@ EventPayload default_payload_for(EventKind kind) {
         return IsoDerNegotiatedEvt{};
     case EventKind::IsoDerControl:
         return IsoDerControlEvt{};
+    case EventKind::IsoWeldingDetectionFailed:
+        return IsoWeldingDetectionFailedEvt{};
     case EventKind::BeginSession:
         return BeginSessionEvt{};
     case EventKind::StateDeadline:
@@ -241,6 +246,7 @@ std::string_view command_verb(EventKind kind) {
     case EventKind::DcEvsePresentVoltage:
     case EventKind::IsoDerNegotiated:
     case EventKind::IsoDerControl:
+    case EventKind::IsoWeldingDetectionFailed:
     case EventKind::BeginSession:
     case EventKind::StateDeadline:
     case EventKind::InternalFault:

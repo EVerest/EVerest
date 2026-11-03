@@ -126,6 +126,279 @@ config:
       need to observe the initial Disabled state before driving enable.
     type: boolean
     default: true
+  hlc_device:
+    description:
+      Ethernet device used for ISO 15118. auto picks the first interface with an IPv6
+      link-local address when a session starts.
+    type: string
+    default: auto
+  evcc_id:
+    description:
+      EVCC identifier sent to the SECC in ISO 15118-20 SessionSetup, 1 to 255 characters,
+      a MAC address (02:00:00:00:00:01) or a vehicle identifier (WMIV1234567890ABCDEX).
+    type: string
+    minLength: 1
+    default: "02:00:00:00:00:01"
+  supported_protocols:
+    description:
+      Comma-separated protocols the EV offers in the SAP handshake, highest priority first,
+      from ISO15118_20, ISO15118_2 and DIN70121. The module fails at startup when the list is
+      empty, names an unknown protocol, or names one twice.
+    type: string
+    default: ISO15118_20
+  response_timeout_ms:
+    description:
+      ISO 15118 response watchdog timeout in milliseconds. 0 uses the per-message timeouts
+      from the specification table.
+    type: integer
+    minimum: 0
+    default: 0
+  authorization_timeout_ms:
+    description:
+      Bound on the ISO 15118-20 authorization loop, in milliseconds. The EV re-sends
+      AuthorizationReq while the EVSE reports Ongoing and after a declined attempt, so the
+      driver can authorize again, and stops the session once this bound expires. 0 uses
+      V2G_EVCC_Ongoing_Timeout (60000 ms) from the specification table.
+    type: integer
+    minimum: 0
+    default: 0
+  control_mode:
+    description:
+      Preferred charge-loop control mode, ISO 15118-20 only; ISO 15118-2 and DIN SPEC 70121
+      always run scheduled. The EV selects the SECC parameter set matching this preference
+      and falls back to the first offered set when the preference is not offered.
+    type: string
+    enum:
+      - Scheduled
+      - Dynamic
+    default: Dynamic
+  tls:
+    description:
+      Transport security. off runs plaintext only and requests no TLS in SDP; ISO 15118-20 over
+      plaintext deviates from [V2G20-2677] and is meant for testing, and Plug&Charge over it also
+      needs allow_pnc_without_tls. prefer requests TLS in SDP and accepts a plaintext offer.
+      require rejects an SDP response without TLS.
+    type: string
+    enum:
+      - "off"
+      - prefer
+      - require
+    default: "off"
+  allow_pnc_without_tls:
+    description:
+      Accept the deviation from the standard and present a contract over a session with no
+      transport security. Off, the vehicle charges by EIM on a plaintext link instead, which is
+      the correction this repository's own charger already makes from the other end. On, the
+      contract chain and the eMAID go out in clear in PaymentDetailsReq and a contract-key
+      signature over a charger-chosen challenge goes out in clear in AuthorizationReq; legitimate
+      for the [V2G2-465] robustness test and for bring-up against a plaintext test charger.
+    type: boolean
+    default: false
+  tls_version:
+    description:
+      TLS version, ignored when tls is off. auto offers TLS 1.3 when ISO 15118-20 is in the
+      offer and the vehicle chain is usable, and TLS 1.2 when ISO 15118-2 is; after the
+      handshake it offers only ISO 15118-20 over 1.3 and only ISO 15118-2 over 1.2. With no
+      version left the start is rejected, or the session stops at connect when the chain
+      files turn out unusable.
+      "1.2" and "1.3" pin exactly that version and offer every enabled protocol over it, with a
+      startup warning for ISO 15118-2 over 1.3 or ISO 15118-20 over 1.2. TLS 1.3 presents the
+      vehicle certificate (ISO 15118-20); TLS 1.2 presents none (ISO 15118-2).
+    type: string
+    enum:
+      - auto
+      - "1.2"
+      - "1.3"
+    default: auto
+  verify_server_certificate:
+    description: Verify the SECC certificate chain against the V2G root.
+    type: boolean
+    default: true
+  enable_tls_key_logging:
+    description:
+      Export the TLS session keys (pre-master-secret) of the handshake. For
+      testing and simulation only.
+    type: boolean
+    default: false
+  tls_key_logging_path:
+    description:
+      Output directory for the TLS key log file. With enable_tls_key_logging, empty is a
+      configuration error, logged when TLS is set up; key logging then stays off.
+    type: string
+    default: /tmp
+  pki_path:
+    description:
+      Directory holding the EV certificates and keys. Each certificate and key path below
+      that is left empty resolves under it, written <pki_path> there. Empty selects
+      <etc>/certs, the certs directory of the EVerest etc path.
+    type: string
+    default: ""
+  v2g_root_cert_path:
+    description:
+      Path to the V2G root certificate. Empty resolves to
+      <pki_path>/ca/v2g/V2G_ROOT_CA.pem. Every certificate in the file is trusted, so under
+      tls_version auto it must hold both the ISO 15118-2 and the ISO 15118-20 V2G roots.
+    type: string
+    default: ""
+  device_cert_chain_path:
+    description:
+      Path to the vehicle (TLS client) certificate chain, leaf first. Empty resolves
+      to <pki_path>/client/vehicle/VEHICLE_CERT_CHAIN.pem.
+    type: string
+    default: ""
+  device_key_path:
+    description:
+      Path to the vehicle leaf private key. Empty resolves to
+      <pki_path>/client/vehicle/VEHICLE_LEAF.key.
+    type: string
+    default: ""
+  device_key_password_path:
+    description:
+      Path to the file holding the password of the vehicle leaf private key. Empty
+      resolves to <pki_path>/client/vehicle/VEHICLE_LEAF_PASSWORD.txt; a missing or
+      empty file means no password.
+    type: string
+    default: ""
+  pnc_contract_cert_chain_path:
+    description:
+      Path to one PEM file holding the whole PnC contract (MO) certificate chain, leaf first.
+      Empty resolves to <pki_path>/client/mo/MO_LEAF.pem followed by
+      <pki_path>/ca/mo/INTERMEDIATE_MO_CA_CERTS.pem.
+    type: string
+    default: ""
+  pnc_contract_key_path:
+    description:
+      Path to the PnC contract (MO) leaf private key (PEM); signs the PnC AuthorizationReq.
+      Empty resolves to <pki_path>/client/mo/MO_LEAF.key.
+    type: string
+    default: ""
+  pnc_contract_key_password_path:
+    description:
+      Path to the file holding the password of the contract leaf private key. Empty resolves
+      to <pki_path>/client/mo/MO_LEAF_PASSWORD.txt; a missing or empty file means no password.
+    type: string
+    default: ""
+  pnc_oem_prov_cert_path:
+    description:
+      Path to the OEM provisioning certificate (PEM). Signs CertificateInstallationReq and
+      holds the static ECDH key that decrypts the delivered contract key. Empty resolves to
+      <pki_path>/client/oem/OEM_LEAF.pem.
+    type: string
+    default: ""
+  pnc_oem_prov_key_path:
+    description:
+      Path to the OEM provisioning private key (PEM). Empty resolves to
+      <pki_path>/client/oem/OEM_LEAF.key.
+    type: string
+    default: ""
+  pnc_oem_prov_key_password_path:
+    description:
+      Path to the file holding the password of the OEM provisioning private key. Empty
+      resolves to <pki_path>/client/oem/OEM_LEAF_PASSWORD.txt.
+    type: string
+    default: ""
+  pnc_force_cert_install:
+    description:
+      Run a CertificateInstallation even when a contract certificate is configured. Requires
+      the SECC to offer the Certificate service.
+    type: boolean
+    default: false
+  pnc_contract_store_dir:
+    description:
+      Directory that keeps the contract a CertificateInstallation delivered, as
+      CONTRACT_CHAIN.pem (leaf first), CONTRACT_LEAF.key (mode 0600) and EMAID.txt. Every
+      later session presents the stored contract when all three files are present and the
+      key belongs to the leaf, and falls back to the configured contract material
+      otherwise. Empty disables persistence. Give each EvController instance its own directory; two
+      instances sharing one can mix their files.
+    type: string
+    default: ""
+  ac_max_charge_power_w:
+    description:
+      Advertised AC maximum charge power in watts, as a total across three
+      lines; a single-phase session asks for a third. The default is 16 A x 230 V x 3.
+    type: number
+    minimum: 0
+    default: 11040
+  ac_min_charge_power_w:
+    description:
+      Advertised AC minimum charge power in watts, as a total across three
+      lines; a single-phase session asks for a third. The default is 6 A x 230 V x 3.
+    type: number
+    minimum: 0
+    default: 4140
+  ac_max_discharge_power_w:
+    description:
+      Advertised AC maximum discharge power in watts (AC_BPT, AC_DER_IEC and AC_DER_SAE), as a
+      total across three lines; a single-phase session asks for the same total. The default is 16 A x 230 V x 3.
+    type: number
+    minimum: 0
+    default: 11040
+  ac_min_discharge_power_w:
+    description:
+      Advertised AC minimum discharge power in watts (AC_BPT, AC_DER_IEC and AC_DER_SAE), as a
+      total across three lines; a single-phase session asks for the same total. The default is 6 A x 230 V x 3.
+    type: number
+    minimum: 0
+    default: 4140
+  dc_max_discharge_power_w:
+    description:
+      Advertised DC maximum discharge power in watts (BPT). A session's bpt
+      discharge_max_power_limit overrides it for that session.
+    type: number
+    minimum: 0
+    default: 150000
+  dc_min_discharge_power_w:
+    description: Advertised DC minimum discharge power in watts (BPT).
+    type: number
+    minimum: 0
+    default: 0
+  dc_max_discharge_current_a:
+    description:
+      Advertised DC maximum discharge current in amperes (BPT). A session's bpt
+      discharge_max_current_limit overrides it for that session.
+    type: number
+    minimum: 0
+    default: 300
+  sae_inverter_profile_path:
+    description:
+      JSON file describing the EV inverter for AC_DER_SAE. Empty uses the built-in profile. A
+      file that fails to parse, or whose values are invalid, makes the module fail at startup.
+    type: string
+    default: ""
+  cpd_rounds:
+    description:
+      ChargeParameterDiscovery rounds the EV drives before it reports Finished. AC_DER_SAE only.
+    type: integer
+    minimum: 1
+    maximum: 65535
+    default: 1
+  der_stop_on_unsupported_functions:
+    description: Stop the session if no AC_DER_IEC parameter set fits the supported DER functions.
+    type: boolean
+    default: true
+  der_stop_on_invalid_control:
+    description:
+      Stop the session on a structurally invalid DER control block from the SECC instead of
+      warning and continuing. AC_DER_SAE only.
+    type: boolean
+    default: false
+  der_iec_functions:
+    description:
+      Comma-separated IEC DER control functions the EV supports in AcIsoD20DerIec, from
+      OverFrequencyWattMode, UnderFrequencyWattMode, VoltWattMode, VoltVarMode, WattVarMode,
+      WattCosPhiMode, DSOQSetpointProvision, DSOCosPhiSetpointProvision, DCInjectionRestriction,
+      ZeroCurrentMode, OverVoltageFaultRideThroughMode and UnderVoltageFaultRideThroughMode. The
+      module fails at startup on an unknown or repeated name.
+    type: string
+    default: DSOQSetpointProvision,DSOCosPhiSetpointProvision
+  min_current_a:
+    description:
+      ISO 15118-2 AC EVMinCurrent in amperes per line. EVMaxVoltage is ac_nominal_voltage and
+      EVMaxCurrent is max_current_a.
+    type: number
+    minimum: 0
+    default: 10
 provides:
   ev_manager:
     interface: ev_manager
@@ -133,10 +406,6 @@ provides:
 requires:
   ev_board_support:
     interface: ev_board_support
-  ev:
-    interface: ISO15118_ev
-    min_connections: 0
-    max_connections: 1
   slac:
     interface: ev_slac
     min_connections: 0

@@ -10,12 +10,15 @@ from typing import Dict
 from everest.testing.core_utils._configuration.everest_configuration_strategies.everest_configuration_strategy import \
     EverestConfigAdjustmentStrategy
 
+# The modules with a pki_path option for their EV certificates and keys.
+_EV_MODULES = ("Ev15118", "EvController")
 
-class Ev15118PkiPathConfigurationStrategy(EverestConfigAdjustmentStrategy):
-    """ Gives every Ev15118 module a private copy of the EV certificates.
 
-    Ev15118 reads the V2G root, the vehicle chain and key, the contract chain and key and the OEM provisioning
-    material from its PKI directory. Tests running in parallel against one installation would otherwise share
+class EvPkiPathConfigurationStrategy(EverestConfigAdjustmentStrategy):
+    """ Gives every Ev15118 and EvController module a private copy of the EV certificates.
+
+    Both modules read the V2G root, the vehicle chain and key, the contract chain and key and the OEM provisioning
+    material from their PKI directory. Tests running in parallel against one installation would otherwise share
     that directory, and one EV could read a certificate or key while another test installs or replaces it. A
     pki_path already set in the configuration is kept, and without an installed certs directory the modules
     keep their default.
@@ -30,7 +33,7 @@ class Ev15118PkiPathConfigurationStrategy(EverestConfigAdjustmentStrategy):
         active_modules = (adjusted_config or {}).get("active_modules") or {}
 
         for module_cfg in active_modules.values():
-            if module_cfg.get("module") != "Ev15118":
+            if module_cfg.get("module") not in _EV_MODULES:
                 continue
             config_module = module_cfg.setdefault("config_module", {})
             if config_module.get("pki_path"):
@@ -46,7 +49,7 @@ class Ev15118PkiPathConfigurationStrategy(EverestConfigAdjustmentStrategy):
             return True
         if not self._source_certificates_directory.is_dir():
             logging.warning(f"No certificates in {self._source_certificates_directory}; "
-                            "Ev15118 keeps its default PKI directory")
+                            "the EV modules keep their default PKI directory")
             return False
         try:
             shutil.copytree(self._source_certificates_directory, self._target_certificates_directory)

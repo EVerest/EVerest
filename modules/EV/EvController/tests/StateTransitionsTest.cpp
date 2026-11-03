@@ -172,7 +172,7 @@ TEST_CASE("FsmContext helpers and shortcuts", "[evctl][helpers]") {
         CHECK(contains_substr(fx.mocks.iso.records, "payment=Contract"));
     }
 
-    SECTION("iso_start_charging(DcIsoD20) with bpt calls enable_sae then set_bpt_dc_params then start_charging") {
+    SECTION("iso_start_charging(DcIsoD20) with bpt starts DC_BPT with the session's discharge limits") {
         auto ctx = fx.make_ctx();
         api::BptParams bpt{};
         bpt.discharge_max_current_limit = 32.0f;
@@ -184,14 +184,8 @@ TEST_CASE("FsmContext helpers and shortcuts", "[evctl][helpers]") {
         auto ok = ctx->iso_start_charging(api::ChargeMode::DcIsoD20, std::nullopt, 0, 0);
         CHECK(ok == true);
 
-        auto enable_idx = index_of_substr(fx.mocks.iso.records, "enable_sae_j2847_v2g_v2h");
-        auto set_bpt_idx = index_of_substr(fx.mocks.iso.records, "set_bpt_dc_params");
-        auto start_idx = index_of_substr(fx.mocks.iso.records, "start_charging(mode=DC_BPT,");
-        REQUIRE(enable_idx >= 0);
-        REQUIRE(set_bpt_idx >= 0);
-        REQUIRE(start_idx >= 0);
-        CHECK(enable_idx < set_bpt_idx);
-        CHECK(set_bpt_idx < start_idx);
+        CHECK(contains_substr(fx.mocks.iso.records, "start_charging(mode=DC_BPT,"));
+        CHECK(contains_substr(fx.mocks.iso.records, ",bpt_power=11000,bpt_current=32)"));
     }
 
     SECTION("iso_start_charging sets configured DC limits and targets for both ISO modes") {
@@ -226,22 +220,20 @@ TEST_CASE("FsmContext helpers and shortcuts", "[evctl][helpers]") {
         CHECK(ok == true);
 
         CHECK(contains_substr(fx.mocks.iso.records, "start_charging(mode=AC_BPT,"));
-        CHECK(contains_substr(fx.mocks.iso.records, "enable_sae_j2847_v2g_v2h"));
-        CHECK(contains_substr(fx.mocks.iso.records, "set_bpt_dc_params"));
+        CHECK(contains_substr(fx.mocks.iso.records, ",bpt_power=7400,bpt_current=16)"));
     }
 
-    SECTION("iso_start_charging(DcIsoD20) without bpt does NOT call BPT actions") {
+    SECTION("iso_start_charging(DcIsoD20) without bpt starts plain DC") {
         auto ctx = fx.make_ctx();
         ensure_session(*ctx).bpt.reset();
 
         auto ok = ctx->iso_start_charging(api::ChargeMode::DcIsoD20, std::nullopt, 0, 0);
         CHECK(ok == true);
         CHECK(contains_substr(fx.mocks.iso.records, "start_charging(mode=DC,"));
-        CHECK_FALSE(contains_substr(fx.mocks.iso.records, "enable_sae_j2847"));
-        CHECK_FALSE(contains_substr(fx.mocks.iso.records, "set_bpt_dc_params"));
+        CHECK_FALSE(contains_substr(fx.mocks.iso.records, "bpt_power"));
     }
 
-    SECTION("iso_start_charging(AcIso2) ignores bpt setting (no BPT pre-calls, etm unchanged)") {
+    SECTION("iso_start_charging(AcIso2) ignores bpt setting (etm unchanged)") {
         auto ctx = fx.make_ctx();
         ctx->vars.three_phases = true;
         api::BptParams bpt{};
@@ -253,11 +245,8 @@ TEST_CASE("FsmContext helpers and shortcuts", "[evctl][helpers]") {
 
         auto ok = ctx->iso_start_charging(api::ChargeMode::AcIso2, std::nullopt, 0, 0);
         CHECK(ok == true);
-        // bpt is harmless metadata on non-D20 modes: etm stays AC_three_phase_core
-        // and no BPT pre-calls fire.
+        // bpt is harmless metadata on non-D20 modes: etm stays AC_three_phase_core.
         CHECK(contains_substr(fx.mocks.iso.records, "start_charging(mode=AC_three_phase_core,"));
-        CHECK_FALSE(contains_substr(fx.mocks.iso.records, "enable_sae_j2847"));
-        CHECK_FALSE(contains_substr(fx.mocks.iso.records, "set_bpt_dc_params"));
     }
 
     SECTION("iso_start_charging(DcIsoD20) with mcs selects MCS etm") {
@@ -267,9 +256,7 @@ TEST_CASE("FsmContext helpers and shortcuts", "[evctl][helpers]") {
         auto ok = ctx->iso_start_charging(api::ChargeMode::DcIsoD20, std::nullopt, 0, 0);
         CHECK(ok == true);
         CHECK(contains_substr(fx.mocks.iso.records, "start_charging(mode=MCS,"));
-        // MCS without BPT does not fire BPT pre-calls.
-        CHECK_FALSE(contains_substr(fx.mocks.iso.records, "enable_sae_j2847"));
-        CHECK_FALSE(contains_substr(fx.mocks.iso.records, "set_bpt_dc_params"));
+        CHECK_FALSE(contains_substr(fx.mocks.iso.records, "bpt_power"));
     }
 
     SECTION("iso_start_charging(DcIsoD20) with mcs + bpt selects MCS_BPT etm") {
@@ -285,18 +272,12 @@ TEST_CASE("FsmContext helpers and shortcuts", "[evctl][helpers]") {
         auto ok = ctx->iso_start_charging(api::ChargeMode::DcIsoD20, std::nullopt, 0, 0);
         CHECK(ok == true);
 
-        auto enable_idx = index_of_substr(fx.mocks.iso.records, "enable_sae_j2847_v2g_v2h");
-        auto set_bpt_idx = index_of_substr(fx.mocks.iso.records, "set_bpt_dc_params");
-        auto start_idx = index_of_substr(fx.mocks.iso.records, "start_charging(mode=MCS_BPT,");
-        REQUIRE(enable_idx >= 0);
-        REQUIRE(set_bpt_idx >= 0);
-        REQUIRE(start_idx >= 0);
-        CHECK(enable_idx < set_bpt_idx);
-        CHECK(set_bpt_idx < start_idx);
+        CHECK(contains_substr(fx.mocks.iso.records, "start_charging(mode=MCS_BPT,"));
+        CHECK(contains_substr(fx.mocks.iso.records, ",bpt_power=11000,bpt_current=32)"));
     }
 
     SECTION("iso_start_charging returns false when the wired peer rejects the start") {
-        // The peer is present and wired, but the ISO15118_ev side answers the
+        // The peer is present and wired, but the ISO 15118 side answers the
         // start_charging request negatively. iso_start_charging must propagate
         // that false back to the caller (V2GNegotiating routes it to Faulted).
         auto ctx = fx.make_ctx();
@@ -321,10 +302,10 @@ TEST_CASE("FsmContext helpers and shortcuts", "[evctl][helpers]") {
         CHECK(contains_substr(fx.mocks.iso.records, "start_charging(mode=AC_three_phase_core,"));
     }
 
-    SECTION("iso_start_charging forwards departure_time_s and e_amount_wh in kWh to the peer") {
+    SECTION("iso_start_charging forwards departure_time_s and e_amount_wh to the peer") {
         auto ctx = fx.make_ctx();
         ctx->iso_start_charging(api::ChargeMode::DcIso2, std::nullopt, 7200, 25500);
-        CHECK(contains_substr(fx.mocks.iso.records, "departure_time=7200,e_amount=25.5)"));
+        CHECK(contains_substr(fx.mocks.iso.records, "departure_time=7200,e_amount=25500)"));
     }
 
     SECTION("iso_start_charging forwards zeroed departure_time_s and e_amount_wh verbatim") {
@@ -985,7 +966,7 @@ TEST_CASE("EvController group1 transitions", "[evctl][group1]") {
     SECTION("V2GNegotiating.enter on iso_start_charging rejection: no pre-seed, "
             "InternalFault carries 'iso_start_charging rejected'") {
         auto ctx = fx.make_ctx();
-        ctx->peer_actions.iso = {}; // iso peer absent -> iso_start_charging false
+        fx.mocks.iso.next_start_charging_result = false; // the session refuses the start
         set_mode(*ctx, api::ChargeMode::DcIso2);
         V2GNegotiating s{*ctx};
         s.enter();
@@ -1087,7 +1068,7 @@ TEST_CASE("EvController group1 transitions", "[evctl][group1]") {
         V2GNegotiating s{*ctx};
         s.enter();
         CHECK(contains_substr(fx.mocks.iso.records, "start_charging"));
-        // The ISO peer times each step and always ends with v2g_session_finished.
+        // The ISO 15118 session times each step and always ends with IsoV2GFinished.
         CHECK(fx.timer.state_timer_arms.empty());
         auto decoded = api::deserialize<api::FsmState>(payload_for(fx.sink, state_topic));
         CHECK(decoded == api::FsmState::V2GNegotiating);

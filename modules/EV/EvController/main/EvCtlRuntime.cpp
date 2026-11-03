@@ -4,16 +4,21 @@
 
 #include "CommandRouter.hpp"
 #include "EventDispatch.hpp"
+#include "IsoSession.hpp"
 #include "PeerSubscriptions.hpp"
 #include "RampInterpolator.hpp"
 #include "SocIntegrator.hpp"
 #include "states/Disabled.hpp"
 
+#include <everest/exceptions.hpp>
+#include <everest/iso15118_ev_session/session_setup.hpp>
 #include <everest/logging.hpp>
+#include <fmt/format.h>
 
 #include <algorithm>
 #include <cerrno>
 #include <exception>
+#include <filesystem>
 #include <iterator>
 #include <stdexcept>
 #include <string>
@@ -41,9 +46,68 @@ void disarm_and_flush(everest::lib::io::event::timer_fd& fd) {
         EVLOG_error << "EvController: timer_fd flush read failed: errno=" << errno;
     }
 }
+
 } // namespace
 
+// The vehicle as configured. Ev15118's keys of the same names, except: the -2 AC EVMaxVoltage and
+// EVMaxCurrent are ac_nominal_voltage and max_current_a, PnC is a session's Contract payment, and
+// the -2 AC EAmount is the session's e_amount_wh.
+IsoSession::Settings iso_settings(const Conf& config, const std::filesystem::path& etc) {
+    std::string error;
+    auto functions = everest::lib::iso15118_ev::parse_der_iec_functions(config.der_iec_functions, error);
+    if (not functions) {
+        throw Everest::EverestConfigError("EvController: der_iec_functions: " + error);
+    }
+    IsoSession::Settings settings;
+    settings.device = config.hlc_device;
+    settings.supported_protocols = config.supported_protocols;
+    settings.sae_inverter_profile_path = config.sae_inverter_profile_path;
+    auto& vehicle = settings.vehicle;
+    vehicle.evcc_id = config.evcc_id;
+    vehicle.response_timeout_ms = config.response_timeout_ms;
+    vehicle.authorization_timeout_ms = config.authorization_timeout_ms;
+    vehicle.control_mode = config.control_mode;
+    vehicle.tls = config.tls;
+    vehicle.allow_pnc_without_tls = config.allow_pnc_without_tls;
+    vehicle.tls_version = config.tls_version;
+    vehicle.verify_server_certificate = config.verify_server_certificate;
+    vehicle.enable_tls_key_logging = config.enable_tls_key_logging;
+    vehicle.tls_key_logging_path = config.tls_key_logging_path;
+    vehicle.pki_path = config.pki_path;
+    vehicle.v2g_root_cert_path = config.v2g_root_cert_path;
+    vehicle.device_cert_chain_path = config.device_cert_chain_path;
+    vehicle.device_key_path = config.device_key_path;
+    vehicle.device_key_password_path = config.device_key_password_path;
+    vehicle.iso2_ac_ev_max_voltage_v = config.ac_nominal_voltage;
+    vehicle.iso2_ac_ev_max_current_a = config.max_current_a;
+    vehicle.iso2_ac_ev_min_current_a = config.min_current_a;
+    vehicle.pnc_contract_cert_chain_path = config.pnc_contract_cert_chain_path;
+    vehicle.pnc_contract_key_path = config.pnc_contract_key_path;
+    vehicle.pnc_contract_key_password_path = config.pnc_contract_key_password_path;
+    vehicle.pnc_oem_prov_cert_path = config.pnc_oem_prov_cert_path;
+    vehicle.pnc_oem_prov_key_path = config.pnc_oem_prov_key_path;
+    vehicle.pnc_oem_prov_key_password_path = config.pnc_oem_prov_key_password_path;
+    vehicle.pnc_force_cert_install = config.pnc_force_cert_install;
+    vehicle.pnc_contract_store_dir = config.pnc_contract_store_dir;
+    vehicle.ac_max_charge_power_w = config.ac_max_charge_power_w;
+    vehicle.ac_min_charge_power_w = config.ac_min_charge_power_w;
+    vehicle.der_functions = *functions;
+    vehicle.der_stop_on_unsupported_functions = config.der_stop_on_unsupported_functions;
+    vehicle.ac_max_discharge_power_w = config.ac_max_discharge_power_w;
+    vehicle.ac_min_discharge_power_w = config.ac_min_discharge_power_w;
+    vehicle.dc_max_discharge_power_w = config.dc_max_discharge_power_w;
+    vehicle.dc_min_discharge_power_w = config.dc_min_discharge_power_w;
+    vehicle.dc_max_discharge_current_a = config.dc_max_discharge_current_a;
+    // The manager checks it against the manifest bounds, [1, 65535].
+    vehicle.cpd_rounds = config.cpd_rounds;
+    vehicle.der_stop_on_invalid_control = config.der_stop_on_invalid_control;
+    vehicle.etc = etc;
+    return settings;
+}
+
 EvCtlRuntime::EvCtlRuntime(EvController& mod_) : mod(mod_) {
+    iso_session = std::make_unique<IsoSession>(iso_settings(mod.config, mod.info.paths.etc),
+                                               [this](Event ev) { enqueue(std::move(ev)); });
     auto actions = build_peer_actions();
 
     // MqttProvider::publish() is void / fire-and-forget; there is no
@@ -78,11 +142,10 @@ EvCtlRuntime::EvCtlRuntime(EvController& mod_) : mod(mod_) {
 }
 
 EvCtlRuntime::~EvCtlRuntime() {
-    // Stop taking events before anything is torn down. The eleven peer subscriptions (BSP, SLAC,
-    // ISO) cannot be detached: the generated interface hands back no token, so a publication can
-    // still arrive here while the queue and the eventfd below are being destroyed. This costs one
-    // relaxed load on a path that is already pushing to a queue, and it is correct whatever the
-    // framework does or does not guarantee about the order it shuts modules down in.
+    // Stop taking events before anything is torn down. The peer subscriptions (BSP, SLAC) cannot be detached: the
+    // generated interface hands back no token, so a publication can still arrive here while the queue and the eventfd
+    // below are being destroyed. This costs one relaxed load on a path that is already pushing to a queue, and it is
+    // correct whatever the framework does or does not guarantee about the order it shuts modules down in.
     accepting_events.store(false);
 
     // Detach MQTT m2e command-router subscriptions first: the captured
@@ -117,34 +180,20 @@ PeerActions EvCtlRuntime::build_peer_actions() {
     a.bsp.enable = [bsp](bool on) { bsp->call_enable(on); };
     a.bsp.present = true;
 
-    // ISO: optional. All ten functions and `present` are set in this block,
-    // never separately, so `iso.present` IFF the whole peer is wired.
-    if (!mod.r_ev.empty()) {
-        auto* iso = mod.r_ev[0].get();
-        a.iso.start_charging = [iso](::types::iso15118::EnergyTransferMode etm, ::types::iso15118::PaymentOption pay,
-                                     int32_t departure_time_s, double e_amount_kwh, bool force_payment_option) {
-            ::types::iso15118::SelectedPaymentOption selected{};
-            selected.payment_option = pay;
-            selected.enforce_payment_option = force_payment_option;
-            return iso->call_start_charging(etm, selected, static_cast<double>(departure_time_s), e_amount_kwh);
-        };
-        a.iso.stop_charging = [iso]() { iso->call_stop_charging(); };
-        a.iso.pause_charging = [iso]() { iso->call_pause_charging(); };
-        a.iso.update_soc = [iso](float pct) { iso->call_update_soc(static_cast<double>(pct)); };
-        a.iso.enable_sae_j2847_v2g_v2h = [iso]() { iso->call_enable_sae_j2847_v2g_v2h(); };
-        a.iso.set_bpt_dc_params = [iso](const ::types::iso15118::DcEvBPTParameters& params) {
-            iso->call_set_bpt_dc_params(params);
-        };
-        a.iso.set_dc_params = [iso](const ::types::iso15118::DcEvParameters& params) {
-            iso->call_set_dc_params(params);
-        };
-        a.iso.abort_charging = [iso]() { iso->call_abort_charging(); };
-        a.iso.cp_state_changed = [iso](::types::iso15118::CpState s) { iso->call_cp_state_changed(s); };
-        a.iso.update_present_values = [iso](const ::types::iso15118::EvPresentValues& values) {
-            iso->call_update_present_values(values);
-        };
-        a.iso.present = true;
-    }
+    // ISO 15118: in-process, always wired.
+    auto* iso = iso_session.get();
+    a.iso.start_charging = [iso](const IsoStart& start) { return iso->start_charging(start); };
+    a.iso.cannot_run = [iso](API_types::ev_controller::ChargeMode mode) { return iso->cannot_run(mode); };
+    a.iso.stop_charging = [iso]() { iso->stop_charging(); };
+    a.iso.pause_charging = [iso]() { iso->pause_charging(); };
+    a.iso.update_soc = [iso](float pct) { iso->update_soc(pct); };
+    a.iso.set_dc_params = [iso](const ::types::iso15118::DcEvParameters& params) { iso->set_dc_params(params); };
+    a.iso.abort_charging = [iso]() { iso->abort_charging(); };
+    a.iso.cp_state_changed = [iso](::types::iso15118::CpState s) { iso->cp_state_changed(s); };
+    a.iso.update_present_values = [iso](const ::types::iso15118::EvPresentValues& values) {
+        iso->update_present_values(values);
+    };
+    a.iso.admit = [iso](std::uint32_t session, bool ended) { return iso->admit(session, ended); };
 
     // SLAC: optional.
     if (!mod.r_slac.empty()) {
@@ -308,6 +357,21 @@ void EvCtlRuntime::drain_step(std::unique_ptr<fsm::v2::FSM<StateBase>>& fsm, Fsm
                 EVLOG_error << "EvController: unknown exception in configure_session";
             }
             continue;
+        }
+        // An event of a session that ended or was replaced is not this session's.
+        if (e->iso_session != 0) {
+            bool admitted = false;
+            try {
+                admitted =
+                    ctx.peer_actions.iso.admit(e->iso_session, std::holds_alternative<IsoV2GFinishedEvt>(e->payload));
+            } catch (const std::exception& ex) {
+                EVLOG_error << "EvController: exception admitting an ISO 15118 session event: " << ex.what();
+            } catch (...) {
+                EVLOG_error << "EvController: unknown exception admitting an ISO 15118 session event";
+            }
+            if (!admitted) {
+                continue;
+            }
         }
         try {
             apply_passthrough_vars(ctx, *e);
@@ -494,6 +558,16 @@ void EvCtlRuntime::publish_passthrough_external(FsmContext& ctx, const Event& ev
     case K::IsoDerControl:
         ctx.publish_e2m_der_control(std::get<IsoDerControlEvt>(ev.payload).value);
         break;
+    case K::IsoWeldingDetectionFailed: {
+        // The session ends with its own IsoV2GFinished; this only reports why.
+        const auto& failure = std::get<IsoWeldingDetectionFailedEvt>(ev.payload).failure;
+        const auto message =
+            fmt::format("welding detection failed after {} cycles, last voltage {}", failure.cycles,
+                        failure.last_voltage_V ? fmt::format("{:g} V", *failure.last_voltage_V) : "unknown");
+        ctx.publish_e2m_fault(API_types::ev_controller::FaultReport{API_types::ev_controller::FaultType::ChargerFault,
+                                                                    message, std::nullopt});
+        break;
+    }
     case K::SlacState:
         ctx.publish_e2m_slac_state();
         break;

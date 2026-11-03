@@ -33,6 +33,7 @@ target_sources(${TEST_TARGET} PRIVATE
     ConfigureSessionTest.cpp
     CrossBootPlugTest.cpp
     SessionEndTest.cpp
+    IsoSessionTest.cpp
     RuntimeTickTimerTest.cpp
     PeerMocks.cpp
     PublisherSink.cpp
@@ -40,6 +41,7 @@ target_sources(${TEST_TARGET} PRIVATE
     ../main/EventDispatch.cpp
     ../main/Events.cpp
     ../main/FsmContext.cpp
+    ../main/IsoSession.cpp
     ../main/StateBase.cpp
     ../main/states/Disabled.cpp
     ../main/states/Unplugged.cpp
@@ -66,7 +68,7 @@ target_compile_definitions(${TEST_TARGET} PRIVATE BUILD_TESTING_MODULE_EV_CONTRO
 target_link_options(${TEST_TARGET} PRIVATE "-Wl,--wrap=_ZNSt6chrono3_V212steady_clock3nowEv")
 target_link_libraries(${TEST_TARGET}
     PRIVATE everest::framework everest::log everest::util everest::everest_api_module_helpers everest::everest_api_types
-            everest::io
+            everest::io everest::iso15118_ev everest::iso15118_ev_session
             Catch2::Catch2WithMain Threads::Threads)
 
 if (NOT DISABLE_EDM)
@@ -77,3 +79,27 @@ endif ()
 
 add_test(${TEST_TARGET} ${TEST_TARGET})
 ev_register_test_target(${TEST_TARGET})
+
+# IsoSession on the fake Controller: the seam links in place of the library's Controller, so this
+# needs its own binary.
+set(ISO_SESSION_TEST_TARGET ${PROJECT_NAME}_EvController_iso_session_tests)
+add_executable(${ISO_SESSION_TEST_TARGET})
+add_dependencies(${ISO_SESSION_TEST_TARGET} ${MODULE_NAME})
+target_include_directories(${ISO_SESSION_TEST_TARGET} PRIVATE
+    ..
+    ${GENERATED_INCLUDE_DIR}
+    ${CMAKE_BINARY_DIR}/generated/modules/${MODULE_NAME}
+)
+target_sources(${ISO_SESSION_TEST_TARGET} PRIVATE
+    IsoSessionFakeTest.cpp
+    ../main/IsoSession.cpp
+    ../main/Events.cpp
+)
+target_link_libraries(${ISO_SESSION_TEST_TARGET}
+    PRIVATE everest::framework everest::log everest::util everest::everest_api_types everest::iso15118_ev
+            everest::iso15118_ev_session everest::iso15118_ev_fake_controller Catch2::Catch2WithMain Threads::Threads)
+if (NOT DISABLE_EDM)
+    catch_discover_tests(${ISO_SESSION_TEST_TARGET})
+endif ()
+add_test(${ISO_SESSION_TEST_TARGET} ${ISO_SESSION_TEST_TARGET})
+ev_register_test_target(${ISO_SESSION_TEST_TARGET})

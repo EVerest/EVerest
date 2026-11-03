@@ -192,6 +192,7 @@ StateBase::Result Paused::on_event(EventType ev) {
     case EK::Enable:
     case EK::IsoDerNegotiated:
     case EK::IsoDerControl:
+    case EK::IsoWeldingDetectionFailed:
     case EK::EvInfo:
     case EK::SlacState:
     case EK::DcEvsePresentCurrent:
@@ -219,7 +220,7 @@ StateBase::Result Paused::on_event(EventType ev) {
 
 StateBase::Result Paused::request_resume(int32_t edges) {
     m_edges = edges;
-    // The ISO15118_ev module runs one V2G comm session per start_charging. If the
+    // The ISO 15118 session runs once per start_charging. If the
     // paused session has not finished tearing down yet, defer the resume: starting
     // the BCB wake-up + re-SLAC now would let the previous session's lagging
     // SessionStop clobber the freshly re-established link (the SECC then drops to
@@ -227,8 +228,8 @@ StateBase::Result Paused::request_resume(int32_t edges) {
     // hangs). IsoV2GFinished releases it once the session is gone.
     if (ctx.vars.iso_session_active) {
         m_ev_resume = EvResume::AwaitSessionEnd;
-        // If the ISO15118_ev module never publishes v2g_session_finished
-        // (abnormal teardown), IsoV2GFinished never arrives and the deferred
+        // If the ISO 15118 session never ends (abnormal teardown),
+        // IsoV2GFinished never arrives and the deferred
         // resume would otherwise hang on the 1 h pause timer.
         ctx.arm_timer(kDeferredResumeFallback);
         return {false, nullptr};

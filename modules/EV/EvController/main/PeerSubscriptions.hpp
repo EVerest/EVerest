@@ -7,7 +7,7 @@
 
 namespace module {
 
-// Enqueues BSP, SLAC and ISO peer variables for the runtime to consume and republish.
+// Enqueues BSP and SLAC peer variables for the runtime to consume and republish.
 void setup_peer_subscriptions(EvCtlRuntime& rt, EvController& mod);
 
 } // namespace module
