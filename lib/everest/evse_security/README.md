@@ -99,7 +99,8 @@ have a flag to configure whether it uses the `default` provider or the `custom` 
 
 ## CTL configuration
 
-The CTL directory is not set by defaul, to point to a ctl add the directory to the active config with the line:  ctl_directory: "path/to/ctl/dir" 
+The CTL directory is not set by default.
+To point to a ctl add the directory to the active config with the line: [ctl_directory: "path/to/ctl/dir"]
 
 ## Garbage Collect
 
