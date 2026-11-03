@@ -52,8 +52,8 @@ using DeviceModelMap = std::map<Component, VariableMap>;
 
 /// \brief The entry of \p variable of \p component in a model keyed by component, then by variable, or nullptr
 template <typename Model>
-auto find_in_model(Model& model, const Component& component, const Variable& variable)
-    -> decltype(&model.begin()->second.begin()->second) {
+auto find_in_model(Model& model, const Component& component,
+                   const Variable& variable) -> decltype(&model.begin()->second.begin()->second) {
     const auto component_it = model.find(component);
     if (component_it == model.end()) {
         return nullptr;
@@ -126,8 +126,9 @@ public:
                                             const AttributeEnum& attribute_enum, const std::string& value,
                                             const std::string& source, bool allow_read_only_update = false) = 0;
 
-    /// \brief set_value with allow_read_only_update for the local channel, ChargePoint::set_variables, which writes the
-    /// component config only: a variable that a runtime owner registered is Rejected
+    /// \brief set_value for the local channel, ChargePoint::set_variables: a ReadOnly variable of the component config
+    /// may be written, a variable that a runtime owner registered is written like the CSMS writes it, through the
+    /// owner and only when it is ReadWrite
     virtual SetVariableStatusEnum set_local_value(const Component& component_id, const Variable& variable_id,
                                                   const AttributeEnum& attribute_enum, const std::string& value,
                                                   const std::string& source) {

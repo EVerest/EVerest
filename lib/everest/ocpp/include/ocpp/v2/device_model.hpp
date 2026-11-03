@@ -137,16 +137,12 @@ private:
     struct WriteRules {
         /// \brief Whether a ReadOnly attribute may be written
         bool allow_read_only_update{false};
-        /// \brief Whether a variable that a runtime owner registered may be written: false for the local channel only
-        bool allow_registered{false};
     };
 
-    static constexpr WriteRules CSMS_WRITE{/*allow_read_only_update=*/false, /*allow_registered=*/true};
-    /// \brief libocpp, and the CSMS through messages that change a ReadOnly variable
-    static constexpr WriteRules READ_ONLY_WRITE{/*allow_read_only_update=*/true, /*allow_registered=*/true};
-    /// \brief The local channel writes the component config only: a registered variable is changed by its owner,
-    /// through notify_value_changed or its provider, by the CSMS or by libocpp
-    static constexpr WriteRules LOCAL_WRITE{/*allow_read_only_update=*/true, /*allow_registered=*/false};
+    static constexpr WriteRules CSMS_WRITE{/*allow_read_only_update=*/false};
+    /// \brief libocpp, the CSMS through messages that change a ReadOnly variable, and set_local_value for the
+    /// component config
+    static constexpr WriteRules READ_ONLY_WRITE{/*allow_read_only_update=*/true};
 
     /// \brief Checks a write of \p value against the characteristics and the mutability of the variable and \p rules
     /// \return The variable to write to, or nullptr with the reason in \p status

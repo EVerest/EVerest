@@ -339,7 +339,11 @@ public:
     get_variables(const std::vector<GetVariableData>& get_variable_data_vector) = 0;
 
     /// \brief Sets variables specified within \p set_variable_data_vector in the device model and returns the result.
+    ///        This is the local channel, the integrator's own code rather than the CSMS: a ReadOnly variable of the
+    ///        component config may be written, and a variable that a runtime owner registered is written through its
+    ///        owner and only when it is ReadWrite, see DeviceModelInterface::set_local_value
     /// \param set_variable_data_vector contains data of the variables to set
+    /// \param source who sets the values, 'webinterface' for example
     /// \return Map containing the SetVariableData as a key and the  SetVariableResult as a value for each requested
     /// change
     virtual std::map<SetVariableData, SetVariableResult>

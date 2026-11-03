@@ -519,7 +519,7 @@ TEST_F(DeviceModelRegistryTest, libocpp_cannot_set_read_only_values_of_other_own
     EXPECT_EQ(get(evse, EvseComponentVariables::Power), "0");
 }
 
-TEST_F(DeviceModelRegistryTest, local_channel_writes_the_component_config_only) {
+TEST_F(DeviceModelRegistryTest, local_channel_writes_a_registered_variable_through_its_owner) {
     const auto evse = make_component("EVSE", 3);
     RegisteredComponent component;
     component.component = evse;
@@ -529,22 +529,25 @@ TEST_F(DeviceModelRegistryTest, local_channel_writes_the_component_config_only) 
     ASSERT_TRUE(dm->register_components(OTHER_OWNER, {component}, nullptr).rejected.empty());
     register_config_view();
 
-    // the registered variables are rejected whatever their mutability
+    // a ReadOnly registered variable is a value the owner reports
     EXPECT_EQ(dm->set_local_value(evse, EvseComponentVariables::Power, AttributeEnum::Actual, "100", "internal"),
               SetVariableStatusEnum::Rejected);
     EXPECT_EQ(get(evse, EvseComponentVariables::Power), "0");
-    EXPECT_EQ(dm->set_local_value(evse, EvseComponentVariables::AllowReset, AttributeEnum::Actual, "true", "internal"),
-              SetVariableStatusEnum::Rejected);
-    EXPECT_EQ(get(evse, EvseComponentVariables::AllowReset), "false");
-    EXPECT_EQ(dm->set_local_value(config_component, timeout, AttributeEnum::Actual, "90", "internal"),
-              SetVariableStatusEnum::Rejected);
-    EXPECT_TRUE(provider->received().empty());
-    EXPECT_EQ(get(config_component, timeout), "60");
 
-    // the CSMS still writes a ReadWrite registered variable, and the local channel still writes the component config
-    EXPECT_EQ(dm->set_value(evse, EvseComponentVariables::AllowReset, AttributeEnum::Actual, "true", "csms"),
+    // a ReadWrite registered variable is written like the CSMS writes it: stored, or handed to the provider
+    EXPECT_EQ(dm->set_local_value(evse, EvseComponentVariables::AllowReset, AttributeEnum::Actual, "true", "internal"),
               SetVariableStatusEnum::Accepted);
     EXPECT_EQ(get(evse, EvseComponentVariables::AllowReset), "true");
+    EXPECT_EQ(dm->set_local_value(config_component, timeout, AttributeEnum::Actual, "90", "internal"),
+              SetVariableStatusEnum::Accepted);
+    EXPECT_EQ(provider->received(), std::vector<std::string>{"90"});
+    EXPECT_EQ(get(config_component, timeout), "90");
+    provider->result = SetVariableStatusEnum::Rejected;
+    EXPECT_EQ(dm->set_local_value(config_component, timeout, AttributeEnum::Actual, "95", "internal"),
+              SetVariableStatusEnum::Rejected);
+    EXPECT_EQ(get(config_component, timeout), "90");
+
+    // the component config takes a ReadOnly write from the local channel
     EXPECT_EQ(dm->set_local_value(ControllerComponents::InternalCtrlr, make_variable("ChargePointModel"),
                                   AttributeEnum::Actual, "Model", "internal"),
               SetVariableStatusEnum::Accepted);

@@ -212,10 +212,14 @@ What happens then depends on whether the owner registered a `VariableValueProvid
 - Without a provider, libocpp stores the values of persistent attributes itself, and the owner learns of writes through
   the variable listeners.
 
-Writes from the local channel (`ChargePoint::set_variables`) reach the component config only: a registered variable is
-changed by its owner, by the CSMS or by libocpp. SetMonitoringBase and SetMonitoringLevel, which change a ReadOnly
-variable, an OCPP 1.6 ChangeConfiguration.req, which is rejected for a read-only key before anything is written, and
-the other writes of libocpp, to `NumberOfConnectors` for example, reach the owner like a SetVariables.req.
+The local channel is the integrator's own code calling `ChargePoint::set_variables`, as opposed to the CSMS; in
+EVerest it is the `ocpp` interface of the OCPPmulti module. Its writes may change a ReadOnly variable of the component
+config, which the integrator maintains that way: ReadOnly constrains the CSMS, not the integrator. A registered
+variable is written like a SetVariables.req writes it: through the owner, and only when it is ReadWrite, since a
+ReadOnly registered variable is a value the owner reports.
+SetMonitoringBase and SetMonitoringLevel, which change a ReadOnly variable, an OCPP 1.6 ChangeConfiguration.req, which
+is rejected for a read-only key before anything is written, and the other writes of libocpp, to `NumberOfConnectors`
+for example, reach the owner like a SetVariables.req.
 
 A change that the owner makes itself while a write to the same variable is in progress races with that write: the
 write may be stored after the report and overwrite it. Each write carries a write id. An owner that passes the id of

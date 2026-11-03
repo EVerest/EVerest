@@ -531,7 +531,10 @@ SetVariableStatusEnum DeviceModel::set_value(const Component& component, const V
 SetVariableStatusEnum DeviceModel::set_local_value(const Component& component, const Variable& variable,
                                                    const AttributeEnum& attribute_enum, const std::string& value,
                                                    const std::string& source) {
-    return this->check_and_write(Lock(this->mutex), component, variable, attribute_enum, value, source, LOCAL_WRITE);
+    Lock lock(this->mutex);
+    // A variable of a runtime owner is written like the CSMS writes it: through the owner, ReadWrite only
+    const auto rules = this->runtime_owner(component, variable).has_value() ? CSMS_WRITE : READ_ONLY_WRITE;
+    return this->check_and_write(std::move(lock), component, variable, attribute_enum, value, source, rules);
 }
 
 SetVariableStatusEnum DeviceModel::set_read_only_value(const Component& component, const Variable& variable,
@@ -547,7 +550,7 @@ SetVariableStatusEnum DeviceModel::set_read_only_value(const Component& componen
         throw std::invalid_argument("Not allowed to set read only value for component " + component.name.get() +
                                     " and variable " + variable.name.get());
     }
-    return this->check_and_write(std::move(lock), component, variable, attribute_enum, value, source, LOCAL_WRITE);
+    return this->check_and_write(std::move(lock), component, variable, attribute_enum, value, source, READ_ONLY_WRITE);
 }
 
 SetVariableStatusEnum DeviceModel::clear_value(const Component& component, const Variable& variable,
@@ -598,11 +601,6 @@ const ComposedVariable* DeviceModel::check_write(const Component& component, con
 
     if (!attribute->mutability.has_value() or
         ((attribute->mutability.value() == MutabilityEnum::ReadOnly) and !rules.allow_read_only_update)) {
-        status = SetVariableStatusEnum::Rejected;
-        return nullptr;
-    }
-
-    if (not rules.allow_registered and composed->registration != nullptr) {
         status = SetVariableStatusEnum::Rejected;
         return nullptr;
     }
@@ -979,9 +977,7 @@ void DeviceModel::remove_monitors_and_values_of_dropped_variables(
     }
     const auto reason = "owner " + owner + " no longer registers the variable";
     this->monitors.remove_if(
-        [&dropped](const StoredMonitor& stored) {
-            return dropped.count({stored.component, stored.variable}) != 0;
-        },
+        [&dropped](const StoredMonitor& stored) { return dropped.count({stored.component, stored.variable}) != 0; },
         reason);
     for (const auto& [component, variable] : dropped) {
         this->stored_values.remove_of_variable(component, variable, reason);
