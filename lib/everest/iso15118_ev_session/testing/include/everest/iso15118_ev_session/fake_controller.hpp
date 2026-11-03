@@ -58,6 +58,8 @@ void set_interface_present(bool present);
 void install_contract(const std::string& chain_pem, const std::string& key_pem, const std::string& emaid);
 // From a loop body: reports the EVSE's AC max current offer, as the -2 engine does.
 void offer_ac_evse_max_current(float current);
+// From a loop body: reports the SECC's PowerDelivery(Stop) acceptance, as the engines do.
+void stop_power_delivery();
 // From a loop body: reports a failed welding detection, as the engines do.
 void fail_welding_detection(float last_voltage_v, int cycles);
 // From a loop body: reports an AC_DER_IEC Dynamic charge-loop control block, as the -20 engine does.
