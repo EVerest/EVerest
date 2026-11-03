@@ -7,7 +7,7 @@
 
 #include <iso15118/ev/d20/der/sae_profile.hpp>
 
-namespace module {
+namespace everest::lib::iso15118_ev {
 
 // Reads a JSON object keyed by SaeInverterProfile field names, unit suffixes kept.
 // supported_modes is an array of iso15118::sae function names.
@@ -23,4 +23,4 @@ namespace module {
 std::optional<iso15118::ev::d20::der::SaeInverterProfile> parse_sae_inverter_profile(const std::string& path,
                                                                                      std::string& error);
 
-} // namespace module
+} // namespace everest::lib::iso15118_ev

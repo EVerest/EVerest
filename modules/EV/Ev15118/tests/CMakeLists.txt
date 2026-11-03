@@ -24,18 +24,13 @@ target_include_directories(${TEST_TARGET_NAME} PRIVATE
 target_sources(${TEST_TARGET_NAME} PRIVATE
     ConfigDefaultsTest.cpp
     ContractStoreTest.cpp
-    DerPublishNamesTest.cpp
     FakeController.cpp
     PkiPathTest.cpp
-    SaeProfileConfigTest.cpp
     SessionHandoffTest.cpp
     SessionParamsTest.cpp
     SessionPublicationsTest.cpp
     test_contract.cpp
     ../ev/ISO15118_evImpl.cpp
-    ../ev/contract_store.cpp
-    ../ev/der_publish_names.cpp
-    ../ev/sae_profile_config.cpp
 )
 
 target_compile_definitions(${TEST_TARGET_NAME} PRIVATE EVEREST_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
@@ -48,6 +43,7 @@ target_link_libraries(${TEST_TARGET_NAME} PRIVATE
     everest::iso15118_conversions
     everest::util
     everest::iso15118_ev
+    everest::iso15118_ev_session
     OpenSSL::Crypto
 )
 
