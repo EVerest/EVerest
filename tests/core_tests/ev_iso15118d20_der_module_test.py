@@ -14,43 +14,19 @@ from everest.testing.core_utils.controller.test_controller_interface import (
 from everest.testing.core_utils.everest_core import EverestCore
 from everest.testing.core_utils.probe_module import ProbeModule
 
-from ev_iso15118d20_common import EvManagerAdjustmentStrategy, _ev_device_adaptions, wait_for_call, wait_for_match
+from ev_iso15118d20_common import (
+    WATT_PF_DIRECTIVES,
+    EvManagerAdjustmentStrategy,
+    _ev_device_adaptions,
+    wait_for_call,
+    wait_for_match,
+)
 
 
 # The SECC publishes this literal for any negotiated AC ISO 15118-20 namespace, DER included.
 D20_AC_PROTOCOL = "ISO15118-20:AC and similar"
 
 AC_DER_IEC_SERVICE = "AC_DER_IEC"
-
-# The one grid_support directive the probe pushes into the SECC. Evse15118D20 relays WattPF onto the
-# IEC WattCosPhiMode control function, so WattCosPhiMode is the only bit the SECC's AC_DER_IEC
-# DERControlFunctions offer carries. config-sil-ac-der-d20.yaml declares WattCosPhiMode on the
-# EV, so the offer is within what the EV supports and the strict
-# der_stop_on_unsupported_functions path accepts it instead of stopping the session.
-#
-# x is a percentage of the EVSE maximum charge power, y a cos phi (its sign selects the excitation),
-# so this curve needs no EVSE reactive-power base to de-normalize.
-WATT_PF_DIRECTIVES = {
-    "evse_id": 1,
-    "directives": [
-        {
-            "id": "sil-der-watt-pf",
-            "directive_type": "WattPF",
-            "priority": 0,
-            "is_default": False,
-            "source": "SIL probe",
-            "received_at": "2026-01-01T00:00:00Z",
-            "curve": {
-                "y_unit": "Not_Applicable",
-                "curve_data": [
-                    {"x": 0.0, "y": 1.0},
-                    {"x": 50.0, "y": 0.97},
-                    {"x": 100.0, "y": 0.9},
-                ],
-            },
-        }
-    ],
-}
 
 # Driven from the probe rather than from auto_exec, so the session starts only after the SECC has
 # been told about the DER wiring. The chain is event-gated throughout (iso_wait_*).
@@ -73,7 +49,16 @@ SESSION_COMMANDS = (
     }
 )
 @pytest.mark.everest_core_config("config-sil-ac-der-d20.yaml")
-@pytest.mark.everest_config_adaptions(EvManagerAdjustmentStrategy(), *_ev_device_adaptions())
+# EvController declares DER functions as der_iec_functions, which Ev15118 takes as flags.
+@pytest.mark.everest_config_adaptions(
+    EvManagerAdjustmentStrategy(
+        der_watt_cos_phi_mode=True,
+        der_volt_var_mode=True,
+        der_dso_q_setpoint_provision=True,
+        der_dso_cos_phi_setpoint_provision=False,
+    ),
+    *_ev_device_adaptions(),
+)
 async def test_ev_iso15118d20_ac_der_iec_session(
     test_controller: TestController, everest_core: EverestCore
 ):

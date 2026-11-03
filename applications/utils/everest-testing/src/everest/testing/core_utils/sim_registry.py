@@ -184,6 +184,9 @@ class EvControllerDriver(_MqttSimDriver):
     def __init__(self, mqtt_client, mqtt_external_prefix: str, module_id: str):
         super().__init__(mqtt_client, mqtt_external_prefix, module_id, api="ev_controller")
         self.world_driver: Optional[EvDriverSimDriver] = None
+        # Whether the module's supported_protocols (manifest default ISO15118_20) lists ISO 15118-20
+        # first. EvController offers -20 only to a -20 charge mode.
+        self.prefers_iso15118_20 = True
 
     def arm(self) -> None:
         """Also record the car's state and events from boot.
@@ -439,6 +442,8 @@ class SimRegistry:
             cid = ((mblock.get("config_module") or {}).get("connector_id"))
             if module_name == "EvController":
                 drv = EvControllerDriver(self._mqtt, self._prefix, mid)
+                protocols = str((mblock.get("config_module") or {}).get("supported_protocols", "ISO15118_20"))
+                drv.prefers_iso15118_20 = protocols.split(",")[0].strip() == "ISO15118_20"
                 self._by_module[mid] = drv
                 if isinstance(cid, int):
                     self._by_connector[cid] = drv

@@ -58,11 +58,14 @@ _EV_MANAGER_BPT = {
 }
 
 
-def _dc_session_for_energy_mode(energy_mode: str, params: dict) -> tuple:
-    """Map an EvManager iso_start_v2g_session energy mode to an EvController session."""
+def _dc_session_for_energy_mode(energy_mode: str, params: dict, d20: bool) -> tuple:
+    """Map an EvManager iso_start_v2g_session energy mode to an EvController session.
+
+    d20 picks the ISO 15118-20 mode for DC, for an EV that lists -20 first.
+    """
     key = energy_mode.strip().lower()
     if key == "dc":
-        return "DcIso2", params
+        return ("DcIsoD20" if d20 else "DcIso2"), params
     if key == "dc_bpt":
         return "DcIsoD20", {**params, "bpt": dict(_EV_MANAGER_BPT)}
     raise ValueError(f"unknown energy_mode {energy_mode!r}; expected DC or dc_bpt (case-insensitive)")
@@ -164,7 +167,7 @@ class EverestTestController(TestController):
                         "departure_time_s": 86400, "e_amount_wh": 0}
         if payment_type:
             params["payment"] = _normalize_payment_option(payment_type)
-        drv.configure_session("AcIso2", params)
+        drv.configure_session("AcIsoD20" if drv.prefers_iso15118_20 else "AcIso2", params)
         world.plug()
 
     def plug_in_dc_iso(self, connector_id=1, payment_type="", energy_mode="DC"):
@@ -173,7 +176,7 @@ class EverestTestController(TestController):
         params: dict = {"departure_time_s": 86400, "e_amount_wh": 0}
         if payment_type:
             params["payment"] = _normalize_payment_option(payment_type)
-        drv.configure_session(*_dc_session_for_energy_mode(energy_mode, params))
+        drv.configure_session(*_dc_session_for_energy_mode(energy_mode, params, drv.prefers_iso15118_20))
         world.plug()
 
     def plug_out(self, connector_id=1):

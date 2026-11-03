@@ -82,18 +82,18 @@ class DcConfigAdjustmentStrategy(EverestConfigAdjustmentStrategy):
 
     def adjust_everest_configuration(self, everest_config: Dict):
         adjusted_config = deepcopy(everest_config)
-        adjusted_config["active_modules"]["iso15118_car"]["config_module"]["supported_protocols"] = "ISO15118_20" if self.ev_d20_only else "ISO15118_2"
+        adjusted_config["active_modules"]["ev_manager"]["config_module"]["supported_protocols"] = "ISO15118_20" if self.ev_d20_only else "ISO15118_2"
         adjusted_config["active_modules"]["evse_manager"]["config_module"]["hack_allow_bpt_with_iso2"] = False
         adjusted_config["active_modules"]["powersupply_dc"]["config_implementation"] = {"main": {"min_current": 0}}
         adjusted_config["active_modules"]["evse_manager"]["config_module"]["zero_power_ignore_pause"] = self.zero_power_ignore_pause
         adjusted_config["active_modules"]["evse_manager"]["config_module"]["hlc_charge_loop_without_energy_timeout_s"] = self.hlc_charge_loop_without_energy_timeout_s
-        # Ev15118 has no ISO 15118-20 Plug and Charge, so the SECC offers a -20 only EV EIM alone
+        # The EV has no ISO 15118-20 Plug and Charge, so the SECC offers a -20 only EV EIM alone
         adjusted_config["active_modules"]["evse_manager"]["config_module"]["payment_enable_contract"] = self.payment_enable_contract and not self.ev_d20_only
         adjusted_config["active_modules"]["ev_manager"]["config_module"]["force_payment_option"] = self.force_payment_option
         if self.force_payment_option:
-            # Ev15118 offers Contract only over TLS
-            adjusted_config["active_modules"]["iso15118_car"]["config_module"]["tls"] = "prefer"
-            adjusted_config["active_modules"]["iso15118_car"]["config_module"]["tls_version"] = "1.2"
+            # The EV offers Contract only over TLS
+            adjusted_config["active_modules"]["ev_manager"]["config_module"]["tls"] = "prefer"
+            adjusted_config["active_modules"]["ev_manager"]["config_module"]["tls_version"] = "1.2"
         adjusted_config["active_modules"]["imd"]["config_implementation"]["main"]["resistance_F_Ohm"] = 0 if self.fail_cable_check else 900000
         adjusted_config["active_modules"]["evse_manager"]["config_module"]["cable_check_wait_number_of_imd_measurements"] = self.cable_check_measurements
         return adjusted_config
@@ -133,7 +133,7 @@ class D20TlsConfigAdjustmentStrategy(EverestConfigAdjustmentStrategy):
 
     def adjust_everest_configuration(self, everest_config: Dict):
         adjusted_config = deepcopy(everest_config)
-        ev = adjusted_config["active_modules"]["iso15118_car"]["config_module"]
+        ev = adjusted_config["active_modules"]["ev_manager"]["config_module"]
         secc = adjusted_config["active_modules"]["iso15118_charger"]["config_module"]
 
         ev["tls"] = "require"
@@ -156,7 +156,7 @@ class D20ScheduledModeAdjustmentStrategy(EverestConfigAdjustmentStrategy):
     def adjust_everest_configuration(self, everest_config: Dict):
         adjusted_config = deepcopy(everest_config)
         adjusted_config["active_modules"]["iso15118_charger"]["config_module"]["supported_scheduled_mode"] = True
-        adjusted_config["active_modules"]["iso15118_car"]["config_module"]["control_mode"] = "Scheduled"
+        adjusted_config["active_modules"]["ev_manager"]["config_module"]["control_mode"] = "Scheduled"
         return adjusted_config
 
 
@@ -168,7 +168,7 @@ class TlsVersionAutoAdjustmentStrategy(EverestConfigAdjustmentStrategy):
 
     def adjust_everest_configuration(self, everest_config: Dict):
         adjusted_config = deepcopy(everest_config)
-        ev = adjusted_config["active_modules"]["iso15118_car"]["config_module"]
+        ev = adjusted_config["active_modules"]["ev_manager"]["config_module"]
         ev["tls"] = "require"
         ev["tls_version"] = "auto"
         ev["supported_protocols"] = "ISO15118_20,ISO15118_2"
@@ -625,12 +625,12 @@ def last_energy_wh(powermeter_mock) -> float:
 
 
 def assert_d20_dc_session_rejoined(v2g_messages_mock):
-    """Assert the EV's v2g_messages since the mock was reset show a re-joined ISO 15118-20 DC session.
+    """Assert the SECC's v2g_messages since the mock was reset show a re-joined ISO 15118-20 DC session.
 
-    The EV publishes the id of every response it receives. After OK_OldSessionJoined it continues
-    at DC_ChargeParameterDiscovery; a new session would go on with AuthorizationSetup instead.
+    The SECC publishes the id of every message it receives and sends. After OK_OldSessionJoined the
+    EV continues at DC_ChargeParameterDiscovery; a new session would go on with AuthorizationSetup.
     """
-    ids = [call[0][0]["id"] for call in v2g_messages_mock.call_args_list]
+    ids = [call[0][0]["id"] for call in v2g_messages_mock.call_args_list if call[0][0]["id"].endswith("Res")]
     assert "SessionSetupRes" in ids, f"No SessionSetupRes in v2g_messages: {ids}"
     assert "AuthorizationSetupRes" not in ids, f"The resumed session was set up anew: {ids}"
     assert ids[ids.index("SessionSetupRes") + 1] == "DcChargeParameterDiscoveryRes", ids
@@ -1418,7 +1418,7 @@ async def test_iso15118_dc_session_paused_by_ev(
 @pytest.mark.probe_module(
     connections={
         "evse_manager": [Requirement("evse_manager", "evse")],
-        "ev": [Requirement("iso15118_car", "ev")],
+        "charger": [Requirement("iso15118_charger", "charger")],
     }
 )
 @pytest.mark.xdist_group(name="ISO15118")
@@ -1442,7 +1442,7 @@ async def test_iso15118_20_dc_session_paused_by_ev(
         test_controller, everest_core
     )
     v2g_messages_mock = Mock()
-    probe_module.subscribe_variable("ev", "v2g_messages", v2g_messages_mock)
+    probe_module.subscribe_variable("charger", "v2g_messages", v2g_messages_mock)
 
     await start_session(test_controller, session_event_mock, test_controller.plug_in_dc_iso)
     await assert_energy_exceeds(powermeter_mock, energy_threshold_wh=10, timeout=15)
@@ -1461,7 +1461,7 @@ async def test_iso15118_20_dc_session_paused_by_ev(
 @pytest.mark.probe_module(
     connections={
         "evse_manager": [Requirement("evse_manager", "evse")],
-        "ev": [Requirement("iso15118_car", "ev")],
+        "charger": [Requirement("iso15118_charger", "charger")],
     }
 )
 @pytest.mark.xdist_group(name="ISO15118")
@@ -1482,7 +1482,7 @@ async def test_iso15118_20_dc_session_paused_by_evse(
         test_controller, everest_core
     )
     v2g_messages_mock = Mock()
-    probe_module.subscribe_variable("ev", "v2g_messages", v2g_messages_mock)
+    probe_module.subscribe_variable("charger", "v2g_messages", v2g_messages_mock)
 
     await start_session(test_controller, session_event_mock, test_controller.plug_in_dc_iso)
     await assert_energy_exceeds(powermeter_mock, energy_threshold_wh=10, timeout=15)

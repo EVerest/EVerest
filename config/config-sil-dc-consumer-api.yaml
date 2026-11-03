@@ -73,11 +73,6 @@ active_modules:
       security:
         - module_id: evse_security
           implementation_id: main
-  iso15118_car:
-    module: Ev15118
-    config_module:
-      device: auto
-      supported_protocols: ISO15118_2,DIN70121
   evse_manager:
     module: EvseManager
     config_module:
@@ -139,6 +134,8 @@ active_modules:
   ev_manager:
     module: EvController
     config_module:
+      hlc_device: auto
+      supported_protocols: ISO15118_2,DIN70121
       connector_id: 1
       dc_target_current: 20
       dc_target_voltage: 400
@@ -146,9 +143,6 @@ active_modules:
       ev_board_support:
         - module_id: ev_manager_driver
           implementation_id: board_support
-      ev:
-        - module_id: iso15118_car
-          implementation_id: ev
       slac:
         - module_id: slac
           implementation_id: ev
@@ -270,18 +264,6 @@ x-module-layout:
         - id: security
           interface: evse_security
           type: requirement
-  iso15118_car:
-    position:
-      x: -8
-      'y': 35
-    terminals:
-      top: []
-      right:
-        - id: ev
-          interface: ISO15118_ev
-          type: provide
-      bottom: []
-      left: []
   evse_manager:
     position:
       x: 33
@@ -434,9 +416,6 @@ x-module-layout:
           type: requirement
         - id: ev_board_support
           interface: ev_board_support
-          type: requirement
-        - id: ev
-          interface: ISO15118_ev
           type: requirement
   ev_manager_driver:
     position:
