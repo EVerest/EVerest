@@ -2,11 +2,15 @@
 {# Copyright Pionix GmbH and Contributors to EVerest #}
 {# Schema tree rendering. A node is a doc_model.SchemaNode. #}
 
+{# data-api-page marks a link to another API's page for the Sphinx hook in
+   conf.py that rewrites href for the builder in use. #}
+{% macro ref_href(ref) %}href="{{ ref.href }}"{% if ref.page %} data-api-page="{{ ref.page }}"{% endif %}{% endmacro %}
+
 {% macro head(node) %}
-<span class="s-name">{{ node.name }}</span>
+{% if node.name is not none %}<span class="s-name">{{ node.name }}</span>{% endif %}
 <span class="s-type">{{ node.type }}</span>
 {% if node.required %}<span class="s-req">required</span>{% endif %}
-{% if node.ref %}<a class="s-ref" href="{{ node.ref.href }}" title="{{ node.ref.file_name }}">{{ node.ref.name }}{% if node.ref.external %} ↗{% endif %}</a>{% endif %}
+{% if node.ref %}<a class="s-ref" {{ ref_href(node.ref) }} title="{{ node.ref.file_name }}">{{ node.ref.name }}{% if node.ref.external %} ↗{% endif %}</a>{% endif %}
 {% endmacro %}
 
 {% macro details_body(node) %}
@@ -59,13 +63,13 @@
 {% macro root(node) %}
 {% if node.deferred %}
 <details class="s-node s-top" data-inline="{{ node.ref.anchor }}" open>
-<summary><span class="s-type">{{ node.type }}</span> <a class="s-ref" href="{{ node.ref.href }}" title="{{ node.ref.file_name }}">{{ node.ref.name }}{% if node.ref.external %} ↗{% endif %}</a></summary>
+<summary><span class="s-type">{{ node.type }}</span> <a class="s-ref" {{ ref_href(node.ref) }} title="{{ node.ref.file_name }}">{{ node.ref.name }}{% if node.ref.external %} ↗{% endif %}</a></summary>
 {% if node.description %}<div class="s-desc">{{ node.description | md }}</div>{% endif %}
 <p class="s-inline"><a href="#{{ node.ref.anchor }}">Definition of {{ node.ref.name }}</a></p>
 </details>
 {% else %}
 <div class="s-root">
-<div class="s-head"><span class="s-type">{{ node.type }}</span>{% if node.ref %} <a class="s-ref" href="{{ node.ref.href }}" title="{{ node.ref.file_name }}">{{ node.ref.name }}{% if node.ref.external %} ↗{% endif %}</a>{% endif %}</div>
+<div class="s-head"><span class="s-type">{{ node.type }}</span>{% if node.ref %} <a class="s-ref" {{ ref_href(node.ref) }} title="{{ node.ref.file_name }}">{{ node.ref.name }}{% if node.ref.external %} ↗{% endif %}</a>{% endif %}</div>
 {{ details_body(node) }}
 </div>
 {% endif %}

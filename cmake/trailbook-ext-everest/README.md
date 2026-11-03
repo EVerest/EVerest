@@ -26,8 +26,7 @@ Every generator registers the files it writes into the trailbook instance
 source directory (`extension-helpers.cmake`). At the end of each configure run,
 the files recorded by the previous run that no generator registered again are
 deleted, so a removed interface, type, module or handwritten page does not
-linger in the glob toctrees. The API reference generator cleans its own page
-directories the same way.
+linger in the glob toctrees or the API reference.
 
 ## Dependencies of the generators
 
@@ -41,4 +40,7 @@ Each command is wrapped in a custom target because CMake only keeps a
 custom command whose output some target in the same directory depends on,
 and the module commands are defined below `modules/<Category>/`. The
 wrapper targets and the generated files are what the Sphinx stage depends
-on.
+on. The API reference command rewrites only the pages whose content changed,
+so Sphinx reads only those again; its pages are byproducts and a stamp file
+is its output, since unchanged pages keep a modification time older than
+their inputs.

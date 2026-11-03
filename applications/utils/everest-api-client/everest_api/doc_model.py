@@ -10,6 +10,7 @@ followed through a SpecSet and keep a link to the page that defines them.
 """
 
 import json
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, List, Optional
@@ -60,6 +61,9 @@ class SchemaRef:
     external: bool
     # id of the rendering on this page that tree nodes copy their structure from
     anchor: str
+    # page name of another API, for the Sphinx hook that turns href into the
+    # builder's URL of that page; None on this page
+    page: Optional[str] = None
 
 
 @dataclass
@@ -187,8 +191,26 @@ class DocModel:
 
 
 def page_name(file_name):
-    """Directory name of a spec's page: the file name without .yaml."""
+    """Document name of a spec's page: the file name without .yaml."""
     return Path(file_name).stem
+
+
+def page_label(page):
+    return f"everest_api_{page}"
+
+
+def op_label(page, op_id):
+    return f"{page_label(page)}_op_{op_id}"
+
+
+def make_id(name):
+    """The HTML id docutils gives the target *name* (docutils.nodes.make_id
+    for ASCII names)."""
+    return re.sub(r"^[-0-9]+|-+$", "", re.sub(r"[^a-z0-9]+", "-", name.lower()))
+
+
+def op_anchor(page, op_id):
+    return make_id(op_label(page, op_id))
 
 
 def schema_anchor(name):
@@ -203,9 +225,9 @@ def _schema_ref(page_file, target_file, name):
     if target_file == page_file:
         anchor = schema_anchor(name)
         return SchemaRef(target_file, name, f"#{anchor}", False, anchor)
-    return SchemaRef(target_file, name,
-                     f"../{page_name(target_file)}/index.html#{schema_anchor(name)}",
-                     True, imported_schema_anchor(target_file, name))
+    page = page_name(target_file)
+    return SchemaRef(target_file, name, f"{page}.html#{schema_anchor(name)}",
+                     True, imported_schema_anchor(target_file, name), page)
 
 
 def _text(value):
@@ -262,8 +284,8 @@ class _SchemaBuilder:
 
         node = SchemaNode(name=name, type=_type_label(schema), required=required,
                           description=_text(schema.get("description")), ref=ref)
-        node.enum = list(schema.get("enum", []))
-        node.constraints = [(label, _constraint_value(schema[key]))
+        node.enum = [_json_value(v) for v in schema.get("enum", [])]
+        node.constraints = [(label, _json_value(schema[key]))
                             for key, label in _CONSTRAINTS if key in schema]
         if ((depth > 0 or defer_root) and ref is not None
                 and any(k in schema for k in ("properties", "items", "allOf", "oneOf", "anyOf"))):
@@ -287,9 +309,16 @@ class _SchemaBuilder:
             node.children = [self._node(schema["items"], file_name, "items", False, depth + 1)]
             node.children_kind = "items"
         for combinator in ("allOf", "oneOf", "anyOf"):
-            if isinstance(schema.get(combinator), list) and not node.children:
-                node.children = [self._node(sub, file_name, f"#{i + 1}", False, depth + 1)
-                                 for i, sub in enumerate(schema[combinator])]
+            if not isinstance(schema.get(combinator), list):
+                continue
+            branches = [self._node(sub, file_name, f"#{i + 1}", False, depth + 1)
+                        for i, sub in enumerate(schema[combinator])]
+            if node.children:
+                # next to properties, items or another combinator: a group of its own
+                node.children.append(SchemaNode(name=None, type=combinator, children=branches,
+                                                children_kind=combinator))
+            else:
+                node.children = branches
                 node.children_kind = combinator
         return node
 
@@ -315,12 +344,12 @@ def _type_label(schema):
     return label
 
 
-def _constraint_value(value):
-    if isinstance(value, bool):
-        return "yes" if value else "no"
-    if isinstance(value, (dict, list)):
-        return json.dumps(value, ensure_ascii=False)
-    return str(value)
+def _json_value(value):
+    """A schema value as readers write it in a payload: JSON, except that
+    strings stay unquoted."""
+    if isinstance(value, str):
+        return value
+    return json.dumps(json_compatible(value), ensure_ascii=False, default=str)
 
 
 class _SampleBuilder:

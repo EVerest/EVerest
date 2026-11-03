@@ -229,14 +229,15 @@ would touch.
 
 `docs/source/reference/EVerest_API/*.yaml` feed the EVerest API client in
 `applications/utils/everest-api-client/` and, through its `everest_api.docs_cli` entry
-point, the HTML reference of the docs build (`reference/api/<name>/index.html`, one
-shared `reference/api/_assets/`, and the RST index page). The docs build runs that
-generator once for all specs into the trailbook instance source directory, and Sphinx
-copies the pages in through `html_extra_path`. The generator validates every spec
-against the AsyncAPI 3.0 schema vendored in `everest_api/schemas/`, so a malformed spec
-fails the docs build. After editing a spec, the client or the generator, run the
-client's tests, which validate, load and render every spec and check links, anchors and
-that nothing from a spec is dropped:
+point, the API reference of the manual: a Sphinx page `reference/api/<name>.rst` per
+spec, the index page listing them, and a stylesheet and script in
+`_static/everest-api/` that `docs/conf.py.in` adds to those pages only. The docs build
+runs that generator once for all specs into the trailbook instance source directory.
+The generator validates every spec against the AsyncAPI 3.0 schema vendored in
+`everest_api/schemas/`, so a malformed spec fails the docs build. After editing a spec,
+the client or the generator, run the client's tests, which validate, load and render
+every spec, build the pages with Sphinx (`-W`, skipped without Sphinx) and check links,
+anchors and that nothing from a spec is dropped:
 
 ```bash
 python3 -m pytest applications/utils/everest-api-client/tests

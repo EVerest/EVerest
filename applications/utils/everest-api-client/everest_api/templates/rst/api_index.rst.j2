@@ -18,6 +18,13 @@
 
 {% endif %}
 {% for model in models %}
-* `{{ model.name }} <{{ model.name }}/index.html>`_{% if model.experimental %} — **experimental**{% if model.experimental.since %} (since {{ model.experimental.since }}){% endif %}{% endif %}
+- :doc:`{{ model.name }}`{% if model.experimental %} (experimental{% if model.experimental.since %} since {{ model.experimental.since }}{% endif %}){% endif %}
 
+{% endfor %}
+
+.. toctree::
+   :hidden:
+
+{% for model in models %}
+   {{ model.name }}
 {% endfor %}

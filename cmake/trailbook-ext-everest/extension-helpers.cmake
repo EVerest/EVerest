@@ -132,27 +132,36 @@ endfunction()
 # the Sphinx stage depend on both. The target is what keeps the generating
 # command alive: CMake drops a custom command whose output no target in the
 # same directory depends on, and the module commands live below modules/.
+# A command that leaves unchanged files untouched declares them as byproducts
+# and a stamp file as its output; STAMP then takes the place of FILES in the
+# dependencies.
 #
 # Usage:
 # _trailbook_ev_add_generated(
 #     TRAILBOOK_NAME <trailbook_name>
 #     TARGET <target_name>
 #     FILES <file>...
+#     [STAMP <stamp_file>]
 # )
 function(_trailbook_ev_add_generated)
-    cmake_parse_arguments("args" "" "TRAILBOOK_NAME;TARGET" "FILES" ${ARGN})
+    cmake_parse_arguments("args" "" "TRAILBOOK_NAME;TARGET;STAMP" "FILES" ${ARGN})
     _trailbook_ev_register_generated_files(
         TRAILBOOK_NAME ${args_TRAILBOOK_NAME}
         FILES ${args_FILES}
     )
-    add_custom_target(${args_TARGET} DEPENDS ${args_FILES})
+    if(args_STAMP)
+        set(OUTPUTS "${args_STAMP}")
+    else()
+        set(OUTPUTS ${args_FILES})
+    endif()
+    add_custom_target(${args_TARGET} DEPENDS ${OUTPUTS})
     set_property(
         TARGET
             trailbook_${args_TRAILBOOK_NAME}
         APPEND
         PROPERTY
             ADDITIONAL_DEPS_STAGE_BUILD_SPHINX_BEFORE
-                ${args_FILES}
+                ${OUTPUTS}
                 ${args_TARGET}
     )
 endfunction()

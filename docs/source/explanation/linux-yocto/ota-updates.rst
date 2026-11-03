@@ -218,7 +218,7 @@ Custom Update Mechanism
 
 In case you do not want to use RAUC and/or integrate your custom update
 mechanism into EVerest, you can also implement the
-`EVerest System API <../../reference/api/system_API/index.html>`_.
+:doc:`EVerest System API </reference/api/system_API>`.
 This would still  allow you to update EVerest via OCPP, but you would need to handle
 the actual update process yourself and provide status updates to EVerest via the
 System API.
