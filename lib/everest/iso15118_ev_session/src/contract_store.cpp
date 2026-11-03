@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
-#include "contract_store.hpp"
+#include <everest/iso15118_ev_session/contract_store.hpp>
 
 #include <algorithm>
 #include <array>
@@ -19,7 +19,7 @@
 
 #include <iso15118/ev/d2/pnc_material.hpp>
 
-namespace module {
+namespace everest::lib::iso15118_ev {
 
 namespace {
 
@@ -230,4 +230,4 @@ std::optional<iso15118::ev::d2::ContractMaterial> load_stored_contract(const fs:
     return contract;
 }
 
-} // namespace module
+} // namespace everest::lib::iso15118_ev

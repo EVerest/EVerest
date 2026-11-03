@@ -9,7 +9,7 @@
 
 #include <iso15118/ev/d20/der/sae_validation.hpp>
 
-namespace module {
+namespace everest::lib::iso15118_ev {
 
 // The functions of the set bits, in ascending bit order. SAE bits are sae_function_bit()
 // positions, IEC bits iec::DERControlName positions. Bits that name no enumerator are skipped.
@@ -24,4 +24,4 @@ types::iso15118::DerControlReceived
 sae_der_control_received(types::iso15118::DerControlSource source, bool permit_service, std::uint32_t enabled,
                          const iso15118::ev::d20::der::DerControlProblems& problems);
 
-} // namespace module
+} // namespace everest::lib::iso15118_ev

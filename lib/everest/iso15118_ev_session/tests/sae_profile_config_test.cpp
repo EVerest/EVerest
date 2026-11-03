@@ -17,7 +17,7 @@
 #include <iso15118/ev/config/validation.hpp>
 #include <iso15118/sae_modes.hpp>
 
-#include "sae_profile_config.hpp"
+#include <everest/iso15118_ev_session/sae_profile_config.hpp>
 
 namespace {
 
@@ -76,7 +76,7 @@ protected:
     }
 
     std::optional<SaeInverterProfile> parse(const std::string& content) {
-        return module::parse_sae_inverter_profile(write_profile(content), error);
+        return everest::lib::iso15118_ev::parse_sae_inverter_profile(write_profile(content), error);
     }
 
     // Expects a failure whose error names the key.
@@ -110,7 +110,7 @@ protected:
 };
 
 TEST_F(SaeProfileConfigTest, EmptyPathReturnsDefaultsWithoutError) {
-    const auto profile = module::parse_sae_inverter_profile("", error);
+    const auto profile = everest::lib::iso15118_ev::parse_sae_inverter_profile("", error);
 
     ASSERT_TRUE(profile.has_value());
     EXPECT_TRUE(error.empty());
@@ -125,7 +125,7 @@ TEST_F(SaeProfileConfigTest, EmptyPathReturnsDefaultsWithoutError) {
 
 TEST_F(SaeProfileConfigTest, MissingPathOrDirectoryFailsNamingThePath) {
     for (const auto& path : {(dir / "missing.json").string(), dir.string()}) {
-        EXPECT_FALSE(module::parse_sae_inverter_profile(path, error).has_value());
+        EXPECT_FALSE(everest::lib::iso15118_ev::parse_sae_inverter_profile(path, error).has_value());
         EXPECT_NE(error.find(path), std::string::npos) << error;
     }
 }
@@ -352,7 +352,7 @@ TEST_F(SaeProfileConfigTest, ErrorIsClearedOnEachCall) {
     EXPECT_FALSE(parse(R"({"bogus": 1})").has_value());
     ASSERT_FALSE(error.empty());
 
-    ASSERT_TRUE(module::parse_sae_inverter_profile("", error).has_value());
+    ASSERT_TRUE(everest::lib::iso15118_ev::parse_sae_inverter_profile("", error).has_value());
     EXPECT_TRUE(error.empty());
 }
 

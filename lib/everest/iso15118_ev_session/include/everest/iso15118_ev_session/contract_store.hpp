@@ -8,7 +8,7 @@
 
 #include <iso15118/ev/d2/pnc_config.hpp>
 
-namespace module {
+namespace everest::lib::iso15118_ev {
 
 // The contract a chain (leaf first) and a key hold, when the chain decodes, the leaf carries an
 // eMAID, derived from its CommonName as for a configured contract, and the key is the leaf's.
@@ -38,4 +38,4 @@ bool store_contract(const std::filesystem::path& dir, const std::string& chain_p
 std::optional<iso15118::ev::d2::ContractMaterial> load_stored_contract(const std::filesystem::path& dir,
                                                                        std::string& error);
 
-} // namespace module
+} // namespace everest::lib::iso15118_ev

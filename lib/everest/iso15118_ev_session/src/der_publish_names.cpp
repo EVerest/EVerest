@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
-#include "der_publish_names.hpp"
+#include <everest/iso15118_ev_session/der_publish_names.hpp>
 
 #include <cstddef>
 #include <stdexcept>
@@ -9,7 +9,7 @@
 #include <iso15118/ev/d20/der/iec_functions.hpp>
 #include <iso15118/sae_modes.hpp>
 
-namespace module {
+namespace everest::lib::iso15118_ev {
 
 namespace {
 
@@ -161,4 +161,4 @@ sae_der_control_received(types::iso15118::DerControlSource source, bool permit_s
     return received;
 }
 
-} // namespace module
+} // namespace everest::lib::iso15118_ev
