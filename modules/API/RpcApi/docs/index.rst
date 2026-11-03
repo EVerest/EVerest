@@ -91,6 +91,18 @@ Feature Overview
 | Display parameters (ISO15118-20 data) | ❌        |
 +---------------------------------------+-----------+
 
+WebSocket backpressure
+~~~~~~~~~~~~~~~~~~~~~~
+Each client's outbound queue holds at most 256 messages and 1 MiB of payload. Both limits apply to
+responses and notifications, including broadcasts, and a single message must also fit within the byte
+limit. These limits are private ``constexpr`` constants in ``WebSocketServer``.
+
+If enqueueing a message would exceed either limit, RpcApi logs a warning, discards that client's queued
+messages, and forcibly disconnects it. Other clients continue to receive messages. Explicit server
+disconnects also work when a client stops reading; the peer may not receive a WebSocket close frame.
+Libwebsockets handles partial socket writes internally. Its buffers, temporary write buffers, socket
+buffers, and RPC request processing consume memory separately from the outbound queue limit.
+
 Authentication
 ~~~~~~~~~~~~~~
 (Currently not supported)
