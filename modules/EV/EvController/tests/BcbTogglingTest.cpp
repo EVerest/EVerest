@@ -257,7 +257,7 @@ TEST_CASE("EvController resume waits for PWM-running before iso_start_charging",
     REQUIRE(fsm.get_current_state_id() == api::FsmState::V2GNegotiating);
     CHECK(contains_substr(fx.mocks.iso.records, "start_charging(mode=AC_three_phase_core,"));
     CHECK(contains_substr(fx.mocks.iso.records, "departure_time=7200"));
-    CHECK(contains_substr(fx.mocks.iso.records, "e_amount=25)"));
+    CHECK(contains_substr(fx.mocks.iso.records, "e_amount=25000)"));
     CHECK(fx.timer.state_timer_arms.empty());
     CHECK(fx.timer.state_timer_cancels == 1);
 
@@ -440,8 +440,8 @@ TEST_CASE("EvController DC resume with intact SLAC goes straight to V2GNegotiati
     CHECK_FALSE(contains_substr(fx.mocks.iso.records, "start_charging"));
 }
 
-// The ISO15118_ev module runs one V2G comm session per start_charging and publishes
-// v2g_session_finished (-> IsoV2GFinished) when each session's loop returns,
+// The ISO 15118 session runs once per start_charging and ends with
+// IsoV2GFinished when its loop returns,
 // including on a pause. If the EV begins its resume (BCB wake-up + re-SLAC)
 // while the paused session is still tearing down, the previous session's
 // lagging SessionStop reaches the SECC after the link is re-established and

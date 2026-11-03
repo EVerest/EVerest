@@ -5,6 +5,7 @@
 #include "../EvController.hpp"
 #include "Events.hpp"
 #include "FsmContext.hpp"
+#include "IsoSession.hpp"
 #include "StateBase.hpp"
 
 #include <everest/io/event/event_fd.hpp>
@@ -16,10 +17,15 @@
 
 #include <atomic>
 #include <chrono>
+#include <filesystem>
 #include <memory>
 #include <vector>
 
 namespace module {
+
+// The in-process ISO 15118 session's settings from the module config. Throws
+// Everest::EverestConfigError on a der_iec_functions list with an unknown or repeated name.
+IsoSession::Settings iso_settings(const Conf& config, const std::filesystem::path& etc);
 
 // Runs the single epoll loop that owns the FSM. Four fds drive the loop:
 //   - wake_fd: external producers enqueue events and poke wake_fd
@@ -84,6 +90,8 @@ private:
     //; those rely on framework-level shutdown to stop event delivery before
     // module destruction.
     std::vector<Everest::UnsubscribeToken> command_router_tokens;
+    // Declared last, so destroyed first: its worker enqueues until it is joined.
+    std::unique_ptr<IsoSession> iso_session;
 
 // The tick composition and the pre-feed var writes, as one definition each. on_tick() and on_wake()
 // add only the ctx-null guard and the exception isolation around these, which the SIL smokes cover.

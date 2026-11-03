@@ -4,7 +4,7 @@
 
 // Mock peer recorders for EvController FSM tests.
 //
-// The ev-cli generated `ev_board_supportIntf`, `ISO15118_evIntf`, `ev_slacIntf`,
+// The ev-cli generated `ev_board_supportIntf`, `ev_slacIntf`,
 // and `kvsIntf` classes have non-virtual `call_*` methods and require a real
 // `Everest::ModuleAdapter*` for construction, so they cannot be subclassed to
 // intercept calls. This header provides hand-rolled recorder classes that mirror
@@ -26,6 +26,8 @@
 #include <generated/types/board_support_common.hpp>
 #include <generated/types/ev_board_support.hpp>
 #include <generated/types/iso15118.hpp>
+
+#include "../main/IsoStart.hpp"
 
 namespace module::test {
 
@@ -50,21 +52,20 @@ public:
 
 class MockIso15118Ev {
 public:
-    // Returns `next_start_charging_result` (default true).
-    bool call_start_charging(::types::iso15118::EnergyTransferMode mode,
-                             ::types::iso15118::SelectedPaymentOption payment, double departure_time, double e_amount);
+    // Records the transfer mode the start runs; returns `next_start_charging_result` (default true).
+    bool call_start_charging(const IsoStart& start);
     void call_stop_charging();
     void call_pause_charging();
     void call_set_fault();
     void call_set_dc_params(const ::types::iso15118::DcEvParameters& params);
-    void call_set_bpt_dc_params(const ::types::iso15118::DcEvBPTParameters& params);
-    void call_enable_sae_j2847_v2g_v2h();
     void call_update_soc(double soc);
     void call_abort_charging();
     void call_cp_state_changed(::types::iso15118::CpState cp_state);
     void call_update_present_values(const ::types::iso15118::EvPresentValues& values);
 
     bool next_start_charging_result{true};
+    // What IsoPeer::cannot_run answers for every mode.
+    std::optional<std::string> next_cannot_run;
     std::vector<std::string> records;
     void clear() {
         records.clear();

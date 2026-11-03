@@ -14,7 +14,6 @@
 #include <generated/interfaces/ev_manager/Implementation.hpp>
 
 // headers for required interface implementations
-#include <generated/interfaces/ISO15118_ev/Interface.hpp>
 #include <generated/interfaces/ev_board_support/Interface.hpp>
 #include <generated/interfaces/ev_slac/Interface.hpp>
 #include <generated/interfaces/kvs/Interface.hpp>
@@ -69,6 +68,44 @@ struct Conf {
     int cfg_communication_check_to_s;
     int cfg_heartbeat_interval_ms;
     bool enabled_at_startup;
+    std::string hlc_device;
+    std::string evcc_id;
+    std::string supported_protocols;
+    int response_timeout_ms;
+    int authorization_timeout_ms;
+    std::string control_mode;
+    std::string tls;
+    bool allow_pnc_without_tls;
+    std::string tls_version;
+    bool verify_server_certificate;
+    bool enable_tls_key_logging;
+    std::string tls_key_logging_path;
+    std::string pki_path;
+    std::string v2g_root_cert_path;
+    std::string device_cert_chain_path;
+    std::string device_key_path;
+    std::string device_key_password_path;
+    std::string pnc_contract_cert_chain_path;
+    std::string pnc_contract_key_path;
+    std::string pnc_contract_key_password_path;
+    std::string pnc_oem_prov_cert_path;
+    std::string pnc_oem_prov_key_path;
+    std::string pnc_oem_prov_key_password_path;
+    bool pnc_force_cert_install;
+    std::string pnc_contract_store_dir;
+    double ac_max_charge_power_w;
+    double ac_min_charge_power_w;
+    double ac_max_discharge_power_w;
+    double ac_min_discharge_power_w;
+    double dc_max_discharge_power_w;
+    double dc_min_discharge_power_w;
+    double dc_max_discharge_current_a;
+    std::string sae_inverter_profile_path;
+    int cpd_rounds;
+    bool der_stop_on_unsupported_functions;
+    bool der_stop_on_invalid_control;
+    std::string der_iec_functions;
+    double min_current_a;
 };
 
 class EvController : public Everest::ModuleBase {
@@ -77,13 +114,12 @@ public:
     EvController(const ModuleInfo& info, Everest::MqttProvider& mqtt_provider,
                  std::unique_ptr<ev_managerImplBase> p_ev_manager,
                  std::unique_ptr<ev_board_supportIntf> r_ev_board_support,
-                 std::vector<std::unique_ptr<ISO15118_evIntf>> r_ev, std::vector<std::unique_ptr<ev_slacIntf>> r_slac,
-                 std::vector<std::unique_ptr<kvsIntf>> r_kvs, Conf& config) :
+                 std::vector<std::unique_ptr<ev_slacIntf>> r_slac, std::vector<std::unique_ptr<kvsIntf>> r_kvs,
+                 Conf& config) :
         ModuleBase(info),
         mqtt(mqtt_provider),
         p_ev_manager(std::move(p_ev_manager)),
         r_ev_board_support(std::move(r_ev_board_support)),
-        r_ev(std::move(r_ev)),
         r_slac(std::move(r_slac)),
         r_kvs(std::move(r_kvs)),
         config(config){};
@@ -91,7 +127,6 @@ public:
     Everest::MqttProvider& mqtt;
     const std::unique_ptr<ev_managerImplBase> p_ev_manager;
     const std::unique_ptr<ev_board_supportIntf> r_ev_board_support;
-    const std::vector<std::unique_ptr<ISO15118_evIntf>> r_ev;
     const std::vector<std::unique_ptr<ev_slacIntf>> r_slac;
     const std::vector<std::unique_ptr<kvsIntf>> r_kvs;
     const Conf& config;

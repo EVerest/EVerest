@@ -1,7 +1,7 @@
 # UNSUPPORTED: SAE J2847/2 V2G is not implemented by the modules this configuration runs.
 # Evse15118D20 (the charger) warns that the SAE J2847/2 mode requested by EvseManager is not
-# supported and does not offer the SAE service, and Ev15118 (the EV) logs
-# enable_sae_j2847_v2g_v2h as not supported. A session started from this file is a plain
+# supported and does not offer the SAE service, and the EV session EvController runs in-process
+# has no SAE J2847/2 mode. A session started from this file is a plain
 # ISO 15118-2 DC charge without any SAE J2847/2 bidirectional exchange, so it is not an
 # SAE J2847/2 test. The file is kept as the wiring for a later SAE J2847/2 implementation.
 active_modules:
@@ -15,11 +15,6 @@ active_modules:
       security:
         - module_id: evse_security
           implementation_id: main
-  iso15118_car:
-    module: Ev15118
-    config_module:
-      device: auto
-      supported_protocols: ISO15118_2
   evse_manager:
     module: EvseManager
     config_module:
@@ -69,6 +64,8 @@ active_modules:
   ev_manager:
     module: EvController
     config_module:
+      hlc_device: auto
+      supported_protocols: ISO15118_2
       connector_id: 1
       dc_target_current: 20
       dc_target_voltage: 400
@@ -76,9 +73,6 @@ active_modules:
       ev_board_support:
         - module_id: ev_manager_driver
           implementation_id: board_support
-      ev:
-        - module_id: iso15118_car
-          implementation_id: ev
       slac:
         - module_id: slac
           implementation_id: ev

@@ -66,32 +66,17 @@ TEST_CASE("cp_state_changed reports every applied CP state to the ISO peer", "[e
     CHECK(fx.mocks.bsp.records.size() == 1);
 }
 
-TEST_CASE("the CP report and the BSP push are guarded independently", "[evctl][iso][cp]") {
-    SECTION("no ISO peer: the BSP still sees the CP state") {
-        TestFixture fx;
-        auto ctx = fx.make_ctx();
-        ctx->peer_actions.iso = IsoPeer{}; // absent peer
-        fx.mocks.bsp.clear();
-        fx.mocks.iso.clear();
+TEST_CASE("the ISO session gets the CP report without a BSP peer", "[evctl][iso][cp]") {
+    TestFixture fx;
+    auto ctx = fx.make_ctx();
+    ctx->peer_actions.bsp = BspPeer{}; // absent peer
+    fx.mocks.bsp.clear();
+    fx.mocks.iso.clear();
 
-        ctx->set_cp(::types::ev_board_support::EvCpState::C);
+    ctx->set_cp(::types::ev_board_support::EvCpState::C);
 
-        CHECK(fx.mocks.bsp.records.size() == 1);
-        CHECK(fx.mocks.iso.records.empty());
-    }
-
-    SECTION("no BSP peer: the ISO peer still gets the CP report") {
-        TestFixture fx;
-        auto ctx = fx.make_ctx();
-        ctx->peer_actions.bsp = BspPeer{}; // absent peer
-        fx.mocks.bsp.clear();
-        fx.mocks.iso.clear();
-
-        ctx->set_cp(::types::ev_board_support::EvCpState::C);
-
-        CHECK(fx.mocks.bsp.records.empty());
-        CHECK(contains_substr(fx.mocks.iso.records, "cp_state_changed(cp_state=C)"));
-    }
+    CHECK(fx.mocks.bsp.records.empty());
+    CHECK(contains_substr(fx.mocks.iso.records, "cp_state_changed(cp_state=C)"));
 }
 
 TEST_CASE("update_present_values defaults to the delivered values", "[evctl][iso][present-values]") {

@@ -68,6 +68,8 @@ struct ActionMocks {
     // (first boot); optional<string>{""} == persisted empty payload (suspicious);
     // optional<string>{"..."} == persisted blob to parse.
     std::optional<std::string> next_kvs_load_value{};
+    // What IsoPeer::admit answers for a session-tagged event.
+    bool iso_admits{true};
     // Internal-side publish records (mirrors EvAPI subscriber traffic).
     int internal_bsp_event_count{0};
     int internal_ev_info_count{0};
@@ -93,20 +95,11 @@ inline PeerActions make_peer_actions(ActionMocks& mocks) {
     actions.bsp.enable = [&mocks](bool v) { mocks.bsp.call_enable(v); };
     actions.bsp.present = true;
 
-    actions.iso.start_charging = [&mocks](::types::iso15118::EnergyTransferMode mode,
-                                          ::types::iso15118::PaymentOption payment, int32_t departure, double e_amount,
-                                          bool /*force_payment_option*/) -> bool {
-        ::types::iso15118::SelectedPaymentOption sel;
-        sel.payment_option = payment;
-        return mocks.iso.call_start_charging(mode, sel, static_cast<double>(departure), e_amount);
-    };
+    actions.iso.start_charging = [&mocks](const IsoStart& start) { return mocks.iso.call_start_charging(start); };
+    actions.iso.cannot_run = [&mocks](API_types::ev_controller::ChargeMode) { return mocks.iso.next_cannot_run; };
     actions.iso.stop_charging = [&mocks]() { mocks.iso.call_stop_charging(); };
     actions.iso.pause_charging = [&mocks]() { mocks.iso.call_pause_charging(); };
     actions.iso.update_soc = [&mocks](float pct) { mocks.iso.call_update_soc(static_cast<double>(pct)); };
-    actions.iso.enable_sae_j2847_v2g_v2h = [&mocks]() { mocks.iso.call_enable_sae_j2847_v2g_v2h(); };
-    actions.iso.set_bpt_dc_params = [&mocks](const ::types::iso15118::DcEvBPTParameters& params) {
-        mocks.iso.call_set_bpt_dc_params(params);
-    };
     actions.iso.set_dc_params = [&mocks](const ::types::iso15118::DcEvParameters& params) {
         mocks.iso.call_set_dc_params(params);
     };
@@ -115,7 +108,10 @@ inline PeerActions make_peer_actions(ActionMocks& mocks) {
     actions.iso.update_present_values = [&mocks](const ::types::iso15118::EvPresentValues& values) {
         mocks.iso.call_update_present_values(values);
     };
-    actions.iso.present = true;
+    actions.iso.admit = [&mocks](std::uint32_t session, bool ended) {
+        mocks.iso.records.push_back("admit(session=" + std::to_string(session) + ",ended=" + (ended ? "1" : "0") + ")");
+        return mocks.iso_admits;
+    };
 
     actions.slac.reset = [&mocks]() { mocks.slac.call_reset(); };
     actions.slac.trigger_matching = [&mocks]() -> bool { return mocks.slac.call_trigger_matching(); };
@@ -193,6 +189,10 @@ struct TestFixture {
         cfg.cfg_communication_check_to_s = 0;
         cfg.cfg_heartbeat_interval_ms = 0;
         cfg.enabled_at_startup = false;
+        cfg.hlc_device = "lo";
+        cfg.evcc_id = "02:00:00:00:00:01";
+        cfg.supported_protocols = "ISO15118_20";
+        cfg.response_timeout_ms = 0;
 
         topics.setup("test_module", "ev_controller", 1);
     }

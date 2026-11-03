@@ -71,6 +71,7 @@ constexpr EventKind ALL_KINDS[] = {
     EventKind::DcEvsePresentVoltage,
     EventKind::IsoDerNegotiated,
     EventKind::IsoDerControl,
+    EventKind::IsoWeldingDetectionFailed,
     EventKind::BeginSession,
     EventKind::StateDeadline,
     EventKind::Shutdown,

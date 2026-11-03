@@ -380,19 +380,15 @@ struct ModuleFixture {
     Everest::MqttProvider mqtt{adapter};
     module::ev_manager::Conf impl_config;
     Everest::PtrContainer<EvController> ptr;
+    // The module keeps a reference to it.
+    ModuleInfo info;
     std::unique_ptr<EvController> mod;
-    void init(bool with_iso = false) {
-        std::vector<std::unique_ptr<ISO15118_evIntf>> iso;
-        if (with_iso) {
-            iso.push_back(std::make_unique<ISO15118_evIntf>(&adapter, Requirement{"ev", 0}, "iso", std::nullopt));
-        }
-        ModuleInfo info;
+    void init() {
         info.id = "test_car";
         mod = std::make_unique<EvController>(
             info, mqtt, std::make_unique<module::ev_manager::ev_managerImpl>(&adapter, ptr, impl_config),
             std::make_unique<ev_board_supportIntf>(&adapter, Requirement{"ev_board_support", 0}, "board", std::nullopt),
-            std::move(iso), std::vector<std::unique_ptr<ev_slacIntf>>{}, std::vector<std::unique_ptr<kvsIntf>>{},
-            fx.cfg);
+            std::vector<std::unique_ptr<ev_slacIntf>>{}, std::vector<std::unique_ptr<kvsIntf>>{}, fx.cfg);
         ptr.set(mod.get());
         adapter.gather_cmds(*mod->p_ev_manager);
         module::test_module = mod.get();
@@ -534,74 +530,10 @@ TEST_CASE("EvController DER pilot start selects the requested annex", "[evctl][d
     REQUIRE(machine.get_current_state_id() == api::FsmState::V2GNegotiating);
     CHECK(contains_substr(fx.mocks.iso.records,
                           sae ? "start_charging(mode=AC_DER_SAE," : "start_charging(mode=AC_DER_IEC,"));
-    CHECK(contains_substr(fx.mocks.iso.records, "departure_time=3600,e_amount=22)"));
+    CHECK(contains_substr(fx.mocks.iso.records, "departure_time=3600,e_amount=22000)"));
     machine.feed(Event{IsoPowerReadyEvt{}});
     CHECK(machine.get_current_state_id() == api::FsmState::Charging);
     CHECK(contains_substr(fx.mocks.bsp.records, "set_ac_max_current(current=12)"));
-}
-
-TEST_CASE("EvController republishes DER peer summaries", "[evctl][der-outputs]") {
-    const auto sae = GENERATE(false, true);
-    ModuleFixture f;
-    f.init(true);
-    f.ready();
-    const nlohmann::json functions =
-        sae ? nlohmann::json{"ChargeFunction", "VoltVarFunction"} : nlohmann::json{"VoltVarMode", "WattCosPhiMode"};
-    const nlohmann::json negotiated{{"flavor", sae ? "AC_DER_SAE" : "AC_DER_IEC"},
-                                    {sae ? "sae_functions" : "iec_functions", functions}};
-    const nlohmann::json control = sae ? nlohmann::json{{"flavor", "AC_DER_SAE"},
-                                                        {"source", "ChargeLoop"},
-                                                        {"permit_service", false},
-                                                        {"enabled_functions", {"ChargeFunction"}},
-                                                        {"problems", {"bad curve"}}}
-                                       : nlohmann::json{{"flavor", "AC_DER_IEC"},
-                                                        {"source", "ChargeParameterDiscovery"},
-                                                        {"dso_q_setpoint", -1200.5},
-                                                        {"dso_cos_phi_setpoint", 0.95f}};
-    REQUIRE(f.adapter.peers.count("der_negotiated_functions") == 1);
-    REQUIRE(f.adapter.peers.count("der_control_received") == 1);
-    f.adapter.peers.at("der_negotiated_functions")(negotiated);
-    f.adapter.peers.at("der_control_received")(control);
-    const std::string base = "everest_api/1/ev_controller/test_car/e2m/";
-    auto observed = f.adapter.observed.handle();
-    REQUIRE(observed.wait_for([&] { return observed->publications.count(base + "der_control") != 0; },
-                              std::chrono::seconds(2)));
-    const nlohmann::json expected_negotiated{{"flavor", sae ? "SAE" : "IEC"}, {"functions", functions}};
-    auto expected_control = control;
-    expected_control["flavor"] = sae ? "SAE" : "IEC";
-    CHECK(observed->publications.at(base + "der_negotiated_functions") == expected_negotiated);
-    CHECK(observed->publications.at(base + "der_control") == expected_control);
-}
-
-TEST_CASE("EvController takes the CP B release from power_delivery_stopped", "[evctl][stop-hold]") {
-    ModuleFixture f;
-    f.init(true);
-    f.ready();
-    CHECK(f.adapter.peers.count("power_delivery_stopped") == 1);
-    CHECK(f.adapter.peers.count("v2g_messages") == 0);
-}
-
-TEST_CASE("EvController consumes welding_detection_failed", "[evctl][welding]") {
-    ModuleFixture f;
-    f.init(true);
-    f.ready();
-    REQUIRE(f.adapter.peers.count("welding_detection_failed") == 1);
-    const std::string fault_topic = "everest_api/1/ev_controller/test_car/e2m/fault";
-    const auto reported = [&](const std::string& message) {
-        auto out = f.adapter.observed.handle();
-        return out.wait_for(
-            [&] {
-                const auto it = out->publications.find(fault_topic);
-                return it != out->publications.end() && it->second.value("message", "") == message;
-            },
-            std::chrono::seconds(2));
-    };
-    CHECK_NOTHROW(
-        f.adapter.peers.at("welding_detection_failed")(nlohmann::json{{"cycles", 3}, {"last_voltage_V", 120.5}}));
-    CHECK(reported("welding detection failed after 3 cycles, last voltage 120.5 V"));
-    CHECK(f.adapter.observed.handle()->publications.at(fault_topic).at("type") == "ChargerFault");
-    CHECK_NOTHROW(f.adapter.peers.at("welding_detection_failed")(nlohmann::json{{"cycles", 0}}));
-    CHECK(reported("welding detection failed after 0 cycles, last voltage unknown"));
 }
 
 TEST_CASE("EvController rejected DER start publishes the internal diagnostic", "[evctl][der]") {

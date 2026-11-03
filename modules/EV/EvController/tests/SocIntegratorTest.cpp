@@ -553,23 +553,6 @@ TEST_CASE("SocIntegrator parity with EvManager simulate_soc", "[evctl][soc]") {
         CHECK(contains_substr(fx.mocks.iso.records, "update_soc("));
     }
 
-    SECTION("iso_update_soc is silently skipped when peer action is unset") {
-        TestFixture fx;
-        fx.cfg.dc_target_current = 125;
-        fx.cfg.dc_target_voltage = 400;
-        fx.cfg.tick_interval_ms = 100;
-        // Build the context, then drop the iso peer to model the AcIec runtime
-        // configuration (no ISO peer wired).
-        auto ctx = fx.make_ctx();
-        ctx->peer_actions.iso = {};
-        set_mode(*ctx, api::ChargeMode::DcIso2);
-        fx.mocks.iso.clear();
-
-        soc_step(*ctx);
-
-        CHECK_FALSE(contains_substr(fx.mocks.iso.records, "update_soc("));
-    }
-
     SECTION("step publishes ev_info on the external topic") {
         TestFixture fx;
         fx.cfg.ac_nominal_voltage = 230.0;

@@ -90,7 +90,7 @@ TEST_CASE("EvController deferred ResumeSession releases 6 edges on IsoV2GFinishe
     CHECK(ctx->vars.bcb_remaining == 6);
 }
 
-// If the ISO15118_ev module never publishes v2g_session_finished (abnormal teardown), a deferred
+// If the ISO 15118 session never ends (abnormal teardown), a deferred
 // resume cannot wait forever for IsoV2GFinished: the short fallback timer armed
 // on defer fires a StateDeadline, and with the resume still pending the EV does a
 // best-effort resume into BcbToggling rather than giving up into Stopping.

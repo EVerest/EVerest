@@ -4,6 +4,7 @@
 #include "main/EvCtlRuntime.hpp"
 #include "main/Events.hpp"
 #include "main/FsmContext.hpp"
+#include "main/IsoSession.hpp"
 
 #include <everest/exceptions.hpp>
 #include <everest/logging.hpp>
@@ -23,6 +24,12 @@ void EvController::RuntimeDeleter::operator()(EvCtlRuntime* runtime) const {
 void EvController::init() {
     if (const auto error = cross_boot_config_error(config, !r_kvs.empty())) {
         EVLOG_AND_THROW(Everest::EverestConfigError("EvController: " + *error));
+    }
+    // Here, where a config error fails startup cleanly; ready() runs on a thread with no catch.
+    try {
+        IsoSession::check(iso_settings(config, info.paths.etc));
+    } catch (const Everest::EverestConfigError& e) {
+        EVLOG_AND_THROW(e);
     }
     if (!config.default_session.empty()) {
         try {
