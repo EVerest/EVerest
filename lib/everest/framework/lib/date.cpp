@@ -27,6 +27,10 @@ std::string seconds_from_now_to_rfc3339(double seconds) {
     return to_rfc3339(date::utc_clock::now() + offset);
 }
 
+double rfc3339_to_seconds_from_now(const std::string& t) {
+    return std::chrono::duration<double>(from_rfc3339(t) - date::utc_clock::now()).count();
+}
+
 std::chrono::time_point<date::utc_clock> from_rfc3339_slow(const std::string& t) {
     std::istringstream infile{t};
     std::chrono::time_point<date::utc_clock> tp;

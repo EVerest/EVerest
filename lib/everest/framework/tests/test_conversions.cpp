@@ -91,6 +91,26 @@ SCENARIO("Relative seconds are converted to an absolute rfc3339 timestamp", "[!t
     }
 }
 
+SCENARIO("An rfc3339 timestamp is converted to relative seconds from now", "[!throws]") {
+    GIVEN("A timestamp one hour from now") {
+        const auto timestamp = Everest::Date::seconds_from_now_to_rfc3339(3600);
+
+        THEN("It is about one hour ahead") {
+            const auto seconds = Everest::Date::rfc3339_to_seconds_from_now(timestamp);
+            CHECK(seconds > 3590);
+            CHECK(seconds <= 3600);
+        }
+    }
+
+    GIVEN("A timestamp in the past") {
+        const auto timestamp = Everest::Date::seconds_from_now_to_rfc3339(-60);
+
+        THEN("It is negative") {
+            CHECK(Everest::Date::rfc3339_to_seconds_from_now(timestamp) < 0);
+        }
+    }
+}
+
 SCENARIO("Strict RFC 3339 parsing", "[date]") {
     using namespace std::chrono;
     using date::utc_clock;
