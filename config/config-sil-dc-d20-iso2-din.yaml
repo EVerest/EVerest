@@ -1,6 +1,7 @@
-# DC ISO 15118-2 / DIN SPEC 70121 SIL: C++ EVCC (Ev15118) against the Evse15118D20 SECC, plaintext.
-# The EV offers -20, -2 and DIN; the SECC leaves -20 out of its offer and prefers -2 over DIN.
-# Narrow the EV offer to ISO15118_20,DIN70121 to negotiate DIN SPEC 70121 instead.
+# DC ISO 15118-2 / DIN SPEC 70121 SIL: EvController's in-process EV session against the Evse15118D20
+# SECC, plaintext. A DcIso2 start offers ISO15118_2 and DIN70121 from supported_protocols; the SECC
+# leaves -20 out of its offer and prefers -2 over DIN. Narrow the list to ISO15118_20,DIN70121 to
+# negotiate DIN SPEC 70121 instead.
 active_modules:
   iso15118_charger:
     module: Evse15118D20
@@ -13,12 +14,6 @@ active_modules:
       security:
         - module_id: evse_security
           implementation_id: main
-  iso15118_car:
-    module: Ev15118
-    config_module:
-      device: auto
-      response_timeout_ms: 8000
-      supported_protocols: ISO15118_20,ISO15118_2,DIN70121
   evse_manager:
     module: EvseManager
     config_module:
@@ -79,6 +74,9 @@ active_modules:
   ev_manager:
     module: EvController
     config_module:
+      hlc_device: auto
+      response_timeout_ms: 8000
+      supported_protocols: ISO15118_20,ISO15118_2,DIN70121
       connector_id: 1
       dc_target_current: 20
       dc_target_voltage: 400
@@ -86,9 +84,6 @@ active_modules:
       ev_board_support:
         - module_id: ev_manager_driver
           implementation_id: board_support
-      ev:
-        - module_id: iso15118_car
-          implementation_id: ev
       slac:
         - module_id: slac
           implementation_id: ev
@@ -210,18 +205,6 @@ x-module-layout:
         - id: security
           interface: evse_security
           type: requirement
-  iso15118_car:
-    position:
-      x: -8
-      'y': 35
-    terminals:
-      top: []
-      right:
-        - id: ev
-          interface: ISO15118_ev
-          type: provide
-      bottom: []
-      left: []
   evse_manager:
     position:
       x: 33
@@ -374,9 +357,6 @@ x-module-layout:
           type: requirement
         - id: ev_board_support
           interface: ev_board_support
-          type: requirement
-        - id: ev
-          interface: ISO15118_ev
           type: requirement
   auth:
     position:

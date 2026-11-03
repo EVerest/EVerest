@@ -113,7 +113,7 @@ If you observe logging messages indicating a timeout of the SDP request like
 
 .. code-block:: text
 
-    [WARN] iso15118_car    EV Controller: SDP discovery / connect did not complete in time
+    [WARN] ev_manager      EV Controller: SDP discovery / connect did not complete in time
 
 you may need to adjust your firewall settings to allow communication between
 the EVCC and SECC modules.

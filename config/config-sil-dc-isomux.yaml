@@ -40,11 +40,6 @@ active_modules:
       ext20:
         - module_id: iso15118_20
           implementation_id: extensions
-  iso15118_car:
-    module: Ev15118
-    config_module:
-      supported_protocols: ISO15118_20,ISO15118_2,DIN70121
-      device: auto
   evse_manager:
     module: EvseManager
     config_module:
@@ -92,6 +87,8 @@ active_modules:
   ev_manager:
     module: EvController
     config_module:
+      supported_protocols: ISO15118_20,ISO15118_2,DIN70121
+      hlc_device: auto
       connector_id: 1
       dc_target_current: 20
       dc_target_voltage: 400
@@ -99,9 +96,6 @@ active_modules:
       ev_board_support:
         - module_id: ev_manager_driver
           implementation_id: board_support
-      ev:
-        - module_id: iso15118_car
-          implementation_id: ev
       slac:
         - module_id: slac
           implementation_id: ev

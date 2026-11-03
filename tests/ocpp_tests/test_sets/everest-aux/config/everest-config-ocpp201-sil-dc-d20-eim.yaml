@@ -10,13 +10,6 @@ active_modules:
     mapping:
       module:
         evse: 1
-  iso15118_car:
-    module: Ev15118
-    config_module:
-      supported_protocols: ISO15118_20
-      device: auto
-      tls: prefer
-      tls_version: "1.3"
   evse_manager:
     module: EvseManager
     mapping:
@@ -72,6 +65,10 @@ active_modules:
   ev_manager:
     module: EvController
     config_module:
+      supported_protocols: ISO15118_20
+      hlc_device: auto
+      tls: prefer
+      tls_version: "1.3"
       connector_id: 1
       dc_target_current: 20
       dc_target_voltage: 400
@@ -79,9 +76,6 @@ active_modules:
       ev_board_support:
         - module_id: ev_manager_driver
           implementation_id: board_support
-      ev:
-        - module_id: iso15118_car
-          implementation_id: ev
       slac:
         - module_id: slac
           implementation_id: ev

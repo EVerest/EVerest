@@ -159,7 +159,7 @@ async def test_ev_iso15118_2_dc_tls_charge_loop(
 @pytest.mark.xdist_group(name="ISO15118")
 @pytest.mark.probe_module(connections=PROBE_CONNECTIONS)
 @pytest.mark.everest_core_config(DC_TLS_PNC_CONFIG)
-@pytest.mark.everest_config_adaptions(*_dc_adaptions(DC_PNC_AUTO_EXEC))
+@pytest.mark.everest_config_adaptions(*_dc_adaptions(DC_PNC_AUTO_EXEC, enable_pnc=True))
 async def test_ev_iso15118_2_dc_tls_pnc_charge_loop(
     test_controller: TestController, everest_core: EverestCore
 ):
@@ -209,7 +209,16 @@ async def test_ev_iso15118_2_dc_tls_pnc_charge_loop(
 @pytest.mark.xdist_group(name="ISO15118")
 @pytest.mark.probe_module(connections=PROBE_CONNECTIONS)
 @pytest.mark.everest_core_config(AC_CONFIG)
-@pytest.mark.everest_config_adaptions(*_ev_config_adaptions(AC_AUTO_EXEC))
+@pytest.mark.everest_config_adaptions(
+    *_ev_config_adaptions(
+        AC_AUTO_EXEC,
+        ac_phase_count=3,
+        iso2_ac_e_amount_wh=60000,
+        iso2_ac_ev_max_voltage_v=400,
+        iso2_ac_ev_max_current_a=16,
+        iso2_ac_ev_min_current_a=6,
+    )
+)
 async def test_ev_iso15118_2_ac_session(
     test_controller: TestController, everest_core: EverestCore
 ):

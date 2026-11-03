@@ -12,6 +12,7 @@ import types
 from unittest.mock import MagicMock
 
 import pytest
+import yaml
 
 # Ensure repo-local src/ is importable.
 _PKG_SRC = os.path.normpath(

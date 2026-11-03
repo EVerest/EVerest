@@ -64,11 +64,10 @@ active_modules:
     module: Auth
   ev_manager:
     config_module:
+      hlc_device: auto
+      supported_protocols: ISO15118_2
       connector_id: 1
     connections:
-      ev:
-        - implementation_id: ev
-          module_id: iso15118_car
       ev_board_support:
         - module_id: ev_manager_driver
           implementation_id: board_support
@@ -146,12 +145,6 @@ active_modules:
         - implementation_id: energy_grid
           module_id: eebus_energy_sink
     module: EnergyNode
-  iso15118_car:
-    config_module:
-      device: auto
-      supported_protocols: ISO15118_2
-    connections: {}
-    module: Ev15118
   iso15118_charger:
     config_module:
       device: auto

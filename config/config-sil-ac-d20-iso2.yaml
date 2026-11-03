@@ -1,5 +1,6 @@
-# AC ISO 15118-2 SIL: C++ EVCC (Ev15118) against the Evse15118D20 SECC, plaintext, EIM.
-# The AC_EVChargeParameter values the EV sends come from the iso2_ac_* options.
+# AC ISO 15118-2 SIL with the EV session run in-process by EvController, plaintext, EIM.
+# The AC_EVChargeParameter EVMaxVoltage is ac_nominal_voltage, EVMaxCurrent max_current_a,
+# EVMinCurrent min_current_a and EAmount the session's e_amount_wh.
 settings:
   telemetry_enabled: true
 active_modules:
@@ -42,11 +43,12 @@ active_modules:
     module: Auth
   ev_manager:
     config_module:
+      hlc_device: auto
+      response_timeout_ms: 8000
+      supported_protocols: ISO15118_2
+      min_current_a: 6
       connector_id: 1
     connections:
-      ev:
-        - implementation_id: ev
-          module_id: iso15118_car
       ev_board_support:
         - module_id: ev_manager_driver
           implementation_id: board_support
@@ -124,18 +126,6 @@ active_modules:
         - implementation_id: energy_grid
           module_id: connector_1
     module: EnergyNode
-  iso15118_car:
-    config_module:
-      device: auto
-      response_timeout_ms: 8000
-      supported_protocols: ISO15118_2
-      ac_phase_count: 3
-      iso2_ac_e_amount_wh: 60000
-      iso2_ac_ev_max_voltage_v: 400
-      iso2_ac_ev_max_current_a: 16
-      iso2_ac_ev_min_current_a: 6
-    connections: {}
-    module: Ev15118
   iso15118_charger:
     config_module:
       device: auto
@@ -248,10 +238,7 @@ active_modules:
         - id: main
           interface: ev_manager
           type: provide
-      top:
-        - id: ev
-          interface: ISO15118_ev
-          type: requirement
+      top: []
   connector_1:
     position:
       x: 13
@@ -363,18 +350,6 @@ active_modules:
         - id: energy_grid
           interface: energy
           type: provide
-  iso15118_car:
-    position:
-      x: 53
-      y: 23
-    terminals:
-      bottom:
-        - id: ev
-          interface: ISO15118_ev
-          type: provide
-      left: []
-      right: []
-      top: []
   iso15118_charger:
     position:
       x: -5

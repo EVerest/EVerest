@@ -12,15 +12,6 @@ active_modules:
       security:
         - module_id: evse_security
           implementation_id: main
-  iso15118_car:
-    module: Ev15118
-    config_module:
-      device: auto
-      supported_protocols: ISO15118_2
-      tls: prefer
-      tls_version: "1.2"
-      enable_pnc: true
-      pnc_force_cert_install: true
   evse_manager_1:
     module: EvseManager
     mapping:
@@ -96,14 +87,16 @@ active_modules:
   ev_manager_1:
     module: EvController
     config_module:
+      hlc_device: auto
+      supported_protocols: ISO15118_2
+      tls: prefer
+      tls_version: "1.2"
+      pnc_force_cert_install: true
       connector_id: 1
     connections:
       ev_board_support:
         - module_id: ev_manager_1_driver
           implementation_id: board_support
-      ev:
-        - module_id: iso15118_car
-          implementation_id: ev
       slac:
         - module_id: slac
           implementation_id: ev
@@ -118,14 +111,16 @@ active_modules:
   ev_manager_2:
     module: EvController
     config_module:
+      hlc_device: auto
+      supported_protocols: ISO15118_2
+      tls: prefer
+      tls_version: "1.2"
+      pnc_force_cert_install: true
       connector_id: 2
     connections:
       ev_board_support:
         - module_id: ev_manager_2_driver
           implementation_id: board_support
-      ev:
-        - module_id: iso15118_car
-          implementation_id: ev
       slac:
         - module_id: slac
           implementation_id: ev
