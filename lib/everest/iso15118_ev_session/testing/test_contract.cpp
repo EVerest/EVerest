@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
-#include "test_contract.hpp"
+#include <everest/iso15118_ev_session/test_contract.hpp>
 
 #include <memory>
 #include <stdexcept>
