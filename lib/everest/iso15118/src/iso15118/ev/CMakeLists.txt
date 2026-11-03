@@ -3,9 +3,10 @@ add_library(everest::iso15118_ev ALIAS iso15118_ev)
 
 target_sources(iso15118_ev
     PRIVATE
-        # The DIN/-2 response decoders; the SECC only decodes -20 responses.
+        # The response decoders; the SECC uses message_20::decode instead.
         message_din/response_variant.cpp
         message_2/response_variant.cpp
+        message_20/response_variant.cpp
         message/ac_der_sae_names.cpp
 
         crypto.cpp

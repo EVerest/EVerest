@@ -1,12 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
-#include <iso15118/message/response_variant.hpp>
+#include <iso15118/ev/message_20/response_variant.hpp>
 
 #include <cassert>
 #include <string>
 
 #include <iso15118/detail/helper.hpp>
-#include <iso15118/detail/received_message_type.hpp>
 #include <iso15118/detail/variant_access.hpp>
 
 #include <cbv2g/app_handshake/appHand_Decoder.h>
@@ -154,12 +153,7 @@ static void handle_ac_sae_der(VariantAccess& va) {
     }
 }
 
-ResponseVariant::ResponseVariant(v2gtp::PayloadType payload_type, const io::StreamInputView& buffer_view) :
-    ResponseVariant(payload_type, buffer_view, true) {
-}
-
-ResponseVariant::ResponseVariant(v2gtp::PayloadType payload_type, const io::StreamInputView& buffer_view,
-                                 bool log_errors) {
+ResponseVariant::ResponseVariant(v2gtp::PayloadType payload_type, const io::StreamInputView& buffer_view) {
 
     if (buffer_view.payload == nullptr or buffer_view.payload_len == 0) {
         error = "empty EXI payload";
@@ -192,7 +186,7 @@ ResponseVariant::ResponseVariant(v2gtp::PayloadType payload_type, const io::Stre
 
     if (data != nullptr) {
         assert(type != Type::None);
-    } else if (log_errors) {
+    } else {
         logf_error("Failed due to: %s\n", error.c_str());
     }
 }
@@ -203,18 +197,6 @@ Type ResponseVariant::get_type() const {
 
 const std::string& ResponseVariant::get_error() const {
     return error;
-}
-
-Type received_message_type(const RequestVariant& request, v2gtp::PayloadType payload_type,
-                           const io::StreamInputView& view) {
-    if (not request.has_unhandled_message()) {
-        return request.get_type();
-    }
-    const ResponseVariant response{payload_type, view, false};
-    if (response.get_type() == Type::None) {
-        logf_error("Failed due to: %s\n", request.get_error().c_str());
-    }
-    return response.get_type();
 }
 
 } // namespace iso15118::message_20

@@ -56,7 +56,12 @@ private:
     // CertificateInstallation relay ([V2G20-1972..1975]).
     bool cert_install_forwarded{false};
     bool cert_install_failed{false};
-    std::optional<std::vector<uint8_t>> cert_install_raw_response{};
+    // A backend CertificateInstallationRes that passed the checks on arrival, with the bytes relayed verbatim.
+    struct RelayedInstallation {
+        std::vector<uint8_t> exi;
+        message_20::CertificateInstallationResponse response;
+    };
+    std::optional<RelayedInstallation> cert_install_response{};
     std::optional<uint8_t> cert_install_remaining{};
 };
 

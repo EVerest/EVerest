@@ -6,8 +6,8 @@
 #include <iso15118/ev/d20/context.hpp>
 #include <iso15118/ev/d20/states.hpp>
 #include <iso15118/ev/detail/context_helper.hpp>
+#include <iso15118/ev/message_20/response_variant.hpp>
 #include <iso15118/message/common_types.hpp>
-#include <iso15118/message/response_variant.hpp>
 
 namespace iso15118::ev::d20 {
 

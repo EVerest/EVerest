@@ -20,7 +20,7 @@
 
 #include <iso15118/message/authorization.hpp>
 #include <iso15118/message/authorization_setup.hpp>
-#include <iso15118/message/response_variant.hpp>
+#include <iso15118/message/decode.hpp>
 #include <iso15118/message/service_discovery.hpp>
 #include <iso15118/message/session_setup.hpp>
 #include <iso15118/message/session_stop.hpp>
@@ -126,10 +126,11 @@ Response response_from_wire(const MockConnection& conn,
                             iso15118::v2gtp::PayloadType payload_type = iso15118::v2gtp::PayloadType::Part20Main) {
     const auto header_size = iso15118::io::SdpPacket::V2GTP_HEADER_SIZE;
     REQUIRE(conn.written.size() > header_size);
-    const iso15118::message_20::ResponseVariant response{
+    const auto response = iso15118::message_20::decode<Response>(
         payload_type,
-        iso15118::io::StreamInputView{conn.written.data() + header_size, conn.written.size() - header_size}};
-    return response.get<Response>();
+        iso15118::io::StreamInputView{conn.written.data() + header_size, conn.written.size() - header_size});
+    REQUIRE(response.has_value());
+    return *response;
 }
 
 dt::SessionId start_session(iso15118::Session& session, MockConnection& conn) {

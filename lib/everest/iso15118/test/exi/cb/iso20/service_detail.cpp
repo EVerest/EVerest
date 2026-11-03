@@ -1,6 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include <iso15118/message/response_variant.hpp>
+#include <iso15118/message/decode.hpp>
 #include <iso15118/message/service_detail.hpp>
 #include <iso15118/message/variant.hpp>
 
@@ -84,13 +84,14 @@ SCENARIO("Se/Deserialize service_detail messages") {
 
         const io::StreamInputView stream_view{doc_raw, sizeof(doc_raw)};
 
-        message_20::ResponseVariant variant(v2gtp::PayloadType::Part20Main, stream_view);
+        const auto decoded =
+            message_20::decode<message_20::ServiceDetailResponse>(v2gtp::PayloadType::Part20Main, stream_view);
 
         THEN("It should be decoded successfully") {
 
-            REQUIRE(variant.get_type() == message_20::Type::ServiceDetailRes);
+            REQUIRE(decoded.has_value());
 
-            const auto& msg = variant.get<message_20::ServiceDetailResponse>();
+            const auto& msg = *decoded;
             const auto& header = msg.header;
 
             REQUIRE(header.session_id == std::array<uint8_t, 8>{0x3D, 0x4C, 0xBF, 0x93, 0x37, 0x4E, 0xD8, 0x9B});

@@ -13,7 +13,7 @@
 
 #include <iso15118/message/variant.hpp>
 
-#include "type.hpp"
+#include <iso15118/message/type.hpp>
 
 namespace iso15118::message_20 {
 
@@ -56,8 +56,6 @@ public:
     }
 
 private:
-    friend Type received_message_type(const RequestVariant&, v2gtp::PayloadType, const io::StreamInputView&);
-    ResponseVariant(v2gtp::PayloadType, const io::StreamInputView&, bool log_errors);
     std::unique_ptr<void, CustomDeleter> data;
     Type type{Type::None};
     std::string error;

@@ -9,7 +9,7 @@
 
 #include <iso15118/d20/config.hpp>
 #include <iso15118/message/ac_der_sae_charge_parameter_discovery.hpp>
-#include <iso15118/message/response_variant.hpp>
+#include <iso15118/message/decode.hpp>
 #include <iso15118/message/service_discovery.hpp>
 #include <iso15118/message/session_setup.hpp>
 #include <iso15118/message/session_stop.hpp>
@@ -461,11 +461,11 @@ SCENARIO("ISO15118-20 der sae ac charge parameter discovery state transitions") 
 
         const auto bytes = serialize_helper(res.value());
         const io::StreamInputView stream_view{bytes.data(), bytes.size()};
-        message_20::ResponseVariant variant(v2gtp::PayloadType::Part20DerSae, stream_view);
+        const auto decoded = message_20::decode<CpdResponse>(v2gtp::PayloadType::Part20DerSae, stream_view);
 
         THEN("The rejection round trips with the inert default DER control") {
-            REQUIRE(variant.get_type() == message_20::Type::DER_SAE_AC_ChargeParameterDiscoveryRes);
-            const auto& round_tripped = variant.get<CpdResponse>();
+            REQUIRE(decoded.has_value());
+            const auto& round_tripped = *decoded;
 
             REQUIRE(round_tripped.response_code == dt::ResponseCode::FAILED_UnknownSession);
             require_every_enable_cleared(round_tripped.transfer_mode.der_control_cpd_res);
@@ -481,7 +481,8 @@ SCENARIO("ISO15118-20 der sae ac charge parameter discovery state transitions") 
         }
 
         THEN("The scalars a rejection never assigns carry their declared defaults") {
-            const auto& round_tripped = variant.get<CpdResponse>();
+            REQUIRE(decoded.has_value());
+            const auto& round_tripped = *decoded;
             const auto& mode = round_tripped.transfer_mode;
 
             REQUIRE(mode.processing == dt::Processing::Finished);

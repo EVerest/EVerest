@@ -3,7 +3,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <iso15118/message/certificate_installation.hpp>
-#include <iso15118/message/response_variant.hpp>
+#include <iso15118/message/decode.hpp>
 #include <iso15118/message/variant.hpp>
 
 #include "helper.hpp"
@@ -105,11 +105,12 @@ SCENARIO("Se/Deserialize certificate installation messages") {
 
         const auto encoded = serialize_large(res);
         const io::StreamInputView stream_view{encoded.data(), encoded.size()};
-        message_20::ResponseVariant variant(v2gtp::PayloadType::Part20Main, stream_view);
+        const auto decoded = message_20::decode<message_20::CertificateInstallationResponse>(
+            v2gtp::PayloadType::Part20Main, stream_view);
 
         THEN("Every field survives") {
-            REQUIRE(variant.get_type() == message_20::Type::CertificateInstallationRes);
-            const auto& msg = variant.get<message_20::CertificateInstallationResponse>();
+            REQUIRE(decoded.has_value());
+            const auto& msg = *decoded;
             REQUIRE(msg.response_code == dt::ResponseCode::OK);
             REQUIRE(msg.evse_processing == dt::Processing::Finished);
             REQUIRE(msg.cps_certificate_chain.certificate == std::vector<uint8_t>{0x30, 0x01});
@@ -140,11 +141,12 @@ SCENARIO("Se/Deserialize certificate installation messages") {
 
         const auto encoded = serialize_large(res);
         const io::StreamInputView stream_view{encoded.data(), encoded.size()};
-        message_20::ResponseVariant variant(v2gtp::PayloadType::Part20Main, stream_view);
+        const auto decoded = message_20::decode<message_20::CertificateInstallationResponse>(
+            v2gtp::PayloadType::Part20Main, stream_view);
 
         THEN("It encodes and decodes with empty chains") {
-            REQUIRE(variant.get_type() == message_20::Type::CertificateInstallationRes);
-            const auto& msg = variant.get<message_20::CertificateInstallationResponse>();
+            REQUIRE(decoded.has_value());
+            const auto& msg = *decoded;
             REQUIRE(msg.response_code == dt::ResponseCode::WARNING_NoCertificateAvailable);
             REQUIRE(msg.evse_processing == dt::Processing::Finished);
             REQUIRE(msg.cps_certificate_chain.certificate.empty());

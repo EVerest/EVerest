@@ -12,8 +12,8 @@
 #include <iso15118/detail/d20/config_validation.hpp>
 #include <iso15118/message/ac_der_sae_charge_loop.hpp>
 #include <iso15118/message/ac_der_sae_charge_parameter_discovery.hpp>
+#include <iso15118/message/decode.hpp>
 #include <iso15118/message/power_delivery.hpp>
-#include <iso15118/message/response_variant.hpp>
 #include <iso15118/message/session_setup.hpp>
 #include <iso15118/session/config.hpp>
 
@@ -1234,11 +1234,11 @@ SCENARIO("ISO15118-20 der sae ac charge loop state transitions") {
 
         const auto bytes = serialize_helper(res.value());
         const io::StreamInputView stream_view{bytes.data(), bytes.size()};
-        message_20::ResponseVariant variant(v2gtp::PayloadType::Part20DerSae, stream_view);
+        const auto decoded = message_20::decode<ChargeLoopResponse>(v2gtp::PayloadType::Part20DerSae, stream_view);
 
         THEN("The round tripped response matches the one the state machine produced") {
-            REQUIRE(variant.get_type() == message_20::Type::DER_SAE_AC_ChargeLoopRes);
-            const auto& round_tripped = variant.get<ChargeLoopResponse>();
+            REQUIRE(decoded.has_value());
+            const auto& round_tripped = *decoded;
 
             REQUIRE(round_tripped.header.session_id == ctx.session.get_id());
             REQUIRE(round_tripped.header.timestamp == res.value().header.timestamp);

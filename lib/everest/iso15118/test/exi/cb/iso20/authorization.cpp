@@ -5,7 +5,7 @@
 #include <stdexcept>
 
 #include <iso15118/message/authorization.hpp>
-#include <iso15118/message/response_variant.hpp>
+#include <iso15118/message/decode.hpp>
 #include <iso15118/message/variant.hpp>
 
 #include <cbv2g/iso_20/iso20_CommonMessages_Datatypes.h>
@@ -63,12 +63,13 @@ SCENARIO("Se/Deserialize authorization messages") {
 
         const io::StreamInputView stream_view{doc_raw, sizeof(doc_raw)};
 
-        message_20::ResponseVariant variant(v2gtp::PayloadType::Part20Main, stream_view);
+        const auto decoded =
+            message_20::decode<message_20::AuthorizationResponse>(v2gtp::PayloadType::Part20Main, stream_view);
 
         THEN("It should be deserialized successfully") {
-            REQUIRE(variant.get_type() == message_20::Type::AuthorizationRes);
+            REQUIRE(decoded.has_value());
 
-            const auto& msg = variant.get<message_20::AuthorizationResponse>();
+            const auto& msg = *decoded;
             const auto& header = msg.header;
 
             REQUIRE(header.session_id == std::array<uint8_t, 8>{0xF2, 0x19, 0x15, 0xB9, 0xDD, 0xDC, 0x12, 0xD1});

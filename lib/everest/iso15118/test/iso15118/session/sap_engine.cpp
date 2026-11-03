@@ -10,7 +10,7 @@
 
 #include <iso15118/io/logging.hpp>
 #include <iso15118/io/stream_view.hpp>
-#include <iso15118/message/response_variant.hpp>
+#include <iso15118/message/decode.hpp>
 #include <iso15118/session/config.hpp>
 #include <iso15118/session/sap_engine.hpp>
 
@@ -58,10 +58,9 @@ public:
         REQUIRE(outgoing->payload_type == v2gtp::PayloadType::SAP);
         REQUIRE(outgoing->message_type == V2gMessageType{message_20::Type::SupportedAppProtocolRes});
 
-        const message_20::ResponseVariant variant{v2gtp::PayloadType::SAP,
-                                                  io::StreamInputView{buffer.data(), outgoing->payload_size}};
-        const auto* res = variant.get_if<message_20::SupportedAppProtocolResponse>();
-        REQUIRE(res != nullptr);
+        const auto res = message_20::decode<message_20::SupportedAppProtocolResponse>(
+            v2gtp::PayloadType::SAP, io::StreamInputView{buffer.data(), outgoing->payload_size});
+        REQUIRE(res.has_value());
         return *res;
     }
 

@@ -5,7 +5,7 @@
 #include <memory>
 
 #include <iso15118/detail/helper.hpp>
-#include <iso15118/message/response_variant.hpp>
+#include <iso15118/ev/message_20/response_variant.hpp>
 
 #include <iso15118/ev/d20/state/supported_app_protocol.hpp>
 #include <iso15118/ev/d20/timeouts.hpp>

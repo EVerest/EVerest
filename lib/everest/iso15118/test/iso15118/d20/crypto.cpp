@@ -10,7 +10,7 @@
 #include <iso15118/message/authorization.hpp>
 #include <iso15118/message/authorization_setup.hpp>
 #include <iso15118/message/certificate_installation.hpp>
-#include <iso15118/message/response_variant.hpp>
+#include <iso15118/message/decode.hpp>
 #include <iso15118/message/variant.hpp>
 
 #include "../captured_messages.hpp"
@@ -379,9 +379,10 @@ SCENARIO("ISO 15118-20 PnC AuthorizationReq captured from an EV conformance test
         THEN("The GenChallenge is the one the SECC sent") {
             const auto& res_exi = captured::ISO20_AUTHORIZATION_SETUP_RES;
             const io::StreamInputView res_view{res_exi.data(), res_exi.size()};
-            const message_20::ResponseVariant res_variant(v2gtp::PayloadType::Part20Main, res_view);
-            REQUIRE(res_variant.get_type() == message_20::Type::AuthorizationSetupRes);
-            const auto& res = res_variant.get<message_20::AuthorizationSetupResponse>();
+            const auto decoded =
+                message_20::decode<message_20::AuthorizationSetupResponse>(v2gtp::PayloadType::Part20Main, res_view);
+            REQUIRE(decoded.has_value());
+            const auto& res = *decoded;
             const auto* offered = std::get_if<dt::PnC_ASResAuthorizationMode>(&res.authorization_mode);
             REQUIRE(offered != nullptr);
             REQUIRE(pnc->gen_challenge == offered->gen_challenge);

@@ -107,7 +107,7 @@ target_sources(iso15118
         d20/state/session_stop.cpp
         
         message/variant.cpp
-        message/response_variant.cpp
+        message/decode.cpp
         message/supported_app_protocol.cpp
         message/session_setup.cpp
         message/common_types.cpp

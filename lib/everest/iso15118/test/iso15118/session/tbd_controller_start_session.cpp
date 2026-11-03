@@ -31,7 +31,7 @@
 #include <iso15118/io/stream_view.hpp>
 #include <iso15118/message/authorization.hpp>
 #include <iso15118/message/authorization_setup.hpp>
-#include <iso15118/message/response_variant.hpp>
+#include <iso15118/message/decode.hpp>
 #include <iso15118/message/service_discovery.hpp>
 #include <iso15118/message/session_setup.hpp>
 #include <iso15118/message/session_stop.hpp>
@@ -230,11 +230,10 @@ Response require_response(const std::optional<std::vector<uint8_t>>& response,
     const std::size_t payload_len = response->size() - header_size;
 
     const iso15118::io::StreamInputView view{payload, payload_len};
-    const iso15118::message_20::ResponseVariant variant(payload_type, view);
-    const auto exptected_type = iso15118::message_20::TypeTrait<Response>::type;
-    REQUIRE(variant.get_type() == exptected_type);
+    const auto decoded = iso15118::message_20::decode<Response>(payload_type, view);
+    REQUIRE(decoded.has_value());
 
-    return variant.get<Response>();
+    return *decoded;
 }
 
 // Encodes a -20 request and wraps it in a V2GTP frame ready to be written to the socket.
@@ -256,12 +255,7 @@ std::optional<Response> decode_response(const std::optional<std::vector<std::uin
     }
 
     const iso15118::io::StreamInputView view{frame->data() + header_size, frame->size() - header_size};
-    const iso15118::message_20::ResponseVariant variant(iso15118::v2gtp::PayloadType::Part20Main, view);
-
-    if (const auto* message = variant.get_if<Response>()) {
-        return *message;
-    }
-    return std::nullopt;
+    return iso15118::message_20::decode<Response>(iso15118::v2gtp::PayloadType::Part20Main, view);
 }
 
 struct ServiceDiscoveryRunResult {

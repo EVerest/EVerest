@@ -6,7 +6,9 @@
 #include <string>
 
 #include <iso15118/detail/helper.hpp>
+#include <iso15118/detail/received_message_type.hpp>
 #include <iso15118/detail/variant_access.hpp>
+#include <iso15118/message/decode.hpp>
 
 #include <cbv2g/app_handshake/appHand_Decoder.h>
 #include <cbv2g/iso_20/iso20_AC_DER_IEC_Decoder.h>
@@ -209,6 +211,18 @@ Type RequestVariant::get_type() const {
 
 const std::string& RequestVariant::get_error() const {
     return error;
+}
+
+Type received_message_type(const RequestVariant& request, v2gtp::PayloadType payload_type,
+                           const io::StreamInputView& view) {
+    if (not request.has_unhandled_message()) {
+        return request.get_type();
+    }
+    const auto type = peek_type(payload_type, view);
+    if (type == Type::None) {
+        logf_error("Failed due to: %s\n", request.get_error().c_str());
+    }
+    return type;
 }
 
 } // namespace iso15118::message_20

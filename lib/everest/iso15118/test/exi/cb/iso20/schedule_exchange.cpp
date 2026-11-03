@@ -1,6 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include <iso15118/message/response_variant.hpp>
+#include <iso15118/message/decode.hpp>
 #include <iso15118/message/schedule_exchange.hpp>
 #include <iso15118/message/variant.hpp>
 
@@ -199,13 +199,14 @@ SCENARIO("Se/Deserialize schedule_exchange messages") {
 
         const io::StreamInputView stream_view{doc_raw, sizeof(doc_raw)};
 
-        message_20::ResponseVariant variant(v2gtp::PayloadType::Part20Main, stream_view);
+        const auto decoded =
+            message_20::decode<message_20::ScheduleExchangeResponse>(v2gtp::PayloadType::Part20Main, stream_view);
 
         THEN("It should be decoded successfully") {
 
-            REQUIRE(variant.get_type() == message_20::Type::ScheduleExchangeRes);
+            REQUIRE(decoded.has_value());
 
-            const auto& msg = variant.get<message_20::ScheduleExchangeResponse>();
+            const auto& msg = *decoded;
             const auto& header = msg.header;
 
             REQUIRE(header.session_id == std::array<uint8_t, 8>{0x47, 0xFD, 0x3B, 0x4F, 0x13, 0x25, 0x57, 0xCA});
@@ -266,13 +267,14 @@ SCENARIO("Se/Deserialize schedule_exchange messages") {
 
         const io::StreamInputView stream_view{doc_raw, sizeof(doc_raw)};
 
-        message_20::ResponseVariant variant(v2gtp::PayloadType::Part20Main, stream_view);
+        const auto decoded =
+            message_20::decode<message_20::ScheduleExchangeResponse>(v2gtp::PayloadType::Part20Main, stream_view);
 
         THEN("It should be decoded successfully") {
 
-            REQUIRE(variant.get_type() == message_20::Type::ScheduleExchangeRes);
+            REQUIRE(decoded.has_value());
 
-            const auto& msg = variant.get<message_20::ScheduleExchangeResponse>();
+            const auto& msg = *decoded;
             const auto& header = msg.header;
 
             REQUIRE(header.session_id == std::array<uint8_t, 8>{0x47, 0xFD, 0x3B, 0x4F, 0x13, 0x25, 0x57, 0xCA});
@@ -321,13 +323,14 @@ SCENARIO("Se/Deserialize schedule_exchange messages") {
 
         const io::StreamInputView stream_view{doc_raw, sizeof(doc_raw)};
 
-        message_20::ResponseVariant variant(v2gtp::PayloadType::Part20Main, stream_view);
+        const auto decoded =
+            message_20::decode<message_20::ScheduleExchangeResponse>(v2gtp::PayloadType::Part20Main, stream_view);
 
         THEN("It should be decoded successfully") {
 
-            REQUIRE(variant.get_type() == message_20::Type::ScheduleExchangeRes);
+            REQUIRE(decoded.has_value());
 
-            const auto& msg = variant.get<message_20::ScheduleExchangeResponse>();
+            const auto& msg = *decoded;
             const auto& header = msg.header;
 
             REQUIRE(header.session_id == std::array<uint8_t, 8>{0x39, 0x20, 0xB0, 0x04, 0x6E, 0x4A, 0xF9, 0x09});
@@ -413,13 +416,14 @@ SCENARIO("Se/Deserialize schedule_exchange messages") {
 
         const io::StreamInputView stream_view{doc_raw, sizeof(doc_raw)};
 
-        message_20::ResponseVariant variant(v2gtp::PayloadType::Part20Main, stream_view);
+        const auto decoded =
+            message_20::decode<message_20::ScheduleExchangeResponse>(v2gtp::PayloadType::Part20Main, stream_view);
 
         THEN("It should be decoded successfully") {
 
-            REQUIRE(variant.get_type() == message_20::Type::ScheduleExchangeRes);
+            REQUIRE(decoded.has_value());
 
-            const auto& msg = variant.get<message_20::ScheduleExchangeResponse>();
+            const auto& msg = *decoded;
             const auto& header = msg.header;
 
             REQUIRE(header.session_id == std::array<uint8_t, 8>{0x39, 0x20, 0xB0, 0x04, 0x6E, 0x4A, 0xF9, 0x09});

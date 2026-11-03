@@ -16,10 +16,10 @@
 #include <utility>
 #include <vector>
 
+#include <iso15118/ev/message_20/response_variant.hpp>
 #include <iso15118/io/stream_view.hpp>
 #include <iso15118/message/common_types.hpp>
 #include <iso15118/message/payload_type.hpp>
-#include <iso15118/message/response_variant.hpp>
 #include <iso15118/message/supported_app_protocol.hpp>
 #include <iso15118/message/type.hpp>
 

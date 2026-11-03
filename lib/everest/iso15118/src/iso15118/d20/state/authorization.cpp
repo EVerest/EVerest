@@ -13,7 +13,7 @@
 #include <iso15118/detail/d20/state/session_stop.hpp>
 
 #include <iso15118/detail/helper.hpp>
-#include <iso15118/message/response_variant.hpp>
+#include <iso15118/message/decode.hpp>
 
 namespace iso15118::d20::state {
 
@@ -128,7 +128,7 @@ Result Authorization::feed(Event ev) {
             backend_response = *control_data;
             authorization_status = *control_data ? AuthStatus::Accepted : AuthStatus::Rejected;
         } else if (const auto certificate = m_ctx.get_control_event<CertificateResponse>()) {
-            if (not cert_install_forwarded or cert_install_failed or cert_install_raw_response) {
+            if (not cert_install_forwarded or cert_install_failed or cert_install_response) {
                 logf_warning("Authorization: certificate response without a forwarded request; ignored");
                 return {};
             }
@@ -143,7 +143,27 @@ Result Authorization::feed(Event ev) {
                 cert_install_failed = true;
                 return {};
             }
-            cert_install_raw_response = std::move(raw);
+            // Judged once, on arrival; a response the EV cannot use fails like a backend failure.
+            auto response = message_20::decode<message_20::CertificateInstallationResponse>(
+                v2gtp::PayloadType::Part20Main, io::StreamInputView{raw.data(), raw.size()});
+            const auto rejection = [&]() -> const char* {
+                if (not response) {
+                    return "undecodable";
+                }
+                if (response->header.session_id != m_ctx.session.get_id()) {
+                    return "for another session";
+                }
+                if (response->evse_processing != dt::Processing::Finished) {
+                    return "not finished";
+                }
+                return nullptr;
+            }();
+            if (rejection != nullptr) {
+                logf_warning("Authorization: the backend certificate response is %s", rejection);
+                cert_install_failed = true;
+                return {};
+            }
+            cert_install_response = RelayedInstallation{std::move(raw), std::move(*response)};
         }
         return {};
     }
@@ -151,7 +171,7 @@ Result Authorization::feed(Event ev) {
     if (ev == Event::TIMEOUT) {
         const auto timeout = m_ctx.get_active_timeout();
         if (timeout and *timeout == d20::TimeoutType::ONGOING) {
-            if (cert_install_forwarded and not cert_install_raw_response.has_value()) {
+            if (cert_install_forwarded and not cert_install_response.has_value()) {
                 // [V2G20-2225]: the backend did not deliver in time.
                 cert_install_failed = true;
             } else if (pnc_attempt or eim_timer_started) {
@@ -385,33 +405,28 @@ Result Authorization::handle_certificate_installation_request(const message_20::
         return {};
     }
 
-    if (cert_install_raw_response.has_value()) {
+    if (cert_install_response.has_value()) {
         // The backend's signed CertificateInstallationRes goes out verbatim ([V2G20-1973/1975]).
-        const auto& raw = *cert_install_raw_response;
-        const io::StreamInputView view{raw.data(), raw.size()};
-        message_20::ResponseVariant response(v2gtp::PayloadType::Part20Main, view);
-        const auto* res = response.get_if<message_20::CertificateInstallationResponse>();
-        if (res and res->header.session_id == m_ctx.session.get_id() and
-            res->evse_processing == dt::Processing::Finished and
-            m_ctx.respond_raw(raw, message_20::Type::CertificateInstallationRes)) {
+        const auto relayed = std::move(*cert_install_response);
+        cert_install_response.reset();
+        if (m_ctx.respond_raw(relayed.exi, message_20::Type::CertificateInstallationRes)) {
+            const auto& res = relayed.response;
             // [V2G20-2224]: an unknown prioritized eMSP permits a fresh installation attempt.
-            if (res->response_code == dt::ResponseCode::WARNING_eMSPUnknown) {
+            if (res.response_code == dt::ResponseCode::WARNING_eMSPUnknown) {
                 cert_install_remaining.reset();
-            } else if (res->response_code == dt::ResponseCode::OK) {
-                cert_install_remaining = res->remaining_contract_certificate_chains;
+            } else if (res.response_code == dt::ResponseCode::OK) {
+                cert_install_remaining = res.remaining_contract_certificate_chains;
             } else {
                 cert_install_remaining = 0;
             }
-            if (res->response_code >= dt::ResponseCode::FAILED) {
+            if (res.response_code >= dt::ResponseCode::FAILED) {
                 m_ctx.session_stopped = true;
             }
-            cert_install_raw_response.reset();
             cert_install_forwarded = false;
             m_ctx.stop_timeout(d20::TimeoutType::ONGOING);
             return {};
         }
-        logf_warning("Authorization: invalid or oversized backend certificate response");
-        cert_install_raw_response.reset();
+        logf_warning("Authorization: oversized backend certificate response");
         cert_install_failed = true;
     }
 

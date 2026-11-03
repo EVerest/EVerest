@@ -13,6 +13,7 @@
 #include <iso15118/ev/d20/engine.hpp>
 #include <iso15118/ev/d20/state/supported_app_protocol.hpp>
 #include <iso15118/ev/detail/d20/context_helper.hpp>
+#include <iso15118/ev/message_20/response_variant.hpp>
 #include <iso15118/ev/session/latches.hpp>
 #include <iso15118/io/logging.hpp>
 #include <iso15118/message/ac_charge_loop.hpp>
@@ -31,7 +32,6 @@
 #include <iso15118/message/dc_welding_detection.hpp>
 #include <iso15118/message/payload_type.hpp>
 #include <iso15118/message/power_delivery.hpp>
-#include <iso15118/message/response_variant.hpp>
 #include <iso15118/message/schedule_exchange.hpp>
 #include <iso15118/message/service_detail.hpp>
 #include <iso15118/message/service_discovery.hpp>
