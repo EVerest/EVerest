@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
-#include "sae_profile_config.hpp"
+#include <everest/iso15118_ev_session/sae_profile_config.hpp>
 
 #include <cmath>
 #include <cstddef>
@@ -20,7 +20,7 @@
 #include <iso15118/ev/message/ac_der_sae_names.hpp>
 #include <iso15118/sae_modes.hpp>
 
-namespace module {
+namespace everest::lib::iso15118_ev {
 
 namespace {
 
@@ -254,4 +254,4 @@ std::optional<iso15118::ev::d20::der::SaeInverterProfile> parse_sae_inverter_pro
     return profile;
 }
 
-} // namespace module
+} // namespace everest::lib::iso15118_ev
