@@ -3,6 +3,9 @@ add_executable(everest_io_tests
   mdns_test.cpp
   fd_event_client_alias_test.cpp
   socket_test.cpp
+  uds_socket_test.cpp
+  uds_event_client_test.cpp
+  uds_seqpacket_test.cpp
   udp_client_v6_test.cpp
   udp_unconnected_socket_test.cpp
   udp_dualstack_server_socket_test.cpp
