@@ -2446,15 +2446,13 @@ void ChargePointImpl::handleStopTransactionResponse(const EnhancedMessage<v16::M
     if (transaction != nullptr) {
         const std::int32_t connector = transaction->get_connector();
 
-        if (stop_transaction_response.idTagInfo) {
-            auto id_tag = this->transaction_handler->get_authorized_id_tag(call_result.uniqueId.get());
-            if (id_tag.has_value()) {
-                try {
-                    this->database_handler->insert_or_update_authorization_cache_entry(
-                        id_tag.value(), stop_transaction_response.idTagInfo.value());
-                } catch (const QueryExecutionException& e) {
-                    EVLOG_warning << "Could not insert or update authorization cache entry";
-                }
+        // the idTagInfo is about the idTag that stopped the transaction
+        if (stop_transaction_response.idTagInfo.has_value() and original_call.msg.idTag.has_value()) {
+            try {
+                this->database_handler->insert_or_update_authorization_cache_entry(
+                    original_call.msg.idTag.value(), stop_transaction_response.idTagInfo.value());
+            } catch (const QueryExecutionException& e) {
+                EVLOG_warning << "Could not insert or update authorization cache entry";
             }
         }
 
