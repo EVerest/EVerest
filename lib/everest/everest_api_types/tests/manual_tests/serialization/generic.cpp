@@ -5,6 +5,7 @@
 #include "everest_api_types/generic/codec.hpp"
 #include "everest_api_types/utilities/codec.hpp"
 #include "everest_api_types/utilities/constants.hpp"
+#include "everest_api_types/utilities/request_reply.hpp"
 #include "nlohmann/json.hpp"
 #include <gtest/gtest.h>
 #include <string_view>
@@ -134,4 +135,156 @@ TEST(RequestReplyDecoding, rejects_payload_nested_deeper_than_limit) {
     EXPECT_FALSE(everest::lib::API::deserialize(request_with_nested_payload(max_json_nesting_depth), msg));
     // Deep enough to overflow the stack when serializing the decoded payload.
     EXPECT_FALSE(everest::lib::API::deserialize(request_with_nested_payload(100000), msg));
+}
+
+TEST(RequestReplyDecoding, missing_reply_to_is_no_reply) {
+    RequestReply msg;
+
+    EXPECT_TRUE(everest::lib::API::deserialize(R"({"payload":{}})", msg));
+    EXPECT_FALSE(msg.replyTo.has_value());
+    EXPECT_TRUE(everest::lib::API::deserialize(R"({"headers":{},"payload":{}})", msg));
+    EXPECT_FALSE(msg.replyTo.has_value());
+}
+
+TEST(RequestReplyDecoding, rejects_reply_to_that_is_not_a_publishable_topic) {
+    RequestReply msg;
+
+    for (const auto* request :
+         {R"({"headers":{"replyTo":""}})", R"({"headers":{"replyTo":"reply/+/topic"}})",
+          R"({"headers":{"replyTo":"reply/#"}})", R"({"headers":{"replyTo":42}})", R"({"headers":"reply/topic"})",
+          R"({"headers":null})", R"({"headers":{"replyTo":"$SYS/broker/load"}})"}) {
+        EXPECT_FALSE(everest::lib::API::deserialize(request, msg)) << request;
+    }
+}
+
+TEST(RequestReplyDecoding, rejects_request_that_is_not_an_object) {
+    RequestReply msg;
+
+    for (const auto* request : {"true", "42", "[]", "null", R"("text")"}) {
+        EXPECT_FALSE(everest::lib::API::deserialize(request, msg)) << request;
+    }
+}
+
+TEST(RequestReplyDecoding, rejects_reply_to_on_a_topic_everest_subscribes_or_publishes_to) {
+    RequestReply msg;
+
+    for (const auto* reply_to :
+         {// m2e and entrypoint topics of the API modules and the management APIs
+          "everest_api/1/session_storage_consumer/storage/m2e/clear_sessions",
+          "everest_api/1/configuration/m2e/mark_active_slot", "everest_api/discover",
+          "everest_api/query-modules/evse_manager_consumer", "everest_api/1/evse_board_support/bsp/m2e/reply/0815",
+          "everest_api/1/evse_manager_consumer/evse/e2m/get_evse/m2e",
+          // command topics of the API module, Setup, OCPP and the simulators
+          "everest_api/evse_manager/cmd/enable_disable", "everest_api/setup/cmd/reboot",
+          "everest_api/ocpp/cmd/disconnect", "everest_api/imd/cmd/set_resistance",
+          // EVerest's own publications and requests to clients
+          "everest_api/1/evse_manager_consumer/evse/e2m/session_info",
+          "everest_api/1/powermeter/meter/e2m/stop_transaction", "everest_api/1/evse_manager_consumer/evse/e2m",
+          "everest_api",
+          // framework-internal and Node-RED debug topics
+          "everest/modules/evse/impl/evse/cmd", "everest", "everest_external/nodered/1/cmd/disable",
+          "everest_external/nodered/1/carsim/cmd/enable"}) {
+        auto request = nlohmann::json{{"headers", {{"replyTo", reply_to}}}}.dump();
+        EXPECT_FALSE(everest::lib::API::deserialize(request, msg)) << reply_to;
+    }
+
+    for (const auto* reply_to : {"everest_api/1/evse_manager_consumer/evse/e2m/get_evse/0815",
+                                 "everest_api/1/lifecycle/e2m/get_everest_version/8a3f/retry", "client/reply/m2e",
+                                 "everest_api_other/m2e/reply", "everest_external/myapp/reply", "everest_other/reply",
+                                 "mcs_evse_control/123/reply/get_evse"}) {
+        auto request = nlohmann::json{{"headers", {{"replyTo", reply_to}}}}.dump();
+        EXPECT_TRUE(everest::lib::API::deserialize(request, msg)) << reply_to;
+        EXPECT_EQ(msg.replyTo, reply_to);
+    }
+}
+
+TEST(RequestReplyEncoding, omits_headers_without_reply_to) {
+    RequestReply rr;
+    rr.payload = "{}";
+
+    auto j = nlohmann::json::parse(serialize(rr));
+
+    EXPECT_FALSE(j.contains("headers"));
+    EXPECT_FALSE(deserialize<RequestReply>(serialize(rr)).replyTo.has_value());
+}
+
+TEST(DeserializeRequest, reply_to_is_optional_but_must_be_publishable_when_present) {
+    using everest::lib::API::deserialize_request;
+    std::optional<std::string> reply_to;
+    int payload = 0;
+
+    EXPECT_TRUE(deserialize_request(R"({"headers":{"replyTo":"reply/topic"},"payload":7})", reply_to, payload));
+    EXPECT_EQ(reply_to, "reply/topic");
+    EXPECT_EQ(payload, 7);
+
+    EXPECT_TRUE(deserialize_request(R"({"payload":7})", reply_to, payload));
+    EXPECT_FALSE(reply_to.has_value());
+
+    EXPECT_TRUE(deserialize_request(R"({})", reply_to));
+    EXPECT_FALSE(reply_to.has_value());
+
+    EXPECT_FALSE(deserialize_request("true", reply_to));
+    EXPECT_FALSE(deserialize_request(R"({"headers":{"replyTo":"everest_api/discover"}})", reply_to));
+
+    EXPECT_FALSE(deserialize_request(R"({"headers":{"replyTo":""},"payload":7})", reply_to, payload));
+    EXPECT_FALSE(deserialize_request(R"({"headers":{"replyTo":"reply/#"}})", reply_to));
+    EXPECT_FALSE(deserialize_request(R"({"headers":{"replyTo":42}})", reply_to));
+    EXPECT_FALSE(deserialize_request(R"({"headers":[]})", reply_to));
+}
+
+TEST(generic, scalar_numbers_reject_other_json_types) {
+    float f = 0.0f;
+    EXPECT_TRUE(everest::lib::API::deserialize("1.5", f));
+    EXPECT_FLOAT_EQ(f, 1.5f);
+    EXPECT_TRUE(everest::lib::API::deserialize("2", f));
+    EXPECT_FLOAT_EQ(f, 2.0f);
+    EXPECT_FALSE(everest::lib::API::deserialize("true", f));
+    EXPECT_FALSE(everest::lib::API::deserialize("false", f));
+    EXPECT_FALSE(everest::lib::API::deserialize("\"1\"", f));
+    EXPECT_FALSE(everest::lib::API::deserialize("null", f));
+
+    double d = 0.0;
+    EXPECT_TRUE(everest::lib::API::deserialize("-3.25", d));
+    EXPECT_FALSE(everest::lib::API::deserialize("true", d));
+
+    int i = 0;
+    EXPECT_TRUE(everest::lib::API::deserialize("-7", i));
+    EXPECT_EQ(i, -7);
+    EXPECT_FALSE(everest::lib::API::deserialize("true", i));
+    EXPECT_FALSE(everest::lib::API::deserialize("7.5", i));
+
+    size_t u = 0;
+    EXPECT_TRUE(everest::lib::API::deserialize("42", u));
+    EXPECT_EQ(u, 42u);
+    EXPECT_FALSE(everest::lib::API::deserialize("-1", u));
+    EXPECT_FALSE(everest::lib::API::deserialize("true", u));
+
+    bool b = false;
+    EXPECT_FALSE(everest::lib::API::deserialize("1", b));
+}
+
+TEST(generic, scalar_numbers_reject_values_out_of_range) {
+    float f = 0.0f;
+    EXPECT_TRUE(everest::lib::API::deserialize("3.4e38", f));
+    EXPECT_TRUE(everest::lib::API::deserialize("-3.4e38", f));
+    EXPECT_FALSE(everest::lib::API::deserialize("1e39", f));
+    EXPECT_FALSE(everest::lib::API::deserialize("-1e39", f));
+
+    double d = 0.0;
+    EXPECT_TRUE(everest::lib::API::deserialize("1e39", d));
+    EXPECT_FALSE(everest::lib::API::deserialize("1e400", d));
+
+    int i = 0;
+    EXPECT_TRUE(everest::lib::API::deserialize("2147483647", i));
+    EXPECT_EQ(i, 2147483647);
+    EXPECT_TRUE(everest::lib::API::deserialize("-2147483648", i));
+    EXPECT_EQ(i, -2147483647 - 1);
+    EXPECT_FALSE(everest::lib::API::deserialize("2147483648", i));
+    EXPECT_FALSE(everest::lib::API::deserialize("-2147483649", i));
+    EXPECT_FALSE(everest::lib::API::deserialize("4294967297", i));
+    EXPECT_FALSE(everest::lib::API::deserialize("18446744073709551615", i));
+
+    size_t u = 0;
+    EXPECT_TRUE(everest::lib::API::deserialize("18446744073709551615", u));
+    EXPECT_FALSE(everest::lib::API::deserialize("18446744073709551616", u));
 }

@@ -69,23 +69,23 @@ void session_storage_consumer_API::generate_api_cmd_get_sessions() {
             request = API_types_ext::to_internal_api(payload);
         }
         auto reply = API_types_ext::to_external_api(r_session_storage->call_get_sessions(request));
-        mqtt_v.publish(msg.replyTo, serialize(reply));
+        mqtt_v.publish_reply(msg.replyTo, serialize(reply));
         return true;
     });
 }
 
 void session_storage_consumer_API::generate_api_cmd_get_session() {
     helper.subscribe_api_topic("get_session", [this](std::string const& data) {
-        std::string reply_to;
+        std::optional<std::string> reply_to;
         API_types_ext::SessionIdentifier_External payload;
         if (deserialize_request(data, reply_to, payload)) {
             auto result = r_session_storage->call_get_session(API_types_ext::to_internal_api(payload));
             if (not result.session) {
-                mqtt_v.publish(reply_to, std::string{"null"});
+                mqtt_v.publish_reply(reply_to, std::string{"null"});
                 return true;
             }
             auto reply = API_types_ext::to_external_api(result.session.value());
-            mqtt_v.publish(reply_to, serialize(reply));
+            mqtt_v.publish_reply(reply_to, serialize(reply));
             return true;
         }
         return false;
@@ -108,7 +108,7 @@ void session_storage_consumer_API::generate_api_cmd_clear_sessions() {
             request = API_types_ext::to_internal_api(payload);
         }
         auto reply = API_types_ext::to_external_api(r_session_storage->call_clear_sessions(request));
-        mqtt_v.publish(msg.replyTo, serialize(reply));
+        mqtt_v.publish_reply(msg.replyTo, serialize(reply));
         return true;
     });
 }

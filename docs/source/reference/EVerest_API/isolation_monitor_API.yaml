@@ -6,6 +6,7 @@ info:
   version: 1.1.0
   description: >-
     API for EVerest API clients implementing isolation monitoring.
+    Commands without arguments carry an empty JSON object ({}) as payload.
 
   license:
     name: Apache-2.0

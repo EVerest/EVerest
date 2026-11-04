@@ -7,6 +7,7 @@ info:
   description: >-
     API for EVerest API client implementing the system capabilities OTA update, log upload
     and network configuration.
+    Commands without arguments carry an empty JSON object ({}) as payload.
 
   license:
     name: Apache-2.0
@@ -290,10 +291,13 @@ components:
       payload:
         type: object
         required:
+          - headers
           - payload
         properties:
           headers:
             type: object
+            required:
+              - replyTo
             properties:
               replyTo:  # Address for the request to reply to
                 type: string
@@ -319,10 +323,13 @@ components:
       payload:
         type: object
         required:
+          - headers
           - payload
         properties:
           headers:
             type: object
+            required:
+              - replyTo
             properties:
               replyTo:  # Address for the request to reply to
                 type: string
@@ -351,10 +358,13 @@ components:
       payload:
         type: object
         required:
+          - headers
           - payload
         properties:
           headers:
             type: object
+            required:
+              - replyTo
             properties:
               replyTo:  # Address for the request to reply to
                 type: string
@@ -380,10 +390,13 @@ components:
       payload:
         type: object
         required:
+          - headers
           - payload
         properties:
           headers:
             type: object
+            required:
+              - replyTo
             properties:
               replyTo:  # Address for the request to reply to
                 type: string
@@ -407,9 +420,13 @@ components:
       summary:  Call to get the boot reason
       payload:
         type: object
+        required:
+          - headers
         properties:
           headers:
             type: object
+            required:
+              - replyTo
             properties:
               replyTo:  # Address for the request to reply to
                 type: string
@@ -435,10 +452,13 @@ components:
       payload:
         type: object
         required:
+          - headers
           - payload
         properties:
           headers:
             type: object
+            required:
+              - replyTo
             properties:
               replyTo:  # Address for the request to reply to
                 type: string
@@ -473,6 +493,8 @@ components:
         installing new firmware. EVerest will take care of this and call
         this function when all EVSE are in unavailable state to signal
         that installation can proceed.
+      contentType: application/json
+      payload: {}
     receive_reset:
       name: receive_reset
       title: 'Receive reset command'

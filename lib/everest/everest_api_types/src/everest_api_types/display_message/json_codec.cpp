@@ -6,9 +6,15 @@
 #include "display_message/codec.hpp"
 
 #include "nlohmann/json.hpp"
+#include "utilities/json_codec_helpers.hpp"
+
 #include "text_message/json_codec.hpp"
+#include <cstdint>
+#include <stdexcept>
 
 namespace everest::lib::API::V1_0::types::display_message {
+
+using utilities::json_number;
 
 void to_json(json& j, MessagePriorityEnum const& k) noexcept {
     switch (k) {
@@ -256,7 +262,7 @@ void to_json(json& j, DisplayMessage const& k) noexcept {
 void from_json(const json& j, DisplayMessage& k) {
     k.message = j.at("message");
     if (j.contains("id")) {
-        k.id.emplace(j.at("id"));
+        k.id.emplace(json_number<int32_t>(j.at("id")));
     }
     if (j.contains("priority")) {
         k.priority.emplace(j.at("priority"));
@@ -378,7 +384,7 @@ void to_json(json& j, ClearDisplayMessageRequest const& k) noexcept {
 }
 
 void from_json(const json& j, ClearDisplayMessageRequest& k) {
-    k.id = j.at("id");
+    k.id = json_number<int32_t>(j.at("id"));
 }
 
 void to_json(json& j, ClearDisplayMessageResponse const& k) noexcept {

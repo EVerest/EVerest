@@ -71,19 +71,19 @@ template <> bool deserialize(std::string_view val) {
 }
 
 template <> int deserialize(std::string_view val) {
-    return utilities::parse_json<int>(val);
+    return utilities::parse_json_number<int>(val);
 }
 
 template <> size_t deserialize(std::string_view val) {
-    return utilities::parse_json<size_t>(val);
+    return utilities::parse_json_number<size_t>(val);
 }
 
 template <> double deserialize(std::string_view val) {
-    return utilities::parse_json<double>(val);
+    return utilities::parse_json_number<double>(val);
 }
 
 template <> float deserialize(std::string_view val) {
-    return utilities::parse_json<float>(val);
+    return utilities::parse_json_number<float>(val);
 }
 
 template <> std::string deserialize(std::string_view val) {

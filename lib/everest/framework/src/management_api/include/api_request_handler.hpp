@@ -27,24 +27,29 @@ inline std::string printable(nlohmann::json const& data) {
     return data.dump(-1, ' ', false, nlohmann::json::error_handler_t::replace);
 }
 
-/// \brief Publishes \p reply, serialized, on the replyTo topic of the request \p msg.
+/// \brief Publishes \p reply, serialized, on the replyTo topic of the request \p msg. A request without replyTo
+/// does not want its reply, so nothing is published.
 template <typename ReplyT>
 void publish_reply(MQTTAbstraction& mqtt, ev_API::V1_0::types::generic::RequestReply const& msg, ReplyT const& reply) {
+    if (not msg.replyTo) {
+        return;
+    }
     // Keep the second argument a std::string. MQTTAbstraction also declares publish(topic, json), which dumps
     // its argument: handing it a json here would double-encode the already serialized reply - the client would
     // receive a quoted JSON string instead of an object - and would publish with QOS2 instead of QOS0.
-    mqtt.publish(msg.replyTo, serialize(reply));
+    mqtt.publish(*msg.replyTo, serialize(reply));
 }
 
 /// \brief Parses the RequestReply envelope in \p data and runs work(msg) for the command \p command.
 ///
-/// Once the envelope parses the replyTo topic is known, so every subsequent outcome must answer the client:
+/// Once the envelope parses the replyTo topic, if any, is known, so every subsequent outcome must answer the client:
 /// work returns false when the inner payload is invalid, and the service call it makes may throw (a call
 /// dispatched to another actor is rethrown into this MQTT worker via future.get()). On either a false return
 /// or an escaping exception, \p failure_reply is published, so a waiting client sees a failure instead of
 /// hanging until its own timeout.
 ///
-/// \returns false only when the envelope itself is unparseable, i.e. when there is no replyTo to answer.
+/// \returns false only when the envelope itself is unparseable, which includes a replyTo that is present but not a
+/// publishable topic; the command is then not executed.
 template <typename FailureT, typename WorkFn>
 bool handle_request(MQTTAbstraction& mqtt, std::string const& data, std::string const& command,
                     FailureT const& failure_reply, WorkFn&& work) {
@@ -57,11 +62,8 @@ bool handle_request(MQTTAbstraction& mqtt, std::string const& data, std::string 
         EVLOG_warning << "Failed to deserialize " << command << " request.";
         return false;
     }
-    // headers.replyTo is optional per the spec, so an empty one is no reason to reject the request: the
-    // command still runs. But MQTTAbstraction::publish() no-ops on an empty topic, so every reply below is
-    // discarded - warn instead of letting that happen silently.
-    if (msg.replyTo.empty()) {
-        EVLOG_warning << command << " request has no headers.replyTo; executing anyway, but the reply is discarded.";
+    if (not msg.replyTo) {
+        EVLOG_debug << command << " request has no headers.replyTo, its reply is discarded.";
     }
     try {
         if (not work(msg)) {

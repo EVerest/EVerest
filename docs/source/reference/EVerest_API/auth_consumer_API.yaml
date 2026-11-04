@@ -152,7 +152,10 @@ components:
             properties:
               replyTo:
                 type: string
-                description: Address to send the response to. If this information is missing, the command will still be accepted, but no response will be sent.
+                minLength: 1
+                description: >-
+                  Address to send the response to. Omit it to discard the response. An invalid address, see
+                  the EVerest API explanation, rejects the request.
           payload:
             $ref: '#/components/schemas/WithdrawAuthorizationRequest'
       examples:
@@ -193,17 +196,16 @@ components:
       contentType: application/json
       payload:
         type: object
-        required:
-          - headers
         properties:
           headers:
             type: object
-            required:
-              - replyTo
             properties:
               replyTo:
                 type: string
-                description: Address to send the response to.
+                minLength: 1
+                description: >-
+                  Address to send the response to. Omit it to discard the response. An invalid address, see
+                  the EVerest API explanation, rejects the request.
       examples:
         - summary: ""
           payload:
@@ -450,6 +452,8 @@ components:
         authorization for the given EVSE will be withdrawn, if the placed id_token matches
         the given id_token. If no parameter is given, all granted authorizations for all EVSEs
         will be removed. If a transaction is running on an affected EVSE, it is stopped.
+        A request that is not such an object, or whose evse_id is not an integer, is ignored
+        with a log warning and withdraws nothing.
       type: object
       additionalProperties: true
       properties:
