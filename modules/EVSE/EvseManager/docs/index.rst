@@ -638,8 +638,8 @@ evse_board_support
    * - ``evse_board_support/CommunicationFault``
      - yes
 
-The ``evse_board_support`` interface can also raise the ``ac_rcd`` error types. Raised through the ``bsp`` requirement, all of
-them block charging, ``ac_rcd/VendorWarning`` included:
+The ``evse_board_support`` interface can also raise the ``ac_rcd`` error types. Raised through the ``bsp`` requirement, they
+block charging exactly as they do when raised through the ``ac_rcd`` requirement:
 
 .. list-table::
    :header-rows: 1
@@ -657,7 +657,7 @@ them block charging, ``ac_rcd/VendorWarning`` included:
    * - ``ac_rcd/VendorError``
      - yes
    * - ``ac_rcd/VendorWarning``
-     - yes
+     - no
 
 connector_lock
 --------------
@@ -761,7 +761,8 @@ powermeter
 ----------
 
 Only the billing powermeter is evaluated: ``powermeter_car_side`` if it is connected, otherwise ``powermeter_grid_side``.
-If ``fail_on_powermeter_errors`` is ``true``, all of its errors block charging. If it is ``false``, none of them do.
+If ``fail_on_powermeter_errors`` is ``true``, ``powermeter/CommunicationFault`` and ``powermeter/VendorError`` block
+charging. If it is ``false``, none of them do. ``powermeter/VendorWarning`` never blocks charging.
 
 .. list-table::
    :header-rows: 1
@@ -773,7 +774,7 @@ If ``fail_on_powermeter_errors`` is ``true``, all of its errors block charging. 
    * - ``powermeter/VendorError``
      - yes, if ``fail_on_powermeter_errors`` is ``true``
    * - ``powermeter/VendorWarning``
-     - yes, if ``fail_on_powermeter_errors`` is ``true``
+     - no
 
 slac
 ----
