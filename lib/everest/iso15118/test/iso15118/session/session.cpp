@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
+#include <algorithm>
 #include <array>
 #include <cbv2g/din/din_msgDefDecoder.h>
 #include <cbv2g/iso_2/iso2_msgDefDecoder.h>
@@ -742,4 +743,68 @@ TEST_CASE_METHOD(SessionFixture, "SAP handover waits for its paced wire response
     session->poll();
     REQUIRE_FALSE(conn->written.empty());
     REQUIRE_FALSE(conn->closed);
+}
+
+namespace {
+iso15118::session::SessionConfig make_pnc_session_config() {
+    iso15118::session::EvseSetupConfig setup{};
+    setup.authorization_services = {dt::Authorization::EIM, dt::Authorization::PnC};
+    setup.enable_certificate_install_service = true;
+    setup.control_mobility_modes = {{dt::ControlMode::Scheduled, dt::MobilityNeedsMode::ProvidedByEvcc}};
+    return iso15118::session::SessionConfig{setup};
+}
+
+void require_eim_only(const iso15118::message_20::AuthorizationSetupResponse& res) {
+    REQUIRE(res.response_code == dt::ResponseCode::OK);
+    REQUIRE(res.authorization_services.size() == 1);
+    REQUIRE(res.authorization_services[0] == dt::Authorization::EIM);
+    REQUIRE_FALSE(res.certificate_installation_service);
+}
+} // namespace
+
+TEST_CASE_METHOD(SessionFixture, "ISO 15118-20 without TLS offers neither PnC nor certificate installation") {
+    SECTION("negotiated with SupportedAppProtocol") {
+        auto config = make_pnc_session_config();
+        config.supported_protocols = {iso15118::ProtocolId::ISO15118_20};
+        auto session = make_session(config, false);
+        conn->fire(iso15118::io::ConnectionEvent::ACCEPTED);
+
+        const auto exchange = [&](const auto& request, iso15118::io::v2gtp::PayloadType payload) {
+            queue_request(*conn, request, payload);
+            session->poll();
+            now += 200ms;
+            session->poll();
+        };
+        iso15118::message_20::SupportedAppProtocolRequest sap;
+        sap.app_protocol.push_back({iso15118::ISO20_AC_PROTOCOL_NAMESPACE, 1, 0, 1, 1});
+        exchange(sap, iso15118::io::v2gtp::PayloadType::SAP);
+        iso15118::message_20::SessionSetupRequest setup{};
+        setup.evccid = "EVCC";
+        exchange(setup, iso15118::io::v2gtp::PayloadType::Part20Main);
+        const auto session_id = response_from_wire<iso15118::message_20::SessionSetupResponse>(*conn).header.session_id;
+        exchange(iso15118::message_20::AuthorizationSetupRequest{{session_id, 0}},
+                 iso15118::io::v2gtp::PayloadType::Part20Main);
+
+        require_eim_only(response_from_wire<iso15118::message_20::AuthorizationSetupResponse>(*conn));
+    }
+
+    SECTION("handed over after an external SupportedAppProtocol") {
+        auto session = make_session(make_pnc_session_config(), true);
+        start_session(*session, *conn);
+
+        require_eim_only(response_from_wire<iso15118::message_20::AuthorizationSetupResponse>(*conn));
+    }
+}
+
+TEST_CASE_METHOD(SessionFixture, "ISO 15118-20 over TLS keeps PnC and certificate installation") {
+    conn->secure = true;
+    auto session = make_session(make_pnc_session_config(), true);
+    start_session(*session, *conn);
+
+    const auto res = response_from_wire<iso15118::message_20::AuthorizationSetupResponse>(*conn);
+    REQUIRE(res.response_code == dt::ResponseCode::OK);
+    REQUIRE(res.authorization_services.size() == 2);
+    REQUIRE(std::find(res.authorization_services.begin(), res.authorization_services.end(), dt::Authorization::PnC) !=
+            res.authorization_services.end());
+    REQUIRE(res.certificate_installation_service);
 }

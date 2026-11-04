@@ -28,7 +28,8 @@ public:
                   std::optional<d20::PauseContext>& pause_ctx, session::feedback::Callbacks callbacks,
                   d20::Timeouts& timeouts, const d20::EVSupportedAppProtocols& offered_protocols,
                   const message_20::SupportedAppProtocol& selected_protocol,
-                  std::optional<io::sha512_hash_t> vehicle_cert_hash, bool skip_app_protocol_negotiation = false);
+                  std::optional<io::sha512_hash_t> vehicle_cert_hash, bool tls_active,
+                  bool skip_app_protocol_negotiation = false);
 
     bool on_packet(io::v2gtp::PayloadType, const io::StreamInputView&);
     void on_control_event(const d20::ControlEvent&);
