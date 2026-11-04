@@ -3,6 +3,8 @@
 
 #include <everest/conversions/ocpp/ocpp_conversions.hpp>
 
+#include <cmath>
+
 #include <everest/logging.hpp>
 
 #include "generated/types/display_message.hpp"
@@ -251,8 +253,9 @@ types::session_cost::SessionStatus to_everest_running_cost_state(const ocpp::Run
 }
 
 // Price in minor currency units, e.g. EUR 1.50 with 2 decimals is 150.
+// Round instead of truncating: 0.29 is stored as 0.28999..., a cast would give 28.
 int to_minor_units(const double& price, const uint32_t& number_of_decimals) {
-    return static_cast<int>(price * (pow(10, number_of_decimals)));
+    return static_cast<int>(std::lround(price * std::pow(10, number_of_decimals)));
 }
 
 types::session_cost::SessionCostChunk create_session_cost_chunk(const double& price, const uint32_t& number_of_decimals,
