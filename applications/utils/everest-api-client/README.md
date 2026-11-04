@@ -239,7 +239,7 @@ the Sphinx manual, without npm or an installed tool:
 cd applications/utils/everest-api-client
 python3 -m everest_api.docs_cli \
     --spec ../../../docs/source/reference/EVerest_API/*.yaml \
-    --rst-out build/api/reference/api --assets-out build/api/_static/everest-api
+    --rst-out build/api/reference/EVerestAPI --assets-out build/api/_static/everest-api
 ```
 
 One call validates every spec against the AsyncAPI 3.0 schema

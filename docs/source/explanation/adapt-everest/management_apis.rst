@@ -47,7 +47,7 @@ This includes
 - querying the current configuration slots, e.g. to fetch the list of available
   configuration slots or the details of a specific slot.
 
-The full specification can be found in the :doc:`AsyncAPI reference </reference/api/configuration_API>`.
+The full specification can be found in the :doc:`AsyncAPI reference </reference/EVerestAPI/configuration_API>`.
 
 To activate the configuration_API, use the ``--configuration-api`` flag when starting
 EVerest, e.g. with the following command in your *build* folder:
@@ -73,7 +73,7 @@ This includes
 - starting and stopping modules
 - fetching the status of modules, e.g. whether they are running or not.
 
-The full specification can be found in the :doc:`AsyncAPI reference </reference/api/lifecycle_API>`.
+The full specification can be found in the :doc:`AsyncAPI reference </reference/EVerestAPI/lifecycle_API>`.
 
 To activate the lifecycle_API, use the ``--lifecycle-api`` flag when starting
 EVerest, e.g. with the following command in your *build* folder:

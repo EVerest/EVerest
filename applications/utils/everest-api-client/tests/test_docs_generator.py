@@ -97,13 +97,13 @@ def site(tmp_path_factory):
     """All pages, the index and the shared assets, generated the way the docs
     build does."""
     root = tmp_path_factory.mktemp("api")
-    generate_reference(SPEC_FILES, root / "reference" / "api", root / "_static" / "everest-api")
+    generate_reference(SPEC_FILES, root / "reference" / "EVerestAPI", root / "_static" / "everest-api")
     pages = {spec.stem: _parse_page(_page_text(root, spec.stem)) for spec in SPEC_FILES}
     return root, pages
 
 
 def _page_text(root, name):
-    return (root / "reference" / "api" / f"{name}.rst").read_text(encoding="utf-8")
+    return (root / "reference" / "EVerestAPI" / f"{name}.rst").read_text(encoding="utf-8")
 
 
 def test_specs_found():
@@ -451,7 +451,7 @@ Experimental index
 
 .. toctree::
 
-   reference/api/{index}
+   reference/EVerestAPI/{index}
 """
 
 
@@ -474,8 +474,8 @@ class _BuiltPage(HTMLParser):
 
 
 _BUILT_PAGES = {
-    "html": lambda out: {p.stem: p for p in (out / "reference" / "api").glob("*.html")},
-    "dirhtml": lambda out: {p.parent.name: p for p in (out / "reference" / "api").glob("*/index.html")},
+    "html": lambda out: {p.stem: p for p in (out / "reference" / "EVerestAPI").glob("*.html")},
+    "dirhtml": lambda out: {p.parent.name: p for p in (out / "reference" / "EVerestAPI").glob("*/index.html")},
 }
 
 
@@ -501,7 +501,7 @@ def test_sphinx_builds_the_reference_without_warnings(tmp_path, builder):
     follow the builder's URLs, and only the API pages load the assets."""
     pytest.importorskip("sphinx")
     src, out = tmp_path / "src", tmp_path / "out"
-    generate_reference(SPEC_FILES, src / "reference" / "api", src / "_static" / "everest-api")
+    generate_reference(SPEC_FILES, src / "reference" / "EVerestAPI", src / "_static" / "everest-api")
     (src / "conf.py").write_text(_sphinx_conf(), encoding="utf-8")
     (src / "index.rst").write_text(_SPHINX_ROOT.replace("{index}", INDEX_NAME), encoding="utf-8")
     result = subprocess.run([sys.executable, "-m", "sphinx", "-W", "--keep-going", "-q", "-b", builder,

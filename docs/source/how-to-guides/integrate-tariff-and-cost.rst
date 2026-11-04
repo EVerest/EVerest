@@ -33,8 +33,8 @@ Two consumer APIs carry tariff and cost information:
 At least the session cost consumer API must be subscribed to receive tariff and cost
 updates.
 
-See the AsyncAPI reference for the :doc:`/reference/api/auth_consumer_API`
-and the :doc:`/reference/api/session_cost_consumer_API` for message schemas.
+See the AsyncAPI reference for the :doc:`/reference/EVerestAPI/auth_consumer_API`
+and the :doc:`/reference/EVerestAPI/session_cost_consumer_API` for message schemas.
 
 
 .. note::

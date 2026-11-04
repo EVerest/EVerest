@@ -229,8 +229,8 @@ would touch.
 
 `docs/source/reference/EVerest_API/*.yaml` feed the EVerest API client in
 `applications/utils/everest-api-client/` and, through its `everest_api.docs_cli` entry
-point, the API reference of the manual: a Sphinx page `reference/api/<name>.rst` per
-spec, the index page listing them, and a stylesheet and script in
+point, the API reference of the manual: a Sphinx page `reference/EVerestAPI/<name>.rst`
+per spec, the index page listing them, and a stylesheet and script in
 `_static/everest-api/` that `docs/conf.py.in` adds to those pages only. The docs build
 runs that generator once for all specs into the trailbook instance source directory.
 The generator validates every spec against the AsyncAPI 3.0 schema vendored in
