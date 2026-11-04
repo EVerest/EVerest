@@ -234,7 +234,7 @@ Transaction flow (OCMF)
 =======================
 
 Start transaction
----------------
+-----------------
 
 High-level flow:
 
@@ -318,7 +318,7 @@ Common causes and checks:
   - Ensure the EVerest process has permissions to open the device node.
 
 Repeated ``CommunicationFault`` raises
-------------------------------------
+--------------------------------------
 
 The module raises a communication fault when Modbus operations fail and clears it once communication is restored.
 If you see frequent toggling:

@@ -1,4 +1,4 @@
-.. _everest_modules_handwritten_OCPPmulti:
+.. _everest_modules_handwritten_ocppmulti:
 
 .. *******************************************
 .. OCPPmulti
