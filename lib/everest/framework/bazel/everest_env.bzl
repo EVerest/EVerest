@@ -1,5 +1,51 @@
+load("@rules_pkg//pkg:providers.bzl", "PackageFilegroupInfo", "PackageFilesInfo")
 load("@rules_python//python:defs.bzl", "PyInfo")
 load("//third-party/bazel/toolchains:defs.bzl", "CROSS_PYTHON_INCOMPATIBLE")
+
+def _overlay_path(dest, origin):
+    """Maps a rules_pkg destination to a path relative to the EVerest prefix.
+
+    Absolute destinations follow an installation with prefix `/usr`, whose etc
+    directory is `/etc/everest` (see runtime.cpp).
+    """
+    if not dest.startswith("/"):
+        return dest
+    if dest.startswith("/usr/"):
+        return dest.removeprefix("/usr/")
+    if dest.startswith("/etc/"):
+        return dest.removeprefix("/")
+    fail("{0}: overlay destination {1} is neither below /usr nor /etc".format(origin, dest))
+
+_USER_CONFIG_DIR = "etc/everest/user-config/"
+
+def _stage_copy(ctx, src, path):
+    """Copies `src` to `<ctx.label.name/<path>` in the output tree.
+    """
+    copy = ctx.actions.declare_file("{0}/{1}".format(ctx.label.name, path))
+    ctx.actions.expand_template(template = src, output = copy, substitutions = {})
+    return copy
+
+def _overlay_symlinks(ctx, config_path):
+    symlinks = {}
+    for target in ctx.attr.overlay:
+        if PackageFilesInfo in target:
+            files_infos = [(target[PackageFilesInfo], target.label)]
+        else:
+            filegroup = target[PackageFilegroupInfo]
+            if filegroup.pkg_dirs or filegroup.pkg_symlinks:
+                fail("{0}: overlay supports files only, not pkg_mkdirs or pkg_mklink".format(target.label))
+            files_infos = filegroup.pkg_files
+        for files_info, origin in files_infos:
+            for dest, src in files_info.dest_src_map.items():
+                path = _overlay_path(dest, origin)
+                if path == config_path:
+                    fail("{0}: overlay destination {1} replaces the config, set config_file instead".format(origin, dest))
+                if path in symlinks:
+                    fail("{0}: overlay destination {1} is staged twice".format(origin, dest))
+                if path.startswith(_USER_CONFIG_DIR):
+                    src = _stage_copy(ctx, src, path)
+                symlinks[path] = src
+    return symlinks
 
 def _everest_env(ctx):
     """Everest Root rule
@@ -71,7 +117,7 @@ def _everest_env(ctx):
     symlinks.update({"bin/manager_impl": ctx.attr.manager[DefaultInfo].files.to_list()[0]})
     symlinks.update(
         {
-            config_path: config_file,
+            config_path: _stage_copy(ctx, config_file, config_path),
         },
     )
     symlinks.update(
@@ -123,6 +169,9 @@ def _everest_env(ctx):
             for file in errors[DefaultInfo].files.to_list()
         },
     )
+
+    # Last, so the overlay replaces the files staged above.
+    symlinks.update(_overlay_symlinks(ctx, config_path))
 
     # For the executable we need to export the python specific variables by
     # hand.
@@ -219,6 +268,19 @@ manager applies them on startup and refuses to boot without them.""",
         doc = "The target with the EVerest logging.ini file.",
         default = Label("//lib/everest/framework/everestrs/tests:logging.ini"),
         allow_single_file = True,
+    ),
+    "overlay": attr.label_list(
+        doc = """
+rules_pkg targets (`pkg_files`, `pkg_filegroup`) with files to stage into the
+EVerest prefix. They replace the files the rule stages at the same path from
+its other attributes; the config itself is set by `config_file` only.
+
+Relative destinations are relative to the prefix. Absolute destinations follow
+an installation with prefix `/usr`: `/usr/share/everest/...` is staged as
+`share/everest/...` and `/etc/everest/...` as `etc/everest/...`. Other absolute
+destinations, `pkg_mkdirs` and `pkg_mklink` are rejected. File attributes such
+as `mode` are ignored.""",
+        providers = [[PackageFilesInfo], [PackageFilegroupInfo]],
     ),
     "modules": attr.label_list(
         doc = """

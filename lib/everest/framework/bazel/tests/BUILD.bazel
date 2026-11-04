@@ -1,0 +1,46 @@
+load("@rules_pkg//pkg:mappings.bzl", "pkg_filegroup", "pkg_files")
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
+load("//lib/everest/framework/bazel:everest_env.bzl", "everest_env")
+
+pkg_files(
+    name = "module_data",
+    srcs = ["overlay/module-data.txt"],
+    prefix = "/usr/share/everest/modules/RsIgnore",
+)
+
+pkg_files(
+    name = "user_config",
+    srcs = ["overlay/user-config.yaml"],
+    prefix = "/etc/everest/user-config",
+    renames = {"overlay/user-config.yaml": "config.yaml"},
+)
+
+pkg_filegroup(
+    name = "installed_files",
+    srcs = [
+        ":module_data",
+        ":user_config",
+    ],
+)
+
+pkg_files(
+    name = "logging",
+    srcs = ["overlay/logging.ini"],
+    renames = {"overlay/logging.ini": "etc/everest/default_logging.cfg"},
+)
+
+everest_env(
+    name = "overlay_env",
+    config_file = "config.yaml",
+    modules = ["//lib/everest/framework/everestrs/tests/modules/RsIgnore"],
+    overlay = [
+        ":installed_files",
+        ":logging",
+    ],
+)
+
+sh_test(
+    name = "overlay_test",
+    srcs = ["overlay_test.sh"],
+    data = [":overlay_env"],
+)
