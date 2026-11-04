@@ -49,10 +49,10 @@ safety:
     pwm_delay_ms: 0
     switchoff_delay_ms: 10
   relay_3:
-    relay_mode: "GPIO"
+    relay_mode: "PowerRelay"
     feedback_enabled: false
-    feedback_delay_ms: 10
-    feedback_inverted: false
+    feedback_delay_ms: 200
+    feedback_inverted: true
     pwm_dc: 100
     pwm_delay_ms: 0
     switchoff_delay_ms: 10
@@ -160,10 +160,10 @@ io:
     mdns: false
     config: 32767
   gpio_8:
-    mode: "Output"
-    pulls: "PullUp"
+    mode: "WS28_LED"
+    pulls: "NoPull"
     mdns: false
-    config: 32767
+    config: 9
   gpio_9:
     mode: "Input"
     pulls: "PullUp"
