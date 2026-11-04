@@ -192,7 +192,7 @@ Planned for H2/2026:
 .. _roadmap-ocpp-status:
 
 Current (August 2026) OCPP implementation status
-==================================
+================================================
 
 The OCPP support in EVerest moves faster than the yearly roadmap rounds, so
 this section is kept separately.

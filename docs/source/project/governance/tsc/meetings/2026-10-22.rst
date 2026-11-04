@@ -1,4 +1,3 @@
-```rst
 EVerest TSC Meeting - 22 October 2026
 =====================================
 
@@ -83,4 +82,3 @@ Other:
 - AFIR: 11 of 12 charger-side obligations ready; already covers the 1 Jan 2027 ISO 15118-20 mandate
 - OSS and AI: maintainers flooded by PRs; open question how merit-based step-up to committer/maintainer should evolve when review is the bottleneck
 - EU Roadmap SG 8: draft due 7 Nov, presented at V2G Leaders Europe 24 Nov
-```
