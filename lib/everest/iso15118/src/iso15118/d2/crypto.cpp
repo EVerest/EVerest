@@ -163,6 +163,21 @@ std::vector<uint8_t> concat_kdf_sha256(const std::vector<uint8_t>& shared_secret
     return std::vector<uint8_t>(hash.begin(), hash.begin() + out_len);
 }
 
+// Annex H.1.1: two letters (country), three alphanumerics (provider), nine alphanumerics (instance) and an
+// optional check digit; the dashes are already removed.
+bool is_emaid(const std::string& stripped) {
+    if (stripped.size() != 14 and stripped.size() != 15) {
+        return false;
+    }
+    for (std::size_t i = 0; i < stripped.size(); ++i) {
+        const auto c = static_cast<unsigned char>(stripped[i]);
+        if (i < 2 ? not std::isalpha(c) : not std::isalnum(c)) {
+            return false;
+        }
+    }
+    return true;
+}
+
 } // namespace
 
 ContractValidationResult validate_contract_chain(const std::vector<uint8_t>& leaf_der,
@@ -184,8 +199,22 @@ ContractValidationResult validate_contract_chain(const std::vector<uint8_t>& lea
         return result;
     }
 
-    // Cross-check the requested eMAID against the leaf CommonName (case-insensitive, '-' removed).
+    // [V2G2-108] with Table F.4: the subject CommonName is the EMAID. Below a shared root nothing else tells
+    // a contract certificate from another leaf, e.g. an SECC certificate whose CommonName is a CPID.
     const auto cert_emaid = x509::subject_common_name(leaf.get());
+    if (not is_emaid(strip_dashes(cert_emaid))) {
+        logf_error("PnC: the certificate CommonName '%s' is not an EMAID, not a contract certificate",
+                   cert_emaid.c_str());
+        result.response_code = dt::ResponseCode::FAILED;
+        return result;
+    }
+    if (x509::subject_names_non_contract_profile(leaf.get())) {
+        logf_error("PnC: the certificate DomainComponent names another Annex F profile, not a contract certificate");
+        result.response_code = dt::ResponseCode::FAILED;
+        return result;
+    }
+
+    // Cross-check the requested eMAID against the leaf CommonName (case-insensitive, '-' removed).
     {
         const auto cert_e = strip_dashes(cert_emaid);
         const auto req_e = strip_dashes(req_emaid);
@@ -196,6 +225,12 @@ ContractValidationResult validate_contract_chain(const std::vector<uint8_t>& lea
             result.response_code = dt::ResponseCode::FAILED;
             return result;
         }
+    }
+
+    if (sub_certs.size() > 2) {
+        logf_error("PnC: %zu SubCertificates, at most two are allowed [V2G2-656]", sub_certs.size());
+        result.response_code = dt::ResponseCode::FAILED;
+        return result;
     }
 
     std::vector<X509_ptr> sub_x509;
@@ -216,7 +251,9 @@ ContractValidationResult validate_contract_chain(const std::vector<uint8_t>& lea
         sub_x509.push_back(std::move(x));
     }
 
-    // Trust anchors: the MO root (and, mirroring EvseV2G, the V2G root too).
+    // Trust anchors: [V2G2-899] names the MO root alone. The V2G root is accepted too because deployed PKIs
+    // issue the MO sub-CAs below it without a separate MO root; the subject checks above keep the other
+    // leaves below that root out.
     X509_STORE* store = X509_STORE_new();
     bool any_root = false;
     if (store != nullptr) {

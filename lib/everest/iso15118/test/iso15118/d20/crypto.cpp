@@ -155,6 +155,26 @@ SCENARIO("ISO 15118-20 contract certificate chain validation") {
         }
     }
 
+    GIVEN("A contract certificate with the optional DomainComponent MO") {
+        CertSpec leaf{"DE-ABC-C123ABC56-X"};
+        leaf.dc = "MO";
+        const auto pki = make_pki("secp521r1", leaf);
+        const auto result = crypto::validate_contract_chain(pki.leaf_der(), pki.subs_der(), "", pki.root_bundle_path);
+        THEN("It validates") {
+            REQUIRE(result.response_code == dt::ResponseCode::OK);
+        }
+    }
+
+    GIVEN("An SECC certificate below the same V2G root (Table B.5: DomainComponent CSO)") {
+        CertSpec leaf{"DE-ABC-C123ABC56-X"};
+        leaf.dc = "CSO";
+        const auto pki = make_pki("secp521r1", leaf, {"CSO sub-CA1"}, {"CSO sub-CA2"});
+        const auto result = crypto::validate_contract_chain(pki.leaf_der(), pki.subs_der(), "", pki.root_bundle_path);
+        THEN("It is rejected as a contract certificate although its chain verifies") {
+            REQUIRE(result.response_code == dt::ResponseCode::WARNING_CertificateValidationError);
+        }
+    }
+
     GIVEN("A valid Ed448 chain") {
         const auto pki = make_pki("ED448");
         const auto result = crypto::validate_contract_chain(pki.leaf_der(), pki.subs_der(), pki.root_bundle_path, "");

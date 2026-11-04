@@ -75,12 +75,16 @@ inline std::string to_pem(X509* cert) {
 struct CertSpec {
     std::string cn;
     std::string o{"EVerest"};
+    std::string dc{}; // subject DomainComponent, omitted when empty
     bool ca{false};
     int path_len{-1}; // -1: no pathLenConstraint
     long not_before_offset_s{-3600};
     long not_after_offset_s{365L * 24 * 3600};
     std::vector<std::string> extra_ext{}; // "nid_name=value"
     bool omit_aia{false};
+    // Key identifiers and AuthorityInfoAccess marked critical. RFC 5280 and the ISO 15118-2 profiles (Annex F,
+    // "nc") want them non-critical; make_pki applies the leaf's setting to the whole chain.
+    bool critical_ids{true};
 };
 
 inline X509_ptr make_cert(const CertSpec& spec, EVP_PKEY* subject_key, X509* issuer, EVP_PKEY* issuer_key,
@@ -97,6 +101,10 @@ inline X509_ptr make_cert(const CertSpec& spec, EVP_PKEY* subject_key, X509* iss
                                0);
     X509_NAME_add_entry_by_txt(name, "CN", MBSTRING_ASC, reinterpret_cast<const unsigned char*>(spec.cn.c_str()), -1,
                                -1, 0);
+    if (not spec.dc.empty()) {
+        X509_NAME_add_entry_by_txt(name, "DC", MBSTRING_ASC, reinterpret_cast<const unsigned char*>(spec.dc.c_str()),
+                                   -1, -1, 0);
+    }
     X509* issuer_cert = issuer != nullptr ? issuer : cert.get();
     REQUIRE(X509_set_issuer_name(cert.get(), X509_get_subject_name(issuer_cert)) == 1);
 
@@ -115,12 +123,13 @@ inline X509_ptr make_cert(const CertSpec& spec, EVP_PKEY* subject_key, X509* iss
     }
     add(NID_basic_constraints, basic);
     add(NID_key_usage, spec.ca ? "critical,keyCertSign,cRLSign" : "critical,digitalSignature");
-    add(NID_subject_key_identifier, "critical,hash");
+    const std::string ids_prefix = spec.critical_ids ? "critical," : "";
+    add(NID_subject_key_identifier, ids_prefix + "hash");
     if (issuer != nullptr) {
-        add(NID_authority_key_identifier, "critical,keyid:always");
+        add(NID_authority_key_identifier, ids_prefix + "keyid:always");
     }
     if (not spec.omit_aia) {
-        add(NID_info_access, "critical,OCSP;URI:http://ocsp.example.org");
+        add(NID_info_access, ids_prefix + "OCSP;URI:http://ocsp.example.org");
     }
     for (const auto& extra : spec.extra_ext) {
         const auto eq = extra.find('=');
@@ -188,6 +197,9 @@ inline Pki make_pki(const char* curve, CertSpec leaf_spec = {"DE-ABC-C123ABC56-X
     CertSpec root_spec{"eMSP Root CA"};
     root_spec.ca = true;
     root_spec.omit_aia = true;
+    root_spec.critical_ids = leaf_spec.critical_ids;
+    sub1_spec.critical_ids = leaf_spec.critical_ids;
+    sub2_spec.critical_ids = leaf_spec.critical_ids;
     pki.root = make_cert(root_spec, pki.root_key.get(), nullptr, pki.root_key.get(), 1);
     sub1_spec.ca = true;
     sub1_spec.path_len = 1;
