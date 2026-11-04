@@ -250,12 +250,17 @@ types::session_cost::SessionStatus to_everest_running_cost_state(const ocpp::Run
     throw std::out_of_range("Could not convert ocpp::RunningCostState to types::session_cost::SessionStatus");
 }
 
+// Price in minor currency units, e.g. EUR 1.50 with 2 decimals is 150.
+static int to_minor_units(const double& price, const uint32_t& number_of_decimals) {
+    return static_cast<int>(price * (pow(10, number_of_decimals)));
+}
+
 types::session_cost::SessionCostChunk create_session_cost_chunk(const double& price, const uint32_t& number_of_decimals,
                                                                 const std::optional<ocpp::DateTime>& timestamp,
                                                                 const std::optional<uint32_t>& meter_value) {
     types::session_cost::SessionCostChunk chunk;
     chunk.cost = types::money::MoneyAmount();
-    chunk.cost->value = static_cast<int>(price * (pow(10, number_of_decimals)));
+    chunk.cost->value = to_minor_units(price, number_of_decimals);
     if (timestamp.has_value()) {
         chunk.timestamp_to = timestamp.value().to_rfc3339();
     }
@@ -270,7 +275,7 @@ types::money::Price create_price(const double& price, const uint32_t& number_of_
     currency.code = currency_code;
     currency.decimals = number_of_decimals;
     p.currency = currency;
-    p.value.value = static_cast<int>(price * (pow(10, number_of_decimals)));
+    p.value.value = to_minor_units(price, number_of_decimals);
     return p;
 }
 
