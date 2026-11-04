@@ -350,7 +350,8 @@ types::network::ConfigureNetworkRequest
 to_everest_configure_network_request(const int32_t request_id, const ocpp::v2::NetworkConnectionProfile& profile);
 
 /// \brief Converts a given ocpp::v2::DERControlEnum \p control_type to a types::grid_support::DirectiveType.
-/// \details Total over the 22 OCPP DERControlEnum values; the 6 ISO-only DirectiveType values have no OCPP producer.
+/// \details Total over the 22 OCPP DERControlEnum values; the 6 ISO-only DirectiveType values and the EVerest-only
+/// FixedWatt have no OCPP producer.
 types::grid_support::DirectiveType to_grid_support_directive_type(const ocpp::v2::DERControlEnum control_type);
 
 /// \brief Converts a given types::grid_support::GridEventFault \p fault to an ocpp::v2::GridEventFaultEnum.
@@ -370,8 +371,9 @@ std::vector<types::grid_support::Directive> translate_active_controls(
     const std::function<types::grid_support::Directive(const ocpp::v21::SetDERControlRequest&)>& translate);
 
 /// \brief Converts a given types::grid_support::GridAlarm \p alarm to an ocpp::v21::NotifyDERAlarmRequest.
-/// \warning Throws std::invalid_argument when alarm.directive_type is unset (OCPP mandates controlType) or carries an
-///          ISO-only value, and when alarm.timestamp cannot be parsed as an RFC3339 date-time.
+/// \warning Throws std::invalid_argument when alarm.directive_type is unset (OCPP mandates controlType) or carries a
+///          value with no OCPP controlType (ISO-only or EVerest-only), and when alarm.timestamp cannot be parsed as an
+///          RFC3339 date-time.
 ocpp::v21::NotifyDERAlarmRequest to_ocpp_notify_der_alarm(const types::grid_support::GridAlarm& alarm);
 
 } // namespace conversions

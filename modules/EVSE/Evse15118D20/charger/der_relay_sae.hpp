@@ -35,9 +35,13 @@ struct SaeRelayResult {
 /// stay Hz; no volt conversion happens.
 ///
 /// EnterService voltage bands are volts on both sides (AMD1 Table 1) and are copied through unchanged.
+/// ramp_rate is copied unchanged into EnterServiceRampTime because both are seconds (OCPP 2.1
+/// EnterServiceType.rampRate, AMD1 Table 1); a negative or non-finite delay, random_delay or ramp_rate rejects
+/// the directive.
 /// FixedVar.setpoint is negated into ConstantVar.var_setpoint because OCPP and Annex M disagree on the sign
-/// of reactive-power injection. The grid_support directive priority is forwarded into every written element
-/// that carries one (EnterService has none); values outside uint16 are omitted.
+/// of reactive-power injection, and FixedWatt.setpoint into ConstantWatt.watt_setpoint because grid_support
+/// and Table M.26 disagree on the sign of discharging. The grid_support directive priority is forwarded into
+/// every written element that carries one (EnterService has none); values outside uint16 are omitted.
 /// Curves with more than CurveDataPointsMaxLength points are rejected, never truncated: dropping points
 /// silently changes the grid-code behavior the operator asked for.
 ///
