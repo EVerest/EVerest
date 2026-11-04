@@ -158,10 +158,10 @@ io:
     mdns: false
     config: 32767
   gpio_8:
-    mode: "Output"
-    pulls: "PullUp"
+    mode: "WS28_LED"
+    pulls: "NoPull"
     mdns: false
-    config: 32767
+    config: 9
   gpio_9:
     mode: "Input"
     pulls: "PullUp"
