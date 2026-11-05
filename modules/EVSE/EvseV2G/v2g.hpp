@@ -12,6 +12,7 @@
 #include <array>
 #include <atomic>
 #include <cstdint>
+#include <map>
 #include <netinet/in.h>
 #include <optional>
 #include <pthread.h>
@@ -356,6 +357,8 @@ struct v2g_context {
         types::authorization::CertificateStatus certificate_status;             // for PnC
         bool authorization_rejected;                                            // for PnC
         std::optional<types::authorization::ProvidedIdToken> provided_id_token; // for PnC
+        // Selected in PaymentServiceSelection, reported to the providers once authorization finished [V2G2-774]
+        std::map<size_t, std::vector<types::iso15118_vas::SelectedService>> selected_vas_services_by_provider;
 
         bool renegotiation_required;  /* Is set to true if renegotiation is required. Only relevant for ISO */
         bool is_charging;             /* set to true if ChargeProgress is set to Start */

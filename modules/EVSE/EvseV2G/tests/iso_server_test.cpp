@@ -11,6 +11,7 @@
 #include "ISO15118_chargerImplStub.hpp"
 #include "evse_securityIntfStub.hpp"
 #include "iso15118_extensionsImplStub.hpp"
+#include "iso15118_vasIntfStub.hpp"
 #include "utest_log.hpp"
 #include "v2g.hpp"
 #include "v2g_ctx.hpp"
@@ -19,11 +20,22 @@
 #include <cstring>
 #include <initializer_list>
 #include <memory>
+#include <string>
 #include <vector>
 
 uint64_t v2g_session_id_from_exi(bool is_iso, void* exi_in) {
     return 0;
 }
+
+namespace module::stub {
+struct RecordingModuleAdapterStub : public QuietModuleAdapterStub {
+    std::vector<std::string> commands;
+    Result call_fn(const Requirement&, const std::string& command, Parameters) override {
+        commands.push_back(command);
+        return {};
+    }
+};
+} // namespace module::stub
 
 namespace {
 
@@ -417,6 +429,80 @@ protected:
         return exi_out->V2G_Message.Body.AuthorizationRes.ResponseCode;
     }
 };
+
+constexpr std::uint16_t internet_service_id = 3;
+
+class IsoServerVasTest : public IsoServerPaymentTest {
+protected:
+    module::stub::RecordingModuleAdapterStub vas_adapter;
+    module::stub::iso15118_vasIntfStub vas{vas_adapter};
+
+    void SetUp() override {
+        IsoServerPaymentTest::SetUp();
+        ctx->r_vas = {&vas};
+        ctx->supported_vas_services_per_provider = {{internet_service_id}};
+        iso2_ServiceType internet{};
+        internet.ServiceID = internet_service_id;
+        internet.ServiceCategory = iso2_serviceCategoryType_Internet;
+        ctx->evse_v2g_data.evse_service_list.push_back(internet);
+    }
+
+    void select_external_payment_with_internet() {
+        ctx->evse_v2g_data.payment_option_list = {iso2_paymentOptionType_ExternalPayment};
+        ctx->state = static_cast<int>(iso_dc_state_id::WAIT_FOR_SVCDETAIL_PAYMENTSVCSEL);
+
+        init_iso2_BodyType(&exi_in->V2G_Message.Body);
+        exi_in->V2G_Message.Body.PaymentServiceSelectionReq_isUsed = 1;
+        auto& req = exi_in->V2G_Message.Body.PaymentServiceSelectionReq;
+        init_iso2_PaymentServiceSelectionReqType(&req);
+        req.SelectedPaymentOption = iso2_paymentOptionType_ExternalPayment;
+        req.SelectedServiceList.SelectedService.array[0].ServiceID = V2G_SERVICE_ID_CHARGING;
+        req.SelectedServiceList.SelectedService.array[1].ServiceID = internet_service_id;
+        req.SelectedServiceList.SelectedService.array[1].ParameterSetID_isUsed = 1;
+        req.SelectedServiceList.SelectedService.array[1].ParameterSetID = 4;
+        req.SelectedServiceList.SelectedService.arrayLen = 2;
+
+        iso_handle_request(conn.get());
+    }
+
+    void send_authorization() {
+        init_iso2_BodyType(&exi_in->V2G_Message.Body);
+        exi_in->V2G_Message.Body.AuthorizationReq_isUsed = 1;
+        init_iso2_AuthorizationReqType(&exi_in->V2G_Message.Body.AuthorizationReq);
+
+        iso_handle_request(conn.get());
+    }
+};
+
+TEST_F(IsoServerVasTest, selected_services_are_reported_once_authorization_finished) {
+    use_tcp_connection();
+    select_external_payment_with_internet();
+    ASSERT_EQ(payment_service_selection_response(), iso2_responseCodeType_OK);
+    EXPECT_TRUE(vas_adapter.commands.empty());
+
+    send_authorization();
+    ASSERT_EQ(authorization_response(), iso2_responseCodeType_OK);
+    EXPECT_TRUE(vas_adapter.commands.empty());
+
+    ctx->evse_v2g_data.evse_processing[PHASE_AUTH] = iso2_EVSEProcessingType_Finished;
+    send_authorization();
+
+    ASSERT_EQ(authorization_response(), iso2_responseCodeType_OK);
+    EXPECT_EQ(vas_adapter.commands, std::vector<std::string>{"selected_services"});
+}
+
+TEST_F(IsoServerVasTest, selected_services_are_not_reported_when_authorization_is_rejected) {
+    use_tcp_connection();
+    select_external_payment_with_internet();
+    ASSERT_EQ(payment_service_selection_response(), iso2_responseCodeType_OK);
+
+    ctx->evse_v2g_data.evse_processing[PHASE_AUTH] = iso2_EVSEProcessingType_Finished;
+    ctx->session.authorization_rejected = true;
+    send_authorization();
+
+    EXPECT_GE(authorization_response(), iso2_responseCodeType_FAILED);
+    EXPECT_TRUE(vas_adapter.commands.empty());
+}
 
 TEST_F(IsoServerPaymentTest, contract_selected_when_offered) {
     use_tls_connection();

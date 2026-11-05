@@ -100,11 +100,8 @@ Result ServiceSelection::process_payment_selection(const message_2::PaymentServi
     m_ctx.feedback.selected_payment_option(req.selected_payment_option);
 
     // Only once the whole selection has been validated.
-    const auto selected_vas =
-        selected_vas_services(req.selected_service_list, m_ctx.session_config.offered_vas_services);
-    if (not selected_vas.empty()) {
-        m_ctx.feedback.selected_vas_services(selected_vas);
-    }
+    m_ctx.set_selected_vas_services(
+        selected_vas_services(req.selected_service_list, m_ctx.session_config.offered_vas_services));
 
     // Table 106: ParameterSetID 1 = Installation, 2 = Update; a certificate SelectedService without one
     // names both. Recorded as session facts (diagnostics / feedback); the certificate exchange itself is
