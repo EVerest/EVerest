@@ -19,6 +19,7 @@
 #include <chrono>
 #include <mutex>
 #include <optional>
+#include <utility>
 // ev@75ac1216-19eb-4182-a85c-820f1fc2c091:v1
 
 namespace module {
@@ -388,6 +389,8 @@ private:
         ChannelDescription description{ChannelDescription::Undefined};
         // False when the Modbus reply was missing or short, the other fields are defaults then
         bool received{false};
+        // Register word 2 as read: alarm and test bits in the high byte, unit and validity in the low byte
+        uint16_t raw_status{0};
     };
 
     MeasurementValue read_register(const ImdRegisters start_register);
@@ -407,6 +410,8 @@ private:
 
     std::atomic<TestType> last_test{TestType::NoTest};
     std::atomic<AlarmType> last_alarm{AlarmType::NoAlarm};
+    // Read loop only: alarm and test bits of R_F and U_N last logged by read_imd_values()
+    std::optional<std::pair<uint8_t, uint8_t>> last_logged_state;
 
     void set_deviceFault(const std::string& message);
     void clear_deviceFault();

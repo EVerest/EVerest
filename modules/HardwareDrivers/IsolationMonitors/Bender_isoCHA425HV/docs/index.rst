@@ -97,6 +97,10 @@ error still present after the device test is retried every 5 min. DeviceFault st
 passes. A self test requested while a device test is running or a device error is active fails immediately, so a
 device test without system connection test never passes as the cable check self test.
 
+Every change of the test or alarm state of R_F or U_N is logged at info level with the raw status words (register
+word 2 of the channel), e.g. ``U_N test=ExternalTest alarm=DeviceError (status 0x8204 ...)`` for an E.02 found by
+the self test.
+
 Using the internal alarm functions and relays
 =============================================
 
