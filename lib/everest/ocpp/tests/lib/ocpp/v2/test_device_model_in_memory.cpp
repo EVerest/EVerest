@@ -8,6 +8,8 @@
 
 #include <device_model_storage_interface_mock.hpp>
 
+#include <everest/database/exceptions.hpp>
+
 #include <ocpp/v2/device_model.hpp>
 
 namespace ocpp::v2 {
@@ -121,6 +123,16 @@ TEST_F(DeviceModelInMemoryTest, persistent_value_is_written_to_storage_before_me
 TEST_F(DeviceModelInMemoryTest, failed_storage_write_leaves_memory_unchanged) {
     EXPECT_CALL(*storage, set_variable_attribute_value(component, persisted, AttributeEnum::Actual, "11", "csms"))
         .WillOnce(Return(SetVariableStatusEnum::Rejected));
+
+    EXPECT_EQ(device_model->set_value(component, persisted, AttributeEnum::Actual, "11", "csms"),
+              SetVariableStatusEnum::Rejected);
+    EXPECT_EQ(get(persisted), "10");
+    EXPECT_TRUE(changes.empty());
+}
+
+TEST_F(DeviceModelInMemoryTest, storage_exception_rejects_the_write_and_leaves_memory_unchanged) {
+    EXPECT_CALL(*storage, set_variable_attribute_value(component, persisted, AttributeEnum::Actual, "11", "csms"))
+        .WillOnce(::testing::Throw(everest::db::Exception("database is locked")));
 
     EXPECT_EQ(device_model->set_value(component, persisted, AttributeEnum::Actual, "11", "csms"),
               SetVariableStatusEnum::Rejected);

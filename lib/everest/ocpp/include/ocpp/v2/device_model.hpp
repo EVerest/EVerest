@@ -172,7 +172,8 @@ private:
     void store_provided_value(std::uint64_t generation, const Component& component, const Variable& variable,
                               const AttributeEnum& attribute_enum, const std::string& value, const std::string& source);
 
-    /// \brief Updates the model with \p value: persist, then, only if that is Accepted, the value in memory
+    /// \brief Updates the model with \p value: persist, then, only if that is Accepted, the value in memory. A storage
+    /// exception counts as Rejected.
     AppliedWrite apply(const ComposedVariable& composed, const Component& component, const Variable& variable,
                        const AttributeEnum& attribute_enum, const std::string& value, const std::string& source);
 

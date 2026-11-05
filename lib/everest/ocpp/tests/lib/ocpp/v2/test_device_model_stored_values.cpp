@@ -389,4 +389,25 @@ TEST(StoredValuesTest, owner_is_recorded_again_when_the_storage_could_not_record
     }
 }
 
+TEST(StoredValuesTest, storage_exception_rejects_the_write_and_keeps_the_registered_value) {
+    auto storage_mock = std::make_unique<::testing::NiceMock<StoredValuesStorageMock>>();
+    auto* storage = storage_mock.get();
+    DeviceModel dm(std::move(storage_mock));
+    RegisteredComponent registered;
+    registered.component = make_der_component(1);
+    registered.variables = {make_enabled()};
+    ASSERT_TRUE(dm.register_components(OWNER, {registered}, nullptr).rejected.empty());
+    const auto enabled = make_variable("Enabled");
+    EXPECT_CALL(*storage, set_stored_value(::testing::_))
+        .WillOnce(::testing::Throw(everest::db::Exception("database is locked")));
+
+    EXPECT_EQ(dm.set_value(registered.component, enabled, AttributeEnum::Actual, "false", "csms"),
+              SetVariableStatusEnum::Rejected);
+    std::string value;
+    ASSERT_EQ(
+        dm.get_variable(registered.component, enabled, AttributeEnum::Actual, value, false, UnsetValue::NotSupported),
+        GetVariableStatusEnum::Accepted);
+    EXPECT_EQ(value, "true");
+}
+
 } // namespace ocpp::v2

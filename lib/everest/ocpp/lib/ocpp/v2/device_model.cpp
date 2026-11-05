@@ -678,7 +678,12 @@ DeviceModel::AppliedWrite DeviceModel::apply(const ComposedVariable& composed, c
         applied.status = SetVariableStatusEnum::NotSupportedAttributeType;
         return applied;
     }
-    applied.status = this->persist(composed, component, variable, attribute_enum, value, source, *attribute);
+    try {
+        applied.status = this->persist(composed, component, variable, attribute_enum, value, source, *attribute);
+    } catch (const everest::db::Exception& e) {
+        EVLOG_error << "Could not store the value of " << component << "." << variable << ": " << e.what();
+        applied.status = SetVariableStatusEnum::Rejected;
+    }
     if (applied.status != SetVariableStatusEnum::Accepted) {
         return applied;
     }
