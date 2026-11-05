@@ -41,6 +41,7 @@ struct Conf {
     int delay_t_off_k1_k2;
     bool chademo_mode;
     bool selftest_enable_gridconnection;
+    bool selftest_gridconnection_off_between_tests;
     bool selftest_enable_at_start;
     int relay_k1_alarm_assignment;
     int relay_k2_alarm_assignment;
@@ -430,6 +431,8 @@ private:
     void start_requested_self_test(double test_voltage_V);
     void start_self_test_at_start();
     void finish_self_test(bool result);
+    // Requires device_test_mutex
+    void set_system_connection_test_off_between_tests();
     // Serializes starting a device test (requested self test, self test at start, recovery) and the 3024 write in
     // configure_device(): the command thread and the read loop both start tests and write 3024
     std::mutex device_test_mutex;

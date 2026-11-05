@@ -74,13 +74,16 @@ when the selection changes:
      - off
      - on
      - on U
-     - last selection
+     - last selection, off with ``selftest_gridconnection_off_between_tests``
 
 The device's self test at power-on (register 3025) is always disabled. With ``selftest_enable_at_start`` the driver
 runs one self test when it starts instead; a device error found by it is reported as DeviceFault. A self test
 requested before this test has ended, from the start of the device configuration on, is started after it. A device
 test started at the device itself (test button) between tests uses the last selection; if it fails the system
-connection test, the recovery described below clears the device error.
+connection test, the recovery described below clears the device error. With
+``selftest_gridconnection_off_between_tests`` the driver sets 3024 back to off after every self test it started
+(except after a device error, where the recovery device test does it), so such a test never runs the system
+connection test, at the cost of two writes of the stored 3024 per self test.
 
 A device error is raised as DeviceFault in whichever measurement channel the device reports it (E.01 in R_F, E.02 in
 U_N) and also while a self test is running, so an interrupted measuring lead fails the cable check as soon as the
