@@ -157,6 +157,8 @@ void MonitorStore::reconcile(const std::string& owner, const Component& componen
                 const auto reference = actual_value.value_or("");
                 if (this->storage.update_monitoring_reference(stored->monitor.id, reference)) {
                     stored->reference_value = reference;
+                } else {
+                    EVLOG_warning << "Could not update the reference value of delta monitor: " << stored->monitor.id;
                 }
             }
             this->insert(StoredMonitor{component, variable, std::move(stored.value())});
