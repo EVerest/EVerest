@@ -261,7 +261,8 @@ void v2g_ctx_init_charging_values(struct v2g_context* const ctx) {
         ctx->evse_v2g_data.payment_option_list.clear();
         ctx->evse_v2g_data.payment_option_list.push_back(ctx->session.iso_selected_payment_option);
     }
-    memset(ctx->session.gen_challenge, 0, sizeof(ctx->session.gen_challenge));
+    ctx->session.gen_challenge.reset();
+    ctx->session.provided_id_token.reset();
 
     ctx->session.authorization_rejected = false;
 

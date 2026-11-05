@@ -9,9 +9,11 @@
 #include <generated/interfaces/evse_security/Interface.hpp>
 #include <generated/interfaces/iso15118_extensions/Implementation.hpp>
 
+#include <array>
 #include <atomic>
 #include <cstdint>
 #include <netinet/in.h>
+#include <optional>
 #include <pthread.h>
 #include <vector>
 
@@ -349,7 +351,7 @@ struct v2g_context {
         long long int auth_start_timeout;
         int auth_timeout_eim;
         int auth_timeout_pnc;                                                   // for PnC
-        uint8_t gen_challenge[GEN_CHALLENGE_SIZE];                              // for PnC
+        std::optional<std::array<uint8_t, GEN_CHALLENGE_SIZE>> gen_challenge;   // for PnC, set by PaymentDetails
         bool verify_contract_cert_chain;                                        // for PnC
         types::authorization::CertificateStatus certificate_status;             // for PnC
         bool authorization_rejected;                                            // for PnC
