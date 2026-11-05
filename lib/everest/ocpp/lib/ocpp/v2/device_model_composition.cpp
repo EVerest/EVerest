@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
 
+#include <algorithm>
+#include <array>
 #include <vector>
 
 #include <everest/database/exceptions.hpp>
@@ -9,6 +11,19 @@
 
 namespace ocpp {
 namespace v2 {
+
+namespace {
+constexpr std::array<AttributeEnum, 4> ATTRIBUTES{AttributeEnum::Actual, AttributeEnum::Target, AttributeEnum::MinSet,
+                                                  AttributeEnum::MaxSet};
+
+std::vector<VariableAttribute>::iterator find_attribute(VariableMetaData& meta_data,
+                                                        const AttributeEnum attribute_enum) {
+    return std::find_if(meta_data.attributes.begin(), meta_data.attributes.end(),
+                        [attribute_enum](const VariableAttribute& attribute) {
+                            return attribute.type.value_or(AttributeEnum::Actual) == attribute_enum;
+                        });
+}
+} // namespace
 
 ComposedModel compose_device_model(DeviceModelMap& component_config,
                                    std::map<std::string, OwnerRegistration>& registrations) {
@@ -41,21 +56,27 @@ StoredValues::StoredValues(DeviceModelStorageInterface& storage) : storage{stora
 
 void StoredValues::restore(const std::string& owner, const Component& component, const Variable& variable,
                            VariableMetaData& meta_data, const ValueValidator& is_valid) {
-    for (auto& attribute : meta_data.attributes) {
-        const auto attribute_enum = attribute.type.value_or(AttributeEnum::Actual);
+    for (const auto attribute_enum : ATTRIBUTES) {
         const auto stored_it = this->values.find(std::make_tuple(component, variable, attribute_enum));
         if (stored_it == this->values.end()) {
             continue;
         }
+        const auto attribute = find_attribute(meta_data, attribute_enum);
+        if (attribute == meta_data.attributes.end()) {
+            EVLOG_info << "Removing the stored value of " << component << "." << variable << ": owner " << owner
+                       << " registers the variable without the attribute";
+            this->remove(stored_it->first);
+            continue;
+        }
         auto& stored = stored_it->second;
-        if (!attribute.persistent.value_or(true) or !is_valid(stored.value)) {
+        if (!attribute->persistent.value_or(true) or !is_valid(stored.value)) {
             EVLOG_warning << "Discarding the stored value of " << component << "." << variable
                           << ": it does not fit the variable as owner " << owner << " registers it";
             this->remove(stored_it->first);
             continue;
         }
 
-        attribute.value = stored.value;
+        attribute->value = stored.value;
         if (stored.owner != owner and this->record_owner(stored, owner)) {
             stored.owner = owner;
         }
@@ -89,8 +110,7 @@ SetVariableStatusEnum StoredValues::store(StoredVariableValue value) {
 }
 
 void StoredValues::remove_of_variable(const Component& component, const Variable& variable, const std::string& reason) {
-    for (const auto attribute :
-         {AttributeEnum::Actual, AttributeEnum::Target, AttributeEnum::MinSet, AttributeEnum::MaxSet}) {
+    for (const auto attribute : ATTRIBUTES) {
         auto key = std::make_tuple(component, variable, attribute);
         if (this->values.count(key) == 0) {
             continue;

@@ -69,7 +69,8 @@ public:
     explicit StoredValues(DeviceModelStorageInterface& storage);
 
     /// \brief Applies the stored values to the persistent attributes of \p meta_data, which \p owner registers.
-    /// Values that \p is_valid rejects are removed. A stored value belongs to the variable: a value stored under
+    /// Values that \p is_valid rejects and values of attributes that \p meta_data does not have are removed. A stored
+    /// value belongs to the variable: a value stored under
     /// another owner applies as well and is recorded under \p owner.
     void restore(const std::string& owner, const Component& component, const Variable& variable,
                  VariableMetaData& meta_data, const ValueValidator& is_valid);

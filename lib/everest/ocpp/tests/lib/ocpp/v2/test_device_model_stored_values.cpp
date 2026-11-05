@@ -167,6 +167,26 @@ TEST_F(DeviceModelStoredValuesTest, stored_value_outside_the_new_limits_is_resto
     EXPECT_EQ(stored_values().size(), 1);
 }
 
+TEST_F(DeviceModelStoredValuesTest, stored_value_is_removed_when_the_attribute_is_registered_no_more) {
+    const auto limit = make_variable("Limit");
+    auto with_target = make_limit(1000);
+    auto target = with_target.attributes.at(0);
+    target.type = AttributeEnum::Target;
+    with_target.attributes.push_back(target);
+    ASSERT_TRUE(register_der({with_target}).rejected.empty());
+    ASSERT_EQ(dm->set_value(der, limit, AttributeEnum::Target, "800", "csms"), SetVariableStatusEnum::Accepted);
+    ASSERT_EQ(stored_values().size(), 1);
+
+    ASSERT_TRUE(register_der({make_limit(1000)}).rejected.empty());
+    EXPECT_TRUE(stored_values().empty());
+
+    ASSERT_TRUE(register_der({with_target}).rejected.empty());
+    std::string value;
+    ASSERT_EQ(dm->get_variable(der, limit, AttributeEnum::Target, value, false, UnsetValue::NotSupported),
+              GetVariableStatusEnum::Accepted);
+    EXPECT_EQ(value, "10");
+}
+
 TEST_F(DeviceModelStoredValuesTest, stored_value_follows_the_variable_to_a_new_owner) {
     const std::string new_owner = "EXT:extension";
     ASSERT_TRUE(register_der({make_enabled()}).rejected.empty());
