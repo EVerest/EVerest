@@ -1,3 +1,13 @@
+# Maps OCPP 1.6 configuration keys to device model Component/Variables.
+# An entry for a key that is not a built-in OCPP 1.6 key adds that key.
+# An entry for a built-in key stored in OCPP16LegacyCtrlr replaces its built-in mapping, so OCPP 1.6 and
+# OCPP 2.x share the variable, e.g.:
+#
+#   - ocpp16_key: LightIntensity
+#     component:
+#       name: VendorStation
+#     variable:
+#       name: LightIntensity
 mappings:
   - ocpp16_key: ExampleConfigurationKey
     component:
