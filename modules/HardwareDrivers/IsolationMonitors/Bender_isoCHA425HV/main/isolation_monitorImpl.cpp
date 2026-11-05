@@ -514,6 +514,17 @@ void isolation_monitorImpl::read_imd_values() {
     // A device error is reported in the channel it belongs to (manual table 5.3.1): E.01 (earth connection) in R_F,
     // E.02 (connection to system, i.e. an interrupted L1/+ or L2/- lead) in U_N. Check every channel that was read.
     if (rf.received and voltage.received) {
+        // Diagnostics: log every change of the test and alarm state of R_F and U_N with the raw status words
+        const std::pair<uint8_t, uint8_t> state{static_cast<uint8_t>(rf.raw_status >> 8),
+                                                static_cast<uint8_t>(voltage.raw_status >> 8)};
+        if (state != last_logged_state) {
+            last_logged_state = state;
+            EVLOG_info << fmt::format("IMD state: R_F test={} alarm={} (status 0x{:04x}), U_N test={} alarm={} "
+                                      "(status 0x{:04x}, {} V)",
+                                      to_string(rf.test), to_string(rf.alarm), rf.raw_status, to_string(voltage.test),
+                                      to_string(voltage.alarm), voltage.raw_status, voltage.value);
+        }
+
         last_alarm = rf.alarm;
         std::string device_error_channels;
         const std::array<std::pair<const char*, const MeasurementValue*>, 4> channels{
@@ -650,6 +661,7 @@ isolation_monitorImpl::parse_register_data(const std::vector<uint16_t>& reg_valu
     }
 
     m.received = true;
+    m.raw_status = reg_value.at(offset + 2);
     m.alarm = to_alarm_type(reg_value.at(offset + 2) >> 8);
     m.test = to_test_type(reg_value.at(offset + 2) >> 8);
     m.unit = to_unit_type(reg_value.at(offset + 2) & 0xFF);
