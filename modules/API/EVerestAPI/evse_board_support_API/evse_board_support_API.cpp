@@ -59,6 +59,7 @@ void evse_board_support_API::ready() {
     generate_api_var_ac_pp_ampacity();
     generate_api_var_request_stop_transaction();
     generate_api_var_rcd_current();
+    generate_api_var_lock_state();
 
     generate_api_var_raise_error();
     generate_api_var_clear_error();
@@ -140,6 +141,17 @@ void evse_board_support_API::generate_api_var_rcd_current() {
         double rcd_current;
         if (deserialize(data, rcd_current)) {
             p_rcd->publish_rcd_current_mA(rcd_current);
+            return true;
+        }
+        return false;
+    });
+}
+
+void evse_board_support_API::generate_api_var_lock_state() {
+    helper.subscribe_api_topic("lock_state", [=](std::string const& data) {
+        API_types_ext::LockStatus ext;
+        if (deserialize(data, ext)) {
+            p_connector_lock->publish_lock_state(to_internal_api(ext.lock_state));
             return true;
         }
         return false;

@@ -40,4 +40,10 @@ void from_json(json const& j, Ampacity& k);
 void to_json(json& j, ProximityPilot const& k) noexcept;
 void from_json(json const& j, ProximityPilot& k);
 
+void to_json(json& j, LockState const& k) noexcept;
+void from_json(json const& j, LockState& k);
+
+void to_json(json& j, LockStatus const& k) noexcept;
+void from_json(json const& j, LockStatus& k);
+
 } // namespace everest::lib::API::V1_0::types::evse_board_support

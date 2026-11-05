@@ -59,3 +59,23 @@ TEST(evse_board_support, hardware_capabilities_serialization_emits_cp_state_E) {
     EXPECT_EQ(serialized.at("supports_cp_state_E"), true);
     EXPECT_EQ(serialized.at("connector_type"), "IEC62196Type2Socket");
 }
+
+TEST(evse_board_support, lock_status_round_trip) {
+    for (auto state : {LockState::Unknown, LockState::Unlocked, LockState::Locked}) {
+        LockStatus status{state};
+        LockStatus result{LockState::Unknown};
+        ASSERT_TRUE(everest::lib::API::deserialize(serialize(status), result));
+        EXPECT_EQ(result.lock_state, state);
+    }
+}
+
+TEST(evse_board_support, lock_status_is_read) {
+    LockStatus result{LockState::Unknown};
+    ASSERT_TRUE(everest::lib::API::deserialize(std::string(R"({"lock_state": "Locked"})"), result));
+    EXPECT_EQ(result.lock_state, LockState::Locked);
+}
+
+TEST(evse_board_support, lock_status_rejects_unknown_value) {
+    LockStatus result{LockState::Unknown};
+    EXPECT_FALSE(everest::lib::API::deserialize(std::string(R"({"lock_state": "Locking"})"), result));
+}

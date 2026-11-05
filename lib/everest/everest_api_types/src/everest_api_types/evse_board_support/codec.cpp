@@ -52,6 +52,14 @@ std::string serialize(ProximityPilot const& val) noexcept {
     return utilities::dump_json(val);
 }
 
+std::string serialize(LockState val) noexcept {
+    return utilities::dump_json(val);
+}
+
+std::string serialize(LockStatus const& val) noexcept {
+    return utilities::dump_json(val);
+}
+
 std::ostream& operator<<(std::ostream& os, Event const& val) {
     os << serialize(val);
     return os;
@@ -102,6 +110,16 @@ std::ostream& operator<<(std::ostream& os, const ProximityPilot& val) {
     return os;
 }
 
+std::ostream& operator<<(std::ostream& os, const LockState& val) {
+    os << serialize(val);
+    return os;
+}
+
+std::ostream& operator<<(std::ostream& os, const LockStatus& val) {
+    os << serialize(val);
+    return os;
+}
+
 template <> Event deserialize(std::string_view val) {
     return utilities::parse_json<Event>(val);
 }
@@ -140,6 +158,14 @@ template <> Ampacity deserialize(std::string_view val) {
 
 template <> ProximityPilot deserialize(std::string_view val) {
     return utilities::parse_json<ProximityPilot>(val);
+}
+
+template <> LockState deserialize(std::string_view val) {
+    return utilities::parse_json<LockState>(val);
+}
+
+template <> LockStatus deserialize(std::string_view val) {
+    return utilities::parse_json<LockStatus>(val);
 }
 
 } // namespace everest::lib::API::V1_0::types::evse_board_support

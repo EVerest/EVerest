@@ -88,6 +88,51 @@ back out within the delay, no lock is engaged. Set it to ``0`` to lock
 immediately. The timer checks every 500 ms, so the effective delay is rounded up
 to the next multiple of 500 ms.
 
+Connector lock confirmation
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The ``lock`` and ``unlock`` commands of the connector lock return immediately.
+A connector lock with feedback reports the physical state in its ``lock_state``
+variable (``Unknown``, ``Unlocked`` or ``Locked``). It can retry a failing
+lock itself and then raises ``connector_lock/ConnectorLockFailedLock`` only
+after its final retry.
+
+By default the EvseManager does not wait for this feedback. Set
+``connector_lock_confirmation_timeout_ms`` to a value above ``0`` to make an
+authorization wait until the connector lock reports ``Locked``. This requires a
+``connector_lock`` connection; without one the EvseManager logs a warning and
+does not wait. The wait only applies to AC charging.
+
+When the lock is requested depends on the locking rules: by default in CP state
+B right after plug-in, with ``unlock_when_deauthorized`` once the session is
+authorized. In the default case the lock is usually confirmed before the
+authorization arrives, so there is no wait at all.
+
+While the EvseManager waits for the lock:
+
+* It stays in ``WaitingForAuthentication`` and starts no transaction.
+* Basic charging: PWM stays off, so the EV cannot request power.
+* ISO 15118 (EIM and Plug and Charge): the authorization is not yet passed to
+  the ISO stack, so the EV keeps receiving ``EVSEProcessing=Ongoing`` in
+  ``AuthorizationRes``. In AC HLC the 5 % or X1 signalling stays unchanged.
+
+Once the lock reports ``Locked``, the session continues as if the authorization
+had just arrived. If it does not within the timeout, the EvseManager:
+
+* drops the authorization and publishes a ``Deauthorized`` session event, so
+  no transaction is started and the token is released,
+* tells the ISO stack that authorization failed (``AuthorizationStatus``
+  ``Timeout`` with a valid certificate, so neither the token nor the contract
+  certificate is blamed),
+* raises ``evse_manager/ConnectorLockConfirmationTimeout``, which ends the
+  session and clears on unplug.
+
+A ``Locked`` report or a new authorization after the timeout does not resume
+the session.
+
+The session log shows when the EvseManager starts waiting for the lock, every
+reported lock state, and whether the lock was confirmed or timed out.
+
 DC Configuration
 ----------------
 
