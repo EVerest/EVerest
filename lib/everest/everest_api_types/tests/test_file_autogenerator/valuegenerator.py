@@ -106,6 +106,8 @@ def get_vector_variable_name(variable_name_suffix=""):
 class ValueGenerator:
     manual_generator = ManualGenerator()
     base_types = ["int32_t", "int64_t", "float", "std::string", "bool"]
+    # (struct, field) pairs that the codecs validate as RFC 3339 date-times
+    date_time_fields = set()
 
     def __init__(self, struct_name, struct_namespace, enum_map, across_file_struct_generator=None):
         if (across_file_struct_generator is None):
@@ -176,6 +178,8 @@ class ValueGenerator:
                     math.floor(-s), math.floor(s)).__str__()
             case "float":
                 value_string = random.random().__str__()
+            case "std::string" if (self.struct_name, name_string) in ValueGenerator.date_time_fields:
+                value_string = "\"2026-01-02T03:04:05.678Z\""
             case "std::string":
                 value_string = "\"" + \
                     "".join(random.sample(string.ascii_letters, 30)) + "\""

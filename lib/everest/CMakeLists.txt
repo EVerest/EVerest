@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 add_subdirectory(can_dpm1000)
 add_subdirectory(cbv2g)
 add_subdirectory(conversions)
@@ -22,6 +23,17 @@ add_subdirectory(io)
 
 if(EVEREST_DEPENDENCY_ENABLED_EVEREST_GPIO)
     add_subdirectory(gpio)
+=======
+set(BUILD_TESTING ${EVEREST_TEST_BASE})
+if(EVEREST_BUILD_BASE)
+    add_subdirectory(log)
+    add_subdirectory(date)
+    add_subdirectory(timer)
+    add_subdirectory(util)
+    add_subdirectory(sqlite)
+    add_subdirectory(evse_security)
+    add_subdirectory(tls)
+>>>>>>> a86dd80 (feat(date): add date library for RFC 3339 parsing and formatting (#3298))
 endif()
 
 if(EVEREST_DEPENDENCY_ENABLED_SDBUS_CPP)

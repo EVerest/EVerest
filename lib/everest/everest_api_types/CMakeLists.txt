@@ -111,11 +111,17 @@ target_sources(everest_api_types
   src/everest_api_types/generic/string.cpp
 
   src/everest_api_types/utilities/codec.cpp
+  src/everest_api_types/utilities/date_time.cpp
   src/everest_api_types/utilities/Topics.cpp
 )
 
 target_link_libraries(everest_api_types
   PRIVATE nlohmann_json::nlohmann_json
+<<<<<<< HEAD
+=======
+  PRIVATE everest::util
+  PRIVATE everest::date
+>>>>>>> a86dd80 (feat(date): add date library for RFC 3339 parsing and formatting (#3298))
 )
 
 install(TARGETS everest_api_types

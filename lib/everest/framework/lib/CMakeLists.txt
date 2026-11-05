@@ -92,8 +92,14 @@ target_link_libraries(framework
         ${EVEREST_FRAMEWORK_BOOST_SYSTEM_LINK_LIBRARY}
         Boost::thread
         Boost::program_options
+<<<<<<< HEAD
         mqttc
         ryml::ryml
+=======
+        everest::date
+        everest::io
+        ${ATOMIC_LIBS}
+>>>>>>> a86dd80 (feat(date): add date library for RFC 3339 parsing and formatting (#3298))
 )
 
 collect_migration_files(

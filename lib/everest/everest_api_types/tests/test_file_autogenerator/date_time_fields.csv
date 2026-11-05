@@ -1,0 +1,14 @@
+ValidationResult,expiry_time
+DisplayMessage,timestamp_from,timestamp_to
+TimeperiodFilter,timestamp_from,timestamp_to
+PricePerkWh,timestamp
+ScheduleReqEntry,timestamp
+ScheduleSetpointEntry,timestamp
+EVInfo,estimated_time_full,departure_time,estimated_time_bulk
+SecurityEvent,timestamp
+SignedMeterValue,timestamp
+PowermeterValues,timestamp
+ReplyStartTransaction,transaction_min_stop_time,transaction_max_stop_time
+NextPeriodPrice,timestamp_from
+SessionCostChunk,timestamp_from,timestamp_to
+SessionFilter,started_after

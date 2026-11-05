@@ -91,7 +91,23 @@ function(add_libocpp_unittest)
     add_test(NAME ${arg_NAME} COMMAND ${arg_NAME} WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
     list(APPEND GCOVR_DEPENDENCIES ${arg_NAME})
     target_link_libraries(${arg_NAME} PUBLIC ${GTEST_LIBRARIES})
+<<<<<<< HEAD
     target_link_libraries(${arg_NAME} PRIVATE ${LIBOCPP_TEST_DEFAULT_LINK_LIBRARIES})
+=======
+    # If the test is not linked against the ocpp library, most probably those libraries are needed to link against.
+    target_link_libraries(${arg_NAME} PRIVATE
+        SQLite3::SQLite3
+        nlohmann_json::nlohmann_json
+        nlohmann_json_schema_validator::validator
+        date::date-tz
+        everest::date
+        everest::log
+        everest::util
+        everest::evse_security
+        everest::sqlite
+    )
+    # Paths are relative to the WORKING_DIRECTORY, so the compile flags don't differ between build trees.
+>>>>>>> a86dd80 (feat(date): add date library for RFC 3339 parsing and formatting (#3298))
     target_compile_definitions(${arg_NAME}
         PRIVATE
             ${TEST_COMPILE_DEFINITIONS}

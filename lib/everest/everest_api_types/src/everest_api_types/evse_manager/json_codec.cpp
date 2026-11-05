@@ -11,6 +11,13 @@
 #include "powermeter/API.hpp"
 #include "powermeter/codec.hpp"
 #include "powermeter/json_codec.hpp"
+<<<<<<< HEAD
+=======
+#include "utilities/date_time.hpp"
+#include "utilities/json_codec_helpers.hpp"
+
+#include <cstdint>
+>>>>>>> a86dd80 (feat(date): add date library for RFC 3339 parsing and formatting (#3298))
 #include <stdexcept>
 #include <string>
 
@@ -667,13 +674,13 @@ void from_json(json const& j, EVInfo& k) {
         k.maximum_power_limit.emplace(j.at("maximum_power_limit"));
     }
     if (j.contains("estimated_time_full")) {
-        k.estimated_time_full.emplace(j.at("estimated_time_full"));
+        k.estimated_time_full.emplace(date_time_from_json(j.at("estimated_time_full")));
     }
     if (j.contains("departure_time")) {
-        k.departure_time.emplace(j.at("departure_time"));
+        k.departure_time.emplace(date_time_from_json(j.at("departure_time")));
     }
     if (j.contains("estimated_time_bulk")) {
-        k.estimated_time_bulk.emplace(j.at("estimated_time_bulk"));
+        k.estimated_time_bulk.emplace(date_time_from_json(j.at("estimated_time_bulk")));
     }
     if (j.contains("evcc_id")) {
         k.evcc_id.emplace(j.at("evcc_id"));

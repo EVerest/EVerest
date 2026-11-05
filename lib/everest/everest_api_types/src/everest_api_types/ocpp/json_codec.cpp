@@ -5,6 +5,12 @@
 #include "nlohmann/json.hpp"
 #include "ocpp/API.hpp"
 #include "ocpp/codec.hpp"
+<<<<<<< HEAD
+=======
+#include "utilities/date_time.hpp"
+#include <cstdint>
+#include <stdexcept>
+>>>>>>> a86dd80 (feat(date): add date library for RFC 3339 parsing and formatting (#3298))
 
 namespace everest::lib::API::V1_0::types::ocpp {
 
@@ -402,7 +408,9 @@ void from_json(const json& j, SecurityEvent& k) {
     set_obj(type);
     set_obj_optional(info);
     set_obj_optional(critical);
-    set_obj_optional(timestamp);
+    if (j.contains("timestamp")) {
+        k.timestamp.emplace(date_time_from_json(j.at("timestamp")));
+    }
 }
 
 void to_json(json& j, StatusInfoType const& k) noexcept {

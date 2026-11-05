@@ -53,6 +53,16 @@ cc_library(
     strip_include_prefix = "include",
     visibility = ["//visibility:public"],
     deps = [
+<<<<<<< HEAD
+=======
+        "//lib/everest/date",
+        "//lib/everest/io:io",
+        "//lib/everest/helpers",
+        "//lib/everest/log:liblog",
+        "//lib/everest/sqlite:everest-sqlite",
+        "//lib/everest/util",
+        "//lib/everest/yaml:everest_yaml",
+>>>>>>> a86dd80 (feat(date): add date library for RFC 3339 parsing and formatting (#3298))
         "@boost.program_options",
         "@boost.uuid",
         "@com_github_HowardHinnant_date//:date",

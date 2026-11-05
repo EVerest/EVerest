@@ -7,7 +7,7 @@ import csv
 
 from pathlib import Path
 from filetestgenerator import FileTestGenerator
-from valuegenerator import AcrossFileGenerator
+from valuegenerator import AcrossFileGenerator, ValueGenerator
 
 print("Running API Serialisation Test Autogenerator")
 
@@ -15,6 +15,7 @@ code_path = sys.argv[1]
 test_path = sys.argv[2]
 skip_path = sys.argv[3]
 write_path = sys.argv[4]
+date_time_fields_path = sys.argv[5]
 
 name = "API.hpp"
 
@@ -58,7 +59,17 @@ def get_single_deny_list(deny_lists, file_to_test):
     return single_deny_list
 
 
+def get_date_time_fields():
+    date_time_fields = set()
+    with open(date_time_fields_path, newline='') as csvfile:
+        for row in csv.reader(csvfile, delimiter=',', quotechar='"'):
+            for field in row[1:]:
+                date_time_fields.add((row[0], field))
+    return date_time_fields
+
+
 deny_lists = get_deny_list()
+ValueGenerator.date_time_fields = get_date_time_fields()
 license_header = ""
 api_files_found = False
 for root, dirs, files in os.walk(code_path):

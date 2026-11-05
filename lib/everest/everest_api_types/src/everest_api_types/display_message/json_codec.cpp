@@ -7,6 +7,12 @@
 
 #include "nlohmann/json.hpp"
 #include "text_message/json_codec.hpp"
+<<<<<<< HEAD
+=======
+#include "utilities/date_time.hpp"
+#include <cstdint>
+#include <stdexcept>
+>>>>>>> a86dd80 (feat(date): add date library for RFC 3339 parsing and formatting (#3298))
 
 namespace everest::lib::API::V1_0::types::display_message {
 
@@ -265,10 +271,10 @@ void from_json(const json& j, DisplayMessage& k) {
         k.state.emplace(j.at("state"));
     }
     if (j.contains("timestamp_from")) {
-        k.timestamp_from.emplace(j.at("timestamp_from"));
+        k.timestamp_from.emplace(date_time_from_json(j.at("timestamp_from")));
     }
     if (j.contains("timestamp_to")) {
-        k.timestamp_to.emplace(j.at("timestamp_to"));
+        k.timestamp_to.emplace(date_time_from_json(j.at("timestamp_to")));
     }
     if (j.contains("identifier_id")) {
         k.identifier_id.emplace(j.at("identifier_id"));
