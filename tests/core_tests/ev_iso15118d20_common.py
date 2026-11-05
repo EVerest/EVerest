@@ -7,7 +7,7 @@
 Not a conftest.py: none of these are pytest fixtures. ``_ev_config_adaptions`` and
 ``EvAutoExecAdjustmentStrategy`` are evaluated inside the
 ``@pytest.mark.everest_config_adaptions`` decorator, i.e. at module import time,
-and ``wait_for_call`` is a plain coroutine.
+and the ``wait_for_*`` helpers are plain coroutines.
 """
 
 import asyncio
@@ -77,3 +77,17 @@ async def wait_for_match(mock: Mock, predicate: Callable[[Any], bool], timeout: 
                 return value
         await asyncio.sleep(0.1)
     raise TimeoutError("Timeout waiting for a matching variable publication.")
+
+
+async def wait_for_v2g_message(mock: Mock, message_id: str, timeout: float = 30.0, min_count: int = 1):
+    """Wait until the EV reported min_count received V2G messages with this id, from its v2g_messages variable.
+
+    The EV publishes the id of every response it receives, so min_count charge-loop response ids
+    are evidence that min_count charge-loop requests were answered. Raises TimeoutError otherwise.
+    """
+    start_time = asyncio.get_event_loop().time()
+    while asyncio.get_event_loop().time() - start_time < timeout:
+        if sum(1 for call in list(mock.call_args_list) if call[0][0]["id"] == message_id) >= min_count:
+            return
+        await asyncio.sleep(0.1)
+    raise TimeoutError(f"Timeout waiting for {min_count} {message_id} in v2g_messages.")

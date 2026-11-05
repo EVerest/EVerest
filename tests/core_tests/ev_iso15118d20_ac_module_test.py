@@ -14,11 +14,13 @@ from everest.testing.core_utils.controller.test_controller_interface import (
 from everest.testing.core_utils.everest_core import EverestCore
 from everest.testing.core_utils.probe_module import ProbeModule
 
-from ev_iso15118d20_common import _ev_config_adaptions, wait_for_call
+from ev_iso15118d20_common import _ev_config_adaptions, wait_for_call, wait_for_v2g_message
 
 
 # The SECC publishes this literal for any negotiated AC ISO 15118-20 namespace.
 D20_AC_PROTOCOL = "ISO15118-20:AC and similar"
+# The AC charge-loop response id the EV reports in v2g_messages.
+D20_AC_CHARGE_LOOP_RES = "AcChargeLoopRes"
 
 
 @pytest.mark.asyncio
@@ -40,16 +42,19 @@ D20_AC_PROTOCOL = "ISO15118-20:AC and similar"
 async def test_ev_iso15118d20_ac_session(
     test_controller: TestController, everest_core: EverestCore
 ):
-    """SIL gate: the C++ Ev15118 module negotiates an AC ISO 15118-20 session.
+    """SIL gate: the C++ Ev15118 module negotiates an AC ISO 15118-20 session and enters its charge loop.
 
-    The two-connection probe observes the SECC view of protocol selection.
+    The two-connection probe observes the SECC view of protocol selection and the EV view
+    of an AC_ChargeLoop exchange.
     """
     test_controller.start()
     probe_module = ProbeModule(everest_core.get_runtime_session())
 
     selected_protocol_mock = Mock()
+    v2g_messages_mock = Mock()
 
     probe_module.subscribe_variable("charger", "selected_protocol", selected_protocol_mock)
+    probe_module.subscribe_variable("ev", "v2g_messages", v2g_messages_mock)
 
     probe_module.start()
     await probe_module.wait_to_be_ready()
@@ -62,6 +67,8 @@ async def test_ev_iso15118d20_ac_session(
         f"selected_protocol '{selected_protocol}' != expected "
         f"ISO 15118-20 AC protocol literal '{D20_AC_PROTOCOL}'"
     )
+
+    await wait_for_v2g_message(v2g_messages_mock, D20_AC_CHARGE_LOOP_RES, timeout=30, min_count=2)
 
 
 @pytest.mark.asyncio
@@ -99,10 +106,12 @@ async def test_ev_iso15118d20_full_ac_charge_loop(
     power_ready_mock = Mock()
     ac_target_power_mock = Mock()
     finished_mock = Mock()
+    v2g_messages_mock = Mock()
 
     probe_module.subscribe_variable("ev", "ev_power_ready", power_ready_mock)
     probe_module.subscribe_variable("ev", "ac_evse_target_power", ac_target_power_mock)
     probe_module.subscribe_variable("ev", "v2g_session_finished", finished_mock)
+    probe_module.subscribe_variable("ev", "v2g_messages", v2g_messages_mock)
 
     probe_module.start()
     await probe_module.wait_to_be_ready()
@@ -112,4 +121,5 @@ async def test_ev_iso15118d20_full_ac_charge_loop(
 
     await wait_for_call(ac_target_power_mock, timeout=30)
 
+    await wait_for_v2g_message(v2g_messages_mock, D20_AC_CHARGE_LOOP_RES, timeout=30, min_count=2)
     await wait_for_call(finished_mock, timeout=40)

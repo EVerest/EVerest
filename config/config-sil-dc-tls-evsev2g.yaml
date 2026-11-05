@@ -16,12 +16,10 @@ active_modules:
     config_module:
       device: auto
       response_timeout_ms: 8000
-      supported_ISO15118_2: true
-      tls_active: true
-      enforce_tls: true
+      supported_protocols: ISO15118_2
+      tls: require
       # ISO 15118-2 uses TLS 1.2 without a client certificate.
-      enable_tls_1_3: false
-      enable_tls_key_logging: true
+      tls_version: "1.2"
   evse_manager:
     module: EvseManager
     config_module:

@@ -24,8 +24,7 @@ active_modules:
     module: Ev15118
     config_module:
       device: auto
-      supported_ISO15118_20: false
-      supported_ISO15118_2: true
+      supported_protocols: ISO15118_2
   evse_manager_1:
     module: EvseManager
     mapping:

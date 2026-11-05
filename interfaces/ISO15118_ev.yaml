@@ -15,11 +15,13 @@ cmds:
         $ref: /iso15118#/SelectedPaymentOption
       DepartureTime:
         description: >-
-          The time when the EVCC wants to leave the charging station (in seconds)
+          Seconds from this call until the EVCC wants to leave the charging
+          station. 0 states no departure time. Must be finite and not negative.
         type: number
       EAmount:
         description: >-
-          The amount of energy that the EVCC wants to charge (in kWh)
+          The amount of energy that the EVCC wants to charge (in kWh). 0 states
+          no amount. Must be finite and not negative.
         type: number
     result:
       description: Returns true if the evcc simulation started
@@ -37,6 +39,7 @@ cmds:
     description: >-
       Control pilot state the vehicle applies. Gates the EVCC CP checks, e.g.
       C/D before CableCheckReq ([V2G2-912]).
+      E or F during a session terminates it without SessionStop ([V2G2-737]).
     arguments:
       cp_state:
         description: The CP state the vehicle has applied
@@ -47,14 +50,18 @@ cmds:
       TODO_SL: Set the different ev faults to communicate these errors
       to the charging station
   set_dc_params:
-    description: Set the target parameters for a dc charging process 
+    description: >-
+      Set the target parameters for a dc charging process. They are vehicle limits that stay for
+      later sessions until the next call; a field left out keeps its previous value.
     arguments:
       EvParameters:
         description: Target parameters for dc charging
         type: object
         $ref: /iso15118#/DcEvParameters
   set_bpt_dc_params:
-    description: Set the bpt parameters for dc charging
+    description: >-
+      Set the bpt parameters for dc charging. They are vehicle limits, like set_dc_params: they
+      apply to a running bidirectional DC session and stay for later ones until the next call.
     arguments:
       EvBPTParameters:
         description: BPT parameters for dc charging
@@ -81,13 +88,22 @@ cmds:
 vars:
   v2g_messages:
     description: >-
-      The V2G message that was just sent or received, reported per message.
-      The id is always published; the decoded JSON and the raw EXI are only
-      populated when the EVCC runs with debug mode enabled. Unlike the
-      charger-side variable of the same name this is not debug-only: the id
-      is a session-progress signal, so a consumer may depend on it.
+      The id of each V2G response the EV accepted, for every protocol. Requests the EV sends are
+      not reported, and the JSON and EXI fields are never populated. The CP B transition after
+      PowerDelivery(Stop) is signaled by power_delivery_stopped, not by this variable.
     type: object
     $ref: /iso15118#/V2gMessages
+  power_delivery_stopped:
+    description: >-
+      The SECC confirmed PowerDelivery(Stop); the EV may open its contactor and set CP B.
+    type: 'null'
+  welding_detection_failed:
+    description: >-
+      DC welding detection reached its response or time limit without a safe EVSE present
+      voltage, either because the reported voltage stayed unsafe or because no response was
+      accepted, so a welded contactor cannot be ruled out. The EV terminates the session.
+    type: object
+    $ref: /iso15118#/WeldingDetectionFailure
   v2g_session_finished:
     description: The v2g session between the charger and the car is finished
     type: 'null'
@@ -118,3 +134,20 @@ vars:
   dc_evse_present_voltage:
     description: EVSE-delivered present voltage during DC charging (V)
     type: number
+  der_negotiated_functions:
+    description: >-
+      The DER control functions negotiated for the session, for either DER annex: the demand of
+      the selected parameter set for AC_DER_IEC, the enabled modes the EV echoes for AC_DER_SAE.
+      AC_DER_IEC publishes once, from ServiceDetail; AC_DER_SAE once per ChargeParameterDiscovery
+      round and in the charge loop whenever the set changes. The functions are in iec_functions
+      for AC_DER_IEC and in sae_functions for AC_DER_SAE.
+    type: object
+    $ref: /iso15118#/DerNegotiatedFunctions
+  der_control_received:
+    description: >-
+      Summary of each DER control block the SECC sends, for either DER annex, with one
+      exception: AC_DER_IEC charge-loop blocks of the Scheduled control mode are not published.
+      AC_DER_IEC Dynamic charge-loop blocks are published for the first of a session and then
+      only when their setpoints change; ChargeParameterDiscovery blocks of either annex always are.
+    type: object
+    $ref: /iso15118#/DerControlReceived

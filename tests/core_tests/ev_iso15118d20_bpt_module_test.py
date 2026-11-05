@@ -14,7 +14,7 @@ from everest.testing.core_utils.controller.test_controller_interface import (
 from everest.testing.core_utils.everest_core import EverestCore
 from everest.testing.core_utils.probe_module import ProbeModule
 
-from ev_iso15118d20_common import _ev_config_adaptions, wait_for_call
+from ev_iso15118d20_common import _ev_config_adaptions, wait_for_call, wait_for_v2g_message
 
 
 # The SECC publishes these literals for any negotiated AC / DC ISO 15118-20 namespace.
@@ -28,6 +28,10 @@ D20_DC_PROTOCOL = "ISO15118-20:DC"
 AC_BPT_SERVICE = "AC_BPT"
 DC_BPT_SERVICE = "DC_BPT"
 BPT_CHANNELS = ("Unified", "Separated")
+
+# The charge-loop response ids the EV reports in v2g_messages.
+D20_AC_CHARGE_LOOP_RES = "AcChargeLoopRes"
+D20_DC_CHARGE_LOOP_RES = "DcChargeLoopRes"
 
 
 @pytest.mark.asyncio
@@ -67,12 +71,14 @@ async def test_ev_iso15118d20_ac_bpt_session(
     power_ready_mock = Mock()
     ac_target_power_mock = Mock()
     finished_mock = Mock()
+    v2g_messages_mock = Mock()
 
     probe_module.subscribe_variable("charger", "selected_protocol", selected_protocol_mock)
     probe_module.subscribe_variable("charger", "selected_service_parameters", selected_service_mock)
     probe_module.subscribe_variable("ev", "ev_power_ready", power_ready_mock)
     probe_module.subscribe_variable("ev", "ac_evse_target_power", ac_target_power_mock)
     probe_module.subscribe_variable("ev", "v2g_session_finished", finished_mock)
+    probe_module.subscribe_variable("ev", "v2g_messages", v2g_messages_mock)
 
     probe_module.start()
     await probe_module.wait_to_be_ready()
@@ -102,6 +108,7 @@ async def test_ev_iso15118d20_ac_bpt_session(
 
     await wait_for_call(ac_target_power_mock, timeout=30)
 
+    await wait_for_v2g_message(v2g_messages_mock, D20_AC_CHARGE_LOOP_RES, timeout=30, min_count=2)
     await wait_for_call(finished_mock, timeout=40)
 
 
@@ -131,9 +138,9 @@ async def test_ev_iso15118d20_dc_bpt_session(
     The gate proves BPT NEGOTIATION happened, not reverse power flow: the SECC
     reports DC_BPT as the service the EV selected, and the EV then reaches the
     charge loop, which the EV-side CPD state can only do after accepting BPT DC
-    limits in the CPD response. iso_dc_power_on blocks the auto_exec chain until
-    dc_power_on is published, so the chain only advances once the DC charge loop
-    has run on both sides. Power still flows in the charge direction; only the
+    limits in the CPD response. Two DC_ChargeLoopRes in the EV's v2g_messages show
+    the SECC kept answering charge-loop requests; dc_power_on alone is published at
+    PreCharge, before the loop. Power still flows in the charge direction; only the
     negotiated service is bidirectional.
     """
     test_controller.start()
@@ -143,12 +150,14 @@ async def test_ev_iso15118d20_dc_bpt_session(
     selected_service_mock = Mock()
     power_ready_mock = Mock()
     dc_power_on_mock = Mock()
+    v2g_messages_mock = Mock()
     finished_mock = Mock()
 
     probe_module.subscribe_variable("charger", "selected_protocol", selected_protocol_mock)
     probe_module.subscribe_variable("charger", "selected_service_parameters", selected_service_mock)
     probe_module.subscribe_variable("ev", "ev_power_ready", power_ready_mock)
     probe_module.subscribe_variable("ev", "dc_power_on", dc_power_on_mock)
+    probe_module.subscribe_variable("ev", "v2g_messages", v2g_messages_mock)
     probe_module.subscribe_variable("ev", "v2g_session_finished", finished_mock)
 
     probe_module.start()
@@ -178,5 +187,6 @@ async def test_ev_iso15118d20_dc_bpt_session(
     assert power_ready_mock.call_args[0][0] is True, "ev_power_ready published without a true value"
 
     await wait_for_call(dc_power_on_mock, timeout=30)
+    await wait_for_v2g_message(v2g_messages_mock, D20_DC_CHARGE_LOOP_RES, timeout=30, min_count=2)
 
     await wait_for_call(finished_mock, timeout=40)

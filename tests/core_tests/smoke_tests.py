@@ -82,9 +82,7 @@ class DcConfigAdjustmentStrategy(EverestConfigAdjustmentStrategy):
 
     def adjust_everest_configuration(self, everest_config: Dict):
         adjusted_config = deepcopy(everest_config)
-        adjusted_config["active_modules"]["iso15118_car"]["config_module"]["supported_DIN70121"] = False
-        adjusted_config["active_modules"]["iso15118_car"]["config_module"]["supported_ISO15118_2"] = not self.ev_d20_only
-        adjusted_config["active_modules"]["iso15118_car"]["config_module"]["supported_ISO15118_20"] = self.ev_d20_only
+        adjusted_config["active_modules"]["iso15118_car"]["config_module"]["supported_protocols"] = "ISO15118_20" if self.ev_d20_only else "ISO15118_2"
         adjusted_config["active_modules"]["evse_manager"]["config_module"]["hack_allow_bpt_with_iso2"] = False
         adjusted_config["active_modules"]["powersupply_dc"]["config_implementation"] = {"main": {"min_current": 0}}
         adjusted_config["active_modules"]["evse_manager"]["config_module"]["zero_power_ignore_pause"] = self.zero_power_ignore_pause
@@ -94,9 +92,21 @@ class DcConfigAdjustmentStrategy(EverestConfigAdjustmentStrategy):
         adjusted_config["active_modules"]["ev_manager"]["config_module"]["force_payment_option"] = self.force_payment_option
         if self.force_payment_option:
             # Ev15118 offers Contract only over TLS
-            adjusted_config["active_modules"]["iso15118_car"]["config_module"]["tls_active"] = True
+            adjusted_config["active_modules"]["iso15118_car"]["config_module"]["tls"] = "prefer"
+            adjusted_config["active_modules"]["iso15118_car"]["config_module"]["tls_version"] = "1.2"
         adjusted_config["active_modules"]["imd"]["config_implementation"]["main"]["resistance_F_Ohm"] = 0 if self.fail_cable_check else 900000
         adjusted_config["active_modules"]["evse_manager"]["config_module"]["cable_check_wait_number_of_imd_measurements"] = self.cable_check_measurements
+        return adjusted_config
+
+
+class DcSupplyZeroMinCurrentAdjustmentStrategy(EverestConfigAdjustmentStrategy):
+    """
+    Adjustment strategy to let the simulated DC supply output 0 A instead of its 1 A minimum
+    """
+
+    def adjust_everest_configuration(self, everest_config: Dict):
+        adjusted_config = deepcopy(everest_config)
+        adjusted_config["active_modules"]["powersupply_dc"]["config_implementation"] = {"main": {"min_current": 0}}
         return adjusted_config
 
 
@@ -126,9 +136,8 @@ class D20TlsConfigAdjustmentStrategy(EverestConfigAdjustmentStrategy):
         ev = adjusted_config["active_modules"]["iso15118_car"]["config_module"]
         secc = adjusted_config["active_modules"]["iso15118_charger"]["config_module"]
 
-        ev["tls_active"] = True
-        ev["enforce_tls"] = True
-        ev["enable_tls_1_3"] = self.tls13
+        ev["tls"] = "require"
+        ev["tls_version"] = "1.3" if self.tls13 else "1.2"
 
         if self.tls13:
             secc["tls_negotiation_strategy"] = "ENFORCE_TLS"
@@ -136,6 +145,42 @@ class D20TlsConfigAdjustmentStrategy(EverestConfigAdjustmentStrategy):
         else:
             secc["tls_negotiation_strategy"] = "ACCEPT_CLIENT_OFFER"
             secc["enforce_tls_1_3"] = False
+        return adjusted_config
+
+
+class D20ScheduledModeAdjustmentStrategy(EverestConfigAdjustmentStrategy):
+    """
+    Adjustment strategy to run the direct-d20 SIL session in Scheduled control mode
+    """
+
+    def adjust_everest_configuration(self, everest_config: Dict):
+        adjusted_config = deepcopy(everest_config)
+        adjusted_config["active_modules"]["iso15118_charger"]["config_module"]["supported_scheduled_mode"] = True
+        adjusted_config["active_modules"]["iso15118_car"]["config_module"]["control_mode"] = "Scheduled"
+        return adjusted_config
+
+
+class TlsVersionAutoAdjustmentStrategy(EverestConfigAdjustmentStrategy):
+    """Run the EV with tls require and tls_version auto, offering ISO 15118-20 and ISO 15118-2,
+    so the negotiated TLS version picks the protocol: -20 over TLS 1.3, -2 over TLS 1.2.
+    Listed after the strategy that configures the SECC, it overrides that strategy's EV TLS keys.
+    """
+
+    def adjust_everest_configuration(self, everest_config: Dict):
+        adjusted_config = deepcopy(everest_config)
+        ev = adjusted_config["active_modules"]["iso15118_car"]["config_module"]
+        ev["tls"] = "require"
+        ev["tls_version"] = "auto"
+        ev["supported_protocols"] = "ISO15118_20,ISO15118_2"
+        return adjusted_config
+
+
+class EvseV2gForceTlsAdjustmentStrategy(EverestConfigAdjustmentStrategy):
+    """Make the EvseV2G SECC require TLS; it serves ISO 15118-2 over TLS 1.2 only."""
+
+    def adjust_everest_configuration(self, everest_config: Dict):
+        adjusted_config = deepcopy(everest_config)
+        adjusted_config["active_modules"]["iso15118_charger"]["config_module"]["tls_security"] = "force"
         return adjusted_config
 
 
@@ -579,6 +624,18 @@ def last_energy_wh(powermeter_mock) -> float:
     return powermeter_mock.call_args[0][0]["energy_Wh_import"]["total"]
 
 
+def assert_d20_dc_session_rejoined(v2g_messages_mock):
+    """Assert the EV's v2g_messages since the mock was reset show a re-joined ISO 15118-20 DC session.
+
+    The EV publishes the id of every response it receives. After OK_OldSessionJoined it continues
+    at DC_ChargeParameterDiscovery; a new session would go on with AuthorizationSetup instead.
+    """
+    ids = [call[0][0]["id"] for call in v2g_messages_mock.call_args_list]
+    assert "SessionSetupRes" in ids, f"No SessionSetupRes in v2g_messages: {ids}"
+    assert "AuthorizationSetupRes" not in ids, f"The resumed session was set up anew: {ids}"
+    assert ids[ids.index("SessionSetupRes") + 1] == "DcChargeParameterDiscoveryRes", ids
+
+
 ###################################################
 ################ Begin Tests ######################
 ###################################################
@@ -732,6 +789,60 @@ async def test_iso15118_20_dc_session_over_tls(
     )
 
     await run_basic_session(test_controller, session_event_mock, powermeter_mock, "plug_in_dc_iso")
+
+
+async def run_tls_version_auto_session(
+    test_controller: TestController, everest_core: EverestCore, expected_protocol: str
+):
+    probe_module, session_event_mock, powermeter_mock, _ = await setup_session_mocks(
+        test_controller, everest_core
+    )
+    selected_protocol_mock = Mock()
+    probe_module.subscribe_variable("charger", "selected_protocol", selected_protocol_mock)
+
+    await run_basic_session(test_controller, session_event_mock, powermeter_mock, "plug_in_dc_iso")
+
+    assert selected_protocol_mock.call_args[0][0] == expected_protocol
+
+
+@pytest.mark.asyncio
+@pytest.mark.xdist_group(name="ISO15118")
+@pytest.mark.probe_module(
+    connections={
+        "evse_manager": [Requirement("evse_manager", "evse")],
+        "charger": [Requirement("iso15118_charger", "charger")],
+    }
+)
+@pytest.mark.everest_core_config("config-sil-dc-d20.yaml")
+@pytest.mark.everest_config_adaptions(
+    D20TlsConfigAdjustmentStrategy(tls13=True), TlsVersionAutoAdjustmentStrategy()
+)
+async def test_tls_version_auto_runs_iso15118_20_over_tls_1_3(
+    test_controller: TestController, everest_core: EverestCore
+):
+    """An EV offering -20 and -2 under tls_version auto against a -20 SECC enforcing TLS 1.3
+    negotiates TLS 1.3, offers -20 alone and charges over ISO 15118-20."""
+    await run_tls_version_auto_session(test_controller, everest_core, "ISO15118-20:DC")
+
+
+@pytest.mark.asyncio
+@pytest.mark.xdist_group(name="ISO15118")
+@pytest.mark.probe_module(
+    connections={
+        "evse_manager": [Requirement("evse_manager", "evse")],
+        "charger": [Requirement("iso15118_charger", "charger")],
+    }
+)
+@pytest.mark.everest_core_config("config-sil-dc-evsev2g.yaml")
+@pytest.mark.everest_config_adaptions(
+    DcConfigAdjustmentStrategy(), EvseV2gForceTlsAdjustmentStrategy(), TlsVersionAutoAdjustmentStrategy()
+)
+async def test_tls_version_auto_runs_iso15118_2_over_tls_1_2(
+    test_controller: TestController, everest_core: EverestCore
+):
+    """An EV offering -20 and -2 under tls_version auto against a SECC serving -2 over TLS 1.2
+    negotiates TLS 1.2, offers -2 alone and charges over ISO 15118-2."""
+    await run_tls_version_auto_session(test_controller, everest_core, "ISO15118-2-2013")
 
 @pytest.mark.asyncio
 @pytest.mark.probe_module(
@@ -1303,6 +1414,97 @@ async def test_iso15118_dc_session_paused_by_ev(
     test_controller.resume_iso_session_dc()
     await wait_for_session_events(session_event_mock, ["ChargingStarted"])
     await assert_energy_exceeds(powermeter_mock, energy_threshold_wh=20, timeout=45)
+    await end_session(test_controller, session_event_mock)
+
+@pytest.mark.asyncio
+@pytest.mark.probe_module(
+    connections={
+        "evse_manager": [Requirement("evse_manager", "evse")],
+        "ev": [Requirement("iso15118_car", "ev")],
+    }
+)
+@pytest.mark.xdist_group(name="ISO15118")
+@pytest.mark.everest_core_config("config-sil-dc-d20.yaml")
+# [V2G20-1195] refuses an EV pause in Dynamic mode.
+@pytest.mark.everest_config_adaptions(
+    D20TlsConfigAdjustmentStrategy(tls13=True), D20ScheduledModeAdjustmentStrategy()
+)
+async def test_iso15118_20_dc_session_paused_by_ev(
+    test_controller: TestController, everest_core: EverestCore
+):
+    """
+    Test session events of an ISO 15118-20 DC charging session paused and resumed by the EV,
+    and that the resume re-joins the paused session rather than setting up a new one.
+
+    TLS 1.3 makes the EV present a vehicle certificate, whose hash the SECC needs to let the
+    resumed session rejoin the paused one.
+    """
+
+    probe_module, session_event_mock, powermeter_mock, _ = await setup_session_mocks(
+        test_controller, everest_core
+    )
+    v2g_messages_mock = Mock()
+    probe_module.subscribe_variable("ev", "v2g_messages", v2g_messages_mock)
+
+    await start_session(test_controller, session_event_mock, test_controller.plug_in_dc_iso)
+    await assert_energy_exceeds(powermeter_mock, energy_threshold_wh=10, timeout=15)
+    test_controller.pause_iso_session()
+    await wait_for_session_events(session_event_mock, ["ChargingPausedEV"])
+    await assert_energy_below(powermeter_mock, energy_threshold_wh=20, timeout=5)
+    await assert_no_events(session_event_mock, ["ChargingStarted", "ChargingStarted"], wait_time=5)
+    v2g_messages_mock.reset_mock()
+    test_controller.resume_iso_session_dc()
+    await wait_for_session_events(session_event_mock, ["ChargingStarted"])
+    assert_d20_dc_session_rejoined(v2g_messages_mock)
+    await assert_energy_exceeds(powermeter_mock, energy_threshold_wh=20, timeout=45)
+    await end_session(test_controller, session_event_mock)
+
+@pytest.mark.asyncio
+@pytest.mark.probe_module(
+    connections={
+        "evse_manager": [Requirement("evse_manager", "evse")],
+        "ev": [Requirement("iso15118_car", "ev")],
+    }
+)
+@pytest.mark.xdist_group(name="ISO15118")
+@pytest.mark.everest_core_config("config-sil-dc-d20.yaml")
+# The dynamic-mode pause waits for the output to drop below 1 A, which the supply's 1 A minimum never allows.
+@pytest.mark.everest_config_adaptions(
+    D20TlsConfigAdjustmentStrategy(tls13=True), DcSupplyZeroMinCurrentAdjustmentStrategy()
+)
+async def test_iso15118_20_dc_session_paused_by_evse(
+    test_controller: TestController, everest_core: EverestCore
+):
+    """
+    Test session events of an ISO 15118-20 DC charging session paused and resumed by the EVSE,
+    and that the resume re-joins the paused session rather than setting up a new one.
+    """
+
+    probe_module, session_event_mock, powermeter_mock, _ = await setup_session_mocks(
+        test_controller, everest_core
+    )
+    v2g_messages_mock = Mock()
+    probe_module.subscribe_variable("ev", "v2g_messages", v2g_messages_mock)
+
+    await start_session(test_controller, session_event_mock, test_controller.plug_in_dc_iso)
+    await assert_energy_exceeds(powermeter_mock, energy_threshold_wh=10, timeout=15)
+    await probe_module.call_command(
+        "evse_manager",
+        "pause_charging",
+        {},
+    )
+    await wait_for_session_events(session_event_mock, ["ChargingPausedEVSE"])
+    await assert_power_below(powermeter_mock, power_threshold_w=10, timeout=5)
+    await assert_no_events(session_event_mock, ["ChargingStarted"])
+    v2g_messages_mock.reset_mock()
+    await probe_module.call_command(
+        "evse_manager",
+        "resume_charging",
+        {},
+    )
+    await wait_for_session_events(session_event_mock, ["ChargingStarted"])
+    assert_d20_dc_session_rejoined(v2g_messages_mock)
+    await assert_energy_exceeds(powermeter_mock, energy_threshold_wh=15, timeout=15)
     await end_session(test_controller, session_event_mock)
 
 @pytest.mark.asyncio

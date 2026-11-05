@@ -12,6 +12,7 @@ active_modules:
   iso15118_car:
     module: Ev15118
     config_module:
+      supported_protocols: ISO15118_20
       device: auto
       evcc_id: "AA:BB:CC:DD:EE:01"
       response_timeout_ms: 8000
