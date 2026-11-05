@@ -32,12 +32,13 @@ RADVD_PID_FILE="${PID_DIR}/vas_radvd.pid"
 CONF_DIR="/tmp"
 FORWARDING_STATE_DIR="${PID_DIR}"
 
-# Resolvers announced to the EV; DNS to them is the only traffic besides PORTS that is forwarded
+# Resolvers announced to the EV; DNS to them is the only traffic besides PORTS that is forwarded,
+# also when they are on a blocked network
 DNS_SERVERS_V4="8.8.8.8 8.8.4.4"
 DNS_SERVERS_V6="2001:4860:4860::8888 2001:4860:4860::8844"
 
-# The EV never reaches non-public destinations. Add the backend networks (CSMS, management)
-# that are reachable via the WAN interface in /etc/default/vas-internet.
+# The EV never reaches non-public destinations nor the networks on the WAN link. Add other backend
+# networks (CSMS, management) that are reachable via the WAN interface in /etc/default/vas-internet.
 BLOCKED_DESTINATIONS_V4="0.0.0.0/8 10.0.0.0/8 100.64.0.0/10 127.0.0.0/8 169.254.0.0/16 172.16.0.0/12 192.0.0.0/24 192.168.0.0/16 198.18.0.0/15 224.0.0.0/4 240.0.0.0/4"
 BLOCKED_DESTINATIONS_V6="::/128 ::1/128 ::ffff:0:0/96 64:ff9b::/96 100::/64 fc00::/7 fe80::/10 ff00::/8"
 EXTRA_BLOCKED_DESTINATIONS_V4=""
@@ -92,6 +93,14 @@ restore_sysctl() {
   fi
 }
 
+# Some networks hand out public addresses on the local link, so the on-link prefixes of the WAN
+# interface are blocked as well, as they are at "up"
+wan_link_prefixes() {
+  local family=$1
+  local wan=$2
+  ip "$family" route show dev "$wan" | awk '$1 != "default" && !/ via / {print $1}'
+}
+
 # VAS_FORWARD sees everything the EV sends through the charger, VAS_RETURN everything forwarded
 # towards the EV. Both end in DROP, so the FORWARD policy of the system does not matter.
 setup_filter() {
@@ -109,14 +118,14 @@ setup_filter() {
   done
 
   $tables -A VAS_FORWARD ! -o "$wan" -j DROP
-  local destination
-  for destination in $blocked; do
-    $tables -A VAS_FORWARD -d "$destination" -j DROP
-  done
   local server
   for server in $dns_servers; do
     $tables -A VAS_FORWARD -d "$server" -p udp --dport 53 -j ACCEPT
     $tables -A VAS_FORWARD -d "$server" -p tcp --dport 53 -j ACCEPT
+  done
+  local destination
+  for destination in $blocked; do
+    $tables -A VAS_FORWARD -d "$destination" -j DROP
   done
   $tables -A VAS_FORWARD -p tcp -m multiport --dports "$ports" -j ACCEPT
   $tables -A VAS_FORWARD -j DROP
@@ -157,22 +166,26 @@ start_services() {
 
   echo "[+] Starting all internet VAS services for $LAN_IFACE -> $WAN_IFACE"
 
-  # 1. Enable IP Forwarding, remembering the previous setting for "down"
-  echo "  [1/4] Enabling IP forwarding"
+  # 1. Setup NAT and Forwarding Rules before forwarding is enabled
+  echo "  [1/4] Setting up NAT and FORWARD rules on $WAN_IFACE"
+  echo "    - Allowing outgoing traffic on TCP ports: $PORTS"
+  if [ "$USE_IPV4" = true ]; then
+    local wan_prefixes_v4
+    wan_prefixes_v4=$(wan_link_prefixes -4 "$WAN_IFACE")
+    setup_filter iptables "$LAN_IFACE" "$WAN_IFACE" "$PORTS" "${DHCP_STATIC_IP%.*}.0/${SUBNET_MASK}" \
+      "$BLOCKED_DESTINATIONS_V4 $wan_prefixes_v4 $EXTRA_BLOCKED_DESTINATIONS_V4" "$DNS_SERVERS_V4"
+  fi
+  local wan_prefixes_v6
+  wan_prefixes_v6=$(wan_link_prefixes -6 "$WAN_IFACE")
+  setup_filter ip6tables "$LAN_IFACE" "$WAN_IFACE" "$PORTS" "$RADVD_IPV6_PREFIX" \
+    "$BLOCKED_DESTINATIONS_V6 $wan_prefixes_v6 $EXTRA_BLOCKED_DESTINATIONS_V6" "$DNS_SERVERS_V6"
+
+  # 2. Enable IP Forwarding, remembering the previous setting for "down"
+  echo "  [2/4] Enabling IP forwarding"
   if [ "$USE_IPV4" = true ]; then
     save_and_set_sysctl net.ipv4.ip_forward
   fi
   save_and_set_sysctl net.ipv6.conf.all.forwarding
-
-  # 2. Setup NAT and Forwarding Rules
-  echo "  [2/4] Setting up NAT and FORWARD rules on $WAN_IFACE"
-  echo "    - Allowing outgoing traffic on TCP ports: $PORTS"
-  if [ "$USE_IPV4" = true ]; then
-    setup_filter iptables "$LAN_IFACE" "$WAN_IFACE" "$PORTS" "${DHCP_STATIC_IP%.*}.0/${SUBNET_MASK}" \
-      "$BLOCKED_DESTINATIONS_V4 $EXTRA_BLOCKED_DESTINATIONS_V4" "$DNS_SERVERS_V4"
-  fi
-  setup_filter ip6tables "$LAN_IFACE" "$WAN_IFACE" "$PORTS" "$RADVD_IPV6_PREFIX" \
-    "$BLOCKED_DESTINATIONS_V6 $EXTRA_BLOCKED_DESTINATIONS_V6" "$DNS_SERVERS_V6"
 
   # 3. Start DHCP server
   if [ "$USE_IPV4" = true ]; then
@@ -252,11 +265,11 @@ stop_services() {
   echo "  [3/3] Removing NAT and FORWARD rules"
 
   if [ "$USE_IPV4" = true ]; then
-    remove_filter iptables "$LAN_IFACE" "$WAN_IFACE" "${DHCP_STATIC_IP%.*}.0/${SUBNET_MASK}"
     restore_sysctl net.ipv4.ip_forward
+    remove_filter iptables "$LAN_IFACE" "$WAN_IFACE" "${DHCP_STATIC_IP%.*}.0/${SUBNET_MASK}"
   fi
-  remove_filter ip6tables "$LAN_IFACE" "$WAN_IFACE" "$RADVD_IPV6_PREFIX"
   restore_sysctl net.ipv6.conf.all.forwarding
+  remove_filter ip6tables "$LAN_IFACE" "$WAN_IFACE" "$RADVD_IPV6_PREFIX"
 
   echo "[✓] All services stopped and rules removed."
 }

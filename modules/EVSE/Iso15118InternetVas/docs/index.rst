@@ -45,13 +45,15 @@ How it works
       via the ``modem_interface``, with TCP on the selected ports (80 for HTTP,
       443 for HTTPS) and DNS to the announced resolvers; everything else it
       sends through the charger is dropped. Private, link-local and multicast
-      ranges are always blocked; backend networks reachable via the
+      ranges and the on-link prefixes of the ``modem_interface`` at session
+      start are always blocked; other backend networks reachable via the
       ``modem_interface`` with public addresses are added with
       ``EXTRA_BLOCKED_DESTINATIONS_V4`` and ``EXTRA_BLOCKED_DESTINATIONS_V6`` in
       ``/etc/default/vas-internet``.
     - The example script uses public DNS servers (Google's 8.8.8.8 for IPv4
       and 2001:4860:4860::8888 for IPv6). They are set with ``DNS_SERVERS_V4``
-      and ``DNS_SERVERS_V6`` in ``/etc/default/vas-internet``.
+      and ``DNS_SERVERS_V6`` in ``/etc/default/vas-internet``; DNS to them is
+      forwarded even when they are on a blocked network.
 4.  **Session Teardown**: When the charging session ends (signaled by the
     ``evse_manager``), the module calls the same script to automatically tear
     down the network configuration, stopping the services, removing all
