@@ -162,7 +162,17 @@ void isolation_monitorImpl::start_requested_self_test(double test_voltage_V) {
     }
     EVLOG_info << "IMD Starting self-test...";
     if (not begin_self_test(system_connection_test_for(test_voltage_V))) {
+        set_system_connection_test_off_between_tests();
         publish_self_test_result(false);
+    }
+}
+
+void isolation_monitorImpl::set_system_connection_test_off_between_tests() {
+    if (not config.selftest_gridconnection_off_between_tests or self_test_started) {
+        return;
+    }
+    if (not send_to_imd_if_changed(3024, SYSTEM_CONNECTION_TEST_OFF)) {
+        EVLOG_warning << "Can't set the system connection test off after the self test";
     }
 }
 
@@ -199,6 +209,11 @@ void isolation_monitorImpl::finish_self_test(bool result) {
             EVLOG_error << "Self test at start failed";
         }
     } else {
+        // With a device error the device may still be in test mode; the recovery device test sets 3024 off
+        if (last_alarm != AlarmType::DeviceError) {
+            std::scoped_lock lock(device_test_mutex);
+            set_system_connection_test_off_between_tests();
+        }
         publish_self_test_result(result);
     }
 

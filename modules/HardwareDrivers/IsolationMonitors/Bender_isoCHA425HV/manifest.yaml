@@ -92,12 +92,21 @@ provides:
         description: >-
           3024 nEt: Test the system connection (measuring leads L1/+ and L2/-) during self tests started by
           EVerest. The driver selects "on U" if the self test voltage is above DC 100 V and "on" otherwise
-          and, as the device stores 3024 permanently, keeps that selection until the next self test.
+          and, as the device stores 3024 permanently, keeps that selection until the next self test unless
+          selftest_gridconnection_off_between_tests is set.
           3024 is set to off when this option is false, at driver start and for device tests the driver
           starts to clear a device error: the test needs a monitored system with low internal resistance and
           voltage, which is not the case at idle. A device error, e.g. left by a failed system connection
           test, is cleared by a device test without it, which the driver starts on its own and repeats until
           it passes.
+        type: boolean
+        default: false
+      selftest_gridconnection_off_between_tests:
+        description: >-
+          Only with selftest_enable_gridconnection: set 3024 back to off after every self test started by
+          EVerest, so device tests not started by EVerest (e.g. test button) never run the system connection
+          test. Costs two writes of the permanently stored 3024 per self test; when false, 3024 keeps the last
+          selection until the next self test.
         type: boolean
         default: false
       selftest_enable_at_start:
