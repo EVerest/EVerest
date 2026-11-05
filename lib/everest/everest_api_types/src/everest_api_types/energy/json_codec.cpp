@@ -4,6 +4,7 @@
 #include "energy/json_codec.hpp"
 #include "energy/API.hpp"
 #include "nlohmann/json.hpp"
+#include "utilities/date_time.hpp"
 #include "utilities/json_codec_helpers.hpp"
 
 #include <cstdint>
@@ -96,7 +97,7 @@ void to_json(json& j, PricePerkWh const& k) noexcept {
 }
 
 void from_json(const json& j, PricePerkWh& k) {
-    k.timestamp = j.at("timestamp");
+    k.timestamp = date_time_from_json(j.at("timestamp"));
     k.value = json_number<float>(j.at("value"));
     k.currency = j.at("currency");
 }
@@ -192,7 +193,7 @@ void to_json(json& j, ScheduleReqEntry const& k) noexcept {
 }
 
 void from_json(const json& j, ScheduleReqEntry& k) {
-    k.timestamp = j.at("timestamp");
+    k.timestamp = date_time_from_json(j.at("timestamp"));
     k.limits_to_root = j.at("limits_to_root");
     k.limits_to_leaves = j.at("limits_to_leaves");
 
@@ -233,7 +234,7 @@ void to_json(json& j, ScheduleSetpointEntry const& k) noexcept {
 }
 
 void from_json(const json& j, ScheduleSetpointEntry& k) {
-    k.timestamp = j.at("timestamp");
+    k.timestamp = date_time_from_json(j.at("timestamp"));
     if (j.contains("setpoint")) {
         k.setpoint.emplace(j.at("setpoint"));
     }

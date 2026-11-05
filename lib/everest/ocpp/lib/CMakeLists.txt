@@ -233,6 +233,7 @@ target_link_libraries(ocpp
         nlohmann_json::nlohmann_json
         ryml::ryml
         date::date-tz
+        everest::date
 )
 
 target_link_libraries(ocpp

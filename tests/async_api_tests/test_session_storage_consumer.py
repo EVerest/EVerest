@@ -13,6 +13,7 @@ deleted count.
 """
 
 import asyncio
+import copy
 import json
 import os
 import uuid
@@ -175,14 +176,17 @@ async def test_get_sessions_forwards_the_request_and_returns_the_page(
         "filter": {
             "state": "Finished",
             "evse_id": 2,
-            "started_after": "2026-08-01T00:00:00Z",
+            "started_after": "2026-08-01T02:00:00+02:00",
         },
     }
     reply = await _request_until_reply(
         async_api_mqtt_handler, everest_core.mqtt_external_prefix,
         "get_sessions", external_request)
 
-    assert backend.requests["get_sessions"] == {"request": external_request}
+    # date-times from clients are forwarded as RFC 3339 in UTC with milliseconds
+    forwarded_request = copy.deepcopy(external_request)
+    forwarded_request["filter"]["started_after"] = "2026-08-01T00:00:00.000Z"
+    assert backend.requests["get_sessions"] == {"request": forwarded_request}
     assert reply == page
 
 

@@ -64,6 +64,7 @@ cc_library(
     strip_include_prefix = "include",
     visibility = ["//visibility:public"],
     deps = [
+        "//lib/everest/date",
         "//lib/everest/io:io",
         "//lib/everest/helpers",
         "//lib/everest/log:liblog",
