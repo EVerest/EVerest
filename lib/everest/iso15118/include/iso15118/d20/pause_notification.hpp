@@ -33,7 +33,7 @@ public:
             std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch())
                 .count());
         if (scheduled and
-            not(session.ev_power_profile.has_value() and session.ev_power_profile->zero_power_at(now_s))) {
+            not(session.ev_power_profile.has_value() and session.ev_power_profile->power_at(now_s) == 0.0f)) {
             if (not m_held_back_logged) {
                 logf_info("Pause requested in scheduled control mode: waiting for a 0 kW EVPowerProfile entry "
                           "[V2G20-1198]");
