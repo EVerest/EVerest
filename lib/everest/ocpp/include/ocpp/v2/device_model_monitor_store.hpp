@@ -45,7 +45,8 @@ public:
 
     ClearMonitoringStatusEnum clear(std::int32_t monitor_id, bool allow_protected);
 
-    /// \brief Removes the custom monitors, also those of variables that are not part of the model (N03)
+    /// \brief Removes the custom monitors, also those of variables that are not part of the model (N03). Memory keeps
+    /// them when the storage removed none.
     std::int32_t clear_custom();
 
     /// \brief Brings the monitors of a variable that \p owner registers in line with the registration: stored

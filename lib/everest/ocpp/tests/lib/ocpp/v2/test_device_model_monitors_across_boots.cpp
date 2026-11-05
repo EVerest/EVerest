@@ -453,4 +453,25 @@ TEST(MonitorStoreTest, monitor_stays_when_the_storage_cannot_remove_it) {
     EXPECT_EQ(store.find(7), nullptr);
 }
 
+TEST(MonitorStoreTest, custom_monitors_stay_when_the_storage_cannot_clear_them) {
+    StoredMonitor stored;
+    stored.component = make_component("ExtensionCtrlr");
+    stored.variable = make_variable("Level");
+    stored.monitor = make_preconfigured_monitor(MonitorEnum::UpperThreshold, 100, 3);
+    stored.monitor.monitor.id = 7;
+    stored.monitor.type = VariableMonitorType::CustomMonitor;
+    DeviceModelStorageMock storage;
+    EXPECT_CALL(storage, get_all_monitors()).WillOnce(::testing::Return(std::vector<StoredMonitor>{stored}));
+    EXPECT_CALL(storage, clear_custom_variable_monitors())
+        .WillOnce(::testing::Return(0))
+        .WillOnce(::testing::Return(1));
+    MonitorStore store(storage);
+    store.load();
+
+    EXPECT_EQ(store.clear_custom(), 0);
+    EXPECT_NE(store.find(7), nullptr);
+    EXPECT_EQ(store.clear_custom(), 1);
+    EXPECT_EQ(store.find(7), nullptr);
+}
+
 } // namespace ocpp::v2

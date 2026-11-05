@@ -80,6 +80,10 @@ ClearMonitoringStatusEnum MonitorStore::clear(const std::int32_t monitor_id, con
 
 std::int32_t MonitorStore::clear_custom() {
     const auto deleted = this->storage.clear_custom_variable_monitors();
+    // The storage also reports 0 when it failed and kept its monitors
+    if (deleted == 0) {
+        return deleted;
+    }
     for (auto it = this->monitors.begin(); it != this->monitors.end();) {
         it = it->second.monitor.type == VariableMonitorType::CustomMonitor ? this->forget(it) : std::next(it);
     }
