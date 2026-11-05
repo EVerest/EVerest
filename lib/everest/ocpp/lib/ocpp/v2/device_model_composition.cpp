@@ -56,13 +56,26 @@ void StoredValues::restore(const std::string& owner, const Component& component,
         }
 
         attribute.value = stored.value;
-        if (stored.owner != owner) {
+        if (stored.owner != owner and this->record_owner(stored, owner)) {
             stored.owner = owner;
-            if (this->storage.set_stored_value(stored) != SetVariableStatusEnum::Accepted) {
-                EVLOG_warning << "Could not record the owner of the stored value of " << component << "." << variable;
-            }
         }
     }
+}
+
+bool StoredValues::record_owner(const StoredVariableValue& stored, const std::string& owner) {
+    auto recorded = stored;
+    recorded.owner = owner;
+    try {
+        if (this->storage.set_stored_value(recorded) == SetVariableStatusEnum::Accepted) {
+            return true;
+        }
+        EVLOG_warning << "Could not record the owner of the stored value of " << stored.component << "."
+                      << stored.variable;
+    } catch (const everest::db::Exception& e) {
+        EVLOG_error << "Could not record the owner of the stored value of " << stored.component << "."
+                    << stored.variable << ": " << e.what();
+    }
+    return false;
 }
 
 SetVariableStatusEnum StoredValues::store(StoredVariableValue value) {

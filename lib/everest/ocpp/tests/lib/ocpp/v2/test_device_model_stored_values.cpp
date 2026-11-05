@@ -319,6 +319,7 @@ class StoredValuesStorageMock : public DeviceModelStorageMock {
 public:
     MOCK_METHOD(std::vector<StoredVariableValue>, get_stored_values, (), (override));
     MOCK_METHOD(bool, remove_stored_value, (const Component&, const Variable&, const AttributeEnum&), (override));
+    MOCK_METHOD(SetVariableStatusEnum, set_stored_value, (const StoredVariableValue&), (override));
 };
 
 TEST(StoredValuesTest, value_stays_when_the_storage_cannot_remove_it) {
@@ -340,6 +341,31 @@ TEST(StoredValuesTest, value_stays_when_the_storage_cannot_remove_it) {
 
     for (int i = 0; i < 4; ++i) {
         values.remove_of_unregistered_variables(unregistered);
+    }
+}
+
+TEST(StoredValuesTest, owner_is_recorded_again_when_the_storage_could_not_record_it) {
+    StoredVariableValue stored;
+    stored.component = make_der_component(1);
+    stored.variable = make_variable("Enabled");
+    stored.attribute = AttributeEnum::Actual;
+    stored.value = "false";
+    stored.owner = "PREVIOUS_OWNER";
+    StoredValuesStorageMock storage;
+    EXPECT_CALL(storage, get_stored_values()).WillOnce(::testing::Return(std::vector<StoredVariableValue>{stored}));
+    EXPECT_CALL(storage, set_stored_value(::testing::Field(&StoredVariableValue::owner, OWNER)))
+        .WillOnce(::testing::Throw(everest::db::Exception("database is locked")))
+        .WillOnce(::testing::Return(SetVariableStatusEnum::Accepted));
+    StoredValues values(storage);
+
+    for (int registration = 0; registration < 3; ++registration) {
+        VariableMetaData meta_data;
+        meta_data.characteristics = make_enabled().characteristics;
+        meta_data.attributes = make_enabled().attributes;
+        ASSERT_NO_THROW(values.restore(OWNER, stored.component, stored.variable, meta_data,
+                                       [](const std::string&) { return true; }));
+        ASSERT_TRUE(meta_data.attributes.at(0).value.has_value());
+        EXPECT_EQ(meta_data.attributes.at(0).value->get(), "false");
     }
 }
 

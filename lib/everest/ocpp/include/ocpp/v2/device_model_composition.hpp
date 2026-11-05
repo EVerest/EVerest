@@ -88,6 +88,10 @@ private:
     /// \brief Removes the value of \p key from the storage, and from memory only if that succeeded
     void remove(Key key);
 
+    /// \brief Records \p owner as the owner of \p stored in the storage and returns whether that succeeded. A storage
+    /// error is logged, the value stays applied.
+    bool record_owner(const StoredVariableValue& stored, const std::string& owner);
+
     DeviceModelStorageInterface& storage;
     std::map<Key, StoredVariableValue> values;
 };
