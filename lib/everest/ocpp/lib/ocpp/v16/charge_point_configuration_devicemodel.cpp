@@ -1215,13 +1215,25 @@ std::string ChargePointConfigurationDeviceModel::calculateSupportedMeasurands() 
 // ----------------------------------------------------------------------------
 // Public methods
 
+// TODO(dynamic-runtime-dm-updates): mapping targets are resolved once here, so a target that is added to the device
+// model at runtime is not used
 ChargePointConfigurationDeviceModel::ChargePointConfigurationDeviceModel(
     const std::string_view& ocpp_main_path, std::unique_ptr<v2::DeviceModelVariablesInterface> device_model_interface,
     v2::Ocpp16KeyMappings custom_key_mappings) :
     ChargePointConfigurationBase(ocpp_main_path),
     storage(std::move(device_model_interface)),
-    resolver(custom_key_mappings) {
-    // logged here rather than in the loader, which runs twice on a migration boot
+    resolver(v2::usable_key_mappings(
+        custom_key_mappings,
+        [this](const v2::Component& component, const v2::Variable& variable) -> std::optional<v2::MappingTargetInfo> {
+            if (const auto meta = storage->get_variable_meta_data(component, variable)) {
+                const auto actual = storage->get_mutability(component, variable, v2::AttributeEnum::Actual);
+                return v2::MappingTargetInfo{meta->characteristics.dataType, actual.has_value()};
+            }
+            return std::nullopt;
+        },
+        true)) {
+    // logged here rather than in the loader, which runs twice on a migration boot, and after unusable overrides
+    // were dropped
     for (const auto& [key, target] : resolver.overrides()) {
         const auto builtin = keys::convert_v2(key);
         EVLOG_info << "OCPP 1.6 key " << keys::convert(key) << " is custom-mapped to "
@@ -1381,40 +1393,6 @@ void ChargePointConfigurationDeviceModel::check_integrity(int32_t expected_numbe
 
     check_profile(SupportedFeatureProfiles::CostAndPrice,
                   [&](auto require_for_profile) { require_for_profile(keys::valid_keys::CustomDisplayCostAndPrice); });
-
-    // A custom-mapped key is stored only in the Actual attribute of its target, so the target must exist in the device
-    // model, have an Actual attribute and hold the data type of the key's built-in variable
-    // TODO(dynamic-runtime-dm-updates): checked once at startup, so a target that is added to the device model at
-    // runtime is reported as missing
-    for (const auto& [key, cv] : resolver.overrides()) {
-        const auto& [component, variable] = cv;
-        const auto target_name = v2::describe_mapping_target(component, variable);
-        const auto target = storage->get_variable_meta_data(component, variable);
-        if (!target.has_value()) {
-            errors.emplace_back(std::string(keys::convert(key)) + " (custom-mapped to " + target_name +
-                                ", which is not in the device model)");
-            continue;
-        }
-        if (!storage->get_mutability(component, variable, v2::AttributeEnum::Actual).has_value()) {
-            errors.emplace_back(std::string(keys::convert(key)) + " (custom-mapped to " + target_name +
-                                ", which has no Actual attribute)");
-            continue;
-        }
-        const auto builtin = keys::convert_v2(key);
-        if (!builtin.has_value()) {
-            continue;
-        }
-        // the built-in variable is usually removed from the device model; remove_overridden_ocpp16_legacy_variables
-        // checks the data type before it does so
-        const auto legacy = storage->get_variable_meta_data(builtin->first, builtin->second);
-        if (legacy.has_value() && legacy->characteristics.dataType != target->characteristics.dataType) {
-            errors.emplace_back(
-                std::string(keys::convert(key)) + " (custom-mapped to " + target_name + " with dataType " +
-                v2::conversions::data_enum_to_string(target->characteristics.dataType) + ", its built-in variable " +
-                v2::describe_mapping_target(builtin->first, builtin->second) + " has dataType " +
-                v2::conversions::data_enum_to_string(legacy->characteristics.dataType) + ")");
-        }
-    }
 
     if (!errors.empty()) {
         for (const auto& err : errors) {

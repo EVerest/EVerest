@@ -161,10 +161,10 @@ protected:
 TEST_F(ChargePointConfigFactoryV16Test, EverestSourcedVariableIsReadableAndWritable) {
     auto everest_storage = std::make_shared<FakeEverestDeviceModelStorage>("ConnectedEV", "VehicleId", "everest-value");
 
-    auto result =
+    auto configuration =
         module::config_factory_v16::create_charge_point_configuration(work_dir, make_params(), n_evse, everest_storage);
-    ASSERT_NE(result.configuration, nullptr);
-    auto& device_model = result.configuration->get_device_model();
+    ASSERT_NE(configuration, nullptr);
+    auto& device_model = configuration->get_device_model();
 
     std::string value;
     const auto get_status =
@@ -182,10 +182,10 @@ TEST_F(ChargePointConfigFactoryV16Test, EverestSourcedVariableIsReadableAndWrita
 TEST_F(ChargePointConfigFactoryV16Test, OcppSourcedVariableStillResolves) {
     auto everest_storage = std::make_shared<FakeEverestDeviceModelStorage>("ConnectedEV", "VehicleId", "everest-value");
 
-    auto result =
+    auto configuration =
         module::config_factory_v16::create_charge_point_configuration(work_dir, make_params(), n_evse, everest_storage);
-    ASSERT_NE(result.configuration, nullptr);
-    auto& device_model = result.configuration->get_device_model();
+    ASSERT_NE(configuration, nullptr);
+    auto& device_model = configuration->get_device_model();
 
     const auto& heartbeat_interval = ocpp::v2::ControllerComponentVariables::HeartbeatInterval;
     ASSERT_TRUE(heartbeat_interval.variable.has_value());
@@ -203,10 +203,10 @@ TEST_F(ChargePointConfigFactoryV16Test, OcppSourcedVariableStillResolves) {
 // The factory is also used in setups without an EVerest device model storage (e.g. tests); it must
 // degrade to the OCPP-only device model instead of crashing.
 TEST_F(ChargePointConfigFactoryV16Test, NullEverestStorageDegradesToOcppOnly) {
-    auto result =
+    auto configuration =
         module::config_factory_v16::create_charge_point_configuration(work_dir, make_params(), n_evse, nullptr);
-    ASSERT_NE(result.configuration, nullptr);
-    auto& device_model = result.configuration->get_device_model();
+    ASSERT_NE(configuration, nullptr);
+    auto& device_model = configuration->get_device_model();
 
     std::string value;
     EXPECT_EQ(device_model.get_variable(make_component("ConnectedEV"), make_variable("VehicleId"),

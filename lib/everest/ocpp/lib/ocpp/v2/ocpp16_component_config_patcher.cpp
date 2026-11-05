@@ -125,35 +125,16 @@ bool has_actual_attribute(const DeviceModelVariable& variable) {
     });
 }
 
-/// The OCPP 1.6 value of an overridden key is written into the Actual attribute of the override target, so the target
-/// must have one and the data type of the key's built-in variable. A missing target is reported by the integrity check.
-void check_override_target(const std::map<ComponentKey, std::vector<DeviceModelVariable>>& component_configs,
-                           ocpp::v16::keys::valid_keys key, const std::pair<Component, Variable>& target) {
-    const auto* target_variable = find_variable(component_configs, target.first, target.second);
-    if (target_variable == nullptr) {
-        return;
-    }
-    const auto error_prefix = "OCPP 1.6 key '" + std::string{ocpp::v16::keys::convert(key)} + "' is custom-mapped to " +
-                              describe_mapping_target(target.first, target.second);
-    if (!has_actual_attribute(*target_variable)) {
-        throw Ocpp16KeyMappingsError(error_prefix + ", which has no Actual attribute");
-    }
-    const auto builtin = ocpp::v16::keys::convert_v2(key);
-    if (!builtin.has_value()) {
-        return;
-    }
-    const auto* builtin_variable = find_variable(component_configs, builtin->first, builtin->second);
-    if (builtin_variable == nullptr) {
-        return;
-    }
-    const auto builtin_type = builtin_variable->characteristics.dataType;
-    const auto target_type = target_variable->characteristics.dataType;
-    if (builtin_type != target_type) {
-        throw Ocpp16KeyMappingsError(error_prefix + " with dataType " + conversions::data_enum_to_string(target_type) +
-                                     ", but its built-in variable " +
-                                     describe_mapping_target(builtin->first, builtin->second) + " has dataType " +
-                                     conversions::data_enum_to_string(builtin_type));
-    }
+/// Lookup of mapping targets in \p component_configs for usable_key_mappings
+MappingTargetLookup
+component_config_lookup(const std::map<ComponentKey, std::vector<DeviceModelVariable>>& component_configs) {
+    return
+        [&component_configs](const Component& component, const Variable& variable) -> std::optional<MappingTargetInfo> {
+            if (const auto* found = find_variable(component_configs, component, variable)) {
+                return MappingTargetInfo{found->characteristics.dataType, has_actual_attribute(*found)};
+            }
+            return std::nullopt;
+        };
 }
 
 ocpp::v16::keys::DeviceModel_CV component_variable_to_dm_cv(const ComponentVariable& cv) {
@@ -411,7 +392,11 @@ void patch_component_config_with_ocpp16(std::map<ComponentKey, std::vector<Devic
                                         const Ocpp16KeyMappings& custom_key_mappings, int32_t network_config_slot) {
 
     const auto config_keys = ocpp16_config.get_all_key_value();
-    const ocpp::v16::VariableResolver resolver{custom_key_mappings};
+    // the device model configuration applies and logs the same rule at runtime
+    // TODO(dynamic-runtime-dm-updates): only the component configs are seen here, so a target that is added to the
+    // device model at runtime does not receive the migrated value
+    const ocpp::v16::VariableResolver resolver{
+        usable_key_mappings(custom_key_mappings, component_config_lookup(component_configs), false)};
 
     for (const auto& config_key : config_keys) {
         const auto key_enum = ocpp::v16::keys::convert(config_key.key.get());
@@ -430,9 +415,6 @@ void patch_component_config_with_ocpp16(std::map<ComponentKey, std::vector<Devic
         }
 
         const bool overridden = key_enum.has_value() && resolver.is_overridden(key_enum.value());
-        if (overridden) {
-            check_override_target(component_configs, key_enum.value(), mapping_opt.value());
-        }
         // an override target belongs to the station's component config, which defines its mutability
         const auto readonly = overridden ? std::nullopt : std::optional<bool>{config_key.readonly};
 
@@ -491,16 +473,14 @@ void remove_overridden_ocpp16_legacy_variables(
     const Ocpp16KeyMappings& custom_key_mappings) {
     // TODO(dynamic-runtime-dm-updates): only the component configs are seen here, so a target that is added to the
     // device model at runtime keeps the built-in variable
-    const ocpp::v16::VariableResolver resolver{custom_key_mappings};
+    // decided here, because the data type of the built-in variable is unknown at runtime once it is removed
+    const ocpp::v16::VariableResolver resolver{
+        usable_key_mappings(custom_key_mappings, component_config_lookup(component_configs), false)};
     for (const auto& [key, target] : resolver.overrides()) {
         const auto builtin = ocpp::v16::keys::convert_v2(key);
-        if (!builtin.has_value() || builtin.value() == target ||
-            find_variable(component_configs, target.first, target.second) == nullptr) {
+        if (!builtin.has_value() || builtin.value() == target) {
             continue;
         }
-        // checked here, because the data type of the built-in variable is unknown once it is removed
-        check_override_target(component_configs, key, target);
-
         const auto component_it = component_configs.find(to_component_key(builtin->first));
         if (component_it == component_configs.end()) {
             continue;
