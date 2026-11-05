@@ -18,6 +18,9 @@
 #include <ocpp/common/call_types.hpp>
 #include <ocpp/common/database/database_handler_common.hpp>
 #include <ocpp/common/types.hpp>
+#include <ocpp/common/utils.hpp>
+
+#include <everest/util/json/nesting_depth.hpp>
 #include <ocpp/v16/messages/StopTransaction.hpp>
 #include <ocpp/v16/types.hpp>
 #include <ocpp/v2/messages/TransactionEvent.hpp>
@@ -867,6 +870,9 @@ public:
     EnhancedMessage<M> receive(std::string_view message) {
         EnhancedMessage<M> enhanced_message;
 
+        if (everest::lib::util::exceeds_json_nesting_depth(message, MAX_JSON_NESTING_DEPTH)) {
+            throw MalformedRpcMessage("Message nesting exceeds the supported depth");
+        }
         enhanced_message.message = json::parse(message);
         enhanced_message.message_size = message.size();
         enhanced_message.uniqueId = this->getMessageId(enhanced_message.message);
