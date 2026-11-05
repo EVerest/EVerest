@@ -425,6 +425,9 @@ private:
     void start_requested_self_test(double test_voltage_V);
     void start_self_test_at_start();
     void finish_self_test(bool result);
+    // Serializes starting a device test (requested self test, self test at start, recovery) and the 3024 write in
+    // configure_device(): the command thread and the read loop both start tests and write 3024
+    std::mutex device_test_mutex;
     std::mutex self_test_mutex;
     bool self_test_at_start_running{false};
     std::optional<double> pending_self_test_voltage_V;

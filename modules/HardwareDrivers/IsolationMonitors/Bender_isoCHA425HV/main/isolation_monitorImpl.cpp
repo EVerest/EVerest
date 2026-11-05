@@ -48,8 +48,14 @@ void isolation_monitorImpl::configure_device() {
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
         successful &= send_to_imd(3023, (config.chademo_mode ? 1 : 0));
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
-        // Leaving stop mode below runs a device test in cbl mode, which must not use the stored system connection test
-        successful &= send_to_imd_if_changed(3024, SYSTEM_CONNECTION_TEST_OFF);
+        {
+            // Leaving stop mode below runs a device test in cbl mode, which must not use the stored system connection
+            // test. A self test started meanwhile (configure_device() also runs when DeviceFault clears) keeps its own.
+            std::scoped_lock lock(device_test_mutex);
+            if (not self_test_started) {
+                successful &= send_to_imd_if_changed(3024, SYSTEM_CONNECTION_TEST_OFF);
+            }
+        }
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
         // The device's own self test at power-on would run with whatever value of 3024 is stored, so it stays off.
         // The driver runs the self test at start itself (selftest_enable_at_start).
@@ -143,6 +149,9 @@ bool isolation_monitorImpl::begin_self_test(uint16_t system_connection_test) {
 }
 
 void isolation_monitorImpl::start_requested_self_test(double test_voltage_V) {
+    // Runs on the command thread: serialized with the recovery start in the read loop, so the checks below and the
+    // start see the same recovery state and neither overwrites 3024 under the other
+    std::scoped_lock lock(device_test_mutex);
     if (recovery_state == RecoveryState::Running or last_test == TestType::ExternalTest or
         last_alarm == AlarmType::DeviceError) {
         // A device test without system connection test must not pass as the cable check self test, and a device
@@ -159,8 +168,14 @@ void isolation_monitorImpl::start_requested_self_test(double test_voltage_V) {
 
 void isolation_monitorImpl::start_self_test_at_start() {
     EVLOG_info << "IMD Starting self test at start...";
-    // Without HV on the output the system connection test cannot pass
-    if (not begin_self_test(SYSTEM_CONNECTION_TEST_OFF)) {
+    bool started{false};
+    {
+        std::scoped_lock lock(device_test_mutex);
+        // Without HV on the output the system connection test cannot pass
+        started = begin_self_test(SYSTEM_CONNECTION_TEST_OFF);
+    }
+    // finish_self_test() may start a parked request, which takes device_test_mutex again
+    if (not started) {
         EVLOG_error << "Could not start the self test at start";
         finish_self_test(false);
     }
@@ -237,7 +252,14 @@ bool isolation_monitorImpl::run_recovery() {
             // The device still runs a test and would answer "busy"
             return false;
         }
-        start_recovery_test();
+        {
+            std::scoped_lock lock(device_test_mutex);
+            if (self_test_started) {
+                // A requested self test started since the check above, the recovery waits until it is done
+                return false;
+            }
+            start_recovery_test();
+        }
         return recovery_state != RecoveryState::Running;
     case RecoveryState::Running: {
         if (last_test == TestType::ExternalTest) {
