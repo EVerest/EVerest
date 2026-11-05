@@ -26,23 +26,20 @@ void preload_tzdb();
 /// The time point is truncated to milliseconds. A leap second is formatted as second 60.
 std::string to_rfc3339(const std::chrono::time_point<date::utc_clock>& t);
 
-/// \brief Lenient parsing of a date-time (YYYY-MM-DDTHH:MM:SS[.frac]) with date::parse().
-///
-/// Field ranges are validated, but the time offset and anything following the seconds are ignored, the result is
-/// always interpreted as UTC.
-/// \returns the parsed time point, or the default-constructed (epoch) time point if \p t cannot be parsed
-std::chrono::time_point<date::utc_clock> from_rfc3339_slow(const std::string& t);
-
-/// \brief Strict parsing of RFC 3339 date-time (YYYY-MM-DDTHH:MM:SS[.frac](Z|+HH:MM|-HH:MM)).
+/// \brief Strict parsing of RFC 3339 date-time (YYYY-MM-DDTHH:MM:SS[.frac](Z|+HH:MM|-HH:MM)), see
+/// everest::lib::datetime::parse_rfc3339().
 ///
 /// Field ranges, separators and the time offset are validated. Fractional seconds are kept to nanoseconds.
-/// \returns the parsed time point, or std::nullopt if \p t is not a valid RFC 3339 date-time
+/// \returns the parsed time point, or std::nullopt if \p t is not a valid RFC 3339 date-time or lies outside the
+/// range of utc_clock (1677-09-21T00:12:43.145224192Z to 2262-04-11T23:46:49.854775807Z)
 std::optional<std::chrono::time_point<date::utc_clock>> try_from_rfc3339(const std::string& t);
 
-/// \brief Parse \p t with try_from_rfc3339(), falling back to from_rfc3339_slow() for inputs it rejects.
+/// \brief Parse \p t with try_from_rfc3339(), falling back to lenient parsing of YYYY-MM-DDTHH:MM:SS[.frac] for
+/// inputs it rejects.
 ///
-/// Never throws. Input that neither parser accepts yields the default-constructed (epoch) time point; use
-/// try_from_rfc3339() to detect invalid input.
+/// The lenient fallback validates field ranges, but ignores the time offset and anything following the seconds, and
+/// always interprets the result as UTC. Never throws. Input that neither accepts yields the default-constructed
+/// (epoch) time point; use try_from_rfc3339() to detect invalid input.
 std::chrono::time_point<date::utc_clock> from_rfc3339(const std::string& t);
 
 } // namespace Date

@@ -84,6 +84,13 @@ target_include_directories(${TEST_TARGET_NAME} PUBLIC
 target_sources(${TEST_TARGET_NAME} PRIVATE
   manual_tests/serialization/generic.hpp
   manual_tests/serialization/generic.cpp
+<<<<<<< HEAD
+=======
+  manual_tests/serialization/auth.cpp
+  manual_tests/serialization/date_time.cpp
+  manual_tests/serialization/dc_external_derate.cpp
+  manual_tests/serialization/energy.cpp
+>>>>>>> a86dd80 (feat(date): add date library for RFC 3339 parsing and formatting (#3298))
   manual_tests/serialization/evse_board_support.cpp
   manual_tests/source_file_hash_check/source_file_hash_check.cpp
 )
@@ -101,6 +108,7 @@ add_test(${TEST_TARGET_NAME} ${TEST_TARGET_NAME})
 file(GLOB API_FILES ${PROJECT_SOURCE_DIR}/lib/everest/everest_api_types/include/everest_api_types/*/API.hpp)
 file(GLOB TEST_GENERATOR_PY_FILES ${PROJECT_SOURCE_DIR}/lib/everest/everest_api_types/tests/test_file_autogenerator/*.py)
 set (TEST_DISABLE_FILE ${PROJECT_SOURCE_DIR}/lib/everest/everest_api_types/tests/test_file_autogenerator/disable.csv)
+set (TEST_DATE_TIME_FIELDS_FILE ${PROJECT_SOURCE_DIR}/lib/everest/everest_api_types/tests/test_file_autogenerator/date_time_fields.csv)
 set (SERIALIZATION_TEST_HELPERS_HPP ${PROJECT_SOURCE_DIR}/lib/everest/everest_api_types/tests/SerializationTestHelpers.hpp)
 
 set(GENERATED_TESTS_LOCATION ${CMAKE_BINARY_DIR}/generated/lib/everest/everest_api_types/tests/)
@@ -114,7 +122,11 @@ set(
      "${PROJECT_SOURCE_DIR}/lib/everest/everest_api_types/tests/"
      "${PROJECT_SOURCE_DIR}/lib/everest/everest_api_types/tests/test_file_autogenerator/disable.csv"
      "${GENERATED_TESTS_LOCATION}"
+<<<<<<< HEAD
     VERBATIM
+=======
+     "${TEST_DATE_TIME_FIELDS_FILE}"
+>>>>>>> a86dd80 (feat(date): add date library for RFC 3339 parsing and formatting (#3298))
 )
 
 add_custom_command(OUTPUT ${GENERATED_TESTS_LOCATION}
@@ -133,5 +145,17 @@ if(NOT EXISTS ${GENERATED_TESTS_LOCATION})
     execute_process(COMMAND ${GENERATE_COMMAND})
 endif()
 
+<<<<<<< HEAD
+=======
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+    ${API_FILES}
+    ${TEST_GENERATOR_PY_FILES}
+    ${TEST_DISABLE_FILE}
+    ${TEST_DATE_TIME_FIELDS_FILE}
+    ${SERIALIZATION_TEST_HELPERS_HPP}
+)
+
+add_dependencies(${TEST_TARGET_NAME} generate_actual_hash_csv generate_actual_ifc_hash_csv)
+>>>>>>> a86dd80 (feat(date): add date library for RFC 3339 parsing and formatting (#3298))
 
 add_subdirectory(${GENERATED_TESTS_LOCATION} ${GENERATED_TESTS_LOCATION})

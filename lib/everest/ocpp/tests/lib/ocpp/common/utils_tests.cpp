@@ -34,9 +34,15 @@ TEST_F(UtilsTest, test_valid_datetime) {
     ASSERT_TRUE(is_rfc3339_datetime("2019-04-12T23:20:50.523Z"));
     ASSERT_TRUE(is_rfc3339_datetime("2019-12-19T16:39:57+01:00"));
     ASSERT_TRUE(is_rfc3339_datetime("2019-12-19T16:39:57-01:00"));
+    ASSERT_TRUE(is_rfc3339_datetime("2019-12-19T16:39:57+0100"));
+    ASSERT_TRUE(is_rfc3339_datetime("2024-01-01T00:00:00"));
+    ASSERT_TRUE(is_rfc3339_datetime("2024-01-01T00:00:00.523"));
+    ASSERT_TRUE(is_rfc3339_datetime("2016-12-31T23:59:60Z"));
+    ASSERT_TRUE(is_rfc3339_datetime("9999-12-31T23:59:59Z"));
 }
 
 TEST_F(UtilsTest, test_invalid_datetime) {
+    ASSERT_FALSE(is_rfc3339_datetime(""));
     ASSERT_FALSE(is_rfc3339_datetime("1"));
     ASSERT_FALSE(is_rfc3339_datetime("1.1"));
     ASSERT_FALSE(is_rfc3339_datetime("true"));
@@ -44,6 +50,13 @@ TEST_F(UtilsTest, test_invalid_datetime) {
 
     // more than 3 decimal digits are not allowed in OCPP
     ASSERT_FALSE(is_rfc3339_datetime("2023-11-29T10:21:04.0001Z"));
+    ASSERT_FALSE(is_rfc3339_datetime("2023-11-29T10:21:04,0001"));
+
+    ASSERT_FALSE(is_rfc3339_datetime("2023-02-30T10:21:04Z"));
+    ASSERT_FALSE(is_rfc3339_datetime("2023-11-29T10:21:60Z"));
+    ASSERT_FALSE(is_rfc3339_datetime("2023-11-29T10:21:04+24:00"));
+    ASSERT_FALSE(is_rfc3339_datetime("2023-11-29T10:21:04Z garbage"));
+    ASSERT_FALSE(is_rfc3339_datetime("9999-02-30T00:00:00Z"));
 }
 
 TEST(Utils, test_split_string) {

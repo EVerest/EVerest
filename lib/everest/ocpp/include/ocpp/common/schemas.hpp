@@ -4,7 +4,6 @@
 #define OCPP_COMMON_SCHEMAS_HPP
 
 #include <map>
-#include <regex>
 #include <set>
 #include <vector>
 
@@ -27,7 +26,6 @@ private:
     fs::path schemas_path;
     std::set<fs::path> available_schemas_paths;
     const static std::vector<std::string> profiles;
-    const static std::regex date_time_regex;
 
     /// \brief Loads the root schema "Config.json" from the schemas path
     void load_root_schema();

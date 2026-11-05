@@ -188,6 +188,7 @@ target_link_libraries(ocpp
         Threads::Threads
         nlohmann_json::nlohmann_json
         date::date-tz
+        everest::date
 )
 
 if(LIBOCPP_USE_BOOST_FILESYSTEM)
