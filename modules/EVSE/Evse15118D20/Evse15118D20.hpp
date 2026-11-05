@@ -41,6 +41,7 @@ struct Conf {
     bool supported_ISO15118_20;
     int auth_timeout_eim;
     int auth_timeout_pnc;
+    int ac_close_contactor_timeout_ms;
     bool enable_ssl_logging;
     bool enable_tls_key_logging;
     std::string tls_key_logging_path;

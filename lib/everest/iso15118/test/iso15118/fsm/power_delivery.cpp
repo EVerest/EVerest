@@ -16,8 +16,8 @@ using namespace iso15118;
 
 namespace dt = message_20::datatypes;
 
-// AC_CLOSE_CONTACTOR_TIMEOUT in src/iso15118/d20/state/power_delivery.cpp, plus a margin.
-constexpr auto WAIT_OUT_CONTACTOR_TIMEOUT = std::chrono::milliseconds(1500);
+const auto WAIT_OUT_CONTACTOR_TIMEOUT =
+    std::chrono::milliseconds(session::EvseSetupConfig{}.ac_close_contactor_timeout_ms + 100);
 
 SCENARIO("ISO15118-20 power delivery contactor handling") {
 
@@ -83,6 +83,49 @@ SCENARIO("ISO15118-20 power delivery contactor handling") {
             // it never fires a second, failing response at the EV.
             std::this_thread::sleep_for(WAIT_OUT_CONTACTOR_TIMEOUT);
             REQUIRE(state_helper.get_timeouts().check().empty());
+        }
+    }
+}
+
+SCENARIO("ISO15118-20 power delivery contactor timeout is configurable") {
+
+    std::optional<d20::PauseContext> pause_ctx{std::nullopt};
+    session::feedback::Callbacks callbacks{};
+
+    auto setup = create_default_evse_setup();
+    setup.ac_close_contactor_timeout_ms = 50;
+    auto state_helper = FsmStateHelper(session::SessionConfig(setup), pause_ctx, callbacks);
+    auto ctx = state_helper.get_context();
+    ctx.session = d20::Session(
+        d20::SelectedServiceParameters(dt::ServiceCategory::AC, dt::AcConnector::ThreePhase, dt::ControlMode::Scheduled,
+                                       dt::MobilityNeedsMode::ProvidedByEvcc, dt::Pricing::NoPricing, 230));
+
+    fsm::v2::FSM<d20::StateBase> fsm{ctx.create_state<d20::state::PowerDelivery>()};
+
+    message_20::PowerDeliveryRequest req;
+    req.header.session_id = ctx.session.get_id();
+    req.header.timestamp = 1691411798;
+    req.processing = dt::Processing::Ongoing;
+    req.charge_progress = dt::Progress::Start;
+
+    state_helper.handle_request(req);
+    REQUIRE_FALSE(fsm.feed(d20::Event::V2GTP_MESSAGE).transitioned());
+
+    GIVEN("The contactor does not close") {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        const auto reached = state_helper.get_timeouts().check();
+
+        THEN("The configured timeout expires and the request is answered with a contactor error") {
+            REQUIRE(reached.size() == 1);
+            REQUIRE(reached.front() == d20::TimeoutType::CONTACTOR);
+
+            ctx.set_active_timeout(d20::TimeoutType::CONTACTOR);
+            REQUIRE_FALSE(fsm.feed(d20::Event::TIMEOUT).transitioned());
+
+            const auto res = ctx.get_response<message_20::PowerDeliveryResponse>();
+            REQUIRE(res.has_value());
+            REQUIRE(res->response_code == dt::ResponseCode::FAILED_ContactorError);
+            REQUIRE(ctx.session_stopped);
         }
     }
 }
