@@ -1018,8 +1018,8 @@ SetVariableStatusEnum DeviceModel::notify_value_changed(const Component& compone
         return SetVariableStatusEnum::Rejected;
     }
     if (!fits_data_type(composed->meta_data->characteristics, value)) {
-        EVLOG_warning << "Owner " << owner << " reported the value \"" << value << "\" of " << component << "."
-                      << variable << ", which does not fit its data type or allowed values";
+        EVLOG_warning << "Owner " << owner << " reported a value of " << component << "." << variable
+                      << " that does not fit its data type or allowed values";
         return SetVariableStatusEnum::Rejected;
     }
     return this->write(std::move(lock), *composed, component, variable, attribute, value, owner);

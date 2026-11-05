@@ -49,7 +49,7 @@ void StoredValues::restore(const std::string& owner, const Component& component,
         }
         auto& stored = stored_it->second;
         if (!attribute.persistent.value_or(true) or !is_valid(stored.value)) {
-            EVLOG_warning << "Discarding the stored value '" << stored.value << "' of " << component << "." << variable
+            EVLOG_warning << "Discarding the stored value of " << component << "." << variable
                           << ": it does not fit the variable as owner " << owner << " registers it";
             this->remove(stored_it->first);
             continue;
