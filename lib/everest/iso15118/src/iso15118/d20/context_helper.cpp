@@ -3,6 +3,7 @@
 #include <chrono>
 #include <limits>
 
+#include <iso15118/d20/power_timeline.hpp>
 #include <iso15118/detail/d20/context_helper.hpp>
 #include <iso15118/detail/helper.hpp>
 
@@ -26,8 +27,6 @@
 namespace iso15118::d20 {
 
 namespace {
-constexpr uint64_t MICROSECONDS_PER_SECOND = 1'000'000;
-
 template <typename Response> Response handle_sequence_error(const d20::Session& session) {
     Response res;
     setup_header(res.header, session);
