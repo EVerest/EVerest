@@ -447,6 +447,17 @@ config:
     type: integer
     default: 500
     minimum: 0
+  connector_lock_confirmation_timeout_ms:
+    description: >-
+      AC sockets with a connector lock only: time in ms to wait for the connector lock to report lock_state
+      Locked once a session is authorized. While waiting, no transaction is started, PWM stays as it is and an
+      ISO 15118 authorization is not yet confirmed to the EV (it keeps getting EVSEProcessing Ongoing). If the lock
+      is not confirmed in time, the session ends with the error evse_manager/ConnectorLockConfirmationTimeout,
+      which clears on unplug. Requires a connector_lock connection to a lock that publishes lock_state; without a
+      connector_lock connection a warning is logged and the wait is disabled. 0 disables the wait.
+    type: integer
+    default: 0
+    minimum: 0
   state_F_after_fault_ms:
     description: >-
       Set state F after any fault that stops charging for the specified time in ms while in Charging mode (CX->F(300ms)->C1/B1).

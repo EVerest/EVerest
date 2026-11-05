@@ -2,8 +2,18 @@ description: >-
   This interface defines one connector locking motor (e.g. for AC sockets with no fixed attached cable)
 cmds:
   lock:
-    description: Lock connector lock
+    description: >-
+      Lock connector lock. The command returns immediately. Implementations with lock feedback report the result
+      via the lock_state variable, retry internally if needed, and raise ConnectorLockFailedLock only after the
+      final retry failed.
   unlock:
     description: Unlock connector lock (e.g. normal unlock or enforced by OCPP)
+vars:
+  lock_state:
+    description: >-
+      Physical state of the connector lock. Optional: publish it only if the hardware has lock feedback.
+      If published, publish it once at startup and on every change.
+    type: string
+    $ref: /connector_lock#/LockState
 errors:
   - reference: /errors/connector_lock

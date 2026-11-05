@@ -95,6 +95,9 @@ public:
     void raise_authorization_timeout_error(const std::string& description);
     void clear_authorization_timeout_error();
 
+    void raise_connector_lock_confirmation_timeout_error(const std::string& description);
+    void clear_connector_lock_confirmation_timeout_error();
+
     void raise_powermeter_transaction_start_failed_error(const std::string& description);
     void clear_powermeter_transaction_start_failed_error();
 

@@ -350,6 +350,22 @@ void ErrorHandling::clear_authorization_timeout_error() {
     }
 }
 
+void ErrorHandling::raise_connector_lock_confirmation_timeout_error(const std::string& description) {
+    // raise externally
+    Everest::error::Error error_object = p_evse->error_factory->create_error(
+        "evse_manager/ConnectorLockConfirmationTimeout", "", description, Everest::error::Severity::Medium);
+    p_evse->raise_error(error_object);
+    process_error();
+}
+
+void ErrorHandling::clear_connector_lock_confirmation_timeout_error() {
+    // clear externally
+    if (p_evse->error_state_monitor->is_error_active("evse_manager/ConnectorLockConfirmationTimeout", "")) {
+        p_evse->clear_error("evse_manager/ConnectorLockConfirmationTimeout");
+        process_error();
+    }
+}
+
 void ErrorHandling::raise_powermeter_transaction_start_failed_error(const std::string& description) {
     // raise externally
     Everest::error::Error error_object = p_evse->error_factory->create_error(

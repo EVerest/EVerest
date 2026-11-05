@@ -272,4 +272,38 @@ ProximityPilot_External to_external_api(ProximityPilot_Internal const& val) {
     return result;
 }
 
+LockState_Internal to_internal_api(LockState_External const& val) {
+    using SrcT = LockState_External;
+    using TarT = LockState_Internal;
+
+    switch (val) {
+    case SrcT::Unknown:
+        return TarT::Unknown;
+    case SrcT::Unlocked:
+        return TarT::Unlocked;
+    case SrcT::Locked:
+        return TarT::Locked;
+    }
+
+    throw std::out_of_range(
+        "Unexpected value for everest::lib::API::V1_0::types::evse_board_support::LockState_External");
+}
+
+LockState_External to_external_api(LockState_Internal const& val) {
+    using SrcT = LockState_Internal;
+    using TarT = LockState_External;
+
+    switch (val) {
+    case SrcT::Unknown:
+        return TarT::Unknown;
+    case SrcT::Unlocked:
+        return TarT::Unlocked;
+    case SrcT::Locked:
+        return TarT::Locked;
+    }
+
+    throw std::out_of_range(
+        "Unexpected value for everest::lib::API::V1_0::types::evse_board_support::LockState_Internal");
+}
+
 } // namespace everest::lib::API::V1_0::types::evse_board_support
