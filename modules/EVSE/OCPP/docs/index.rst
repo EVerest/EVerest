@@ -448,8 +448,8 @@ The following module configuration parameters are relevant for device model back
   :ref:`Share an OCPP 1.6 key with your own OCPP 2.x variable <howto-ocpp-storage-migration-share-legacy-key>`
   for the rules. Mappings must not target the connection configuration (``NetworkConfiguration`` slots, the
   ``OCPPCommCtrlr`` network profile selectors, or the ``SecurityCtrlr`` connection fallbacks ``Identity``
-  and ``BasicAuthPassword``); those are managed via the standardized OCPP 1.6 keys. A mapping file that breaks
-  these rules is rejected at startup
+  and ``BasicAuthPassword``); those are managed via the standardized OCPP 1.6 keys. An entry that breaks these
+  rules is ignored with an error log
 * **Ocpp16NetworkConfigSlot**: ``NetworkConfiguration`` slot number that OCPP 1.6 network connection
   details (``CentralSystemURI``, ``SecurityProfile``, ``AuthorizationKey``, ``HostName``,
   ``ChargePointId``) are migrated to during the one-time migration (default: ``1``; set to ``0`` to skip).
