@@ -445,6 +445,40 @@ permissive first (IEC 61851-23-3 Table CC.111, t103 before t105). An MCS board
 support treats a C exit under a standing permissive as an emergency shutdown
 (CC.4.3).
 
+On an AC ``PowerDeliveryReq`` with ``Start``, ``ac_close_contactor`` is published
+and the response is held until ``ac_contactor_closed(true)`` arrives
+([V2G20-861]). If it does not arrive within ``ac_close_contactor_timeout_ms``
+(default 1400 ms), counted from receipt of the request ([V2G20-858]), the
+response is ``FAILED_ContactorError`` and the session stops ([V2G20-862]). That
+window covers the EV switching to state C, which may take up to 250 ms
+([V2G20-847]), as well as the contactor closing and reporting back. The default
+keeps 100 ms of the 1.5 s performance time for sending the response.
+
+The setting accepts 100 to 10000 ms. Only part of that range conforms to
+ISO 15118-20 (Table 215, transport time of up to 250 ms per round trip):
+
+.. list-table::
+   :header-rows: 1
+
+   * - ``ac_close_contactor_timeout_ms``
+     - Effect
+   * - up to 1400 (recommended)
+     - Conformant. The response leaves within the 1.5 s performance time. Values
+       below about 1000 ms leave the contactor too little time once the EV has
+       taken its 250 ms to reach state C.
+   * - 1401 to 1500
+     - Not conformant. The response may miss the performance time but normally
+       reaches the EV before its 2 s message timeout.
+   * - 1501 to about 1750
+     - Not conformant. The response misses the performance time and arrives close
+       to the EV's 2 s message timeout, so some EVs abort first ([V2G20-438]).
+   * - above about 1750, up to 10000
+     - Not conformant. A conformant EV has usually timed out before the response
+       arrives. Only useful with EVs that wait longer than the specification
+       requires.
+
+A value above 1400 logs a warning at startup.
+
 A pause requested with ``pause_charging`` is sent as ``EVSENotification`` ``Pause``
 with ``NotificationMaxDelay`` 60 s ([V2G20-1850]). In scheduled control mode it may
 only be sent while the applied entry of the EV's power profile, from its latest

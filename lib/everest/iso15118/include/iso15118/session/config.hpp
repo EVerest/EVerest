@@ -81,6 +81,11 @@ struct EvseSetupConfig {
     // -20 EIM stops the session at the fixed d20::TIMEOUT_ONGOING ([V2G20-2102]); -20 PnC uses auth_timeout_pnc_s.
     uint32_t auth_timeout_eim_s{300};
     uint32_t auth_timeout_pnc_s{55};
+
+    // How long an AC PowerDeliveryReq(Start) waits for the closed contactor before FAILED_ContactorError
+    // ([V2G20-862]). The default keeps 100 ms of the 1.5 s V2G_SECC_Msg_Performance_Time (Table 215) for
+    // sending the response; larger values tolerate slow contactors at the cost of conformance.
+    uint32_t ac_close_contactor_timeout_ms{1400};
 };
 
 struct SessionConfig {
@@ -144,6 +149,7 @@ struct SessionConfig {
     std::vector<VasService> pre20_vas_services{};
     uint32_t auth_timeout_eim_s{300};
     uint32_t auth_timeout_pnc_s{55};
+    uint32_t ac_close_contactor_timeout_ms{1400};
 };
 
 // Saturates instead of wrapping: a configured value beyond ~49 days would overflow the uint32_t
