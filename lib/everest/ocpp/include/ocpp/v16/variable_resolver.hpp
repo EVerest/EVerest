@@ -39,14 +39,14 @@ enum class CVClass {
 ///
 /// Custom key mappings must not target these CVs: the key path writes the device model without
 /// the RebootRequired/reconnect semantics the standardized keys and canonical CVs carry.
-/// load_ocpp16_key_mappings_from_yaml rejects such mappings.
+/// load_ocpp16_key_mappings_from_yaml ignores such mappings.
 bool is_connection_config_cv(const ocpp::v2::Component& component, const ocpp::v2::Variable& variable);
 
 /// \brief Whether the CV holds a value the 1.6 stack computes at runtime (see CVClass::ReadOnlyDerived):
 ///        SupportedFeatureProfiles and the CVs that carry the maxLimit of a max-limit key.
 ///
 /// Custom key mappings must not target these CVs: the 1.6 stack overwrites their value, and OCPPmulti rejects
-/// OCPP 2.x writes to them. load_ocpp16_key_mappings_from_yaml rejects such mappings.
+/// OCPP 2.x writes to them. load_ocpp16_key_mappings_from_yaml ignores such mappings.
 bool is_read_only_derived_cv(const ocpp::v2::Component& component, const ocpp::v2::Variable& variable);
 
 /// \brief Whether a custom mapping entry may override the built-in mapping of the known key \p key.
@@ -66,7 +66,7 @@ class VariableResolver {
 public:
     /// \brief Entries for known keys that are not overridable are ignored with a warning. An entry whose target is the
     /// built-in mapping of another key or the target of an earlier entry (in key order) is ignored with an error, so
-    /// every CV maps back to at most one key. The custom mapping file loader rejects such entries before they get here.
+    /// every CV maps back to at most one key. The custom mapping file loader drops such entries before they get here.
     explicit VariableResolver(const ocpp::v2::Ocpp16KeyMappings& custom_mappings = {});
 
     /// \brief Forward lookup: known keys first (built-in mapping or its override; keys with no v2 mapping and
