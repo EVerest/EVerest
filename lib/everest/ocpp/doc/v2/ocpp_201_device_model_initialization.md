@@ -221,11 +221,9 @@ SetMonitoringBase and SetMonitoringLevel, which change a ReadOnly variable, an O
 is rejected for a read-only key before anything is written, and the other writes of libocpp, to `NumberOfConnectors`
 for example, reach the owner like a SetVariables.req.
 
-A change that the owner makes itself while a write to the same variable is in progress races with that write: the
-write may be stored after the report and overwrite it. Each write carries a write id. An owner that passes the id of
-the last write it had applied with `notify_value_changed` resolves the race: libocpp ignores a report based on an older
-write than the last one it stored, and does not store a write over a report based on it or a newer one. An owner that
-passes no write id accepts the race.
+libocpp stores the value of a write once the owner accepted it, so a change that the owner reports with
+`notify_value_changed` while the write is in progress is overwritten by it. An owner whose change must outlast the
+write reports it after `set_value` returned.
 
 ## Required variables
 

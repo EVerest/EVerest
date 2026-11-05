@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <cstdint>
 #include <functional>
 #include <map>
 #include <memory>
@@ -22,10 +23,9 @@ struct OwnerRegistration {
     std::string owner;
     std::shared_ptr<VariableValueProvider> provider;
     DeviceModelMap variables;
-    /// \brief The last write issued before this registration: the writes up to it were forwarded to an earlier one
-    WriteId registered_after_write{0};
-    /// \brief Per attribute, the newest write that the value in memory reflects, stored or reported on
-    std::map<std::tuple<Component, Variable, AttributeEnum>, WriteId> applied_writes;
+    /// \brief Unique across the registrations of all owners, so that a write forwarded to an earlier registration of
+    /// the owner is not stored in this one
+    std::uint64_t generation{0};
 };
 
 /// \brief Where the values of a variable are kept. Every backing but OwnerStorage keeps a copy in memory, which

@@ -640,40 +640,31 @@ SetVariableStatusEnum DeviceModel::forward_to_provider(Lock lock, const Composed
                                                        const std::string& source) {
     const auto provider = composed.registration->provider;
     const auto owner = composed.registration->owner;
-    const auto write_id = ++this->last_write_id;
+    const auto generation = composed.registration->generation;
     // Counted under the lock, so that unregister_components cannot return before the provider did
     const auto call = this->provider_calls.begin(owner);
     lock.unlock();
 
     auto status = SetVariableStatusEnum::Rejected;
     try {
-        status = provider->set_value(component, variable, attribute_enum, value, source, write_id);
+        status = provider->set_value(component, variable, attribute_enum, value, source);
     } catch (const std::exception& e) {
         EVLOG_error << "Provider of " << component << "." << variable << " failed to set the value: " << e.what();
     }
     if (status == SetVariableStatusEnum::Accepted) {
-        this->store_provided_value(owner, write_id, component, variable, attribute_enum, value, source);
+        this->store_provided_value(generation, component, variable, attribute_enum, value, source);
     }
     return status;
 }
 
-void DeviceModel::store_provided_value(const std::string& owner, const WriteId write_id, const Component& component,
+void DeviceModel::store_provided_value(const std::uint64_t generation, const Component& component,
                                        const Variable& variable, const AttributeEnum& attribute_enum,
                                        const std::string& value, const std::string& source) {
     Lock lock(this->mutex);
     const auto* composed = this->find_variable(component, variable);
-    if (composed == nullptr or composed->registration == nullptr or composed->registration->owner != owner) {
+    if (composed == nullptr or composed->registration == nullptr or composed->registration->generation != generation) {
         return;
     }
-    auto& registration = *composed->registration;
-    if (write_id <= registration.registered_after_write) {
-        return;
-    }
-    auto& applied_write = registration.applied_writes[{component, variable, attribute_enum}];
-    if (write_id <= applied_write) {
-        return;
-    }
-    applied_write = write_id;
     this->write(std::move(lock), *composed, component, variable, attribute_enum, value, source);
 }
 
@@ -833,7 +824,7 @@ ComponentRegistrationResult DeviceModel::register_components_of(const std::strin
                                      ? actual_values(previous_it->second)
                                      : std::map<std::pair<Component, Variable>, std::string>{};
 
-    OwnerRegistration registration{owner, provider, {}, this->last_write_id, {}};
+    OwnerRegistration registration{owner, provider, {}, ++this->last_registration_generation};
     for (const auto& registered_component : components) {
         const auto& component = registered_component.component;
         for (const auto& registered_variable : registered_component.variables) {
@@ -977,7 +968,9 @@ void DeviceModel::remove_monitors_and_values_of_dropped_variables(
     }
     const auto reason = "owner " + owner + " no longer registers the variable";
     this->monitors.remove_if(
-        [&dropped](const StoredMonitor& stored) { return dropped.count({stored.component, stored.variable}) != 0; },
+        [&dropped](const StoredMonitor& stored) {
+            return dropped.count({stored.component, stored.variable}) != 0;
+        },
         reason);
     for (const auto& [component, variable] : dropped) {
         this->stored_values.remove_of_variable(component, variable, reason);
@@ -1011,8 +1004,7 @@ void DeviceModel::unregister_components(const std::string& owner) {
 
 SetVariableStatusEnum DeviceModel::notify_value_changed(const Component& component, const Variable& variable,
                                                         AttributeEnum attribute, const std::string& value,
-                                                        const std::string& owner,
-                                                        const std::optional<WriteId> applied_write) {
+                                                        const std::string& owner) {
     if (is_reserved_owner(owner)) {
         EVLOG_error << "Owner " << owner << " is reserved for libocpp: its value of " << component << "." << variable
                     << " is ignored";
@@ -1029,15 +1021,6 @@ SetVariableStatusEnum DeviceModel::notify_value_changed(const Component& compone
         EVLOG_warning << "Owner " << owner << " reported the value \"" << value << "\" of " << component << "."
                       << variable << ", which does not fit its data type or allowed values";
         return SetVariableStatusEnum::Rejected;
-    }
-    if (applied_write.has_value()) {
-        auto& newest = composed->registration->applied_writes[{component, variable, attribute}];
-        if (applied_write.value() < newest) {
-            EVLOG_debug << "Owner " << owner << " reported a value of " << component << "." << variable
-                        << " based on write " << applied_write.value() << ", which write " << newest << " replaced";
-            return SetVariableStatusEnum::Accepted;
-        }
-        newest = applied_write.value();
     }
     return this->write(std::move(lock), *composed, component, variable, attribute, value, owner);
 }

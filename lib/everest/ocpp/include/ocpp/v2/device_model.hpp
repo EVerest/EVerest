@@ -53,7 +53,7 @@ private:
     MonitorStore monitors;
     StoredValues stored_values;
     ProviderCalls provider_calls;
-    WriteId last_write_id{0};
+    std::uint64_t last_registration_generation{0};
 
     /// \brief Listener for the internal change of a variable
     std::vector<on_variable_changed> variable_listener;
@@ -167,11 +167,10 @@ private:
                                               const Variable& variable, const AttributeEnum& attribute_enum,
                                               const std::string& value, const std::string& source);
 
-    /// \brief Stores \p value, which the provider of \p owner accepted with \p write_id, unless \p owner registered
-    /// again or reported a value based on this or a newer write since. Requires the mutex not to be held.
-    void store_provided_value(const std::string& owner, WriteId write_id, const Component& component,
-                              const Variable& variable, const AttributeEnum& attribute_enum, const std::string& value,
-                              const std::string& source);
+    /// \brief Stores \p value, which the provider of the registration \p generation accepted, unless the variable
+    /// belongs to another registration by now. Requires the mutex not to be held.
+    void store_provided_value(std::uint64_t generation, const Component& component, const Variable& variable,
+                              const AttributeEnum& attribute_enum, const std::string& value, const std::string& source);
 
     /// \brief Updates the model with \p value: persist, then, only if that is Accepted, the value in memory
     AppliedWrite apply(const ComposedVariable& composed, const Component& component, const Variable& variable,
@@ -313,7 +312,7 @@ public:
     void unregister_components(const std::string& owner) override;
     SetVariableStatusEnum notify_value_changed(const Component& component, const Variable& variable,
                                                AttributeEnum attribute, const std::string& value,
-                                               const std::string& owner, std::optional<WriteId> applied_write) override;
+                                               const std::string& owner) override;
 
     // ConnectivityManagerConfiguration interface
     std::string get_network_configuration_priority() override;

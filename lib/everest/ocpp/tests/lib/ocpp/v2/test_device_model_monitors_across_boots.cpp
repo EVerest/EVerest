@@ -313,7 +313,7 @@ TEST_F(DeviceModelMonitorsAcrossBootsTest, threshold_monitor_outside_the_new_lim
             }
         }
     });
-    EXPECT_EQ(dm->notify_value_changed(component, level, AttributeEnum::Actual, "600", OWNER, std::nullopt),
+    EXPECT_EQ(dm->notify_value_changed(component, level, AttributeEnum::Actual, "600", OWNER),
               SetVariableStatusEnum::Accepted);
     EXPECT_EQ(monitor_values, std::vector<float>{500});
 }

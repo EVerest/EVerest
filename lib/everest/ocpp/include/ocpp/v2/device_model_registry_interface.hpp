@@ -3,9 +3,7 @@
 
 #pragma once
 
-#include <cstdint>
 #include <memory>
-#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -16,10 +14,6 @@
 
 namespace ocpp {
 namespace v2 {
-
-/// \brief Identifies a write that DeviceModel forwards to a provider. Write ids increase in the order in which
-/// DeviceModel issues the writes, starting at 1.
-using WriteId = std::uint64_t;
 
 /// \brief Receives the writes to the variables of a runtime owner
 class VariableValueProvider {
@@ -37,13 +31,12 @@ public:
     /// keeps the value in effect until then, and so must the owner: it does not report the held value with
     /// notify_value_changed before the next start.
     ///
-    /// When writes to one variable overlap, the model keeps the value of the one with the highest \p write_id, so an
-    /// owner applies them in that order too.
+    /// DeviceModel stores an accepted value once this call returned. When writes to one variable overlap, the value
+    /// stored last stays in memory.
     /// \param source The source of the value (e.g. 'csms', 'internal')
-    /// \param write_id The id of this write, which the owner passes to notify_value_changed, see there
     virtual SetVariableStatusEnum set_value(const Component& component, const Variable& variable,
                                             AttributeEnum attribute, const std::string& value,
-                                            const std::string& source, WriteId write_id) = 0;
+                                            const std::string& source) = 0;
 };
 
 /// \brief A variable that an owner registers at runtime
@@ -131,18 +124,12 @@ public:
     /// the allowed values of the variable, otherwise it is rejected. minLimit and maxLimit are not checked: they bound
     /// what the CSMS may set, not what the owner reports. The reserved owner is rejected.
     ///
-    /// A change the owner makes while a write to the same attribute is in progress races with that write. To resolve
-    /// it, the owner passes \p applied_write: the id of the last write to the attribute that it had applied when the
-    /// change happened, or 0 if it had applied none since it registered. A report based on an older write than the
-    /// last one DeviceModel stored is ignored, because that write replaced the reported value, and a write is not
-    /// stored over a report based on it or on a newer write. Without \p applied_write the report is applied as it
-    /// comes: the write that is in progress overwrites it if DeviceModel stores the write later, even if the owner
-    /// changed the value after applying the write.
-    /// \return Accepted also for a report that is ignored as outdated
+    /// A report made while a write to the same attribute is in progress is overwritten when DeviceModel stores that
+    /// write, after set_value returned. An owner whose change must outlast the write reports it after set_value
+    /// returned.
     virtual SetVariableStatusEnum notify_value_changed(const Component& component, const Variable& variable,
                                                        AttributeEnum attribute, const std::string& value,
-                                                       const std::string& owner,
-                                                       std::optional<WriteId> applied_write) = 0;
+                                                       const std::string& owner) = 0;
 };
 
 } // namespace v2

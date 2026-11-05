@@ -75,7 +75,7 @@ RegisteredVariable make_vendor_available() {
 class NoOpProvider : public VariableValueProvider {
 public:
     SetVariableStatusEnum set_value(const Component&, const Variable&, AttributeEnum, const std::string&,
-                                    const std::string&, WriteId) override {
+                                    const std::string&) override {
         return SetVariableStatusEnum::Accepted;
     }
 };
@@ -138,7 +138,7 @@ TEST_F(DeviceModelStoredValuesTest, persistent_value_survives_a_restart) {
 
 TEST_F(DeviceModelStoredValuesTest, value_reported_by_the_owner_is_stored) {
     ASSERT_TRUE(register_der({make_enabled()}).rejected.empty());
-    ASSERT_EQ(dm->notify_value_changed(der, enabled, AttributeEnum::Actual, "false", OWNER, std::nullopt),
+    ASSERT_EQ(dm->notify_value_changed(der, enabled, AttributeEnum::Actual, "false", OWNER),
               SetVariableStatusEnum::Accepted);
 
     reboot();
