@@ -21,10 +21,6 @@
 
 namespace iso15118::d20::state {
 
-// Secc performance timer for PowerDelivery is 1.5s.
-// 100ms is resevered for polling timeout and sending the response.
-constexpr uint32_t AC_CLOSE_CONTACTOR_TIMEOUT = 1400;
-
 namespace dt = message_20::datatypes;
 
 namespace {
@@ -208,7 +204,7 @@ Result PowerDelivery::feed(Event ev) {
         const auto* const timeout = m_ctx.get_active_timeout();
         if (timeout != nullptr and *timeout == d20::TimeoutType::CONTACTOR) {
             logf_error("AC contactor is not closed within %ums, sending failure response code and stop the session",
-                       AC_CLOSE_CONTACTOR_TIMEOUT);
+                       m_ctx.session_config.ac_close_contactor_timeout_ms);
             // TODO(SL): Check if value_or is the correct way
             const auto& res =
                 handle_request(previous_req.value_or(message_20::PowerDeliveryRequest{}), m_ctx.session, true, false);
@@ -265,7 +261,7 @@ Result PowerDelivery::feed(Event ev) {
                 previous_req = *req;
                 // Close the AC contactor so that charging can start
                 m_ctx.feedback.signal(session::feedback::Signal::AC_CLOSE_CONTACTOR);
-                m_ctx.start_timeout(d20::TimeoutType::CONTACTOR, AC_CLOSE_CONTACTOR_TIMEOUT);
+                m_ctx.start_timeout(d20::TimeoutType::CONTACTOR, m_ctx.session_config.ac_close_contactor_timeout_ms);
                 logf_info("Waiting for contactor is closed");
                 return {};
             }
