@@ -109,7 +109,7 @@ catch2:
 mosquitto:
   git: https://github.com/eclipse-mosquitto/mosquitto
   git_tag: v2.0.22
-  cmake_condition: "EVEREST_BUILD_CORE OR EVEREST_BUILD_RUNTIME"
+  cmake_condition: "EVEREST_BUILD_BASE OR EVEREST_BUILD_RUNTIME"
   options:
     - DOCUMENTATION OFF
     - WITH_BROKER OFF
