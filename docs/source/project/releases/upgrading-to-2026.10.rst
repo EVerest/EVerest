@@ -225,6 +225,8 @@ Building and packaging
 - Rust modules need Rust 1.86 or newer.
 - The CMake options ``EVEREST_ENABLE_ADMIN_PANEL_BACKEND`` and
   ``EVEREST_INSTALL_ADMIN_PANEL`` are removed.
+- The Josev wheel targets are removed, and the development PKI no longer
+  contains Java keystores (``.jks``).
 
 Yocto
 -----
@@ -232,12 +234,19 @@ Yocto
 - Recipes shared between Yocto releases live in the
   ``meta-everest-common`` layer, which meta-everest adds automatically. They
   use ``${UNPACKDIR}``. Update bbappends that refer to ``${WORKDIR}`` paths of
-  ``everest-core``, ``ev-cli`` or ``python3-iso15118``.
+  ``everest-core`` or ``ev-cli``.
 - The compatibility recipes ``everest-framework``, ``everest-sqlite``,
   ``libcbv2g``, ``libevse-security``, ``libfsm``, ``libiso15118``,
   ``liblog``, ``libocpp``, ``libslac`` and ``libtimer``, the ``asyncapi``
   backport recipe and the admin-panel packages are removed. Drop them from
   ``IMAGE_INSTALL``, ``DEPENDS`` and ``RDEPENDS``.
+- Josev's recipe ``python3-iso15118`` and the recipes only it pulled in,
+  ``openjdk``, ``python3-aiofile``, ``python3-caio``, ``python3-environs``,
+  ``python3-marshmallow``, ``python3-netifaces``, ``python3-packaging``,
+  ``python3-poetry-core``, ``python3-py4j``, ``python3-pydantic``,
+  ``python3-python-dotenv`` and ``python3-typing-extensions``, are removed.
+  Drop them from ``IMAGE_INSTALL`` and ``RDEPENDS`` and delete bbappends for
+  them.
 - ``everest.service`` runs the manager with the configuration database
   ``/var/lib/everest/everest.db`` and the settings file
   ``settings-mqtt-uds.yaml``, and with ``systemd`` meta-everest configures

@@ -5,14 +5,14 @@
  * cbv2g_json_wrapper.h - JSON-based API wrapper for libcbv2g
  *
  * This library provides a JSON-based interface to libcbv2g's EXI encoding/decoding
- * functionality, designed to replace the Java-based EXIficient codec in Josev.
+ * functionality, for callers that load it through an FFI such as Python's ctypes.
  */
 
 #ifndef CBV2G_JSON_WRAPPER_H
 #define CBV2G_JSON_WRAPPER_H
 
-#include <stdint.h>
 #include <stddef.h>
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
