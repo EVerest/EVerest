@@ -2,13 +2,12 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 #pragma once
 
-#include <memory>
-#include <stdexcept>
-#include <string>
-
 #include <evse_security/crypto/interface/crypto_types.hpp>
 #include <evse_security/evse_types.hpp>
 #include <evse_security/utils/evse_filesystem_types.hpp>
+#include <memory>
+#include <stdexcept>
+#include <string>
 
 namespace evse_security {
 
@@ -45,7 +44,6 @@ public:
     inline X509Handle* get() const {
         return x509.get();
     }
-
     /// @brief Gets valid_in
     /// @return seconds until certificate is valid; if > 0 cert is not yet valid
     int64_t get_valid_in() const;
@@ -68,6 +66,45 @@ public:
     /// @result
     std::string get_common_name() const;
 
+    /// @brief Get the Organization (O) from the certificate
+    std::string get_organization() const;
+
+    /// @brief Get the Organizational Unit (OU) from the certificate
+    std::string get_organizational_unit() const;
+
+    /// @brief Get the Country (C) from the certificate
+    std::string get_country() const;
+
+    /// @brief Get the State/Province (ST) from the certificate
+    std::string get_state() const;
+
+    /// @brief Get the Locality (L) from the certificate
+    std::string get_locality() const;
+
+    /// @brief Get the Domain Component (DC) from the certificate
+    std::string get_domain_component() const;
+
+    /// @brief Gets the issuer Common Name (CN) embedded in this certificate
+    std::string get_issuer_common_name() const;
+
+    /// @brief Gets the issuer Organization (O) embedded in this certificate
+    std::string get_issuer_organization() const;
+
+    /// @brief Gets the issuer Organizational Unit (OU) embedded in this certificate
+    std::string get_issuer_organizational_unit() const;
+
+    /// @brief Gets the issuer Country (C) embedded in this certificate
+    std::string get_issuer_country() const;
+
+    /// @brief Gets the issuer State/Province (ST) embedded in this certificate
+    std::string get_issuer_state() const;
+
+    /// @brief Gets the issuer Locality (L) embedded in this certificate
+    std::string get_issuer_locality() const;
+
+    /// @brief Gets the issuer Domain Component (DC) embedded in this certificate
+    std::string get_issuer_domain_component() const;
+
     /// @brief Gets issuer name hash of certificate
     /// @result
     std::string get_issuer_name_hash() const;
@@ -79,13 +116,53 @@ public:
     /// @result
     std::string get_issuer_key_hash() const;
 
+    /// @brief Get the Key Usage extension from the certificate
+    /// @return Comma-separated list of key usage names, or empty if not present
+    std::string get_key_usage() const;
+
+    /// @brief Get the Basic Constraints extension from the certificate
+    /// @return String representation (e.g. "CA:TRUE" or "CA:FALSE"), or empty if not present
+    std::string get_basic_constraints() const;
+
+    bool has_extension(const std::string& name) const;
+    bool is_extension_critical(const std::string& name) const;
+
+    /// @brief Get the Subject Key Identifier extension from the certificate
+    /// @return Subject Key Identifier string, or empty if not present
+    std::string get_subject_key_identifier() const;
+
+    /// @brief Get the Authority Key Identifier extension from the certificate
+    /// @return Authority Key Identifier string, or empty if not present
+    std::string get_authority_key_identifier() const;
+
+    /// @brief Get the CRL Distribution Points extension from the certificate
+    /// @return Comma-separated list of CRL distribution point URIs, or empty if not present
+    std::string get_crl_distribution_points() const;
+
+    /// @brief Get the notBefore validity field as ISO 8601 UTC (e.g. "2026-09-29T08:20:03Z"), or empty if not present
+    std::string get_not_before() const;
+
+    /// @brief Get the notAfter validity field as ISO 8601 UTC, or empty if not present
+    std::string get_not_after() const;
+
+    /// @brief Get the Subject Public Key algorithm short name (e.g. "rsaEncryption", "id-ecPublicKey"), or empty
+    std::string get_public_key_algorithm() const;
+
+    /// @brief Get the Subject Public Key size in bits as a decimal string, or empty
+    std::string get_public_key_bits() const;
+
+    /// @brief Get the Extended Key Usage extension as a comma-separated OID list, or empty if not present
+    std::string get_extended_key_usage() const;
+
+    /// @brief Get the Certificate Policies extension as a comma-separated OID list, or empty if not present
+    std::string get_certificate_policies() const;
+
+    /// @brief Get the Authority Information Access extension as a comma-separated URI list, or empty if not present
+    std::string get_authority_info_access() const;
+
     /// @brief Gets key hash of this certificate
     /// @result
     std::string get_key_hash() const;
-
-    /// @brief Gets the public key algorithm of this certificate: the EC curve name for EC keys
-    /// (e.g. "prime256v1", "secp521r1"), otherwise the key type name (e.g. "ED448", "RSA")
-    std::string get_public_key_algorithm() const;
 
     /// @brief Gets serial number of certificate
     /// @result

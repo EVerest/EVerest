@@ -1,0 +1,56 @@
+header:
+  domain_component: V2G
+  role: Optional
+
+
+OCSP:
+  stand:
+    - field: domainComponent # Issuer Domain Component
+      target: Issuer
+      mustExist: "true"
+      val: "CPO"
+
+    - field: domainComponent # Subject Domain Component
+      target: Subject
+      mustExist: "true"
+      val: "CPO"
+      
+    - field: subjectKeyIdentifier
+      mustExist: true
+      target: Subject
+      
+    - field: crlDistributionPointName
+      target: Subject
+      mustExist: "false"
+
+
+  key_usage:
+    - keyUsageBit: 0 # Digital Signature
+      mustExist: "true"
+
+    - keyUsageBit: 1 # Non Repudiation
+      mustExist: "true"
+
+    - keyUsageBit: 2 # Key Encipherment
+      mustExist: "true"
+
+    - keyUsageBit: 3 # Data Encipherment
+      mustExist: "true"
+
+    - keyUsageBit: 4 # Key Agreement
+      mustExist: "true"
+
+    - keyUsageBit: 5 # Encipher Only
+      mustExist: "true"
+
+    - keyUsageBit: 6 # Decipher Only
+      mustExist: "true"
+
+  basic_constraints:
+    - value: CA
+      mustExist: true
+      data: true
+
+    - value: path_length
+      mustExist: false
+      data: 0
