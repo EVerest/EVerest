@@ -553,15 +553,14 @@ class _InterfaceBuild:
 # --------------------------------------------------------------------------
 
 class ModuleBuilder:
-    """Builds :class:`ModuleDef` values from a work directory's manifests."""
+    """Builds :class:`ModuleDef` values from module manifests."""
 
-    def __init__(self, loader: DefinitionLoader, sink: Sink, work_dir: Path) -> None:
+    def __init__(self, loader: DefinitionLoader, sink: Sink) -> None:
         self._loader = loader
         self._sink = sink
-        self._work_dir = Path(work_dir)
 
     def build(self, relative_module_dir: str) -> ModuleDef:
-        document = self._loader.module_document(self._work_dir, relative_module_dir)
+        document = self._loader.module_document(relative_module_dir)
         data = document.data
         source = document.source
 
@@ -667,10 +666,9 @@ class ModuleBuilder:
 def build_modules(
     loader: DefinitionLoader,
     sink: Sink,
-    work_dir: Path,
     names: Iterable[str],
 ) -> dict[str, ModuleDef]:
-    builder = ModuleBuilder(loader, sink, work_dir)
+    builder = ModuleBuilder(loader, sink)
     return {name: builder.build(name) for name in names}
 
 

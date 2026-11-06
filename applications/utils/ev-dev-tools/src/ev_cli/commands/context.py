@@ -56,7 +56,7 @@ class Context:
     @property
     def tree(self) -> SourceTree:
         if self._tree is None:
-            self._tree = SourceTree(self.everest_dirs)
+            self._tree = SourceTree(self.everest_dirs, self.work_dir)
         return self._tree
 
     @property
@@ -110,12 +110,11 @@ class Context:
 
         Generating a module's loader needs neither the interfaces nor the type
         units: the loader only ever mentions configuration values, which are
-        primitives.  Since a build generates a loader once per module -- 118
-        times in everest-core -- loading the whole type tree each time would be
-        pure overhead, so it is not done unless something asks for it.
+        primitives.  Since a build generates a loader once per module, loading the
+        whole type tree each time would be pure overhead, so it is not done
+        unless something asks for it.
         """
-        modules = build.build_modules(
-            self.loader, self.loader.sink, self.work_dir, names)
+        modules = build.build_modules(self.loader, self.loader.sink, names)
         if not with_interfaces:
             return Model(modules=modules)
 

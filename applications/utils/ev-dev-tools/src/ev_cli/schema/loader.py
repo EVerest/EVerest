@@ -45,10 +45,15 @@ class Document:
 
 
 class SourceTree:
-    """The everest directories that definitions are looked up in."""
+    """Where definitions are read from.
 
-    def __init__(self, everest_dirs: Sequence[Path]) -> None:
+    Types, interfaces and errors are looked up across the everest directories;
+    module manifests come from the work directory.
+    """
+
+    def __init__(self, everest_dirs: Sequence[Path], work_dir: Path) -> None:
         self.everest_dirs = tuple(Path(d) for d in everest_dirs)
+        self.work_dir = Path(work_dir)
         self._reject_unusable_roots()
 
     def _reject_unusable_roots(self) -> None:
@@ -92,6 +97,12 @@ class SourceTree:
 
     def error_file(self, namespace: str) -> Path:
         return self.resolve(f'{ERRORS_DIR}/{namespace}.yaml')
+
+    def manifest_file(self, module: str) -> Path:
+        path = self.work_dir / MODULES_DIR / module / 'manifest.yaml'
+        if not path.exists():
+            raise DefinitionNotFound(f'could not find module manifest {path}')
+        return path
 
     # -- discovery ----------------------------------------------------------
 
@@ -139,12 +150,8 @@ class DefinitionLoader:
     def error_document(self, namespace: str) -> Document:
         return self._load(self.tree.error_file(namespace), DocumentKind.ERROR_DECLARATION_LIST)
 
-    def module_document(self, work_dir: Path, relative_module_dir: str) -> Document:
-        """Module manifests come from the work directory, not the search path."""
-        path = Path(work_dir) / MODULES_DIR / relative_module_dir / 'manifest.yaml'
-        if not path.exists():
-            raise DefinitionNotFound(f'could not find module manifest {path}')
-        return self._load(path, DocumentKind.MANIFEST)
+    def module_document(self, module: str) -> Document:
+        return self._load(self.tree.manifest_file(module), DocumentKind.MANIFEST)
 
     # -- internals ----------------------------------------------------------
 

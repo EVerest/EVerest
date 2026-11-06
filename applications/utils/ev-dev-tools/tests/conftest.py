@@ -45,7 +45,7 @@ def make_loader(tree_dir: Path, sink):
     from ev_cli.schema.loader import DefinitionLoader, SourceTree
     from ev_cli.schema.validate import Validators
 
-    return DefinitionLoader(SourceTree([tree_dir]), Validators.load(SCHEMAS_DIR), sink)
+    return DefinitionLoader(SourceTree([tree_dir], tree_dir), Validators.load(SCHEMAS_DIR), sink)
 
 
 @pytest.fixture
@@ -70,7 +70,7 @@ def fixture_model(fixture_loader, sink):
     types = build.build_type_units(fixture_loader, sink)
     interfaces = build.build_interfaces(
         fixture_loader, sink, fixture_loader.tree.interface_names())
-    modules = build.build_modules(fixture_loader, sink, FIXTURE_TREE, ['Sample'])
+    modules = build.build_modules(fixture_loader, sink, ['Sample'])
 
     from ev_cli.ir.model import Model
     return Model(types=types, interfaces=interfaces, modules=modules)
