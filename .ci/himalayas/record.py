@@ -19,7 +19,8 @@ TOOLCHAIN_LIMIT = 60
 TOOLCHAIN_PATTERN = re.compile(r"(gcc|clang|msvc|icc) [0-9]+(\.[0-9]+){0,2}")
 BUILD_STATUSES = ("passed", "failed")
 TARGET_STATUSES = ("passed", "failed", "skipped")
-TARGET_KEYS = {"target", "status", "toolchain"}
+TARGET_KEYS = {"target", "status"}
+OPTIONAL_TARGET_KEYS = {"toolchain"}
 
 
 def _check_sha(sha: str) -> None:
@@ -79,13 +80,17 @@ def record_path(pointer: str, moved_at: str, n: int = 1) -> str:
 
 def _check_targets(targets: list) -> None:
     for target in targets:
-        if not isinstance(target, dict) or set(target) != TARGET_KEYS:
-            raise ValueError(f"a target needs exactly {sorted(TARGET_KEYS)}: {target!r}")
+        if not isinstance(target, dict) or not TARGET_KEYS <= set(target) <= TARGET_KEYS | OPTIONAL_TARGET_KEYS:
+            raise ValueError(
+                f"a target needs {sorted(TARGET_KEYS)} and may have {sorted(OPTIONAL_TARGET_KEYS)}: {target!r}"
+            )
         triple = target["target"]
         if not isinstance(triple, str) or len(triple) > TRIPLE_LIMIT or not TRIPLE_PATTERN.fullmatch(triple):
             raise ValueError(f"target must be an <arch>-<os>-<abi> triple of at most {TRIPLE_LIMIT}: {target!r}")
         if target["status"] not in TARGET_STATUSES:
             raise ValueError(f"target status must be one of {TARGET_STATUSES}: {target!r}")
+        if "toolchain" not in target:
+            continue
         toolchain = target["toolchain"]
         if (
             not isinstance(toolchain, str)
