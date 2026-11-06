@@ -73,7 +73,7 @@ SCENARIO("create_tcp_listen_socket creates a non-blocking listener") {
         REQUIRE(listen_fd >= 0);
 
         THEN("the listener fd is non-blocking, so accept_connection's Transient/EAGAIN contract "
-             "holds and a client aborting between poll() and accept4() cannot block the poll loop") {
+             "holds and a client aborting between poll() and accept() cannot block the poll loop") {
             const auto flags = ::fcntl(listen_fd, F_GETFL);
             REQUIRE(flags >= 0);
             REQUIRE((flags & O_NONBLOCK) != 0);

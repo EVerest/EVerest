@@ -7,10 +7,13 @@
 #include <cerrno>
 #include <chrono>
 #include <cstring>
+#include <string>
 #include <thread>
 #include <vector>
 
+#include <arpa/inet.h>
 #include <dirent.h>
+#include <net/if.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <unistd.h>
@@ -155,4 +158,26 @@ TEST_CASE("socket_helper: write_all surfaces a closed peer as EPIPE instead of r
     CHECK(errno == EPIPE);
 
     close(fds[0]);
+}
+
+TEST_CASE("socket_helper: sockaddr_in6_to_name formats the address like getnameinfo(NI_NUMERICHOST)") {
+    sockaddr_in6 address{};
+    address.sin6_family = AF_INET6;
+
+    SECTION("without a scope, the bare address") {
+        REQUIRE(inet_pton(AF_INET6, "2001:db8::1", &address.sin6_addr) == 1);
+        const auto name = iso15118::io::sockaddr_in6_to_name(address);
+        REQUIRE(name != nullptr);
+        CHECK(std::string(name.get()) == "2001:db8::1");
+    }
+
+    SECTION("with the scope of a named interface, the address and the interface name") {
+        const auto loopback_index = if_nametoindex("lo");
+        REQUIRE(loopback_index != 0);
+        REQUIRE(inet_pton(AF_INET6, "fe80::1", &address.sin6_addr) == 1);
+        address.sin6_scope_id = loopback_index;
+        const auto name = iso15118::io::sockaddr_in6_to_name(address);
+        REQUIRE(name != nullptr);
+        CHECK(std::string(name.get()) == "fe80::1%lo");
+    }
 }
