@@ -1,0 +1,17 @@
+description: Fixture unit types
+types:
+  Power:
+    description: Power in Watt
+    type: object
+    additionalProperties: false
+    required:
+      - total
+    properties:
+      total:
+        description: Sum value
+        type: number
+      L1:
+        description: Phase 1 only
+        type: number
+        minimum: 0
+        maximum: 100000

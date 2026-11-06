@@ -1,0 +1,120 @@
+{{ u.license_header }}
+#ifndef {{ u.guard }}
+#define {{ u.guard }}
+
+//
+// AUTO GENERATED - MARKED REGIONS WILL BE KEPT
+// template version {{ u.template_version }}
+//
+
+#include <{{ u.base_class_header }}>
+
+#include "{{ u.module_header }}"
+
+{{ u.block('add_headers') }}
+
+namespace module {
+namespace {{ u.id }} {
+
+{% if u.rwconfig %}
+struct RwConf {
+{% for item in u.rwconfig %}
+    {{ u.config_type(item) }} {{ item.name }};
+{% endfor %}
+};
+
+struct RwConfUpdate {
+    using ConfigChangeResult = Everest::config::ConfigChangeResult;
+
+    virtual ~RwConfUpdate() = default;
+
+    // override in class {{ u.class_name }} adding the implementation to {{ u.class_name }}.cpp
+    // or inline
+    //
+    // note: these handlers are invoked from a different thread than the one
+    // executing your module code, so guard rw_config with a mutex both here
+    // and wherever your module accesses config or rw_config
+    // e.g.
+    // ConfigChangeResult on_{{ u.rwconfig[0].name }}_changed(const {{ u.config_type(u.rwconfig[0]) }}& value) override {
+    //     std::scoped_lock lock(config_mutex);
+    //     rw_config.{{ u.rwconfig[0].name }} = value;
+    //     return ConfigChangeResult::Accepted();
+    // }
+
+{% for item in u.rwconfig %}
+    virtual ConfigChangeResult on_{{ item.name }}_changed(const {{ u.config_type(item) }}& /* value */) {
+        return ConfigChangeResult::Rejected("handler not implemented");
+    }
+{% endfor %}
+};
+{% endif %}
+
+struct Conf {
+{% for item in u.config %}
+    {{ u.config_type(item) }} {{ item.name }};
+{% endfor %}
+
+{% for item in u.rwconfig %}
+    const {{ u.config_type(item) }}& {{ item.name }};
+{% endfor %}
+
+{% if u.rwconfig %}
+    Conf(const RwConf& rw):
+{% for item in u.rwconfig %}
+        {{ item.name }}(rw.{{ item.name }}){{ ',' if not loop.last else ' {}' }}
+{% endfor %}
+{% endif %}
+};
+
+{% if u.rwconfig %}
+class {{ u.class_name }} : public {{ u.class_parent }}, public RwConfUpdate {
+{% else %}
+class {{ u.class_name }} : public {{ u.class_parent }} {
+{% endif %}
+public:
+    {{ u.class_name }}() = delete;
+    {{ u.class_name }}(Everest::ModuleAdapter* ev, const Everest::PtrContainer<{{ u.module_class }}> &mod, {% if u.rwconfig %}Conf& config, RwConf& rw_config{% else %}Conf& config{% endif %}) :
+        {{ u.class_parent }}(ev, "{{ u.id }}"),
+        mod(mod),
+{% if u.rwconfig %}
+        config(config),
+        rw_config(rw_config)
+{% else %}
+        config(config)
+{% endif %}
+    {};
+
+    {{ u.block('public_defs', 4) }}
+
+protected:
+{% if not u.cmds %}
+    // no commands defined for this interface
+{% else %}
+    // command handler functions (virtual)
+{% for cmd in u.cmds %}
+    virtual {{ u.result_type(cmd) }} handle_{{ cmd.name }}({% for argument in cmd.arguments %}{{ u.argument_declaration(argument) }}{{ ', ' if not loop.last }}{% endfor %}) override;
+{% endfor %}
+{% endif %}
+
+    {{ u.block('protected_defs', 4) }}
+
+private:
+    const Everest::PtrContainer<{{ u.module_class }}>& mod;
+    const Conf& config;
+{% if u.rwconfig %}
+    RwConf& rw_config;
+{% endif %}
+
+    virtual void init() override;
+    virtual void ready() override;
+    void shutdown() override;
+
+    {{ u.block('private_defs', 4) }}
+};
+
+{{ u.block('after_class') }}
+
+} // namespace {{ u.id }}
+} // namespace module
+
+#endif // {{ u.guard }}
