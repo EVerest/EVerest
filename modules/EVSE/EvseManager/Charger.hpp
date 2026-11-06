@@ -118,6 +118,13 @@ public:
         Pause
     };
 
+    // What the data link layer is told of a D-LINK_PAUSE/D-LINK_TERMINATE from the HLC stack.
+    enum class DlinkOutcome {
+        Applied,  // pass the request on
+        LinkLost, // handled as a D-LINK_ERROR: pass that on instead
+        Ignored,  // the old session's teardown after the EV restarted: the link carries the new session
+    };
+
     // Public interface to configure Charger
     //
     // Call anytime also during charging, but call setters in this block at
@@ -219,14 +226,13 @@ public:
     void inform_new_evse_min_hlc_limits(const types::iso15118::DcEvseMinimumLimits& limits);
     types::iso15118::DcEvseMinimumLimits get_evse_min_hlc_limits();
 
-    void dlink_pause();
+    DlinkOutcome dlink_pause();
     // AC HLC session authorized by PnC whose EV never started the charging loop: the data link ending is
     // the EV asking for basic charging.
     bool pnc_without_charging_loop() const;
     void dlink_error();
-    // Returns true if the terminate was a data link loss during session setup and was handled as a D-LINK_ERROR;
-    // the caller then forwards a D-LINK_ERROR rather than a D-LINK_TERMINATE to the data link layer.
-    bool dlink_terminate();
+    // LinkLost if the terminate was a data link loss during session setup, handled as a D-LINK_ERROR.
+    DlinkOutcome dlink_terminate();
 
     // A positive SessionStopRes was sent to the EV: remember terminate/pause and arm the
     // CP-oscillator retain timer [V2G-DC-968] (PWM off V2G_SECC_CP_OSCILLATOR_RETAIN after the Res,

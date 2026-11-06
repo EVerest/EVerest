@@ -6,6 +6,7 @@
 #include <chrono>
 #include <functional>
 #include <optional>
+#include <string>
 
 #include <generated/types/power_supply_DC.hpp>
 
@@ -74,6 +75,14 @@ public:
     /// move.
     Result wait(const Condition& condition, const MeasurementSource& next_measurement, const CancelledCheck& cancelled,
                 const GapObserver& on_gap) const;
+
+    /// \brief Renders why a wait() gave up, distinguishing a cancelled wait, a silent measurement stream and a
+    /// voltage that did not move.
+    /// \param goal what the voltage had to do, e.g. "drop below 60 V"
+    /// \param total_timeout the budget the wait had
+    /// \param cancel_reason what made the cancellation check stop the wait
+    static std::string describe_failure(const Result& result, const std::string& goal,
+                                        std::chrono::seconds total_timeout, const std::string& cancel_reason);
 
 private:
     std::chrono::milliseconds total_timeout;

@@ -7,6 +7,8 @@
 #include <Charger.hpp>
 #include <memory>
 #include <optional>
+#include <thread>
+#include <tuple>
 
 namespace module {
 std::vector<std::string> observed_cp_state_commands;
@@ -1064,6 +1066,146 @@ TEST_F(ChargerWakeupLinkTest, LinkAfterWakeupDisarmsTheWatchdog) {
     EXPECT_EQ(charger->current_state(), Charger::EvseState::PrepareCharging);
 }
 
+// [V2G-DC-968]: after a SessionStopRes the CP oscillator is retained for V2G_SECC_CP_OSCILLATOR_RETAIN, then X1.
+// An EV that opens a new session inside that window has been accepted by the HLC stack already, so the session
+// must run on the oscillator it was started on. The EV restarts from state B.
+struct ChargerRetainRestartTest : public ChargerDlinkErrorTest {
+    /// The EV ended its session with a SessionStop; the charger is in ChargingPausedEV with the 5% retained.
+    void setup_session_stopped_by_ev(Charger::ChargeMode mode, types::iso15118::SessionStopAction action) {
+        setup_hlc_session_in(Charger::EvseState::ChargingPausedEV);
+        charger->get_config_context().charge_mode = mode;
+        charger->get_shared_context().flag_ev_plugged_in = true;
+        charger->get_internal_context().update_pwm_last_duty_cycle = 0.05;
+        charger->notify_session_stop_res_sent(action);
+        charger->run_state_machine();
+        ASSERT_EQ(charger->current_state(), Charger::EvseState::ChargingPausedEV);
+        ASSERT_TRUE(pwm_on());
+        observed_cp_state_commands.clear();
+    }
+
+    void expire_retain() {
+        charger->get_internal_context().session_stop_pwm_off_deadline =
+            std::chrono::steady_clock::now() - std::chrono::milliseconds(1);
+    }
+
+    void pwm_off_since(std::chrono::milliseconds ago) {
+        charger->get_internal_context().pwm_switched_off_at = std::chrono::steady_clock::now() - ago;
+    }
+
+    bool pwm_on() {
+        return charger->get_shared_context().pwm_running and
+               charger->get_internal_context().update_pwm_last_duty_cycle < 1.;
+    }
+};
+
+struct ChargerRetainRestartModeTest
+    : public ChargerRetainRestartTest,
+      public testing::WithParamInterface<std::tuple<Charger::ChargeMode, types::iso15118::SessionStopAction>> {};
+
+// The CI case: the EV's SupportedAppProtocolReq lands less than one main loop period (100 ms) before the retain
+// deadline, and the next pass runs after it. Same for DC and AC ISO, and for a pause and a terminate.
+TEST_P(ChargerRetainRestartModeTest, RestartJustBeforeTheRetainDeadlineKeepsThePwmOn) {
+    const auto [mode, action] = GetParam();
+    setup_session_stopped_by_ev(mode, action);
+    // The EV stays in state B and reconnects while the oscillator is retained.
+    charger->get_internal_context().session_stop_pwm_off_deadline =
+        std::chrono::steady_clock::now() + std::chrono::milliseconds(50);
+
+    charger->notify_hlc_session_started_by_ev();
+    std::this_thread::sleep_for(std::chrono::milliseconds(60));
+    charger->run_state_machine();
+
+    EXPECT_TRUE(observed_cp_state_commands.empty()) << "no retain X1 under the restarted session";
+    EXPECT_TRUE(pwm_on());
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::PrepareCharging);
+}
+
+INSTANTIATE_TEST_SUITE_P(ModesAndStops, ChargerRetainRestartModeTest,
+                         testing::Combine(testing::Values(Charger::ChargeMode::DC, Charger::ChargeMode::AC),
+                                          testing::Values(types::iso15118::SessionStopAction::Pause,
+                                                          types::iso15118::SessionStopAction::Terminate)));
+
+// The restart arrives after the retain X1 went out: it is still taken, and IEC 61851-1 Table A.6 seq. 9.2 holds
+// the PWM off for 3 s before PrepareCharging switches it on again.
+TEST_F(ChargerRetainRestartTest, RestartAfterTheRetainX1HoldsX1ThenResumes) {
+    setup_session_stopped_by_ev(Charger::ChargeMode::DC, types::iso15118::SessionStopAction::Pause);
+    expire_retain();
+    charger->run_state_machine();
+    ASSERT_EQ(observed_cp_state_commands, std::vector<std::string>{"X1"});
+
+    charger->notify_hlc_session_started_by_ev();
+    charger->run_state_machine();
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::PrepareCharging);
+    EXPECT_FALSE(pwm_on()) << "3 s in X1 before the PWM comes back";
+
+    pwm_off_since(std::chrono::milliseconds(3000));
+    charger->run_state_machine();
+    EXPECT_TRUE(pwm_on());
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::PrepareCharging);
+}
+
+// A restart dropped by a stop before the main loop takes it (here: deauthorized) leaves the retain timer armed:
+// the oscillator still goes off when it expires.
+TEST_F(ChargerRetainRestartTest, RestartStoppedBeforeItIsTakenKeepsTheRetainX1) {
+    setup_session_stopped_by_ev(Charger::ChargeMode::DC, types::iso15118::SessionStopAction::Pause);
+    charger->get_internal_context().session_stop_pwm_off_deadline =
+        std::chrono::steady_clock::now() + std::chrono::milliseconds(50);
+    charger->notify_hlc_session_started_by_ev();
+    charger->get_shared_context().flag_authorized = false;
+    charger->run_state_machine();
+    ASSERT_NE(charger->current_state(), Charger::EvseState::PrepareCharging);
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(60));
+    charger->run_state_machine();
+    charger->run_state_machine();
+
+    EXPECT_EQ(observed_cp_state_commands, std::vector<std::string>{"X1"});
+}
+
+// A D-LINK_ERROR ends a pending restart: the error path owns the CP sequence from there, and a later teardown of
+// the session is applied again.
+TEST_F(ChargerRetainRestartTest, DlinkErrorDropsThePendingRestart) {
+    setup_session_stopped_by_ev(Charger::ChargeMode::DC, types::iso15118::SessionStopAction::Pause);
+    charger->notify_hlc_session_started_by_ev();
+
+    charger->dlink_error();
+
+    EXPECT_EQ(charger->dlink_pause(), Charger::DlinkOutcome::Applied);
+}
+
+// The old session's D-LINK teardown may trail the new session's start. The Ignored answer keeps EvseManager from
+// passing it on to SLAC, whose link now carries the new session; no X1 goes out under it either.
+TEST_F(ChargerRetainRestartTest, LateDlinkPauseAfterTheRestartIsIgnored) {
+    setup_session_stopped_by_ev(Charger::ChargeMode::DC, types::iso15118::SessionStopAction::Pause);
+    charger->notify_hlc_session_started_by_ev();
+
+    EXPECT_EQ(charger->dlink_pause(), Charger::DlinkOutcome::Ignored) << "the data link carries the new session";
+    charger->run_state_machine();
+
+    EXPECT_TRUE(observed_cp_state_commands.empty());
+    EXPECT_TRUE(pwm_on());
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::PrepareCharging);
+}
+
+TEST_F(ChargerRetainRestartTest, LateDlinkTerminateAfterTheRestartIsIgnored) {
+    setup_session_stopped_by_ev(Charger::ChargeMode::DC, types::iso15118::SessionStopAction::Terminate);
+    charger->get_shared_context().dlink_established = true;
+    charger->notify_hlc_session_started_by_ev();
+
+    EXPECT_EQ(charger->dlink_terminate(), Charger::DlinkOutcome::Ignored) << "the data link carries the new session";
+    charger->run_state_machine();
+    ASSERT_EQ(charger->current_state(), Charger::EvseState::PrepareCharging);
+
+    // The link stays up, so the wake-up watchdog [V2G3-M07-27] does not end the new session.
+    charger->get_internal_context().wakeup_link_deadline =
+        std::chrono::steady_clock::now() - std::chrono::milliseconds(1);
+    charger->run_state_machine();
+
+    EXPECT_TRUE(observed_cp_state_commands.empty()) << "no X1, no E/F";
+    EXPECT_TRUE(pwm_on());
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::PrepareCharging);
+}
+
 // [V2G3-M06-07]: with ac_limit_slac_init_retries (default), the 5% matching sequence (E/F, back to 5%) is
 // retried C_sequ_retry = 2 times; the next timeout ends in X1 and later error routines are ignored.
 TEST_F(ChargerDlinkErrorTest, SlacInitRetriesLimitedThenX1) {
@@ -1187,7 +1329,7 @@ TEST_F(ChargerPncWithoutChargingLoopTest, TerminateFallsBackToNominalThroughEF) 
     auto& ictx = charger->get_internal_context();
     ctx.hlc_charging_terminate_pause = Charger::HlcTerminatePause::Terminate;
 
-    EXPECT_FALSE(charger->dlink_terminate()) << "a clean terminate, not a link loss";
+    EXPECT_EQ(charger->dlink_terminate(), Charger::DlinkOutcome::Applied) << "a clean terminate, not a link loss";
 
     EXPECT_EQ(charger->current_state(), Charger::EvseState::T_step_EF);
     EXPECT_EQ(ictx.t_step_EF_return_state, Charger::EvseState::PrepareCharging);
@@ -1309,7 +1451,7 @@ TEST_F(ChargerPncAuthorizationTest, X1StartTerminateFallsBackToNominal) {
     charger->set_dlink_ready(true);
     authorize_pnc();
 
-    EXPECT_FALSE(charger->dlink_terminate());
+    EXPECT_EQ(charger->dlink_terminate(), Charger::DlinkOutcome::Applied);
 
     EXPECT_EQ(charger->current_state(), Charger::EvseState::T_step_EF);
     EXPECT_EQ(charger->get_internal_context().t_step_EF_return_state, Charger::EvseState::PrepareCharging);

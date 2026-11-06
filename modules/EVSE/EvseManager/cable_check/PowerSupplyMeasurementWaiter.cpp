@@ -5,6 +5,8 @@
 
 #include <algorithm>
 
+#include <fmt/format.h>
+
 namespace module {
 
 PowerSupplyMeasurementWaiter::PowerSupplyMeasurementWaiter(std::chrono::milliseconds total_timeout,
@@ -57,6 +59,21 @@ PowerSupplyMeasurementWaiter::Result PowerSupplyMeasurementWaiter::wait(const Co
             on_gap(result.gaps);
         }
     }
+}
+
+std::string PowerSupplyMeasurementWaiter::describe_failure(const Result& result, const std::string& goal,
+                                                           std::chrono::seconds total_timeout,
+                                                           const std::string& cancel_reason) {
+    if (result.stop_reason == StopReason::Cancelled) {
+        return fmt::format("cancelled while waiting for the voltage to {}: {}", goal, cancel_reason);
+    }
+    if (not result.last_voltage_V.has_value()) {
+        return fmt::format("no measurement received from the power supply at all within {} s, so it is unknown "
+                           "whether the voltage did {}",
+                           total_timeout.count(), goal);
+    }
+    return fmt::format("voltage did not {} within timeout, last measured {:.2f} V ({} measurements, {} gaps)", goal,
+                       result.last_voltage_V.value(), result.samples, result.gaps);
 }
 
 } // namespace module

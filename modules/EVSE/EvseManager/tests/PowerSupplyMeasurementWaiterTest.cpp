@@ -308,3 +308,16 @@ TEST(PowerSupplyMeasurementWaiterTest, timeout_with_measurements_reports_the_las
     // the caller can report a real "last measured X V" diagnostic.
     EXPECT_NE(*result.last_voltage_V, 0.0);
 }
+
+/// A wait cancelled because the session stopped never looked at the measurement stream, so it must not be
+/// reported as a stalled one.
+TEST(PowerSupplyMeasurementWaiterTest, cancelled_wait_is_described_as_cancelled_with_its_reason) {
+    PowerSupplyMeasurementWaiter::Result result;
+    result.stop_reason = PowerSupplyMeasurementWaiter::StopReason::Cancelled;
+
+    const auto text = PowerSupplyMeasurementWaiter::describe_failure(
+        result, "drop below 60 V", 10s, "the charger is in EVSE Paused, not PrepareCharging");
+
+    EXPECT_EQ(text, "cancelled while waiting for the voltage to drop below 60 V: the charger is in EVSE Paused, "
+                    "not PrepareCharging");
+}

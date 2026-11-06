@@ -434,16 +434,24 @@ void EvseManager::ready() {
         r_hlc[0]->subscribe_dlink_pause([this] {
             // tell charger (it will disable PWM)
             session_log.evse(true, "D-LINK_PAUSE.req");
+            if (charger->dlink_pause() == Charger::DlinkOutcome::Ignored) {
+                // The link and the session state belong to the EV's new session.
+                return;
+            }
             hlc_link_in_use = false;
-            charger->dlink_pause();
             r_slac[0]->call_dlink_pause();
         });
 
         r_hlc[0]->subscribe_dlink_terminate([this] {
-            selected_d20_energy_service.reset();
             session_log.evse(true, "D-LINK_TERMINATE.req");
+            const auto outcome = charger->dlink_terminate();
+            if (outcome == Charger::DlinkOutcome::Ignored) {
+                // See subscribe_dlink_pause.
+                return;
+            }
+            selected_d20_energy_service.reset();
             hlc_link_in_use = false;
-            if (charger->dlink_terminate()) {
+            if (outcome == Charger::DlinkOutcome::LinkLost) {
                 // A data link loss during session setup, handled as D-LINK_ERROR: see Charger::dlink_terminate().
                 if (fake_dc_enabled and config.ac_with_soc) {
                     setup_AC_mode(false);
@@ -1123,6 +1131,9 @@ void EvseManager::ready() {
         // it must be maintained regardless of the session_logging debug switch.
         r_hlc[0]->subscribe_selected_protocol([this](std::string const& selected_protocol) {
             this->selected_protocol = selected_protocol;
+            // A new session sets its own service: in ServiceSelection (-20), or in SessionSetup when it resumes a
+            // paused -20 session. -2 and DIN have none.
+            selected_d20_energy_service.reset();
             hlc_link_in_use = true;
             charger->notify_hlc_session_started_by_ev();
         });
@@ -2674,13 +2685,11 @@ void EvseManager::powersupply_DC_off() {
 
 std::string EvseManager::describe_powersupply_wait_failure(const PowerSupplyMeasurementWaiter::Result& result,
                                                            const std::string& goal) {
-    if (not result.last_voltage_V.has_value()) {
-        return fmt::format("no measurement received from the power supply at all within {} s, so it is unknown "
-                           "whether the voltage did {}",
-                           CABLECHECK_VOLTAGE_TIMEOUT.count(), goal);
-    }
-    return fmt::format("voltage did not {} within timeout, last measured {:.2f} V ({} measurements, {} gaps)", goal,
-                       result.last_voltage_V.value(), result.samples, result.gaps);
+    const auto cancel_reason = result.stop_reason == PowerSupplyMeasurementWaiter::StopReason::Cancelled
+                                   ? fmt::format("the charger is in {}, not PrepareCharging",
+                                                 charger->evse_state_to_string(charger->get_current_state()))
+                                   : std::string{};
+    return PowerSupplyMeasurementWaiter::describe_failure(result, goal, CABLECHECK_VOLTAGE_TIMEOUT, cancel_reason);
 }
 
 PowerSupplyMeasurementWaiter::Result
