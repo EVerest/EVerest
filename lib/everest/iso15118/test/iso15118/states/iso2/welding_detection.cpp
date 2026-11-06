@@ -13,14 +13,15 @@ SCENARIO("ISO 15118-2 SECC WeldingDetection handling") {
 
     const auto res = d2::state::handle_request(req, id, 42.0f);
 
-    THEN("OK, present voltage reported") {
+    THEN("OK, present voltage reported with EVSE_Shutdown [IEC 61851-23:2023 Table CC.9 t104]") {
         REQUIRE(res.response_code == dt::ResponseCode::OK);
         REQUIRE(dt::from_physical_value(res.evse_present_voltage) == 42.0);
-        REQUIRE(res.dc_evse_status.status_code == dt::DC_EVSEStatusCode::EVSE_Ready);
+        REQUIRE(res.dc_evse_status.status_code == dt::DC_EVSEStatusCode::EVSE_Shutdown);
+        REQUIRE(res.dc_evse_status.notification == dt::EVSENotification::None);
     }
 
     GIVEN("A module-reported EVSE error") {
-        // An active send_error status override wins over EVSE_Ready (EvseV2G parity).
+        // An active send_error status override wins over EVSE_Shutdown (EvseV2G parity).
         const auto err = d2::state::handle_request(req, id, 42.0f, dt::DC_EVSEStatusCode::EVSE_Malfunction);
         THEN("the status code is EVSE_Malfunction") {
             REQUIRE(err.dc_evse_status.status_code == dt::DC_EVSEStatusCode::EVSE_Malfunction);

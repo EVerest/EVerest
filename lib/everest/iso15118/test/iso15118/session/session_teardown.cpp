@@ -238,6 +238,32 @@ SCENARIO("Power path teardown signals") {
         }
     }
 
+    GIVEN("a DC session in welding detection") {
+        power_path.observe(Signal::CHARGE_LOOP_STARTED);
+        power_path.observe(Signal::CHARGE_LOOP_FINISHED);
+        power_path.observe(Signal::DC_OPEN_CONTACTOR);
+        power_path.observe(Signal::WELDING_DETECTION_STARTED);
+
+        WHEN("the session is torn down") {
+            const auto signals = power_path.take_teardown_signals();
+
+            THEN("only the welding detection phase is ended") {
+                REQUIRE(signals == std::vector<Signal>{Signal::WELDING_DETECTION_FINISHED});
+            }
+            THEN("a second teardown is a no-op") {
+                REQUIRE(power_path.take_teardown_signals().empty());
+            }
+        }
+
+        WHEN("the phase was finished first") {
+            power_path.observe(Signal::WELDING_DETECTION_FINISHED);
+
+            THEN("the teardown has nothing left to undo") {
+                REQUIRE(power_path.take_teardown_signals().empty());
+            }
+        }
+    }
+
     GIVEN("a session that never reached a charge loop") {
         power_path.observe(Signal::SETUP_FINISHED);
         power_path.observe(Signal::START_CABLE_CHECK);
