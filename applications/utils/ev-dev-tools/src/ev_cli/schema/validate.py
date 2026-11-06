@@ -2,8 +2,8 @@
 # Copyright Pionix GmbH and Contributors to EVerest
 """Validation against the framework's meta-schemas.
 
-The five meta-schemas in ``lib/everest/framework/schemas`` are draft-07, and so
-is the validation done here.  That is deliberate: this generator's job is to
+The meta-schemas in ``lib/everest/framework/schemas`` are draft-07, and so is
+the validation done here.  That is deliberate: this generator's job is to
 keep reading the definitions EVerest has today, and the framework's own C++
 validator supports draft-07 only.  The keyword subset actually used means the
 choice of draft is not observable -- but saying so is not the same as changing
@@ -13,35 +13,36 @@ it, and changing it belongs with the source migration, not here.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
-from typing import Any, Final
+from typing import Any
 
 import jsonschema
 import yaml
 
 from ..errors import SchemaError
 
-#: Validator name -> meta-schema file stem.
-SCHEMA_FILES: Final[dict[str, str]] = {
-    'interface': 'interface',
-    'module': 'manifest',
-    'config': 'config',
-    'type': 'type',
-    'error_declaration_list': 'error-declaration-list',
-}
+
+class DocumentKind(Enum):
+    """A kind of definition document; the value names its meta-schema file."""
+
+    TYPE = 'type'
+    INTERFACE = 'interface'
+    ERROR_DECLARATION_LIST = 'error-declaration-list'
+    MANIFEST = 'manifest'
 
 
 @dataclass(frozen=True)
 class Validators:
     """The meta-schema validators, loaded once per run."""
 
-    by_name: dict[str, jsonschema.Draft7Validator]
+    by_kind: dict[DocumentKind, jsonschema.Draft7Validator]
 
     @classmethod
     def load(cls, schemas_dir: Path) -> Validators:
-        validators: dict[str, jsonschema.Draft7Validator] = {}
-        for name, stem in SCHEMA_FILES.items():
-            path = schemas_dir / f'{stem}.yaml'
+        validators: dict[DocumentKind, jsonschema.Draft7Validator] = {}
+        for kind in DocumentKind:
+            path = schemas_dir / f'{kind.value}.yaml'
             try:
                 schema = yaml.safe_load(path.read_text())
             except OSError as err:
@@ -56,13 +57,13 @@ class Validators:
             except jsonschema.SchemaError as err:
                 raise SchemaError(f'meta-schema {path} is itself invalid: {err}') from err
 
-            validators[name] = jsonschema.Draft7Validator(schema)
-        return cls(by_name=validators)
+            validators[kind] = jsonschema.Draft7Validator(schema)
+        return cls(by_kind=validators)
 
-    def validate(self, name: str, document: Any, path: Path) -> None:
+    def validate(self, kind: DocumentKind, document: Any, path: Path) -> None:
         """Validate a whole definition document against its meta-schema."""
         try:
-            self.by_name[name].validate(document)
+            self.by_kind[kind].validate(document)
         except jsonschema.ValidationError as err:
             location = '/'.join(str(part) for part in err.absolute_path)
             where = f'{path}#/{location}' if location else str(path)

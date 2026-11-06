@@ -20,7 +20,7 @@ import yaml
 from ..errors import DefinitionNotFound, EverestDirNotFound, SchemaError
 from ..ir.common import SourceRef
 from .diagnostics import Category, Diagnostic, Severity, Sink
-from .validate import Validators
+from .validate import DocumentKind, Validators
 
 TYPES_DIR = 'types'
 INTERFACES_DIR = 'interfaces'
@@ -129,26 +129,26 @@ class DefinitionLoader:
     # -- typed accessors ----------------------------------------------------
 
     def type_document(self, unit: str) -> Document:
-        return self._load(self.tree.type_file(unit), 'type')
+        return self._load(self.tree.type_file(unit), DocumentKind.TYPE)
 
     def interface_document(self, name: str) -> Document:
-        document = self._load(self.tree.interface_file(name), 'interface')
+        document = self._load(self.tree.interface_file(name), DocumentKind.INTERFACE)
         self._check_interface_payloads(document)
         return document
 
     def error_document(self, namespace: str) -> Document:
-        return self._load(self.tree.error_file(namespace), 'error_declaration_list')
+        return self._load(self.tree.error_file(namespace), DocumentKind.ERROR_DECLARATION_LIST)
 
     def module_document(self, work_dir: Path, relative_module_dir: str) -> Document:
         """Module manifests come from the work directory, not the search path."""
         path = Path(work_dir) / MODULES_DIR / relative_module_dir / 'manifest.yaml'
         if not path.exists():
             raise DefinitionNotFound(f'could not find module manifest {path}')
-        return self._load(path, 'module')
+        return self._load(path, DocumentKind.MANIFEST)
 
     # -- internals ----------------------------------------------------------
 
-    def _load(self, path: Path, kind: str) -> Document:
+    def _load(self, path: Path, kind: DocumentKind) -> Document:
         cached = self._cache.get(path)
         if cached is not None:
             return cached
@@ -157,10 +157,10 @@ class DefinitionLoader:
             data = yaml.safe_load(path.read_text())
         except OSError as err:
             raise DefinitionNotFound(
-                f'could not open {kind} definition {path}: {err.strerror}'
+                f'could not open {kind.value} definition {path}: {err.strerror}'
             ) from err
         except yaml.YAMLError as err:
-            raise SchemaError(f'could not parse {kind} definition {path}: {err}') from err
+            raise SchemaError(f'could not parse {kind.value} definition {path}: {err}') from err
 
         if not isinstance(data, dict):
             raise SchemaError(f'{path}: expected a mapping at the top level')
