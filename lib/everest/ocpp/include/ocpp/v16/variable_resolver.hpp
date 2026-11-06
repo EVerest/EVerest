@@ -55,17 +55,6 @@ bool is_read_only_derived_cv(const ocpp::v2::Component& component, const ocpp::v
 /// expands itself (NumberOfConnectors, SupportedFeatureProfiles, MeterPublicKeys, DefaultPriceText).
 bool is_overridable_key(keys::valid_keys key);
 
-/// \brief Result of a reverse (CV -> 1.6 key) lookup.
-struct ReverseResult {
-    std::optional<std::string> key;
-    bool ambiguous{false};
-
-    /// \brief The key is only trustworthy as a routing target when present and unambiguous.
-    bool usable() const {
-        return key.has_value() && !ambiguous;
-    }
-};
-
 /// \brief Maps between OCPP 1.6 configuration keys and canonical OCPP 2.x Component/Variable pairs,
 ///        including operator-provided custom mappings.
 ///
@@ -75,8 +64,9 @@ struct ReverseResult {
 /// OCPP16LegacyCtrlr variable is no longer associated with the key. All other entries are custom keys.
 class VariableResolver {
 public:
-    /// \brief Entries for known keys that are not overridable are ignored with a warning; the custom mapping file
-    /// loader rejects them before they get here.
+    /// \brief Entries for known keys that are not overridable are ignored with a warning. An entry whose target is the
+    /// built-in mapping of another key or the target of an earlier entry (in key order) is ignored with an error, so
+    /// every CV maps back to at most one key. The custom mapping file loader rejects such entries before they get here.
     explicit VariableResolver(const ocpp::v2::Ocpp16KeyMappings& custom_mappings = {});
 
     /// \brief Forward lookup: known keys first (built-in mapping or its override; keys with no v2 mapping and
@@ -88,7 +78,8 @@ public:
     keys::DeviceModel_CV known_key_to_cv(keys::valid_keys key) const;
 
     /// \brief Reverse lookup: standard reverse table first, then the custom-mapping reverse index.
-    ReverseResult cv_to_key(const ocpp::v2::Component& component, const ocpp::v2::Variable& variable) const;
+    std::optional<std::string> cv_to_key(const ocpp::v2::Component& component,
+                                         const ocpp::v2::Variable& variable) const;
 
     /// \brief Reverse lookup of a known key: an override target maps to its key; a built-in target of an
     /// overridden key maps to no key.
@@ -115,7 +106,7 @@ private:
     ocpp::v2::Ocpp16KeyMappings custom_mappings;
     // ocpp/v2/comparators.hpp ordering keeps instance/evse-qualified CVs distinct
     std::map<std::pair<ocpp::v2::Component, ocpp::v2::Variable>, keys::valid_keys> overrides_by_cv;
-    std::map<std::pair<ocpp::v2::Component, ocpp::v2::Variable>, ReverseResult> custom_reverse;
+    std::map<std::pair<ocpp::v2::Component, ocpp::v2::Variable>, std::string> custom_reverse;
 };
 
 } // namespace ocpp::v16
