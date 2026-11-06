@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
 
 from ..errors import DefinitionNotFound, EvCliError, UnsupportedDefinition
-from ..schema import normalize
+from ..schema import conformance
 from ..schema.diagnostics import Category, Diagnostic, Severity, Sink
 from ..schema.loader import DefinitionLoader
 from ..schema.references import parse_error_reference, parse_type_reference
@@ -101,8 +101,8 @@ def resolve_reference(
     the legacy one reported, in exactly one place.
     """
     reference = parse_type_reference(schema['$ref'], from_unit=from_unit)
-    normalize.report_reference(
-        dict(schema),
+    conformance.report_reference(
+        schema,
         reference=reference,
         source=source,
         from_unit=from_unit,

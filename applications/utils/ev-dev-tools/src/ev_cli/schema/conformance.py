@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright Pionix GmbH and Contributors to EVerest
-"""Absorbing the legacy dialect in one place.
+"""Reporting what in a reference would not conform to JSON Schema 2020-12.
 
 Under JSON Schema draft-07 every keyword sitting beside a ``$ref`` is
 *ignored*.  Under 2020-12 -- and therefore under OpenAPI 3.1 -- the same
@@ -9,16 +9,16 @@ definitions in everest-core lean on the draft-07 reading heavily: nearly every
 reference carries a redundant ``type``, and a handful carry keywords that would
 change meaning outright if they were ever honoured.
 
-Every generator in the tree already ignores those siblings, so dropping them
-here changes no output.  What it does change is that the IR handed to a backend
-is conformant: a reference is a reference plus a description, and nothing else.
-Each dropped keyword is reported, so that the sources can be cleaned up and so
-that the two genuinely dangerous shapes are visible rather than latent.
+Every generator in the tree already ignores those siblings, and the IR does
+not carry them: a reference there is a reference plus a description, and
+nothing else.  Each sibling is reported here, as is a reference written in the
+legacy form, so that the sources can be cleaned up and so that the two
+genuinely dangerous shapes are visible rather than latent.
 """
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Mapping
 
 from ..ir.common import SourceRef
 from ..ir.types import TypeRef
@@ -29,13 +29,13 @@ from .references import ParsedReference, conformant_form
 KEPT_BESIDE_REF = frozenset({'$ref', 'description'})
 
 
-def ref_siblings(schema: dict[str, Any]) -> dict[str, Any]:
+def ref_siblings(schema: Mapping[str, Any]) -> dict[str, Any]:
     """The keys beside a ``$ref`` that the IR does not carry over."""
     return {key: value for key, value in schema.items() if key not in KEPT_BESIDE_REF}
 
 
 def report_reference(
-    schema: dict[str, Any],
+    schema: Mapping[str, Any],
     *,
     reference: ParsedReference,
     source: SourceRef,
