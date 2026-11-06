@@ -251,7 +251,7 @@ types::session_cost::SessionStatus to_everest_running_cost_state(const ocpp::Run
 }
 
 // Price in minor currency units, e.g. EUR 1.50 with 2 decimals is 150.
-static int to_minor_units(const double& price, const uint32_t& number_of_decimals) {
+int to_minor_units(const double& price, const uint32_t& number_of_decimals) {
     return static_cast<int>(price * (pow(10, number_of_decimals)));
 }
 
