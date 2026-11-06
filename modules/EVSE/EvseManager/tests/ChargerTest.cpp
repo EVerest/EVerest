@@ -1979,3 +1979,47 @@ std::string PersistentStore::get_session() {
 }
 
 } // namespace module
+
+// DC current demand: the EVSE limits are re-applied to the power supply periodically, and at once on request.
+struct ChargerDcEnforceLimitsTest : public ChargerTest {
+    std::unique_ptr<evse_board_supportIntf> bsp_if;
+    int enforce_count{0};
+
+    void SetUp() override {
+        charger_bsp = std::make_unique<IECStateMachine>(bsp_if, true, false, false, 0);
+        ChargerTest::SetUp();
+        charger->signal_dc_enforce_target_limits.connect([this](const auto&) { ++enforce_count; });
+        charger->get_config_context().charge_mode = Charger::ChargeMode::DC;
+        auto& ctx = charger->get_shared_context();
+        ctx.current_state = Charger::EvseState::Charging;
+        ctx.session_active = true;
+        ctx.flag_ev_plugged_in = true;
+        ctx.flag_transaction_active = true;
+        ctx.flag_authorized = true;
+        ctx.iec_allow_close_contactor = true;
+        ctx.hlc_charging_active = true;
+        ctx.contactor_open = false;
+        ctx.max_current_valid_until = std::chrono::steady_clock::now() + std::chrono::hours(1);
+        ctx.current_evse_max_limits.evse_maximum_current_limit = 100.;
+        ctx.current_evse_max_limits.evse_maximum_power_limit = 50000.;
+        charger->reset_dc_enforce_target_limits_timer();
+    }
+};
+
+TEST_F(ChargerDcEnforceLimitsTest, PeriodicEnforcementWaitsForTheInterval) {
+    charger->run_state_machine();
+
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::Charging);
+    EXPECT_EQ(enforce_count, 0);
+}
+
+TEST_F(ChargerDcEnforceLimitsTest, RequestedEnforcementFiresOnTheNextIterationOnce) {
+    charger->request_dc_enforce_target_limits();
+
+    charger->run_state_machine();
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::Charging);
+    EXPECT_EQ(enforce_count, 1);
+
+    charger->run_state_machine();
+    EXPECT_EQ(enforce_count, 1);
+}
