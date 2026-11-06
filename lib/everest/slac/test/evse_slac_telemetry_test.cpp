@@ -28,18 +28,12 @@ bool test_default_slac_telemetry_serializes_with_zero_ev_mac() {
     SlacTelemetry telemetry;
     auto const serialized = serialize(telemetry);
     auto const serialized_json = nlohmann::json::parse(serialized);
-    if (!assert_true(serialized_json.at("ev_mac") == "00:00:00:00:00:00", test_name,
-                     "Serialized ev_mac is not 00:00:00:00:00:00")) {
-        return false;
-    }
-
-    auto const deserialized = deserialize(serialized);
-    auto const zero = messages::HomeplugMessage::MacAddress{};
-    return assert_true(deserialized.ev_mac == zero, test_name, "Deserialized ev_mac is not zeroed") &&
-           assert_true(deserialized.match_state == SlacState::Init, test_name,
-                       "Default deserialized match_state changed from Init") &&
-           assert_true(deserialized.d3_state == D3State::Unmatched, test_name,
-                       "Default deserialized d3_state changed from Unmatched");
+    return assert_true(serialized_json.at("ev_mac") == "00:00:00:00:00:00", test_name,
+                       "Serialized ev_mac is not 00:00:00:00:00:00") &&
+           assert_true(serialized_json.at("match_state") == "Init", test_name,
+                       "Default serialized match_state changed from Init") &&
+           assert_true(serialized_json.at("d3_state") == "Unmatched", test_name,
+                       "Default serialized d3_state changed from Unmatched");
 }
 
 } // namespace

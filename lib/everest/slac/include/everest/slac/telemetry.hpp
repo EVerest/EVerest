@@ -39,6 +39,5 @@ struct SlacTelemetry {
 };
 
 std::string serialize(SlacTelemetry val);
-SlacTelemetry deserialize(std::string const& val);
 
 } // namespace everest::lib::slac

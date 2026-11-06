@@ -36,32 +36,6 @@ api_telemetry::SlacState to_api(SlacState state) {
     return api_telemetry::SlacState::Init;
 }
 
-SlacState from_api(api_telemetry::SlacState state) {
-    switch (state) {
-    case api_telemetry::SlacState::Init:
-        return SlacState::Init;
-    case api_telemetry::SlacState::Reset:
-        return SlacState::Reset;
-    case api_telemetry::SlacState::ResetChip:
-        return SlacState::ResetChip;
-    case api_telemetry::SlacState::Idle:
-        return SlacState::Idle;
-    case api_telemetry::SlacState::Failed:
-        return SlacState::Failed;
-    case api_telemetry::SlacState::Unmatched:
-        return SlacState::Unmatched;
-    case api_telemetry::SlacState::Matching:
-        return SlacState::Matching;
-    case api_telemetry::SlacState::WaitForLink:
-        return SlacState::WaitForLink;
-    case api_telemetry::SlacState::Validate:
-        return SlacState::Validate;
-    case api_telemetry::SlacState::Matched:
-        return SlacState::Matched;
-    }
-    return SlacState::Init;
-}
-
 api_telemetry::SlacD3State to_api(D3State state) {
     switch (state) {
     case D3State::Unmatched:
@@ -72,18 +46,6 @@ api_telemetry::SlacD3State to_api(D3State state) {
         return api_telemetry::SlacD3State::Matched;
     }
     return api_telemetry::SlacD3State::Unmatched;
-}
-
-D3State from_api(api_telemetry::SlacD3State state) {
-    switch (state) {
-    case api_telemetry::SlacD3State::Unmatched:
-        return D3State::Unmatched;
-    case api_telemetry::SlacD3State::Matching:
-        return D3State::Matching;
-    case api_telemetry::SlacD3State::Matched:
-        return D3State::Matched;
-    }
-    return D3State::Unmatched;
 }
 
 api_telemetry::SlacStatus to_api(SlacTelemetry const& status) {
@@ -100,31 +62,10 @@ api_telemetry::SlacStatus to_api(SlacTelemetry const& status) {
     return telemetry;
 }
 
-SlacTelemetry from_api(api_telemetry::SlacStatus const& status) {
-    SlacTelemetry telemetry;
-    telemetry.matching_requested = status.matching_requested;
-    telemetry.modem_PIB = status.modem_PIB;
-    telemetry.modem_NMK = status.modem_NMK;
-    telemetry.modem_link_ready = status.modem_link_ready;
-    telemetry.session_count = static_cast<int>(status.session_count);
-    telemetry.average_attenuation = status.average_attenuation;
-    telemetry.ev_mac.fill(0);
-    if (auto parsed = parse_mac_addr(status.ev_mac); parsed) {
-        telemetry.ev_mac = *parsed;
-    }
-    telemetry.match_state = from_api(status.match_state);
-    telemetry.d3_state = from_api(status.d3_state);
-    return telemetry;
-}
-
 } // namespace
 
 std::string serialize(SlacTelemetry val) {
     return api_telemetry::serialize(to_api(val));
-}
-
-SlacTelemetry deserialize(std::string const& val) {
-    return from_api(api_telemetry::deserialize<api_telemetry::SlacStatus>(val));
 }
 
 } // namespace everest::lib::slac
