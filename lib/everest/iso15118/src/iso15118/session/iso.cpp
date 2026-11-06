@@ -382,6 +382,13 @@ TimePoint const& Session::poll() {
     for (const auto timeout : timeouts.check()) {
         visit_engine([timeout](auto& e) { e.on_timeout(timeout); });
         timeouts.reset_timeout(timeout);
+        if (session_over() and not clean_session_end and not error_termination) {
+            // A timeout ended the session, an abnormal end: close without the EV-first linger and switch the CP
+            // oscillator off together with the FIN (par_SECC_CPOscillator_Shutdown_Timeout), not only with the
+            // delayed D-LINK signal.
+            error_termination = true;
+            feedback.session_stop_res_sent(session::feedback::SessionStopAction::FailedTermination);
+        }
     }
 
     // check for complete sdp packet
