@@ -78,9 +78,9 @@ class TestController():
         """
         raise NotImplementedError()
 
-    def plug_out(self):
+    def plug_out(self, connector_id=1, abrupt=False):
         """
-        Plug out of an electric vehicle from the chargepoint.
+        Unplug after ending an active session cleanly. Use abrupt=True to pull the plug mid-session.
         """
         raise NotImplementedError()
 

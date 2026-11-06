@@ -260,7 +260,7 @@ async def test_c09(
     # C09.FR.11: Swipe card with groupIdToken the same as transacton but status blocked SHALL NOT stop the transaction
     #            Instead the plug out should stop the transaction. The transactionEvent will tell us which one it was.
     test_controller.swipe("003")
-    test_controller.plug_out()
+    test_controller.plug_out(abrupt=True)
 
     assert await wait_for_and_validate(
         test_utility,

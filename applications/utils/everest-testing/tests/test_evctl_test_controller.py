@@ -300,17 +300,27 @@ def test_plug_in_dc_d20_mcs_sends_mcs_enabled_flag(world_controller):
     assert publishes[0][1] == {"mode": "DcIsoD20", "params": {"mcs_enabled": True}}
 
 
-def test_plug_out_publishes_unplug(world_controller):
+@pytest.mark.parametrize("state,abrupt", [
+    (None, False), ("Unplugged", False), ("Disabled", False), ("Charging", True),
+])
+def test_plug_out_publishes_unplug(world_controller, state, abrupt):
     controller = world_controller
-    controller.plug_out()
+    if state is not None:
+        on_state, state_topic = _state_callback(controller)
+        on_state(None, None, _make_msg(state_topic, state))
+    controller.plug_out(abrupt=abrupt)
+    assert len(_all_publishes(controller)) == 1
     topic, payload = _last_publish(controller)
     assert topic.endswith("/m2e/unplug")
     assert payload is None
 
 
-def test_plug_out_iso_stops_then_unplugs(world_controller):
+@pytest.mark.parametrize("helper", ["plug_out", "plug_out_iso"])
+def test_plug_out_stops_then_unplugs(world_controller, helper):
     controller = world_controller
-    controller.plug_out_iso()
+    on_state, state_topic = _state_callback(controller)
+    on_state(None, None, _make_msg(state_topic, "Charging"))
+    getattr(controller, helper)()
     publishes = _all_publishes(controller)
     assert publishes[0][0].endswith("/m2e/stop_session")
     assert publishes[0][1] is None
@@ -753,10 +763,12 @@ def test_plug_uses_world_driver_and_keeps_intent_on_car(world_controller, helper
     assert len(publishes) == (2 if mode else 1)
 
 
-def test_plug_out_iso_keeps_the_car_plugged_while_charging_goes_on(world_controller, monkeypatch):
+@pytest.mark.parametrize("helper", ["plug_out", "plug_out_iso"])
+def test_plug_out_keeps_the_car_plugged_while_charging_goes_on(world_controller, monkeypatch, helper):
     ctrl = world_controller
     callbacks = {c.args[0]: c.args[1] for c in ctrl._fake_client.message_callback_add.call_args_list}
     topic = f"{ctrl.base_e2m}/state"
+    callbacks[topic](None, None, _make_msg(topic, "Charging"))
 
     def answer_charging(published, _payload):
         if published.endswith("/m2e/query_state"):
@@ -767,7 +779,7 @@ def test_plug_out_iso_keeps_the_car_plugged_while_charging_goes_on(world_control
     monkeypatch.setattr(EvControllerDriver, "wait_for",
                         lambda self, var, pred, timeout=10.0, after=0: wait_for(self, var, pred, 0.05, after))
     with pytest.raises(AssertionError):
-        ctrl.plug_out_iso()
+        getattr(ctrl, helper)()
     assert "ext/everest_api/1/ev_driver_sim/world/m2e/unplug" not in [t for t, _ in _all_publishes(ctrl)]
 
 

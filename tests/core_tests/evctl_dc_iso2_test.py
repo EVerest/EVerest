@@ -229,7 +229,7 @@ def test_iso15118_dc_fault_then_clear_recovers(
         "world_state", lambda state: state.get("fault") is None,
         timeout=_TIMEOUT_FINISH, after=after,
     )
-    evctl_test_controller.plug_out()
+    evctl_test_controller.plug_out(abrupt=True)
 
     assert evctl_test_controller.state_collector.wait_for_state(
         "Unplugged", timeout=_TIMEOUT_FINISH
@@ -261,7 +261,7 @@ def test_iso15118_dc_unplug_from_fault(everest_core, evctl_test_controller):
         "Charging", timeout=_TIMEOUT_FINISH
     ), f"saw {evctl_test_controller.state_collector.states}"
 
-    evctl_test_controller.plug_out()
+    evctl_test_controller.plug_out(abrupt=True)
 
     assert evctl_test_controller.state_collector.wait_for_state(
         "Unplugged", timeout=_TIMEOUT_FINISH

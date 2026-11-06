@@ -825,7 +825,7 @@ async def test_005_1_ev_side_disconnect(
         ),
     )
 
-    test_controller.plug_out()
+    test_controller.plug_out(abrupt=True)
 
     test_utility.messages.clear()
 
@@ -924,7 +924,7 @@ async def test_ev_side_disconnect(
 
     test_utility.messages.clear()
 
-    test_controller.plug_out()
+    test_controller.plug_out(abrupt=True)
 
     # expect StopTransaction.req
     assert await wait_for_and_validate(
