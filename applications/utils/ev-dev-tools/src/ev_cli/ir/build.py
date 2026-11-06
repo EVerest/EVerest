@@ -192,7 +192,7 @@ class _UnitBuild:
             return
 
         if declared == JsonType.OBJECT.value and 'properties' in schema:
-            self._build_struct(capitalize_first(name), schema, source)
+            self._register_struct(capitalize_first(name), schema, source)
             return
 
         # Only these two shapes produce anything in a generated header.  A
@@ -204,9 +204,9 @@ class _UnitBuild:
             f'type={declared!r}'
         )
 
-    def _build_struct(
+    def _register_struct(
         self, name: str, schema: Mapping[str, Any], source: SourceRef
-    ) -> StructDef:
+    ) -> None:
         required = set(schema.get('required') or [])
         depends_on: list[str] = []
         fields: list[Field] = []
@@ -230,16 +230,14 @@ class _UnitBuild:
                 constraints=Constraints.from_schema(property_schema),
             ))
 
-        struct = StructDef(
+        self._structs.append(StructDef(
             name=name,
             description=schema.get('description', ''),
             fields=order_fields(fields),
             depends_on=tuple(depends_on),
             source=source,
             constraints=Constraints.from_schema(schema),
-        )
-        self._structs.append(struct)
-        return struct
+        ))
 
     # -- type expressions ---------------------------------------------------
 
@@ -333,7 +331,7 @@ class _UnitBuild:
         name = capitalize_first(enclosing_name)
         depends_on.append(name)
         if not any(struct.name == name for struct in self._structs):
-            self._build_struct(name, schema, source)
+            self._register_struct(name, schema, source)
         return LocalStruct(name)
 
 
