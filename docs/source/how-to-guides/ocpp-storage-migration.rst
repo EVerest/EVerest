@@ -227,18 +227,33 @@ The referenced component and variable must already exist in the component
 configuration at ``DeviceModelConfigPath``. The mapping file tells the
 migration where to write the value — it does not create the target variable.
 
+.. TODO(dynamic-runtime-dm-updates): describe mapping targets that application
+   modules add to the device model at runtime.
+
 An entry stores its key in the ``Actual`` attribute of the variable, and each
 attribute stores exactly one OCPP 1.6 key. Built-in keys can share a variable
 through different attributes: ``MeterValuesAlignedData`` is stored in the
 ``Actual`` attribute of ``AlignedDataCtrlr`` ``Measurands``, and
-``MeterValuesAlignedDataMaxLength`` in its ``maxLimit``. The module does not
-start when two entries in the file target the same component and variable, or
-when an entry targets a variable whose ``Actual`` attribute stores a built-in
-key, for example ``OCPPCommCtrlr`` ``HeartbeatInterval``. It also does not
-start when an entry targets a variable whose value the OCPP 1.6 stack
-computes: the ``SupportedFeatureProfiles`` variable and the variables that
-hold the limit of a max-length key, for example ``LocalAuthListCtrlr``
-``Entries``.
+``MeterValuesAlignedDataMaxLength`` in its ``maxLimit``. Entries that break
+this rule are ignored with an error log, and the remaining entries still
+apply. Entries are read in file order, so of two entries for the same key or
+the same component and variable the first one is used. An entry is also
+ignored when it targets a variable whose ``Actual`` attribute stores a
+built-in key, for example ``OCPPCommCtrlr`` ``HeartbeatInterval``, the
+connection configuration, or a variable whose value the OCPP 1.6 stack
+computes: the ``SupportedFeatureProfiles`` variable and the variables that hold
+the limit of a max-length key, for example ``LocalAuthListCtrlr`` ``Entries``.
+
+Check the log after changing the mapping file. An ignored entry for a built-in
+key leaves the key on its built-in mapping, and the migration writes its value
+to the ``OCPP16LegacyCtrlr`` variable. The value of an ignored custom key is not
+migrated.
+
+A custom key whose variable does not exist or has no ``Actual`` attribute is
+reported with an error log at every start and is not available to OCPP 1.6.
+
+A file that cannot be read or does not match the mapping file schema stops the
+module at startup.
 
 A built-in mapping stays reserved for its key even when the file replaces it:
 the freed ``OCPP16LegacyCtrlr`` variable cannot be used by another entry, and
@@ -274,7 +289,8 @@ does not see it in reports and cannot get or set it. Your variable keeps the
 mutability of your component configuration, also for keys that are read-only in
 OCPP 1.6. The module logs every replaced mapping at startup.
 
-The module does not start when the mapping file:
+The module ignores the entry with an error log, and the key keeps its built-in
+mapping and its ``OCPP16LegacyCtrlr`` variable, when the entry:
 
 * replaces the mapping of a built-in key that is not stored in
   ``OCPP16LegacyCtrlr``. Keys with a standard OCPP 2.x or ``InternalCtrlr``
@@ -283,13 +299,15 @@ The module does not start when the mapping file:
   ``MeterPublicKeys`` or ``DefaultPriceText``, which the OCPP 1.6 stack derives
   or expands itself.
 * maps a built-in key to a variable that does not exist in the component
-  configuration.
-* maps a built-in key to a variable without an ``Actual`` attribute. The key's
-  value is stored in the ``Actual`` attribute of the variable.
+  configuration. The migration then writes the value to the
+  ``OCPP16LegacyCtrlr`` variable of the key.
 * maps a built-in key to a variable whose ``dataType`` differs from the key's
   ``OCPP16LegacyCtrlr`` variable, for example a ``boolean`` variable for the
-  ``integer`` key ``LightIntensity``. The error names the key and both
-  variables.
+  ``integer`` key ``LightIntensity``. The migration then writes the value to
+  the ``OCPP16LegacyCtrlr`` variable of the key.
+* maps a built-in key to a variable without an ``Actual`` attribute, which
+  stores the key's value. The migration then writes the value to the
+  ``OCPP16LegacyCtrlr`` variable of the key.
 
 The value is not carried over when a mapping is replaced after the database was
 migrated: the key then reads the current value of the new variable, and the
