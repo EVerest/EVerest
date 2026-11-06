@@ -6,8 +6,10 @@ add_executable(${TEST_TARGET_NAME}
     command_path_tests.cpp
     amp_map_file_tests.cpp
     slac_runtime_tests.cpp
+    slac_telemetry_tests.cpp
     ../main/amp_map_file.cpp
     ../main/slac_runtime.cpp
+    ../main/slac_telemetry.cpp
     # The receive-dispatch tests drive the real controller, so its translation unit is compiled
     # into the test binary. slacImpl.cpp cannot be: it needs the generated framework headers.
     ../main/fsm_controller.cpp
@@ -19,6 +21,7 @@ target_include_directories(${TEST_TARGET_NAME} PRIVATE
 
 target_link_libraries(${TEST_TARGET_NAME} PRIVATE
     GTest::gtest_main
+    everest::everest_api_types
     everest::util
     slac::slac
     everest::io

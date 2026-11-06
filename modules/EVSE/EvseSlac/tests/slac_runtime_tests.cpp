@@ -292,11 +292,16 @@ public:
     void clear_fault(std::string const& type) override {
         record([&] { cleared.push_back(type); });
     }
-    void publish_telemetry(std::string const&, std::string const&, std::string const&) override {
+    void publish_telemetry(everest::lib::slac::SlacFsmState const& fsm_state,
+                           everest::lib::slac::SlacTelemetry const& status) override {
         if (on_telemetry) {
             on_telemetry();
         }
-        record([&] { ++telemetry; });
+        record([&] {
+            ++telemetry;
+            fsm_states.push_back(fsm_state);
+            statuses.push_back(status);
+        });
     }
     void log(LogLevel level, std::string const& text) override {
         record([&] { logs.emplace_back(level, text); });
@@ -359,6 +364,8 @@ public:
     std::vector<std::pair<LogLevel, std::string>> logs;
     int error_routines{0};
     int telemetry{0};
+    std::vector<everest::lib::slac::SlacFsmState> fsm_states;
+    std::vector<everest::lib::slac::SlacTelemetry> statuses;
 
 private:
     template <typename Fn> void record(Fn&& fn) {
@@ -868,6 +875,29 @@ TEST(SlacRuntime, ATelemetryFailureDoesNotStopMatching) {
     EXPECT_TRUE(h.reach_matching()) << "matching did not start although only telemetry failed";
     EXPECT_TRUE(h.sink.has_log(LogLevel::Warning, "not published"));
     EXPECT_TRUE(h.sink.faults.empty());
+}
+
+TEST(SlacRuntime, TelemetryHandsTheStateMachineStateAndTheStatusToTheSink) {
+    Harness h;
+    h.config.telemetry_enabled = true;
+    h.create();
+    h.runtime->init();
+    h.start_ready_thread();
+    ASSERT_TRUE(h.reach_idle());
+    ASSERT_TRUE(h.sink.wait_for(WAIT, [&] { return h.sink.telemetry > 0; }));
+    std::lock_guard<std::mutex> lock(h.sink.mutex);
+    EXPECT_FALSE(h.sink.fsm_states.back().states.empty()) << "no active state in the FSM telemetry";
+    EXPECT_EQ(h.sink.statuses.back().d3_state, D3State::Unmatched);
+}
+
+TEST(SlacRuntime, TelemetryIsNotPublishedWhenDisabled) {
+    Harness h;
+    h.create();
+    h.runtime->init();
+    h.start_ready_thread();
+    ASSERT_TRUE(h.reach_idle());
+    std::lock_guard<std::mutex> lock(h.sink.mutex);
+    EXPECT_EQ(h.sink.telemetry, 0);
 }
 
 // The public state follows the matching process: arming on enter_bcd publishes nothing, the first

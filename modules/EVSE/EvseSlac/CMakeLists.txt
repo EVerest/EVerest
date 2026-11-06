@@ -15,6 +15,7 @@ target_sources(${MODULE_NAME}
     main/amp_map_file.cpp
     main/slac_io.cpp
     main/slac_runtime.cpp
+    main/slac_telemetry.cpp
 )
 
 target_link_libraries(${MODULE_NAME}

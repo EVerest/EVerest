@@ -4,7 +4,9 @@
 #pragma once
 
 #include "everest/slac/HomeplugMessage.hpp"
+#include <map>
 #include <string>
+#include <vector>
 
 namespace everest::lib::slac {
 enum class SlacState {
@@ -38,6 +40,11 @@ struct SlacTelemetry {
     D3State d3_state{D3State::Unmatched};
 };
 
-std::string serialize(SlacTelemetry val);
+// The active states of the state machine, nested as the machine is.
+struct SlacFsmState {
+    std::vector<std::string> states;                 // active states on this level
+    std::map<std::string, SlacFsmState> submachines; // by the state that runs the submachine
+    std::vector<SlacFsmState> sessions;              // one per matching session
+};
 
 } // namespace everest::lib::slac
