@@ -1,0 +1,180 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright Pionix GmbH and Contributors to EVerest
+#ifndef EV_CONTROLLER_HPP
+#define EV_CONTROLLER_HPP
+
+//
+// AUTO GENERATED - MARKED REGIONS WILL BE KEPT
+// template version 3
+//
+
+#include "ld-ev.hpp"
+
+// headers for provided interface implementations
+#include <generated/interfaces/ev_manager/Implementation.hpp>
+
+// headers for required interface implementations
+#include <generated/interfaces/ev_board_support/Interface.hpp>
+#include <generated/interfaces/ev_slac/Interface.hpp>
+#include <generated/interfaces/kvs/Interface.hpp>
+
+// ev@4bf81b14-a215-475c-a1d3-0a484ae48918:v1
+// insert your custom include headers here
+#include <everest_api_module_helpers/CommCheckHandler.hpp>
+#include <everest_api_types/ev_controller/API.hpp>
+#include <everest_api_types/utilities/Topics.hpp>
+
+#include <atomic>
+#include <memory>
+#include <optional>
+#include <thread>
+
+namespace ev_API = everest::lib::API;
+
+namespace module {
+// Forward declarations: full definitions live in main/EvCtlRuntime.hpp /
+// main/FsmContext.hpp. Keeping them out of this header keeps the ev-cli
+// regeneration target free of runtime-internal types.
+class EvCtlRuntime;
+class FsmContext;
+} // namespace module
+// ev@4bf81b14-a215-475c-a1d3-0a484ae48918:v1
+
+namespace module {
+
+struct Conf {
+    std::string default_session;
+    int iso_pwm_wait_s;
+    int connector_id;
+    double ac_nominal_voltage;
+    double max_current_a;
+    bool three_phases;
+    int dc_max_current_limit;
+    int dc_max_power_limit;
+    int dc_max_voltage_limit;
+    int dc_min_voltage_limit;
+    int dc_energy_capacity;
+    int dc_target_current;
+    int dc_target_voltage;
+    int soc_initial_pct;
+    int departure_time_s;
+    int e_amount_wh;
+    bool force_payment_option;
+    bool keep_cross_boot_plugin_state;
+    bool publish_bsp_measurements;
+    int tick_interval_ms;
+    std::string on_battery_full;
+    double battery_full_threshold_pct;
+    int cfg_communication_check_to_s;
+    int cfg_heartbeat_interval_ms;
+    bool enabled_at_startup;
+    std::string hlc_device;
+    std::string evcc_id;
+    std::string supported_protocols;
+    int response_timeout_ms;
+    int authorization_timeout_ms;
+    std::string control_mode;
+    std::string tls;
+    bool allow_pnc_without_tls;
+    std::string tls_version;
+    bool verify_server_certificate;
+    bool enable_tls_key_logging;
+    std::string tls_key_logging_path;
+    std::string pki_path;
+    std::string v2g_root_cert_path;
+    std::string device_cert_chain_path;
+    std::string device_key_path;
+    std::string device_key_password_path;
+    std::string pnc_contract_cert_chain_path;
+    std::string pnc_contract_key_path;
+    std::string pnc_contract_key_password_path;
+    std::string pnc_oem_prov_cert_path;
+    std::string pnc_oem_prov_key_path;
+    std::string pnc_oem_prov_key_password_path;
+    bool pnc_force_cert_install;
+    std::string pnc_contract_store_dir;
+    double ac_max_charge_power_w;
+    double ac_min_charge_power_w;
+    double ac_max_discharge_power_w;
+    double ac_min_discharge_power_w;
+    double dc_max_discharge_power_w;
+    double dc_min_discharge_power_w;
+    double dc_max_discharge_current_a;
+    std::string sae_inverter_profile_path;
+    int cpd_rounds;
+    bool der_stop_on_unsupported_functions;
+    bool der_stop_on_invalid_control;
+    std::string der_iec_functions;
+    double min_current_a;
+};
+
+class EvController : public Everest::ModuleBase {
+public:
+    EvController() = delete;
+    EvController(const ModuleInfo& info, Everest::MqttProvider& mqtt_provider,
+                 std::unique_ptr<ev_managerImplBase> p_ev_manager,
+                 std::unique_ptr<ev_board_supportIntf> r_ev_board_support,
+                 std::vector<std::unique_ptr<ev_slacIntf>> r_slac, std::vector<std::unique_ptr<kvsIntf>> r_kvs,
+                 Conf& config) :
+        ModuleBase(info),
+        mqtt(mqtt_provider),
+        p_ev_manager(std::move(p_ev_manager)),
+        r_ev_board_support(std::move(r_ev_board_support)),
+        r_slac(std::move(r_slac)),
+        r_kvs(std::move(r_kvs)),
+        config(config){};
+
+    Everest::MqttProvider& mqtt;
+    const std::unique_ptr<ev_managerImplBase> p_ev_manager;
+    const std::unique_ptr<ev_board_supportIntf> r_ev_board_support;
+    const std::vector<std::unique_ptr<ev_slacIntf>> r_slac;
+    const std::vector<std::unique_ptr<kvsIntf>> r_kvs;
+    const Conf& config;
+
+    // ev@1fce4c5e-0ab8-41bb-90f7-14277703d2ac:v1
+    // insert your public definitions here
+    ~EvController();
+    std::optional<everest::lib::API::V1_0::types::ev_controller::SessionConfigParams> m_default_session;
+
+    const ev_API::Topics& get_topics() const {
+        return topics;
+    }
+
+    std::optional<ev_API::CommCheckHandler<ev_managerImplBase>> comm_check{
+        std::in_place, "generic/CommunicationFault", "Bridge to implementation connection lost", p_ev_manager};
+    // ev@1fce4c5e-0ab8-41bb-90f7-14277703d2ac:v1
+
+protected:
+    // ev@4714b2ab-a24f-4b95-ab81-36439e1478de:v1
+    // insert your protected definitions here
+    // ev@4714b2ab-a24f-4b95-ab81-36439e1478de:v1
+
+private:
+    friend class LdEverest;
+    void init();
+    void ready();
+    void shutdown();
+
+    // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
+    // insert your private definitions here
+    void setup_heartbeat_generator();
+    std::string m_default_session_error;
+
+    ev_API::Topics topics;
+    size_t hb_id{0};
+    struct RuntimeDeleter {
+        void operator()(EvCtlRuntime* runtime) const;
+    };
+    std::unique_ptr<EvCtlRuntime, RuntimeDeleter> runtime;
+    std::thread loop_thread;
+    std::atomic_bool loop_online{true};
+    // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
+};
+
+// ev@087e516b-124c-48df-94fb-109508c7cda9:v1
+// insert other definitions here
+// ev@087e516b-124c-48df-94fb-109508c7cda9:v1
+
+} // namespace module
+
+#endif // EV_CONTROLLER_HPP

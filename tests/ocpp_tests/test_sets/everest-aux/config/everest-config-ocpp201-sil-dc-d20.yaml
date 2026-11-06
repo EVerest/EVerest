@@ -10,13 +10,6 @@ active_modules:
     mapping:
       module:
         evse: 1
-  iso15118_car:
-    module: Ev15118
-    config_module:
-      supported_protocols: ISO15118_20
-      device: auto
-      tls: prefer
-      tls_version: "1.3"
   evse_manager:
     module: EvseManager
     config_module:
@@ -89,24 +82,28 @@ active_modules:
         selftest_success: true
     module: IMDSimulator
   ev_manager:
-    module: EvManager
+    module: EvController
     config_module:
+      supported_protocols: ISO15118_20
+      hlc_device: auto
+      tls: prefer
+      tls_version: "1.3"
       connector_id: 1
-      auto_enable: true
-      auto_exec: false
-      auto_exec_commands: sleep 3;iso_wait_slac_matched;
       dc_target_current: 20
       dc_target_voltage: 400
     connections:
       ev_board_support:
-        - module_id: yeti_driver
-          implementation_id: ev_board_support
-      ev:
-        - module_id: iso15118_car
-          implementation_id: ev
+        - module_id: ev_manager_driver
+          implementation_id: board_support
       slac:
         - module_id: slac
           implementation_id: ev
+  ev_manager_driver:
+    module: EvDriverSim
+    connections:
+      ev_board_support:
+        - module_id: yeti_driver
+          implementation_id: ev_board_support
   ocpp:
     module: OCPP201
     config_module:

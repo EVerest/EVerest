@@ -1,6 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright Pionix GmbH and Contributors to EVerest
 
+# Two suites live side by side because they use different frameworks and so
+# cannot share one executable: the board-support tests are GoogleTest, the
+# diode fault tests are Catch2.
+
 set(TEST_TARGET_NAME ${PROJECT_NAME}_YetiSimulator_tests)
 
 add_executable(${TEST_TARGET_NAME}
@@ -24,3 +28,21 @@ target_link_libraries(${TEST_TARGET_NAME} PRIVATE
 
 add_test(${TEST_TARGET_NAME} ${TEST_TARGET_NAME})
 ev_register_test_target(${TEST_TARGET_NAME})
+
+set(DIODE_TEST_TARGET ${PROJECT_NAME}_YetiSimulator_diode_tests)
+add_executable(${DIODE_TEST_TARGET}
+    DiodeFaultDetectionTest.cpp
+    ../util/cp_signal.cpp
+)
+target_link_libraries(${DIODE_TEST_TARGET} PRIVATE
+    Catch2::Catch2WithMain
+)
+
+if (NOT DISABLE_EDM)
+    list(APPEND CMAKE_MODULE_PATH ${CPM_PACKAGE_catch2_SOURCE_DIR}/extras)
+    include(Catch)
+    catch_discover_tests(${DIODE_TEST_TARGET})
+endif ()
+
+add_test(${DIODE_TEST_TARGET} ${DIODE_TEST_TARGET})
+ev_register_test_target(${DIODE_TEST_TARGET})

@@ -77,8 +77,8 @@ OCPP_EXTERNAL_LIMITS_SOURCE = "ocpp/OCPP_set_external_limits"
 OCPP_SETPOINT_SOURCE = "OCPP"
 SUPPORTED_OPERATION_MODES = "ChargingOnly,Idle,CentralSetpoint,ExternalSetpoint"
 OBSERVATION_TIMEOUT_S = 30.0
-# Ev15118 takes the energy service from start_charging, which EvManager's
-# iso_start_v2g_session names. The DCSupplySimulator is bidirectional by
+# EvController takes the energy service from the session start, which
+# plug_in_dc_iso's energy_mode names. The DCSupplySimulator is bidirectional by
 # default, so EvseManager offers DC_BPT.
 DC_BPT_ENERGY_MODE = "dc_bpt"
 

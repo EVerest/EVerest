@@ -11,6 +11,7 @@ ev_setup_cpp_module()
 target_link_libraries(${MODULE_NAME}
     PRIVATE
         everest::iso15118_ev
+        everest::iso15118_ev_session
         everest::util
         everest::iso15118_conversions
 )
@@ -25,13 +26,6 @@ target_sources(${MODULE_NAME}
 )
 
 # ev@c55432ab-152c-45a9-9d2e-7281d50c69c3:v1
-target_sources(${MODULE_NAME}
-    PRIVATE
-        "ev/contract_store.cpp"
-        "ev/der_publish_names.cpp"
-        "ev/sae_profile_config.cpp"
-)
-
 if(BUILD_TESTING)
     add_subdirectory(tests)
 endif()
