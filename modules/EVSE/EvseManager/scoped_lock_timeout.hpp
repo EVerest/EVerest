@@ -83,6 +83,7 @@ enum class MutexDescription {
     EVSE_subscribe_ac_ev_power_limits,
     EVSE_subscribe_ac_ev_present_powers,
     EVSE_subscribe_ac_ev_dynamic_control_mode,
+    EVSE_subscribe_display_parameters,
     EVSE_subscribe_dc_ev_energy_capacity,
     EVSE_subscribe_dc_ev_energy_request,
     EVSE_subscribe_dc_full_soc,
@@ -236,6 +237,8 @@ static std::string to_string(MutexDescription d) {
         return "EvseManager.cpp: subscribe_ac_ev_present_powers";
     case MutexDescription::EVSE_subscribe_ac_ev_dynamic_control_mode:
         return "EvseManager.cpp: subscribe_ac_ev_dynamic_control_mode";
+    case MutexDescription::EVSE_subscribe_display_parameters:
+        return "EvseManager.cpp: subscribe_display_parameters";
     case MutexDescription::EVSE_subscribe_dc_ev_energy_capacity:
         return "EvseManager.cpp: subscribe_dc_ev_energy_capacity";
     case MutexDescription::EVSE_subscribe_dc_ev_energy_request:

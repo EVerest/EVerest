@@ -3,6 +3,7 @@
 #ifndef UTILS_DATE_HPP
 #define UTILS_DATE_HPP
 
+#include <cstdint>
 #include <optional>
 #include <string>
 
@@ -25,6 +26,14 @@ void preload_tzdb();
 ///
 /// The time point is truncated to milliseconds. A leap second is formatted as second 60.
 std::string to_rfc3339(const std::chrono::time_point<date::utc_clock>& t);
+
+/// \brief Convert a relative time in seconds from now, as reported by ISO 15118 and DIN SPEC 70121, into an
+/// absolute RFC3339 UTC timestamp
+std::string seconds_from_now_to_rfc3339(std::uint32_t seconds);
+
+/// \brief Convert an RFC3339 timestamp into the number of seconds from now, the inverse of
+/// seconds_from_now_to_rfc3339(). Negative for timestamps in the past.
+std::int32_t rfc3339_to_seconds_from_now(const std::string& t);
 
 /// \brief Strict parsing of RFC 3339 date-time (YYYY-MM-DDTHH:MM:SS[.frac](Z|+HH:MM|-HH:MM)), see
 /// everest::lib::datetime::parse_rfc3339().

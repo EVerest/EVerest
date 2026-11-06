@@ -75,6 +75,40 @@ SCENARIO("Check conversions", "[!throws]") {
     }
 }
 
+SCENARIO("Relative seconds are converted to an absolute rfc3339 timestamp", "[!throws]") {
+    GIVEN("An offset of one hour from now") {
+        const auto before = date::utc_clock::now();
+        const auto timestamp = Everest::Date::seconds_from_now_to_rfc3339(3600);
+        const auto after = date::utc_clock::now();
+
+        THEN("The timestamp is one hour ahead") {
+            const auto tp = Everest::Date::from_rfc3339(timestamp);
+            CHECK(tp >= std::chrono::time_point_cast<std::chrono::milliseconds>(before + std::chrono::hours(1)));
+            CHECK(tp <= after + std::chrono::hours(1));
+        }
+    }
+}
+
+SCENARIO("An rfc3339 timestamp is converted to relative seconds from now", "[!throws]") {
+    GIVEN("A timestamp one hour from now") {
+        const auto timestamp = Everest::Date::seconds_from_now_to_rfc3339(3600);
+
+        THEN("It is about one hour ahead") {
+            const auto seconds = Everest::Date::rfc3339_to_seconds_from_now(timestamp);
+            CHECK(seconds > 3590);
+            CHECK(seconds <= 3600);
+        }
+    }
+
+    GIVEN("A timestamp in the past") {
+        const auto timestamp = Everest::Date::to_rfc3339(date::utc_clock::now() - std::chrono::seconds(60));
+
+        THEN("It is negative") {
+            CHECK(Everest::Date::rfc3339_to_seconds_from_now(timestamp) < 0);
+        }
+    }
+}
+
 SCENARIO("Strict RFC 3339 parsing", "[date]") {
     using namespace std::chrono;
     using date::utc_clock;

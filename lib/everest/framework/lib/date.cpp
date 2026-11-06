@@ -45,6 +45,15 @@ std::string to_rfc3339(const std::chrono::time_point<date::utc_clock>& t) {
     return everest::lib::datetime::to_rfc3339(t);
 }
 
+std::string seconds_from_now_to_rfc3339(std::uint32_t seconds) {
+    return to_rfc3339(date::utc_clock::now() + std::chrono::seconds(seconds));
+}
+
+std::int32_t rfc3339_to_seconds_from_now(const std::string& t) {
+    const auto time_until = from_rfc3339(t) - date::utc_clock::now();
+    return static_cast<std::int32_t>(std::chrono::duration_cast<std::chrono::seconds>(time_until).count());
+}
+
 std::optional<std::chrono::time_point<date::utc_clock>> try_from_rfc3339(const std::string& t) {
     return everest::lib::datetime::parse_rfc3339(t);
 }
