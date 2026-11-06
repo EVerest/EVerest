@@ -88,6 +88,23 @@ back out within the delay, no lock is engaged. Set it to ``0`` to lock
 immediately. The timer checks every 500 ms, so the effective delay is rounded up
 to the next multiple of 500 ms.
 
+Free service
+------------
+
+``free_service`` (default ``false``) sets the ``FreeService`` flag of the charge
+service in ``ServiceDiscoveryRes`` (DIN 70121, ISO 15118-2 and ISO 15118-20).
+EvseManager forwards it to the HLC module through the ``ISO15118_charger``
+``set_free_service`` command.
+
+* ``ServiceDiscoveryRes`` is sent before authorization, so ``true`` means free of
+  charge for all drivers at this EVSE.
+* It is about billing, not authorization. It is independent of
+  ``disable_authentication`` and of the auth providers and validators.
+* It has to match what the CSMS actually bills.
+* It can be set in the configuration file for static free vend sites, and
+  changed at runtime through the configuration service. A change applies from
+  the next session on.
+
 DC Configuration
 ----------------
 

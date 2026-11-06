@@ -58,7 +58,7 @@ static bool find_service_id(const everest::lib::util::fixed_vector<uint16_t, 16>
 message_20::ServiceDiscoveryResponse
 handle_request(const message_20::ServiceDiscoveryRequest& req, d20::Session& session,
                const std::vector<dt::ServiceCategory>& energy_services, const std::vector<uint16_t>& vas_services,
-               std::vector<message_20::datatypes::ServiceCategory>& ev_energy_services) {
+               std::vector<message_20::datatypes::ServiceCategory>& ev_energy_services, bool free_service) {
 
     message_20::ServiceDiscoveryResponse res;
 
@@ -86,7 +86,7 @@ handle_request(const message_20::ServiceDiscoveryRequest& req, d20::Session& ses
         const auto offered = std::any_of(energy_services_list.begin(), energy_services_list.end(),
                                          [service](const dt::Service& s) { return s.service_id == service; });
         if (not offered) {
-            energy_services_list.push_back({service, false});
+            energy_services_list.push_back({service, free_service});
         }
     };
     const auto offer_vas_service = [&](uint16_t service) {
@@ -185,9 +185,9 @@ Result ServiceDiscovery::feed(Event ev) {
             }
         }
 
-        const auto res =
-            handle_request(*req, m_ctx.session, m_ctx.session_config.supported_energy_transfer_services,
-                           m_ctx.session_config.supported_vas_services, m_ctx.session_ev_info.ev_energy_services);
+        const auto res = handle_request(*req, m_ctx.session, m_ctx.session_config.supported_energy_transfer_services,
+                                        m_ctx.session_config.supported_vas_services,
+                                        m_ctx.session_ev_info.ev_energy_services, m_ctx.session_config.free_service);
 
         m_ctx.respond(res);
 

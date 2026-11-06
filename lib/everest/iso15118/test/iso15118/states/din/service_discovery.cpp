@@ -35,4 +35,16 @@ SCENARIO("DIN SECC ServiceDiscovery state handling") {
             REQUIRE(res.charge_service.energy_transfer_type == dt::SupportedEnergyTransferMode::DC_extended);
         }
     }
+
+    GIVEN("A charge service offered free of charge") {
+        message_din::ServiceDiscoveryRequest req;
+        req.header.session_id = session;
+
+        THEN("FreeService follows the session config") {
+            auto config = make_config();
+            REQUIRE(din::state::handle_request(req, config, session).charge_service.free_service == true);
+            config.free_service = false;
+            REQUIRE(din::state::handle_request(req, config, session).charge_service.free_service == false);
+        }
+    }
 }

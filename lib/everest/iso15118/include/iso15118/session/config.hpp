@@ -62,6 +62,8 @@ struct EvseSetupConfig {
     std::string contract_v2g_root_path{};
     // Forwarded to the CSMS instead (OCPP CentralContractValidationAllowed, EvseV2G parity).
     bool central_contract_validation_allowed{false};
+    // FreeService of the charge service in ServiceDiscoveryRes.
+    bool free_service{false};
     // Per phase, in A. Overrides the power-derived default; mid-session changes additionally reach the
     // running charge loop as an UpdateAcMaxCurrent control event.
     std::optional<float> iso2_ac_max_current{std::nullopt};
@@ -137,6 +139,7 @@ struct SessionConfig {
     std::string contract_mo_root_path{};
     std::string contract_v2g_root_path{};
     bool central_contract_validation_allowed{false};
+    bool free_service{false};
     std::optional<float> iso2_ac_max_current{std::nullopt};
     d20::PhysicalValues physical_values{};
     d20::NoEnergyPauseMode no_energy_pause{d20::NoEnergyPauseMode::None};

@@ -55,6 +55,7 @@ d2::SessionConfig make_d2_config(const session::SessionConfig& config, bool tls_
                      config.evse_id.c_str(), ISO2_EVSE_ID_MIN_LEN, out.evse_id.c_str());
     }
     out.tls_active = tls_active;
+    out.free_service = config.free_service;
 
     // The -20 service categories are a lossy fallback for a module that never configured pre-20 modes:
     // they cannot distinguish DC_core from DC_extended, or carry DC_combo_core / DC_unique at all.
