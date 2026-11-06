@@ -29,6 +29,7 @@ from .modules import (
 )
 from .order import order_fields, order_structs
 from .types import (
+    SCALAR_TYPES,
     Array,
     EnumDef,
     Field,
@@ -44,10 +45,6 @@ from .types import (
     TypeUnit,
     Variant,
 )
-
-SCALAR_TYPES = frozenset({
-    JsonType.BOOLEAN, JsonType.INTEGER, JsonType.NUMBER, JsonType.STRING, JsonType.NULL,
-})
 
 
 def capitalize_first(name: str) -> str:

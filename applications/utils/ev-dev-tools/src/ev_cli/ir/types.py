@@ -29,6 +29,11 @@ class JsonType(str, Enum):
     OBJECT = 'object'
 
 
+SCALAR_TYPES = frozenset({
+    JsonType.BOOLEAN, JsonType.INTEGER, JsonType.NUMBER, JsonType.STRING, JsonType.NULL,
+})
+
+
 @dataclass(frozen=True, order=True)
 class TypeRef:
     """A reference to a named type, already resolved to a unit and a name.
