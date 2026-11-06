@@ -2017,7 +2017,7 @@ bool Charger::get_authorized_eim() {
 
 void Charger::set_connector_lock_state(types::connector_lock::LockState state) {
     Everest::scoped_lock_timeout lock(state_machine_mutex, Everest::MutexDescription::Charger_set_connector_lock_state);
-    shared_context.connector_lock_confirmed = state == types::connector_lock::LockState::Locked;
+    shared_context.connector_lock_state = state;
 }
 
 bool Charger::connector_lock_ready() {
@@ -2026,7 +2026,8 @@ bool Charger::connector_lock_ready() {
 }
 
 bool Charger::connector_lock_ready_internal() const {
-    return config_context.connector_lock_confirmation_timeout_ms == 0 or shared_context.connector_lock_confirmed;
+    return config_context.connector_lock_confirmation_timeout_ms == 0 or
+           shared_context.connector_lock_state == types::connector_lock::LockState::Locked;
 }
 
 bool Charger::connector_lock_allows_charging() {

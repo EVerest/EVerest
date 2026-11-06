@@ -413,7 +413,8 @@ private:
         std::atomic_bool flag_ev_plugged_in{false};
         // set to true if auth is from PnC, otherwise to false (EIM)
         bool authorized_pnc;
-        bool connector_lock_confirmed{false};
+        // Latest lock_state reported by the connector lock, kept across sessions.
+        types::connector_lock::LockState connector_lock_state{types::connector_lock::LockState::Unknown};
         bool matching_started;
         std::atomic_bool slac_matched{false};
         // D-LINK_READY(link established) was indicated since the session or the last error sequence started, and HLC

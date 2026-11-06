@@ -1885,6 +1885,23 @@ TEST_F(ChargerConnectorLockTest, NoWaitWhenAlreadyLocked) {
     EXPECT_FALSE(charger->get_internal_context().connector_lock_wait_started.has_value());
 }
 
+TEST_F(ChargerConnectorLockTest, LockStateIsKeptAcrossSessions) {
+    setup_plugged_in(5000);
+    charger->set_connector_lock_state(types::connector_lock::LockState::Locked);
+    authorize();
+    ASSERT_EQ(charger->current_state(), Charger::EvseState::PrepareCharging);
+
+    charger->process_event(CPEvent::CarUnplugged);
+    charger->run_state_machine();
+    charger->run_state_machine();
+
+    setup_plugged_in(5000);
+    authorize();
+
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::PrepareCharging);
+    EXPECT_FALSE(charger->get_internal_context().connector_lock_wait_started.has_value());
+}
+
 TEST_F(ChargerConnectorLockTest, PncAuthorizationWaitsForLock) {
     setup_plugged_in(5000);
 

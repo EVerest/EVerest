@@ -124,11 +124,16 @@ had just arrived. If it does not within the timeout, the EvseManager:
 * tells the ISO stack that authorization failed (``AuthorizationStatus``
   ``Timeout`` with a valid certificate, so neither the token nor the contract
   certificate is blamed),
-* raises ``evse_manager/ConnectorLockConfirmationTimeout``, which ends the
-  session and clears on unplug.
+* raises ``evse_manager/ConnectorLockConfirmationTimeout``. Like every
+  blocking error (see `Error Handling`_), it makes the EvseManager Inoperative,
+  which ends the session with an error shutdown. It clears on unplug.
 
 A ``Locked`` report or a new authorization after the timeout does not resume
 the session.
+
+The EvseManager keeps the last reported lock state across sessions. A lock that
+stays ``Locked`` between sessions, as in captive cable mode, therefore needs no
+new report for the next session to start without waiting.
 
 The session log shows when the EvseManager starts waiting for the lock, every
 reported lock state, and whether the lock was confirmed or timed out.
@@ -604,6 +609,8 @@ Errors raised by the EvseManager itself.
    * - ``evse_manager/MREC5OverVoltage``
      - yes
    * - ``evse_manager/MREC9AuthorizationTimeout``
+     - yes
+   * - ``evse_manager/ConnectorLockConfirmationTimeout``
      - yes
    * - ``evse_manager/PowermeterTransactionStartFailed``
      - yes
