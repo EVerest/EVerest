@@ -43,6 +43,16 @@ class State(Enum):
     ClearedByModule = "ClearedByModule",
     ClearedByReboot = "ClearedByReboot"
 
+class TriggerValue:
+    @overload
+    def __init__(self) -> None: ...
+
+    @overload
+    def __init__(self, text_repr: str) -> None: ...
+
+    @property
+    def text_repr(self) -> str: ...
+
 class Error:
     def __init__(self) -> None: ...
 
@@ -72,6 +82,9 @@ class Error:
 
     @property
     def state(self) -> State: ...
+
+    @property
+    def trigger_value(self) -> Optional[TriggerValue]: ...
 
 ErrorCallback = Callable[[Error], None]
 
@@ -111,3 +124,7 @@ class ErrorFactory:
 
     @overload
     def create_error(self, type: str, sub_type: str, message: str, severity: Severity, state: State) -> Error: ...
+
+    @overload
+    def create_error(self, type: str, sub_type: str, message: str, severity: Severity,
+                     trigger_value: Optional[TriggerValue]) -> Error: ...

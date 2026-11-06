@@ -396,6 +396,20 @@ components:
             Optional additional information about the error
             OCPP 1.6: Sets `info` on MREC errors and `vendorId` otherwise
             OCPP 2.x: Sets `techInfo`
+        trigger_value:
+          description: |-
+            Optional value that caused this specific occurrence of the error, e.g. the
+            measurement that crossed a limit.
+          type: object
+          properties:
+            text_repr:
+              description: |-
+                Text representation of the value as the raising entity would print it,
+                including a unit where one applies, e.g. `85.3 degC`. EVerest passes it
+                on as is and does not parse it. Longer values are truncated to 2500
+                characters.
+              type: string
+              maxLength: 2500
     ErrorEnum:
       description: |
         Type of Error

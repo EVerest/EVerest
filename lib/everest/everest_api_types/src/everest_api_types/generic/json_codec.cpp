@@ -66,6 +66,19 @@ void from_json(json const& j, ErrorEnum& k) {
                             " could not be converted to enum of type API_V1_0_TYPES_GENERIC_ErrorEnum");
 }
 
+void to_json(json& j, const TriggerValue& k) noexcept {
+    j = json::object();
+    if (k.text_repr) {
+        j["text_repr"] = k.text_repr.value();
+    }
+}
+
+void from_json(const json& j, TriggerValue& k) {
+    if (j.contains("text_repr")) {
+        k.text_repr.emplace(j.at("text_repr"));
+    }
+}
+
 void to_json(json& j, const Error& k) noexcept {
     j = json{
         {"type", k.type},
@@ -76,6 +89,9 @@ void to_json(json& j, const Error& k) noexcept {
     if (k.message) {
         j["message"] = k.message.value();
     };
+    if (k.trigger_value) {
+        j["trigger_value"] = k.trigger_value.value();
+    }
 }
 
 void from_json(const json& j, Error& k) {
@@ -85,6 +101,9 @@ void from_json(const json& j, Error& k) {
     }
     if (j.contains("message")) {
         k.message.emplace(j.at("message"));
+    }
+    if (j.contains("trigger_value")) {
+        k.trigger_value.emplace(j.at("trigger_value").get<TriggerValue>());
     }
 }
 

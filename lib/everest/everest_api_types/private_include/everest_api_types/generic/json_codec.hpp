@@ -16,6 +16,9 @@ void from_json(json const& j, RequestReply& k);
 void from_json(const json& j, ErrorEnum& k);
 void to_json(json& j, const ErrorEnum& k) noexcept;
 
+void from_json(const json& j, TriggerValue& k);
+void to_json(json& j, const TriggerValue& k) noexcept;
+
 void from_json(const json& j, Error& k);
 void to_json(json& j, const Error& k) noexcept;
 

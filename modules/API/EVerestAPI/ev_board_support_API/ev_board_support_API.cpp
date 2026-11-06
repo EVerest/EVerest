@@ -10,6 +10,7 @@
 #include <everest_api_types/evse_manager/wrapper.hpp>
 #include <everest_api_types/generic/codec.hpp>
 #include <everest_api_types/generic/string.hpp>
+#include <everest_api_types/utilities/ErrorConversions.hpp>
 #include <everest_api_types/utilities/codec.hpp>
 
 #include "everest_api_types/ev_board_support/API.hpp"
@@ -86,7 +87,8 @@ void ev_board_support_API::generate_api_var_raise_error() {
             auto message_str = error.message ? error.message.value() : "";
             auto error_str = make_error_string(error);
             auto ev_error = p_main->error_factory->create_error(error_str, sub_type_str, message_str,
-                                                                Everest::error::Severity::High);
+                                                                Everest::error::Severity::High,
+                                                                ev_API::to_trigger_value(error.trigger_value));
             p_main->raise_error(ev_error);
             return true;
         }
