@@ -162,11 +162,11 @@ removes the monitors of variables that nobody defines and the stored values of v
 remarks). This is why every owner must register before the first `start`. A later `start`, a restart of the charging
 station at runtime, removes nothing, so an owner may unregister and register again in the meantime.
 
-An owner that registers again while the process runs replaces its earlier registration with its full set. The monitors
-and stored values of the variables it registered before and that are not part of the new registration, because it no
-longer lists them or because they are rejected, are removed at once. This is how a configuration change at runtime that
-drops variables removes their monitors. A variable that moves to another owner at runtime therefore loses its monitors
-and stored values, while one that moves across a restart keeps them.
+A registration replaces all previous entries for its owner. A variable the owner no longer registers, because it is left
+out or rejected, loses its monitors and stored values at once, so a configuration change at runtime that drops a
+variable also drops its monitors. A variable that moves to another owner at runtime therefore loses them too, while one
+that moves across a restart keeps them. A storage error while a registration applies or removes monitors and stored
+values is logged and does not fail the registration.
 
 ### Ownership
 
@@ -174,8 +174,7 @@ Every variable has exactly one definition: the component config or one runtime o
 the component config and runtime owners can contribute different variables to the same component. A variable that is
 already defined is rejected, and the result names the owner that defines it; so is a second definition of a variable in
 one registration. The owner `COMPONENT_CONFIG` is reserved for libocpp: `register_components`,
-`unregister_components` and `notify_value_changed` reject it. An owner that registers again replaces its earlier
-registration.
+`unregister_components` and `notify_value_changed` reject it.
 
 The integrator is responsible for owners not defining the same variable. Otherwise the owner that registers first gets
 it, with its monitors and stored values; owners start in no fixed order, so after a restart that can be another owner.

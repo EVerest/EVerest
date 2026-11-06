@@ -94,17 +94,14 @@ class DeviceModelRegistryInterface {
 public:
     virtual ~DeviceModelRegistryInterface() = default;
 
-    /// \brief Registers \p components under \p owner, replacing what \p owner registered before. Every variable has
-    /// one definition: a variable that the component config or another runtime owner defines already is rejected.
-    /// A variable with an empty instance, or of a component with an empty instance or an EVSE or connector id of 0, is
-    /// rejected as well, and so is a second definition of a variable in \p components.
-    /// The owner VARIABLE_OWNER_COMPONENT_CONFIG is reserved for libocpp and rejected, and so are the variables that
-    /// libocpp writes from its own state, see RegistrationRejectionReason::ReservedVariable.
-    /// The variable listeners are notified of each Actual value that differs from the one \p owner registered before
-    /// for the same variable.
-    /// \p components is the full set of \p owner: the monitors and stored values of a variable that \p owner
-    /// registered before and that is not part of the new registration, because it is not listed or rejected, are
-    /// removed. unregister_components keeps them.
+    /// \brief Registers \p components under \p owner and replaces all previous entries for this owner. A variable
+    /// that is no longer registered, because it is left out or rejected, loses its monitors and stored values;
+    /// unregister_components keeps them. The variable listeners are notified of each Actual value that changed.
+    /// Every variable has one definition: a variable that the component config or another runtime owner defines
+    /// already is rejected, and so is a second definition in \p components. Also rejected are a variable with an empty
+    /// instance or of a component with an empty instance or an EVSE or connector id of 0, the reserved owner
+    /// VARIABLE_OWNER_COMPONENT_CONFIG, and the variables that libocpp writes from its own state, see
+    /// RegistrationRejectionReason::ReservedVariable.
     /// \param provider Receives the writes to the registered variables. Without a provider, writes are applied to the
     /// model like writes to any other variable. A write that is in progress while \p owner registers again is not
     /// stored, the registered value stays. DeviceModel shares the ownership of the provider until \p owner is
