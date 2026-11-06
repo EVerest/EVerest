@@ -124,6 +124,7 @@ struct Conf {
     int cable_check_relays_closed_timeout_s;
     int cable_check_measurement_timeout_s;
     bool cable_check_wait_below_60V_before_finish;
+    bool unmated_enable_imd;
     bool hack_skoda_enyaq;
     int hack_present_current_offset;
     bool hack_pause_imd_during_precharge;
@@ -510,8 +511,21 @@ private:
     types::evse_manager::EVInfo ev_info;
     types::evse_manager::CarManufacturer car_manufacturer{types::evse_manager::CarManufacturer::Unknown};
 
+    // unmated_enable_imd: the IMD is switched on when the connector is unmated (raw CP state A) and the Charger
+    // is Idle, whichever comes last, and off at CarPluggedIn. imd_start, imd_stop and the two setters hold this
+    // monitor for the whole IMD command, so a stop that saw the gate open cannot land after the unmated start.
+    // While unmated, stops from the cable check, the HLC callbacks and the Charger are dropped. The cable
+    // check's self test is not gated: it only runs mated.
+    struct ImdUnmatedGate {
+        bool unmated{false};
+        bool charger_idle{false};
+    };
+    everest::lib::util::monitor<ImdUnmatedGate> imd_unmated_gate;
+    bool imd_unmated_enabled{false};
     void imd_stop();
     void imd_start();
+    void imd_set_unmated(bool unmated);
+    void imd_set_charger_idle(bool idle);
     Everest::Thread telemetryThreadHandle;
 
     void fail_cable_check(const std::string& reason);
