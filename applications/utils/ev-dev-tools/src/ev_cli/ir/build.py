@@ -221,7 +221,7 @@ class _UnitBuild:
             fields.append(Field(
                 name=property_name,
                 description=property_schema.get('description'),
-                type=self._type_expr(
+                type=self._build_type_expr(
                     property_schema, property_source,
                     enclosing_name=property_name, depends_on=depends_on,
                 ),
@@ -241,7 +241,7 @@ class _UnitBuild:
 
     # -- type expressions ---------------------------------------------------
 
-    def _type_expr(
+    def _build_type_expr(
         self,
         schema: Mapping[str, Any],
         source: SourceRef,
@@ -250,7 +250,7 @@ class _UnitBuild:
         depends_on: list[str],
     ) -> TypeExpr:
         if '$ref' in schema:
-            return self._reference(schema, source)
+            return self._build_reference(schema, source)
 
         declared = schema.get('type')
         if declared is None:
@@ -275,7 +275,7 @@ class _UnitBuild:
                 raise UnsupportedDefinition(
                     f'{source}: an array must declare its "items"'
                 )
-            return Array(self._type_expr(
+            return Array(self._build_type_expr(
                 items, source.child('items'),
                 enclosing_name=enclosing_name, depends_on=depends_on,
             ))
@@ -289,7 +289,7 @@ class _UnitBuild:
 
         raise UnsupportedDefinition(f'{source}: cannot express type {declared!r}')
 
-    def _reference(self, schema: Mapping[str, Any], source: SourceRef) -> Ref:
+    def _build_reference(self, schema: Mapping[str, Any], source: SourceRef) -> Ref:
         reference = resolve_reference(
             self.loader, self.sink, schema, source, from_unit=self.unit
         )
@@ -375,33 +375,33 @@ class _InterfaceBuild:
             name=self.name,
             description=self.data['description'],
             vars=tuple(
-                self._var(name, schema, self.source.child('vars', name))
+                self._build_var(name, schema, self.source.child('vars', name))
                 for name, schema in (self.data.get('vars') or {}).items()
             ),
             cmds=tuple(
-                self._cmd(name, schema, self.source.child('cmds', name))
+                self._build_cmd(name, schema, self.source.child('cmds', name))
                 for name, schema in (self.data.get('cmds') or {}).items()
             ),
-            errors=self._errors(self.data.get('errors') or []),
+            errors=self._resolve_errors(self.data.get('errors') or []),
             referenced_units=frozenset(self._referenced_units),
             source=self.source,
         )
 
     # -- vars and cmds ------------------------------------------------------
 
-    def _var(self, name: str, schema: Mapping[str, Any], source: SourceRef) -> VarDef:
+    def _build_var(self, name: str, schema: Mapping[str, Any], source: SourceRef) -> VarDef:
         return VarDef(
             name=name,
             description=schema['description'],
-            type=self._payload(schema, source),
+            type=self._build_payload(schema, source),
             source=source,
             constraints=Constraints.from_schema(schema),
             qos=schema.get('qos'),
         )
 
-    def _cmd(self, name: str, schema: Mapping[str, Any], source: SourceRef) -> CmdDef:
+    def _build_cmd(self, name: str, schema: Mapping[str, Any], source: SourceRef) -> CmdDef:
         arguments = tuple(
-            self._argument(argument, argument_schema, source.child('arguments', argument))
+            self._build_argument(argument, argument_schema, source.child('arguments', argument))
             # Declaration order is the order of the generated handler's
             # parameters, so it is taken from the document as written.
             for argument, argument_schema in (schema.get('arguments') or {}).items()
@@ -410,7 +410,7 @@ class _InterfaceBuild:
         result_schema = schema.get('result')
         result = None
         if result_schema is not None:
-            result = self._payload(result_schema, source.child('result'))
+            result = self._build_payload(result_schema, source.child('result'))
 
         return CmdDef(
             name=name,
@@ -426,18 +426,18 @@ class _InterfaceBuild:
             ),
         )
 
-    def _argument(self, name: str, schema: Mapping[str, Any], source: SourceRef) -> ArgDef:
+    def _build_argument(self, name: str, schema: Mapping[str, Any], source: SourceRef) -> ArgDef:
         return ArgDef(
             name=name,
             description=schema['description'],
-            type=self._payload(schema, source),
+            type=self._build_payload(schema, source),
             source=source,
             constraints=Constraints.from_schema(schema),
         )
 
     # -- payloads -----------------------------------------------------------
 
-    def _payload(self, schema: Mapping[str, Any], source: SourceRef) -> TypeExpr:
+    def _build_payload(self, schema: Mapping[str, Any], source: SourceRef) -> TypeExpr:
         if '$ref' in schema:
             reference = resolve_reference(
                 self.loader, self.sink, schema, source, from_unit=None
@@ -460,7 +460,7 @@ class _InterfaceBuild:
                 # Nothing said about the elements: the payload travels as raw
                 # JSON rather than as a typed vector.
                 return Opaque(JsonType.ARRAY)
-            return Array(self._payload(items, source.child('items')))
+            return Array(self._build_payload(items, source.child('items')))
 
         if json_type is JsonType.OBJECT:
             if 'properties' in schema:
@@ -492,7 +492,7 @@ class _InterfaceBuild:
 
     # -- errors -------------------------------------------------------------
 
-    def _errors(self, entries: Sequence[Mapping[str, Any]]) -> tuple[ErrorDef, ...]:
+    def _resolve_errors(self, entries: Sequence[Mapping[str, Any]]) -> tuple[ErrorDef, ...]:
         """Resolve every ``/errors/<namespace>[#/<Name>]`` reference.
 
         No template consumes the result today, but resolving is what catches a
@@ -506,7 +506,7 @@ class _InterfaceBuild:
         for index, entry in enumerate(entries):
             source = root.child(index)
             reference = parse_error_reference(entry['reference'])
-            for error in self._namespace_errors(reference, source):
+            for error in self._resolve_namespace_errors(reference, source):
                 key = (error.namespace, error.name)
                 if key in resolved:
                     raise UnsupportedDefinition(
@@ -518,7 +518,7 @@ class _InterfaceBuild:
 
         return tuple(ordered)
 
-    def _namespace_errors(self, reference, source: SourceRef) -> list[ErrorDef]:
+    def _resolve_namespace_errors(self, reference, source: SourceRef) -> list[ErrorDef]:
         try:
             document = self.loader.error_document(reference.namespace)
         except DefinitionNotFound as err:
@@ -572,14 +572,14 @@ class ModuleBuilder:
             # Modules are addressed by a path but named by its last segment.
             name=relative_module_dir.rpartition('/')[2],
             description=data['description'],
-            metadata=self._metadata(data['metadata']),
-            config=self._config(data.get('config'), source.child('config')),
+            metadata=self._build_metadata(data['metadata']),
+            config=self._build_config(data.get('config'), source.child('config')),
             provides=tuple(
-                self._provides(name, schema, source.child('provides', name))
+                self._build_provides(name, schema, source.child('provides', name))
                 for name, schema in (data.get('provides') or {}).items()
             ),
             requires=tuple(
-                self._requires(name, schema, source.child('requires', name))
+                self._build_requires(name, schema, source.child('requires', name))
                 for name, schema in (data.get('requires') or {}).items()
             ),
             source=source,
@@ -590,7 +590,7 @@ class ModuleBuilder:
         )
 
     @staticmethod
-    def _metadata(data: Mapping[str, Any]) -> ModuleMetadata:
+    def _build_metadata(data: Mapping[str, Any]) -> ModuleMetadata:
         known = {'license', 'base_license', 'authors'}
         return ModuleMetadata(
             license=data['license'],
@@ -599,25 +599,25 @@ class ModuleBuilder:
             extra={k: v for k, v in data.items() if k not in known},
         )
 
-    def _config(
+    def _build_config(
         self, entries: Mapping[str, Any] | None, source: SourceRef
     ) -> tuple[ConfigEntry, ...]:
         return tuple(
-            self._config_entry(name, schema, source.child(name))
+            self._build_config_entry(name, schema, source.child(name))
             for name, schema in (entries or {}).items()
         )
 
-    def _config_entry(self, name: str, schema: Mapping[str, Any], source: SourceRef) -> ConfigEntry:
+    def _build_config_entry(self, name: str, schema: Mapping[str, Any], source: SourceRef) -> ConfigEntry:
         return ConfigEntry(
             name=name,
             description=schema['description'],
             type=json_type_of(schema['type'], source),
             source=source,
-            mutability=self._mutability(schema, source),
+            mutability=self._read_mutability(schema, source),
             constraints=Constraints.from_schema(schema),
         )
 
-    def _mutability(self, schema: Mapping[str, Any], source: SourceRef) -> Mutability:
+    def _read_mutability(self, schema: Mapping[str, Any], source: SourceRef) -> Mutability:
         """Read the declared mutability, defaulting as the meta-schema does.
 
         A value the manifest spells wrongly is an error rather than silently
@@ -631,7 +631,7 @@ class ModuleBuilder:
                 f'{source}: unknown mutability {declared!r}'
             ) from None
 
-    def _provides(
+    def _build_provides(
         self, name: str, schema: Mapping[str, Any], source: SourceRef
     ) -> ProvidesDef:
         known = {'description', 'interface', 'config'}
@@ -639,7 +639,7 @@ class ModuleBuilder:
             id=name,
             interface=schema['interface'],
             description=schema['description'],
-            config=self._config(schema.get('config'), source.child('config')),
+            config=self._build_config(schema.get('config'), source.child('config')),
             source=source,
             # The manifest allows further primitive properties here, which the
             # framework matches requirements against.  Code generation ignores
@@ -648,7 +648,7 @@ class ModuleBuilder:
         )
 
     @staticmethod
-    def _requires(
+    def _build_requires(
         name: str, schema: Mapping[str, Any], source: SourceRef
     ) -> RequiresDef:
         ignore = schema.get('ignore') or {}
