@@ -61,7 +61,7 @@ class Validators:
         return cls(by_kind=validators)
 
     def validate(self, kind: DocumentKind, document: Any, path: Path) -> None:
-        """Validate a whole definition document against its meta-schema."""
+        """Validate a whole definition document of the given kind."""
         try:
             self.by_kind[kind].validate(document)
         except jsonschema.ValidationError as err:
@@ -69,13 +69,24 @@ class Validators:
             where = f'{path}#/{location}' if location else str(path)
             raise SchemaError(f'{where}: {err.message}') from err
 
-    def check_is_schema(self, subschema: Any, path: Path, pointer: str) -> None:
-        """Check that an embedded payload declaration is itself a valid schema.
+        if kind is DocumentKind.INTERFACE:
+            self._check_interface_payloads(document, path)
+
+    def _check_interface_payloads(self, document: Any, path: Path) -> None:
+        """Mirror the framework's second pass over an interface.
 
         Interface ``vars`` and command arguments and results are JSON Schema
-        fragments that the meta-schema cannot check directly, so the framework
-        validates them in a second step and this mirrors that.
+        fragments that the meta-schema cannot check directly.
         """
+        for name, definition in (document.get('vars') or {}).items():
+            self._check_is_schema(definition, path, f'/vars/{name}')
+        for name, definition in (document.get('cmds') or {}).items():
+            for argument, schema in (definition.get('arguments') or {}).items():
+                self._check_is_schema(schema, path, f'/cmds/{name}/arguments/{argument}')
+            if 'result' in definition:
+                self._check_is_schema(definition['result'], path, f'/cmds/{name}/result')
+
+    def _check_is_schema(self, subschema: Any, path: Path, pointer: str) -> None:
         try:
             jsonschema.Draft7Validator.check_schema(subschema)
         except jsonschema.SchemaError as err:

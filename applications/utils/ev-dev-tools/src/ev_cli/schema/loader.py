@@ -149,9 +149,7 @@ class DefinitionLoader:
         return self._load(self.tree.type_file(unit), DocumentKind.TYPE)
 
     def interface_document(self, name: str) -> Document:
-        document = self._load(self.tree.interface_file(name), DocumentKind.INTERFACE)
-        self._check_interface_payloads(document)
-        return document
+        return self._load(self.tree.interface_file(name), DocumentKind.INTERFACE)
 
     def error_document(self, namespace: str) -> Document:
         return self._load(self.tree.error_file(namespace), DocumentKind.ERROR_DECLARATION_LIST)
@@ -201,16 +199,3 @@ class DefinitionLoader:
         document = Document(path=path, data=data)
         self._cache[path] = document
         return document
-
-    def _check_interface_payloads(self, document: Document) -> None:
-        """Mirror the framework's second validation pass over embedded schemas."""
-        data = document.data
-        for name, definition in (data.get('vars') or {}).items():
-            self.validators.check_is_schema(definition, document.path, f'/vars/{name}')
-        for name, definition in (data.get('cmds') or {}).items():
-            for argument, schema in (definition.get('arguments') or {}).items():
-                self.validators.check_is_schema(
-                    schema, document.path, f'/cmds/{name}/arguments/{argument}')
-            if 'result' in definition:
-                self.validators.check_is_schema(
-                    definition['result'], document.path, f'/cmds/{name}/result')

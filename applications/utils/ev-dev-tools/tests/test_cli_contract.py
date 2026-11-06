@@ -438,6 +438,29 @@ def test_missing_work_dir_fails_before_writing(tmp_path):
     assert not work_dir.exists()
 
 
+@pytest.mark.parametrize('payload, pointer', [
+    ('vars:\n  broken:\n    description: A var\n    type: notatype\n', '#/vars/broken'),
+    ('cmds:\n  run:\n    description: A command\n    arguments:\n      broken:\n'
+     '        description: An argument\n        type: notatype\n', '#/cmds/run/arguments/broken'),
+    ('cmds:\n  run:\n    description: A command\n    result:\n'
+     '      description: A result\n      type: notatype\n', '#/cmds/run/result'),
+])
+def test_an_interface_payload_must_be_a_valid_schema(tmp_path, payload, pointer):
+    """The interface meta-schema cannot check its embedded payload schemas."""
+    (tmp_path / 'interfaces').mkdir()
+    (tmp_path / 'interfaces' / 'odd.yaml').write_text('description: An interface\n' + payload)
+    proc = run(
+        'interface', 'generate-headers', 'odd',
+        '--disable-clang-format',
+        '--schemas-dir', str(SCHEMAS_DIR),
+        '--everest-dir', str(tmp_path),
+        '--output-dir', str(tmp_path / 'out'),
+        check=False,
+    )
+    assert proc.returncode != 0
+    assert f'odd.yaml{pointer}: not a valid schema' in proc.stderr
+
+
 def test_everest_dir_without_entries_fails(tmp_path):
     proc = run(
         'interface', 'generate-headers',
