@@ -4,10 +4,12 @@
 #include "powermeterImpl.hpp"
 #include "http_client.hpp"
 #include "lem_dcbm_time_sync_helper.hpp"
+#include "measurement_change.hpp"
 #include "poll_scheduler.hpp"
 #include <chrono>
 #include <everest/logging.hpp>
 #include <fmt/format.h>
+#include <optional>
 #include <string>
 #include <thread>
 
@@ -15,31 +17,36 @@ namespace module::main {
 
 namespace {
 
-/// \brief Reports an unexpectedly long gap between two consecutive publications of the live measurements.
+/// \brief Reports an unexpectedly long gap between two consecutive polls of the live measurements.
 ///
-/// Consumers of the powermeter var watch this stream for gaps - EvseManager aborts a DC cable check
-/// when it sees no power supply measurement for two seconds - so a gap that grows well beyond the
-/// configured poll interval is worth reporting even though nothing here has failed.
-void warn_on_publication_gap(std::chrono::steady_clock::time_point last_publish,
-                             std::chrono::steady_clock::time_point publish,
-                             std::chrono::steady_clock::duration request_duration,
-                             std::chrono::milliseconds poll_interval) {
-    if (last_publish == std::chrono::steady_clock::time_point{}) {
-        return; // first publication, there is no gap to report yet
+/// Consumers of the powermeter var watch the publication stream for gaps - EvseManager aborts a DC cable
+/// check when it sees no power supply measurement for two seconds. A publication needs a poll that returns
+/// a new measurement, so a poll gap that grows well beyond the configured interval is worth reporting even
+/// though nothing here has failed.
+void warn_on_poll_gap(std::chrono::steady_clock::time_point last_poll, std::chrono::steady_clock::time_point poll,
+                      std::chrono::steady_clock::duration request_duration, std::chrono::milliseconds poll_interval) {
+    if (last_poll == std::chrono::steady_clock::time_point{}) {
+        return; // first poll, there is no gap to report yet
     }
 
-    const auto gap = publish - last_publish;
+    const auto gap = poll - last_poll;
     if (gap <= poll_interval + poll_interval / 2) {
         return;
     }
 
     EVLOG_warning << fmt::format(
-        "LEM DCBM 400/600: {} ms between two live measurement publications, expected about {} ms "
+        "LEM DCBM 400/600: {} ms between two live measurement polls, expected about {} ms "
         "(the live measurement request itself took {} ms). Consumers watching the measurement stream may "
         "time out.",
         std::chrono::duration_cast<std::chrono::milliseconds>(gap).count(), poll_interval.count(),
         std::chrono::duration_cast<std::chrono::milliseconds>(request_duration).count());
 }
+
+/// \brief How long the device may repeat the same live measurement before it is reported.
+///
+/// The DCBM 400/600 refreshes about once per second; EvseManager gives up on a DC cable check after two
+/// seconds without a measurement.
+constexpr auto STALE_MEASUREMENT_WARNING_AFTER = std::chrono::seconds(2);
 
 } // namespace
 
@@ -86,7 +93,12 @@ void powermeterImpl::ready() {
     this->live_measure_publisher_thread = std::thread([this] {
         const auto poll_interval = std::chrono::milliseconds(mod->config.poll_interval_ms);
         PollScheduler scheduler{std::chrono::steady_clock::now(), poll_interval};
-        auto last_publish = std::chrono::steady_clock::time_point{};
+        auto last_poll = std::chrono::steady_clock::time_point{};
+        // The device refreshes its live measurements about once per second, so with a shorter poll
+        // interval a poll returns the previous sample again. Only new measurements are published.
+        std::optional<types::powermeter::Powermeter> last_published;
+        auto last_new_measurement = std::chrono::steady_clock::time_point{};
+        bool stale_measurement_reported = false;
 
         while (true) {
             try {
@@ -101,10 +113,28 @@ void powermeterImpl::ready() {
 
                     const auto request_start = std::chrono::steady_clock::now();
                     auto powermeter_data = this->controller->get_powermeter();
-                    const auto publish = std::chrono::steady_clock::now();
-                    this->publish_powermeter(powermeter_data);
-                    warn_on_publication_gap(last_publish, publish, publish - request_start, poll_interval);
-                    last_publish = publish;
+                    const auto poll = std::chrono::steady_clock::now();
+                    if (is_new_measurement(last_published, powermeter_data)) {
+                        this->publish_powermeter(powermeter_data);
+                        last_published = powermeter_data;
+                        last_new_measurement = poll;
+                        stale_measurement_reported = false;
+                    } else {
+                        EVLOG_verbose << "LEM DCBM 400/600: the device still reports the live measurement of "
+                                      << powermeter_data.timestamp << ", not published again";
+                        if (not stale_measurement_reported and
+                            poll - last_new_measurement > STALE_MEASUREMENT_WARNING_AFTER) {
+                            EVLOG_warning << fmt::format(
+                                "LEM DCBM 400/600: the device has reported the same live measurement ({}) for {} "
+                                "ms. Consumers watching the measurement stream may time out.",
+                                powermeter_data.timestamp,
+                                std::chrono::duration_cast<std::chrono::milliseconds>(poll - last_new_measurement)
+                                    .count());
+                            stale_measurement_reported = true;
+                        }
+                    }
+                    warn_on_poll_gap(last_poll, poll, poll - request_start, poll_interval);
+                    last_poll = poll;
 
                     // Refresh the fallback OCMF record only after the measurements have been published:
                     // it is a fallback for an unreachable device at transaction stop, so its round trip

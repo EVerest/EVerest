@@ -118,6 +118,19 @@ SCENARIO("ISO 15118-2 SECC PowerDelivery handling") {
         }
     }
 
+    GIVEN("A DC Stop by the EV") {
+        message_2::PowerDeliveryRequest req;
+        req.charge_progress = dt::ChargeProgress::Stop;
+        req.sa_schedule_tuple_id = 1;
+        const auto res = d2::state::handle_request(req, id, true, 1, dt::IsolationLevel::Valid, false, schedule);
+        THEN("EVSE_Shutdown confirms the disabled side B without a StopCharging notification [IEC 61851-23:2023 "
+             "Table CC.9 t104]") {
+            REQUIRE(res.response_code == dt::ResponseCode::OK);
+            REQUIRE(res.dc_evse_status->status_code == dt::DC_EVSEStatusCode::EVSE_Shutdown);
+            REQUIRE(res.dc_evse_status->notification == dt::EVSENotification::None);
+        }
+    }
+
     GIVEN("A DC Stop while the module reports a utility interrupt") {
         message_2::PowerDeliveryRequest req;
         req.charge_progress = dt::ChargeProgress::Stop;

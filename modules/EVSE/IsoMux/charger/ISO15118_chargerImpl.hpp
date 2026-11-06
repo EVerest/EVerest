@@ -48,7 +48,7 @@ protected:
     virtual void handle_set_powersupply_capabilities(types::power_supply_DC::Capabilities& capabilities) override;
     virtual void handle_authorization_response(types::authorization::AuthorizationStatus& authorization_status,
                                                types::authorization::CertificateStatus& certificate_status) override;
-    virtual void handle_ac_contactor_closed(bool& status) override;
+    virtual void handle_contactor_closed(bool& status) override;
     virtual void handle_cp_state_changed(types::iso15118::CpState& cp_state) override;
     virtual void handle_dlink_ready(bool& value) override;
     virtual void handle_cable_check_finished(bool& status) override;

@@ -30,6 +30,9 @@ private:
 struct PresentVoltageCurrent {
     float voltage;
     float current;
+    // Measured by the welding detection voltage source (IEC 61851-23:2023 CC.7.6.17); releases the
+    // first WeldingDetectionRes.
+    bool welding_detection{false};
 };
 
 // Latched on the session context and reported as the MeterInfo element of the charge-loop responses;

@@ -11,6 +11,7 @@ IMPLS = [
     "cable_check",
     "over_voltage",
     "voltage_plausibility",
+    "welding_detection",
 ]
 
 cc_everest_module(
@@ -25,6 +26,7 @@ cc_everest_module(
     deps = [
         "//lib/everest/everest_api_types:everest_api_types",
         "//lib/everest/helpers",
+        "//lib/everest/timer:libtimer",
         "//lib/everest/util",
         "@pugixml",
         "@sigslot",
@@ -43,6 +45,7 @@ cc_test(
         "tests/OverVoltageMonitorTest.cpp",
         "tests/PowerSupplyMeasurementWaiterTest.cpp",
         "tests/VoltagePlausibilityMonitorTest.cpp",
+        "tests/WeldingDetectionVoltageTest.cpp",
         # Test stub headers
         "tests/evse_board_supportIntfStub.hpp",
         "tests/EvseManagerStub.hpp",
@@ -53,12 +56,14 @@ cc_test(
         "cable_check/PowerSupplyMeasurementWaiter.cpp",
         "over_voltage/OverVoltageMonitor.cpp",
         "voltage_plausibility/VoltagePlausibilityMonitor.cpp",
+        "welding_detection/WeldingDetectionVoltage.cpp",
         # Module headers
     ] + glob([
         "*.hpp",
         "cable_check/*.hpp",
         "over_voltage/*.hpp",
         "voltage_plausibility/*.hpp",
+        "welding_detection/*.hpp",
     ]) + [
         # Generated ld-ev header only (not ld-ev.cpp which pulls in impl files)
         "generated/modules/EvseManager/ld-ev.hpp",
@@ -75,6 +80,8 @@ cc_test(
         "//interfaces:interfaces_lib",
         "//lib/everest/framework",
         "//lib/everest/helpers",
+        "//lib/everest/timer:libtimer",
+        "//lib/everest/util",
         "//tests:module_adapter_stub",
         "@googletest//:gtest_main",
         "@sigslot",

@@ -26,6 +26,26 @@ void stop_timer(struct event** event_timer, char const* const timer_name, struct
 void log_selected_energy_transfer_type(int selected_energy_transfer_mode) {
 }
 
+namespace {
+int welding_voltage_waits{0};
+} // namespace
+
+void v2g_ctx_start_welding_detection(struct v2g_context* const ctx) {
+    ctx->session.welding_detection_active = true;
+}
+
+void v2g_ctx_finish_welding_detection(struct v2g_context* const ctx) {
+    ctx->session.welding_detection_active = false;
+}
+
+void v2g_ctx_wait_for_welding_voltage(struct v2g_context* const) {
+    ++welding_voltage_waits;
+}
+
+bool v2g_ctx_wait_contactor_open(struct v2g_context* const ctx, int) {
+    return not ctx->contactor_is_closed;
+}
+
 uint64_t v2g_session_id_from_exi(bool is_iso, void* exi_in) {
     return 0;
 }
@@ -720,6 +740,7 @@ TEST_F(DinServerPowerDeliveryTest, power_delivery_stop_sets_shutdown_status_code
     EXPECT_EQ(ctx->evse_v2g_data.evse_status_code[PHASE_WELDING], din_DC_EVSEStatusCodeType_EVSE_Shutdown);
     EXPECT_EQ(ctx->state, WAIT_FOR_WELDINGDETECTION_SESSIONSTOP);
     EXPECT_EQ(ctx->session.is_charging, false);
+    EXPECT_TRUE(ctx->session.welding_detection_active);
     EXPECT_EQ(module::stub::get_logs(dloglevel_t::DLOG_LEVEL_ERROR).size(), 0);
 }
 
@@ -761,7 +782,9 @@ TEST_F(DinServerPowerDeliveryTest, welding_detection_after_stop_reports_shutdown
     ctx->last_v2g_msg = V2G_POWER_DELIVERY_MSG;
     ctx->current_v2g_msg = V2G_WELDING_DETECTION_MSG;
 
+    const auto waits_before = welding_voltage_waits;
     EXPECT_EQ(states::handle_din_welding_detection(conn.get()), V2G_EVENT_NO_EVENT);
+    EXPECT_EQ(welding_voltage_waits, waits_before + 1);
 
     auto& res = exi_out->V2G_Message.Body.WeldingDetectionRes;
     EXPECT_EQ(res.ResponseCode, din_responseCodeType_OK);
@@ -786,6 +809,7 @@ TEST_F(DinServerPowerDeliveryTest, power_delivery_start_keeps_ready_status_code)
     EXPECT_EQ(res.DC_EVSEStatus.EVSEStatusCode, din_DC_EVSEStatusCodeType_EVSE_Ready);
     EXPECT_EQ(ctx->evse_v2g_data.evse_status_code[PHASE_WELDING], din_DC_EVSEStatusCodeType_EVSE_NotReady);
     EXPECT_EQ(ctx->state, WAIT_FOR_CURRENTDEMAND);
+    EXPECT_FALSE(ctx->session.welding_detection_active);
 }
 
 } // namespace

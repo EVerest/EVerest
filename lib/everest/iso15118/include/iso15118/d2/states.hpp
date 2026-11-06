@@ -32,6 +32,7 @@ enum class StateID {
     PreChargeStart,
     PreCharge,
     DcChargeLoop,
+    DcPowerDeliveryStop,
     PostCharge,
     WeldingDetection,
     AcChargeLoopStart,
