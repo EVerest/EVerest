@@ -17,7 +17,7 @@ std::unique_ptr<MessageExchange> create_message_exchange(uint8_t* buf, const siz
 MessageExchange::MessageExchange(io::StreamOutputView output_) : response(std::move(output_)) {
 }
 
-void MessageExchange::set_request(std::unique_ptr<message_20::Variant> new_request) {
+void MessageExchange::set_request(std::unique_ptr<message_20::RequestVariant> new_request) {
     if (request) {
         // FIXME (aw): we might want to have a stack here?
         throw std::runtime_error("Previous V2G message has not been handled yet");
@@ -26,7 +26,7 @@ void MessageExchange::set_request(std::unique_ptr<message_20::Variant> new_reque
     request = std::move(new_request);
 }
 
-std::unique_ptr<message_20::Variant> MessageExchange::pull_request() {
+std::unique_ptr<message_20::RequestVariant> MessageExchange::pull_request() {
     if (not request) {
         throw std::runtime_error("Tried to access V2G message, but there is none");
     }
@@ -46,13 +46,13 @@ bool MessageExchange::set_raw_response(const uint8_t* data, size_t len, message_
     std::memcpy(response.payload, data, len);
     response_size = len;
     response_available = true;
-    payload_type = io::v2gtp::PayloadType::Part20Main;
+    payload_type = v2gtp::PayloadType::Part20Main;
     response_type = type;
     response_message.reset();
     return true;
 }
 
-std::tuple<bool, size_t, io::v2gtp::PayloadType, message_20::Type> MessageExchange::check_and_clear_response() {
+std::tuple<bool, size_t, v2gtp::PayloadType, message_20::Type> MessageExchange::check_and_clear_response() {
     auto retval = std::make_tuple(response_available, response_size, payload_type, response_type);
 
     response_available = false;
@@ -81,7 +81,7 @@ Context::Context(session::feedback::Callbacks feedback_callbacks, session::Sessi
     timeouts(timeouts_) {
 }
 
-std::unique_ptr<message_20::Variant> Context::pull_request() {
+std::unique_ptr<message_20::RequestVariant> Context::pull_request() {
     return message_exchange.pull_request();
 }
 

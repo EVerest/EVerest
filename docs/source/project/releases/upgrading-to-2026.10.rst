@@ -147,6 +147,38 @@ user-config or the configuration database, and EVerest does not carry them
 over to the successor module. :ref:`htg-upgrading-persisted-config` describes
 what to do for each storage mode.
 
+.. _project-upgrading-to-2026-10-iso15118-ev:
+
+ISO 15118 EV simulation
+=======================
+
+``PyEvJosev`` is removed and replaced by
+:ref:`Ev15118 <everest_modules_Ev15118>`, the EV side of the C++ ISO 15118
+stack. Change ``module: PyEvJosev`` to ``module: Ev15118`` and map the
+``config_module`` keys with the table in
+:ref:`everest_modules_handwritten_Ev15118_pyevjosev`.
+
+- ``supported_protocols`` must be set. It has no usable default, and the
+  module refuses to start until it lists at least one of ``ISO15118_20``,
+  ``ISO15118_2`` and ``DIN70121``.
+- ``start_charging`` takes ``DepartureTime`` in seconds from the call and
+  ``EAmount`` in kWh. ``0`` states none, and negative or non-finite values are
+  rejected.
+- A DC or MCS ``start_charging`` is rejected unless ``set_dc_params`` has
+  given a positive ``max_power_limit``, ``max_current_limit`` and
+  ``max_voltage_limit``. A ``set_dc_params`` call that leaves a field out
+  keeps its previous value, and a call with an invalid value is rejected
+  whole.
+- Out-of-tree modules that provide ``ISO15118_ev`` must implement three new
+  commands:
+
+  - ``abort_charging``: terminate the V2G session immediately, without the
+    SessionStop exchange.
+  - ``cp_state_changed``: the control pilot state the vehicle applies; E or F
+    during a session terminates it without SessionStop.
+  - ``update_present_values``: the electrical values the EV currently
+    measures.
+
 .. _project-upgrading-to-2026-10-ocpp:
 
 OCPP 2.x component configuration

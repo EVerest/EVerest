@@ -36,7 +36,7 @@ std::vector<uint8_t> serialize_sap_request(const std::string& protocol_namespace
     frame[0] = iso15118::io::SDP_PROTOCOL_VERSION;
     frame[1] = iso15118::io::SDP_INVERSE_PROTOCOL_VERSION;
 
-    const uint16_t type = htons(static_cast<uint16_t>(iso15118::io::v2gtp::PayloadType::SAP));
+    const uint16_t type = htons(static_cast<uint16_t>(iso15118::v2gtp::PayloadType::SAP));
     std::memcpy(frame.data() + 2, &type, sizeof(type));
 
     const uint32_t len = htonl(static_cast<uint32_t>(payload_len));

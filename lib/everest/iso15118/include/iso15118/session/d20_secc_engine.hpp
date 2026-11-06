@@ -31,7 +31,7 @@ public:
                   std::optional<io::sha512_hash_t> vehicle_cert_hash, bool tls_active,
                   bool skip_app_protocol_negotiation = false);
 
-    bool on_packet(io::v2gtp::PayloadType, const io::StreamInputView&);
+    bool on_packet(v2gtp::PayloadType, const io::StreamInputView&);
     void on_control_event(const d20::ControlEvent&);
     void on_timeout(d20::TimeoutType);
 

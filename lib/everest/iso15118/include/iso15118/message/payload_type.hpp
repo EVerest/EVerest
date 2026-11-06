@@ -4,7 +4,7 @@
 
 // FIXME (aw): how to streamline this with type.hpp?
 
-#include <iso15118/io/sdp.hpp>
+#include <iso15118/v2gtp/sdp.hpp>
 
 namespace iso15118::message_20 {
 
@@ -16,7 +16,7 @@ template <typename T> struct PayloadTypeTrait;
 #define CREATE_TYPE_TRAIT(struct_name, payload_type)                                                                   \
     struct struct_name;                                                                                                \
     template <> struct PayloadTypeTrait<struct_name> {                                                                 \
-        static const io::v2gtp::PayloadType type = io::v2gtp::PayloadType::payload_type;                               \
+        static const v2gtp::PayloadType type = v2gtp::PayloadType::payload_type;                                       \
     }
 
 CREATE_TYPE_TRAIT(SupportedAppProtocolResponse, SAP);
@@ -39,6 +39,10 @@ CREATE_TYPE_TRAIT(DC_ChargeLoopRequest, Part20DC);
 CREATE_TYPE_TRAIT(DC_WeldingDetectionRequest, Part20DC);
 CREATE_TYPE_TRAIT(AC_ChargeParameterDiscoveryRequest, Part20AC);
 CREATE_TYPE_TRAIT(AC_ChargeLoopRequest, Part20AC);
+CREATE_TYPE_TRAIT(DER_AC_ChargeParameterDiscoveryRequest, Part20DerIec);
+CREATE_TYPE_TRAIT(DER_AC_ChargeLoopRequest, Part20DerIec);
+CREATE_TYPE_TRAIT(DER_SAE_AC_ChargeParameterDiscoveryRequest, Part20DerSae);
+CREATE_TYPE_TRAIT(DER_SAE_AC_ChargeLoopRequest, Part20DerSae);
 CREATE_TYPE_TRAIT(AuthorizationSetupResponse, Part20Main);
 CREATE_TYPE_TRAIT(AuthorizationResponse, Part20Main);
 CREATE_TYPE_TRAIT(CertificateInstallationRequest, Part20Main);

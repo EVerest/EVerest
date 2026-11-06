@@ -55,11 +55,6 @@ RUN git clone https://github.com/EVerest/EVerest.git -b "${BRANCH}"
 WORKDIR /workspace/everest/EVerest/applications/utils/ev-dev-tools
 RUN if [ "${INSTALL_EV_CLI}" = "install_ev_cli" ] ; then python3 -m pip install . ; fi
 WORKDIR /workspace/everest
-RUN git clone https://github.com/EVerest/ext-switchev-iso15118.git
-WORKDIR /workspace/everest/ext-switchev-iso15118/
-RUN pip install -r requirements.txt
-
-WORKDIR /workspace/everest
 
 RUN rm -rf "/workspace/everest/$(basename "${REPO}" .git)"
 RUN --mount=type=ssh git clone ${REPO} -b "${BRANCH}"

@@ -10,10 +10,10 @@ active_modules:
         - module_id: evse_security
           implementation_id: main
   iso15118_car:
-    module: PyEvJosev
+    module: Ev15118
     config_module:
       device: auto
-      supported_ISO15118_2: true
+      supported_protocols: ISO15118_2
   persistent_store:
     module: PersistentStore
   evse_manager_1:

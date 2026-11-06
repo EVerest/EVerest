@@ -188,7 +188,7 @@ constexpr double AC_PROFILE_POWER_W = 1000.0;
 message_2::CertificateInstallationRequest certificate_installation_req() {
     message_2::CertificateInstallationRequest req;
     req.oem_provisioning_cert = {0x30, 0x82, 0x01, 0x02};
-    req.root_certificate_ids.push_back({"CN=V2G Root CA", 12345});
+    req.root_certificate_ids.push_back({"CN=V2G Root CA", {0x30, 0x39}});
     return req;
 }
 
@@ -197,7 +197,7 @@ message_2::CertificateUpdateRequest certificate_update_req() {
     req.contract_chain.certificate = {0x30, 0x82, 0x01, 0x02};
     req.contract_chain.sub_certificates.push_back({0x30, 0x82, 0x00, 0x55});
     req.emaid = "UKSWI123456791A";
-    req.root_certificate_ids.push_back({"CN=V2G Root CA", 12345});
+    req.root_certificate_ids.push_back({"CN=V2G Root CA", {0x30, 0x39}});
     return req;
 }
 

@@ -16,11 +16,21 @@
 
 using CmdArguments = std::vector<std::string>;
 
+// Thrown by a command whose failure ends its whole command sequence. Returning false only
+// blocks the command, which then runs again on the next tick.
+class TerminalCommandFailure : public std::runtime_error {
+public:
+    using std::runtime_error::runtime_error;
+};
+
 class SimulationCommand {
 public:
     SimulationCommand(const RegisteredCommandBase* registered_command_in, const CmdArguments& arguments_in);
 
     bool execute() const;
+
+    /// Name of the underlying registered command, for diagnostics.
+    [[nodiscard]] const std::string& name() const;
 
     static std::queue<SimulationCommand> parse_sim_commands(const std::string& value,
                                                             const CommandRegistry& command_registry);
