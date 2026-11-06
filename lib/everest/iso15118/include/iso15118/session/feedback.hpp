@@ -190,7 +190,6 @@ struct Callbacks {
     std::function<void(const dt::VasSelectedServiceList&)> selected_vas_services;
     std::function<void(const AcLimits&)> ac_limits;
     std::function<void(const std::string&, const std::string&)> ev_termination;
-
     // Anchors the CP-oscillator retain time [V2G-DC-968]; does NOT imply link teardown.
     std::function<void(SessionStopAction)> session_stop_res_sent;
 
@@ -200,6 +199,7 @@ struct Callbacks {
     std::function<void(const std::string& emaid, const std::string& contract_chain_pem)> require_auth_pnc;
 
     std::function<void(const CertificateRequest&)> certificate_request;
+    std::function<void(const iso15118::message_20::datatypes::ResponseCode&)> response_code;
 };
 
 } // namespace feedback
@@ -238,6 +238,7 @@ public:
     void selected_payment_option(shared_datatypes::PaymentOption) const;
     void require_auth_pnc(const std::string& emaid, const std::string& contract_chain_pem) const;
     void certificate_request(const feedback::CertificateRequest&) const;
+    void response_code(const iso15118::message_20::datatypes::ResponseCode&) const;
 
 private:
     feedback::Callbacks callbacks;

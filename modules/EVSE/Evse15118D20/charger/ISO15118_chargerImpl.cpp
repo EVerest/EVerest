@@ -1586,6 +1586,11 @@ iso15118::session::feedback::Callbacks ISO15118_chargerImpl::create_callbacks() 
         this->mod->p_extensions->publish_iso15118_certificate_request(request);
     };
 
+    callbacks.response_code = [this](const iso15118::message_20::datatypes::ResponseCode& code) {
+        const auto converted_type = convert_response_code_types(code);
+        this->mod->p_charger->publish_response_code(converted_type);
+    };
+
     return callbacks;
 }
 
