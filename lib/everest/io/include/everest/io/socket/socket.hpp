@@ -7,12 +7,17 @@
 
 #include <array>
 #include <cstdint>
+#include <functional>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <vector>
 
 #include <everest/io/event/unique_fd.hpp>
 #include <everest/io/udp/endpoint.hpp>
+
+// From <netdb.h>, which this header does not include.
+struct addrinfo;
 
 namespace everest::lib::io::event {
 // Declared opaquely, and without an underlying type, to keep this header out of an include cycle:
@@ -62,6 +67,17 @@ private:
 constexpr int reconnect_delay_ms{100};
 
 /**
+ * @brief Inclusive range of local source ports for a client socket.
+ * @details For callers whose peer or protocol constrains the local port. The kernel's
+ * default ephemeral range is wider than some of them allow, so the caller names its own.
+ * Binding walks the range from a random port, wrapping around, and tries each port once.
+ */
+struct SourcePortRange {
+    std::uint16_t min{0}; //!< lowest port to bind, inclusive
+    std::uint16_t max{0}; //!< highest port to bind, inclusive
+};
+
+/**
  * @brief Open a UDP socket in server mode
  * @param[in] port The port to listen to
  * @param[in] device Optional interface name (e.g. "eth0"). When non-empty the socket is bound
@@ -87,20 +103,22 @@ event::unique_fd open_udp_client_socket(std::string const& host, std::uint16_t p
 /**
  * @brief Open an unconnected UDP datagram socket (IPv4 or IPv6) for a target.
  * @details Socket family is taken from @p target. SOCK_DGRAM, non-blocking,
- * bound to the family wildcard address on an ephemeral port. For a multicast
- * @p target the multicast egress interface is pinned (IP_MULTICAST_IF /
- * IPV6_MULTICAST_IF) to @p iface (falling back to the interface carried by
- * @p target); SO_BINDTODEVICE is applied best-effort for extra link
- * confinement (tolerated to fail unprivileged). Performs neither ::connect()
- * nor any multicast group join, so a unicast reply from an address other than
- * the configured target is delivered on this same fd by destination address
- * and port.
+ * bound to the family wildcard address on an ephemeral port, or on a port of
+ * @p source_ports when given. For a multicast @p target the multicast egress
+ * interface is pinned (IP_MULTICAST_IF / IPV6_MULTICAST_IF) to @p iface
+ * (falling back to the interface carried by @p target); SO_BINDTODEVICE is
+ * applied best-effort for extra link confinement (tolerated to fail
+ * unprivileged). Performs neither ::connect() nor any multicast group join,
+ * so a unicast reply from an address other than the configured target is
+ * delivered on this same fd by destination address and port.
  * @param[in] target Destination address; selects the socket family.
  * @param[in] iface Optional interface name. Empty uses @p target's iface hint.
+ * @param[in] source_ports Optional local source port range. Unset lets the kernel pick the port.
  * @return The managed file descriptor of the socket.
  * @throws std::runtime_error if the operation fails.
  */
-event::unique_fd open_udp_unconnected_socket(udp::endpoint const& target, std::string const& iface = {});
+event::unique_fd open_udp_unconnected_socket(udp::endpoint const& target, std::string const& iface = {},
+                                             std::optional<SourcePortRange> const& source_ports = std::nullopt);
 
 /**
  * @brief Open a dual-stack (IPv6 + IPv4-mapped) UDP server socket.
@@ -178,12 +196,32 @@ event::unique_fd open_tcp_socket(const std::string& host, std::uint16_t port, co
  * @param[in] device Optional interface name (e.g. "eth0"). When non-empty the socket is bound
  * to that device via SO_BINDTODEVICE before connect. If the caller lacks CAP_NET_RAW, falls back
  * to source-IP bind using the interface's IPv4 address (no privilege needed).
+ * @param[in] source_ports Optional local source port range bound before connect. Unset lets the
+ * kernel pick the port. The socket sets SO_REUSEADDR, so a port left in TIME_WAIT by an earlier
+ * connection opened this way binds again. A connect that fails with EADDRNOTAVAIL on such a port
+ * retries on a fresh socket with the next port of the range, up to 8 times in a row.
  * @return The managed file descriptor of the socket
  * @throws socket_error if the operation fails. Catch it rather than
  * std::runtime_error to recover the errno behind the failure.
  */
 event::unique_fd open_tcp_socket_with_timeout(const std::string& host, std::uint16_t port, unsigned int timeout_ms,
-                                              const std::string& device = {});
+                                              const std::string& device = {},
+                                              std::optional<SourcePortRange> const& source_ports = std::nullopt);
+
+/**
+ * @brief Open a socket on the first of @p addresses that @p try_address succeeds on
+ * @details The per-address loop of open_tcp_socket_with_timeout. An address whose step throws
+ * is skipped, so a failure specific to one address (its family, a port taken there) does not
+ * stop the next one from being tried.
+ * @param[in] addresses The resolver's list, tried in its order
+ * @param[in] try_address Opens a socket for one address and throws when it cannot
+ * @return The first socket opened
+ * @throws socket_error once every address has failed: the last socket_error thrown, or
+ * one with EIO and the last failure's message when none was a socket_error. EHOSTUNREACH
+ * when @p addresses is empty.
+ */
+event::unique_fd open_first_address(addrinfo const* addresses,
+                                    std::function<event::unique_fd(addrinfo const&)> const& try_address);
 
 /**
  * @brief Open a TCP socket in server mode (bound and listening).
@@ -514,7 +552,8 @@ struct if_info {
  * @brief Get the address of the supplied interface
  * @param[in] name The name of the interface
  * @return The IP adress of the interface
- * @throws std::runtime_error if the operation fails.
+ * @throws socket_error if the operation fails, with EADDRNOTAVAIL when the interface is
+ * missing or has no IPv4 address.
  */
 std::string get_interface_address(std::string const& name);
 

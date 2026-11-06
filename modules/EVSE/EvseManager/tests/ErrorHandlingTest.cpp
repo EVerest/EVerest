@@ -60,11 +60,15 @@ struct EvseManagerModuleAdapterStub : public module::stub::EvseManagerModuleAdap
     std::shared_ptr<ErrorDatabaseStub> error_database;
     std::shared_ptr<ErrorDatabaseStub> slac_error_database;
     std::shared_ptr<ErrorDatabaseStub> hlc_error_database;
+    std::shared_ptr<ErrorDatabaseStub> powermeter_error_database;
+    std::shared_ptr<ErrorDatabaseStub> bsp_error_database;
     std::list<Everest::error::ErrorType> error_list;
     std::list<Everest::error::ErrorType> requirement_error_list;
     std::list<Everest::error::Error> active_errors;
     std::list<Everest::error::Error> slac_active_errors;
     std::list<Everest::error::Error> hlc_active_errors;
+    std::list<Everest::error::Error> powermeter_active_errors;
+    std::list<Everest::error::Error> bsp_active_errors;
 
     EvseManagerModuleAdapterStub() :
         module::stub::EvseManagerModuleAdapter(),
@@ -72,6 +76,8 @@ struct EvseManagerModuleAdapterStub : public module::stub::EvseManagerModuleAdap
         error_database(std::make_shared<ErrorDatabaseStub>(active_errors)),
         slac_error_database(std::make_shared<ErrorDatabaseStub>(slac_active_errors)),
         hlc_error_database(std::make_shared<ErrorDatabaseStub>(hlc_active_errors)),
+        powermeter_error_database(std::make_shared<ErrorDatabaseStub>(powermeter_active_errors)),
+        bsp_error_database(std::make_shared<ErrorDatabaseStub>(bsp_active_errors)),
         error_list{} {
     }
 
@@ -112,6 +118,13 @@ struct EvseManagerModuleAdapterStub : public module::stub::EvseManagerModuleAdap
         if (req.id == "hlc") {
             return std::make_shared<Everest::error::ErrorStateMonitor>(hlc_error_database);
         }
+        if (req.id == "powermeter") {
+            return std::make_shared<Everest::error::ErrorStateMonitor>(powermeter_error_database);
+        }
+        if (req.id == "requirement") {
+            // Requirement id evse_board_supportIntfStub subscribes with
+            return std::make_shared<Everest::error::ErrorStateMonitor>(bsp_error_database);
+        }
         return std::make_shared<Everest::error::ErrorStateMonitor>(
             std::make_shared<Everest::error::ErrorDatabaseMap>());
     }
@@ -136,7 +149,7 @@ struct ErrorHandlingTesting : public testing::Test {
     std::unique_ptr<evse_managerImplBase> p_evse{};
     const std::vector<std::unique_ptr<isolation_monitorIntf>> _r_imd{};
     const std::vector<std::unique_ptr<power_supply_DCIntf>> _r_powersupply{};
-    const std::vector<std::unique_ptr<powermeterIntf>> _r_powermeter{};
+    std::vector<std::unique_ptr<powermeterIntf>> r_powermeter{};
     std::vector<std::unique_ptr<slacIntf>> r_slac{};
     const std::vector<std::unique_ptr<over_voltage_monitorIntf>> _r_over_voltage_monitor{};
 
@@ -146,11 +159,17 @@ struct ErrorHandlingTesting : public testing::Test {
     // raise_inoperative_error() directly, so they own it and pass it across calls to exercise the refresh logic.
     ErrorHandlingTest::InoperativeCauses inoperative_causes;
 
-    void construct(bool _inoperative_error_use_vendor_id, bool connect_slac = false, bool connect_hlc = false) {
+    void construct(bool _inoperative_error_use_vendor_id, bool connect_slac = false, bool connect_hlc = false,
+                   bool connect_powermeter = false) {
         error_types_map = {{"evse_board_support/VendorWarning", "warning"},
+                           {"ac_rcd/VendorError", "ac_rcd vendor error"},
+                           {"ac_rcd/VendorWarning", "ac_rcd vendor warning"},
                            {"generic/CommunicationFault", "communication fault"},
                            {"generic/VendorError", "vendor error"},
                            {"generic/VendorWarning", "vendor warning"},
+                           {"powermeter/CommunicationFault", "powermeter communication fault"},
+                           {"powermeter/VendorError", "powermeter vendor error"},
+                           {"powermeter/VendorWarning", "powermeter vendor warning"},
                            {"evse_manager/Inoperative", "inoperative"}};
         adapter.error_type_map->load_error_types_map(error_types_map);
         adapter.active_errors.clear();
@@ -160,14 +179,19 @@ struct ErrorHandlingTesting : public testing::Test {
         adapter.error_clear.clear();
         adapter.slac_active_errors.clear();
         adapter.hlc_active_errors.clear();
+        adapter.powermeter_active_errors.clear();
+        adapter.bsp_active_errors.clear();
         r_slac.clear();
         r_hlc.clear();
+        r_powermeter.clear();
         inoperative_causes.clear();
         for (const auto& [error, description] : error_types_map) {
             adapter.error_list.push_back(error);
         }
-        adapter.requirement_error_list = {"evse_board_support/VendorWarning", "generic/CommunicationFault",
-                                          "generic/VendorError", "generic/VendorWarning"};
+        adapter.requirement_error_list = {
+            "evse_board_support/VendorWarning", "ac_rcd/VendorError",     "ac_rcd/VendorWarning",
+            "generic/CommunicationFault",       "generic/VendorError",    "generic/VendorWarning",
+            "powermeter/CommunicationFault",    "powermeter/VendorError", "powermeter/VendorWarning"};
         adapter.error_raise["evse_manager/Inoperative"] = [](const Everest::error::Error&) {};
         adapter.error_clear["evse_manager/Inoperative"] = [](const Everest::error::Error&) {};
         r_bsp = std::make_unique<module::stub::evse_board_supportIntfStub>(adapter);
@@ -178,9 +202,13 @@ struct ErrorHandlingTesting : public testing::Test {
             r_hlc.push_back(
                 std::make_unique<ISO15118_chargerIntf>(&adapter, Requirement{"hlc", 1}, "hlc", std::nullopt));
         }
+        if (connect_powermeter) {
+            r_powermeter.push_back(
+                std::make_unique<powermeterIntf>(&adapter, Requirement{"powermeter", 1}, "powermeter", std::nullopt));
+        }
         p_evse = std::make_unique<module::stub::evse_managerImplStub>(&adapter, "manager");
         error_handler = std::make_unique<ErrorHandlingTest>(r_bsp, r_hlc, r_connector_lock, r_ac_rcd, p_evse, _r_imd,
-                                                            _r_powersupply, _r_powermeter, r_slac,
+                                                            _r_powersupply, r_powermeter, r_slac,
                                                             _r_over_voltage_monitor, _inoperative_error_use_vendor_id);
     }
 
@@ -222,6 +250,26 @@ struct ErrorHandlingTesting : public testing::Test {
         error.message = "message";
         error.description = "description";
         adapter.hlc_active_errors.push_back(error);
+        adapter.error_raise.at(type)(error);
+    }
+
+    void raise_powermeter_error(const std::string& type) {
+        Everest::error::Error error{};
+        error.type = type;
+        error.sub_type = "";
+        error.message = "message";
+        error.description = "description";
+        adapter.powermeter_active_errors.push_back(error);
+        adapter.error_raise.at(type)(error);
+    }
+
+    void raise_bsp_error(const std::string& type) {
+        Everest::error::Error error{};
+        error.type = type;
+        error.sub_type = "";
+        error.message = "message";
+        error.description = "description";
+        adapter.bsp_active_errors.push_back(error);
         adapter.error_raise.at(type)(error);
     }
 };
@@ -492,6 +540,55 @@ TEST_F(ErrorHandlingTesting, HlcVendorWarningIsNotFatal) {
     construct(false, false, true);
 
     raise_hlc_error("generic/VendorWarning");
+
+    EXPECT_FALSE(p_evse->error_state_monitor->is_error_active("evse_manager/Inoperative", ""));
+}
+
+TEST_F(ErrorHandlingTesting, PowermeterCommunicationFaultIsFatal) {
+    construct(false, false, false, true);
+
+    raise_powermeter_error("powermeter/CommunicationFault");
+
+    ASSERT_EQ(adapter.active_errors.size(), 1);
+    const auto& error = adapter.active_errors.front();
+    EXPECT_EQ(error.type, "evse_manager/Inoperative");
+    EXPECT_EQ(error.message, "powermeter/CommunicationFault");
+}
+
+TEST_F(ErrorHandlingTesting, PowermeterVendorErrorIsFatal) {
+    construct(false, false, false, true);
+
+    raise_powermeter_error("powermeter/VendorError");
+
+    ASSERT_EQ(adapter.active_errors.size(), 1);
+    const auto& error = adapter.active_errors.front();
+    EXPECT_EQ(error.type, "evse_manager/Inoperative");
+    EXPECT_EQ(error.message, "powermeter/VendorError");
+}
+
+TEST_F(ErrorHandlingTesting, PowermeterVendorWarningIsNotFatal) {
+    construct(false, false, false, true);
+
+    raise_powermeter_error("powermeter/VendorWarning");
+
+    EXPECT_FALSE(p_evse->error_state_monitor->is_error_active("evse_manager/Inoperative", ""));
+}
+
+TEST_F(ErrorHandlingTesting, BspAcRcdVendorErrorIsFatal) {
+    construct(false);
+
+    raise_bsp_error("ac_rcd/VendorError");
+
+    ASSERT_EQ(adapter.active_errors.size(), 1);
+    const auto& error = adapter.active_errors.front();
+    EXPECT_EQ(error.type, "evse_manager/Inoperative");
+    EXPECT_EQ(error.message, "ac_rcd/VendorError");
+}
+
+TEST_F(ErrorHandlingTesting, BspAcRcdVendorWarningIsNotFatal) {
+    construct(false);
+
+    raise_bsp_error("ac_rcd/VendorWarning");
 
     EXPECT_FALSE(p_evse->error_state_monitor->is_error_active("evse_manager/Inoperative", ""));
 }

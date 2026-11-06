@@ -2446,15 +2446,13 @@ void ChargePointImpl::handleStopTransactionResponse(const EnhancedMessage<v16::M
     if (transaction != nullptr) {
         const std::int32_t connector = transaction->get_connector();
 
-        if (stop_transaction_response.idTagInfo) {
-            auto id_tag = this->transaction_handler->get_authorized_id_tag(call_result.uniqueId.get());
-            if (id_tag.has_value()) {
-                try {
-                    this->database_handler->insert_or_update_authorization_cache_entry(
-                        id_tag.value(), stop_transaction_response.idTagInfo.value());
-                } catch (const QueryExecutionException& e) {
-                    EVLOG_warning << "Could not insert or update authorization cache entry";
-                }
+        // the idTagInfo is about the idTag that stopped the transaction
+        if (stop_transaction_response.idTagInfo.has_value() and original_call.msg.idTag.has_value()) {
+            try {
+                this->database_handler->insert_or_update_authorization_cache_entry(
+                    original_call.msg.idTag.value(), stop_transaction_response.idTagInfo.value());
+            } catch (const QueryExecutionException& e) {
+                EVLOG_warning << "Could not insert or update authorization cache entry";
             }
         }
 
@@ -3480,31 +3478,13 @@ void ChargePointImpl::set_connector_trigger_metervalue_timer(const DateTime& dat
         return;
     }
 
-    std::chrono::time_point<date::utc_clock> trigger_timepoint = date_time.to_time_point();
+    // atTime is an absolute date-time; TimeOffset is only for display (California Pricing whitepaper 3.3)
+    const std::chrono::time_point<date::utc_clock> trigger_timepoint = date_time.to_time_point();
     const std::chrono::time_point<date::utc_clock> now = date::utc_clock::now();
 
     if (trigger_timepoint < now) {
         EVLOG_error << "Could not set trigger metervalue because trigger time is in the past.";
         return;
-    }
-
-    std::optional<std::string> time_offset = this->configuration.getDisplayTimeOffset();
-    if (time_offset.has_value()) {
-        const std::vector<std::string> times = split_string(time_offset.value(), ':');
-        if (times.size() != 2) {
-            EVLOG_error << "Could not set display time offset: format not correct (should be something like "
-                           "\"-05:00\", but is "
-                        << time_offset.value() << ")";
-        } else {
-            try {
-                trigger_timepoint += std::chrono::hours(std::stoi(times.at(0)));
-                trigger_timepoint += std::chrono::minutes(std::stoi(times.at(1)));
-            } catch (const std::exception& e) {
-                EVLOG_error << "Could not set display time offset: format not correct (should be something "
-                               "like \"-19:15\", but is "
-                            << time_offset.value() << "): " << e.what();
-            }
-        }
     }
 
     const DateTime d(now);

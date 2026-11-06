@@ -30,6 +30,16 @@ target_link_libraries(test_tbd_controller_teardown
 
 catch_discover_tests(test_tbd_controller_teardown)
 
+add_executable(test_tbd_controller_interface tbd_controller_interface.cpp)
+
+target_link_libraries(test_tbd_controller_interface
+    PRIVATE
+        iso15118
+        Catch2::Catch2WithMain
+)
+
+catch_discover_tests(test_tbd_controller_interface)
+
 add_executable(test_tbd_controller_start_session tbd_controller_start_session.cpp)
 
 target_link_libraries(test_tbd_controller_start_session
@@ -105,3 +115,16 @@ catch_discover_tests(test_variant_decode)
 add_executable(test_session session.cpp)
 target_link_libraries(test_session PRIVATE iso15118 Catch2::Catch2WithMain)
 catch_discover_tests(test_session)
+
+# Only the EV side names the protocol it switched to.
+if(ISO15118_BUILD_EV_SIDE)
+    add_executable(test_protocol protocol.cpp)
+
+    target_link_libraries(test_protocol
+        PRIVATE
+            iso15118
+            Catch2::Catch2WithMain
+    )
+
+    catch_discover_tests(test_protocol)
+endif()

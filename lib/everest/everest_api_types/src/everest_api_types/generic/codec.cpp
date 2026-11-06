@@ -47,6 +47,10 @@ std::string serialize(ErrorEnum val) noexcept {
     return utilities::dump_json(val);
 }
 
+std::string serialize(TriggerValue const& val) noexcept {
+    return utilities::dump_json(val);
+}
+
 std::string serialize(Error const& val) noexcept {
     return utilities::dump_json(val);
 }
@@ -61,6 +65,11 @@ std::ostream& operator<<(std::ostream& os, const ErrorEnum& val) {
     return os;
 }
 
+std::ostream& operator<<(std::ostream& os, const TriggerValue& val) {
+    os << serialize(val);
+    return os;
+}
+
 std::ostream& operator<<(std::ostream& os, const Error& val) {
     os << serialize(val);
     return os;
@@ -71,19 +80,19 @@ template <> bool deserialize(std::string_view val) {
 }
 
 template <> int deserialize(std::string_view val) {
-    return utilities::parse_json<int>(val);
+    return utilities::parse_json_number<int>(val);
 }
 
 template <> size_t deserialize(std::string_view val) {
-    return utilities::parse_json<size_t>(val);
+    return utilities::parse_json_number<size_t>(val);
 }
 
 template <> double deserialize(std::string_view val) {
-    return utilities::parse_json<double>(val);
+    return utilities::parse_json_number<double>(val);
 }
 
 template <> float deserialize(std::string_view val) {
-    return utilities::parse_json<float>(val);
+    return utilities::parse_json_number<float>(val);
 }
 
 template <> std::string deserialize(std::string_view val) {
@@ -96,6 +105,10 @@ template <> RequestReply deserialize(std::string_view val) {
 
 template <> ErrorEnum deserialize(std::string_view val) {
     return utilities::parse_json<ErrorEnum>(val);
+}
+
+template <> TriggerValue deserialize(std::string_view val) {
+    return utilities::parse_json<TriggerValue>(val);
 }
 
 template <> Error deserialize(std::string_view val) {

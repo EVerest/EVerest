@@ -467,4 +467,19 @@ TEST_F(IsabellenhuetteIemDcrControllerTest, test_get_receipt_fail_http_error) {
     EXPECT_THROW(controller.get_receipt(), HttpClientError);
 }
 
+/// \brief Test the constructor rejects a timezone that is not +HHMM or -HHMM
+TEST_F(IsabellenhuetteIemDcrControllerTest, test_invalid_timezone) {
+    for (const auto* timezone : {"", "0100", "+01:00", "+ab00", "+2400", "-0160", "+01000"}) {
+        auto config = this->controller_config;
+        config.timezone = timezone;
+        EXPECT_THROW(IsaIemDcrController(std::make_unique<HTTPClientMock>(), config), std::invalid_argument)
+            << timezone;
+    }
+    for (const auto* timezone : {"+0000", "-0530", "+2359"}) {
+        auto config = this->controller_config;
+        config.timezone = timezone;
+        EXPECT_NO_THROW(IsaIemDcrController(std::make_unique<HTTPClientMock>(), config)) << timezone;
+    }
+}
+
 } // namespace module::main

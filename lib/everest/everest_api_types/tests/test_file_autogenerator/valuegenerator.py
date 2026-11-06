@@ -86,6 +86,15 @@ class AcrossFileGenerator:
         return type_string in helpers[namespace.__str__()].keys()
 
 
+# Integer fields whose schema bounds them; vector elements carry their index as a suffix.
+BOUNDED_INT_FIELDS = {"evse_ids": (1, 1000), "enable_priority": (0, 10000), "retries": (1, 1000), "decimals": (0, 10),
+                      "connector_id": (1, 128), "evse": (0, 128), "id": (1, 128)}
+
+
+def bounded_int_range(name):
+    return BOUNDED_INT_FIELDS.get(name.rstrip("0123456789"))
+
+
 def get_vector_type(type_string):
     return ValueGenerator.generics_extractor("std::vector", type_string)
 
@@ -106,6 +115,8 @@ def get_vector_variable_name(variable_name_suffix=""):
 class ValueGenerator:
     manual_generator = ManualGenerator()
     base_types = ["int32_t", "int64_t", "float", "std::string", "bool"]
+    # (struct, field) pairs that the codecs validate as RFC 3339 date-times
+    date_time_fields = set()
 
     def __init__(self, struct_name, struct_namespace, enum_map, across_file_struct_generator=None):
         if (across_file_struct_generator is None):
@@ -168,6 +179,8 @@ class ValueGenerator:
                 return self.struct_printout(prefix, generation)
 
         match type_string_cleaned:
+            case "int32_t" if bounded_int_range(name_string):
+                value_string = str(random.randint(*bounded_int_range(name_string)))
             case "int32_t":
                 s = ((2 ** 32) - 1) / 2
                 base = random.randint(math.floor(-s), math.floor(s))
@@ -178,6 +191,8 @@ class ValueGenerator:
                 value_string = ("(static_cast<int64_t>(" + str(base) + ") ^ static_cast<int64_t>(seed))") if use_runtime_seed else str(base)
             case "float":
                 value_string = random.random().__str__()
+            case "std::string" if (self.struct_name, name_string) in ValueGenerator.date_time_fields:
+                value_string = "\"2026-01-02T03:04:05.678Z\""
             case "std::string":
                 base = "\"" + "".join(random.sample(string.ascii_letters, 30)) + "\""
                 value_string = ("rotate_string(" + base + ", seed)") if use_runtime_seed else base

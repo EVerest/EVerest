@@ -144,7 +144,10 @@ components:
             properties:
               replyTo:
                 type: string
-                description: Address to send the response to.
+                minLength: 1
+                description: >-
+                  Address to send the response to. Omit it to discard the response. An invalid address, see
+                  the EVerest API explanation, rejects the request.
       examples:
         - summary: "Request to stop all modules"
           payload:
@@ -175,7 +178,10 @@ components:
             properties:
               replyTo:
                 type: string
-                description: Address to send the response to.
+                minLength: 1
+                description: >-
+                  Address to send the response to. Omit it to discard the response. An invalid address, see
+                  the EVerest API explanation, rejects the request.
       examples:
         - summary: "Request EVerest version"
           payload:
@@ -208,7 +214,10 @@ components:
             properties:
               replyTo:
                 type: string
-                description: Address to send the response to.
+                minLength: 1
+                description: >-
+                  Address to send the response to. Omit it to discard the response. An invalid address, see
+                  the EVerest API explanation, rejects the request.
       examples:
         - summary: "Request to start modules"
           payload:

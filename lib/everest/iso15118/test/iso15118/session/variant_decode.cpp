@@ -35,11 +35,11 @@ std::vector<uint8_t> encoded_vehicle_check_in_req() {
 
 } // namespace
 
-SCENARIO("A -20 Variant tells an undecodable frame from a decoded but unhandled message") {
+SCENARIO("A -20 RequestVariant tells an undecodable frame from a decoded but unhandled message") {
     GIVEN("A decoded VehicleCheckInReq") {
         const auto payload = encoded_vehicle_check_in_req();
-        const message_20::Variant variant{io::v2gtp::PayloadType::Part20Main,
-                                          io::StreamInputView{payload.data(), payload.size()}};
+        const message_20::RequestVariant variant{v2gtp::PayloadType::Part20Main,
+                                                 io::StreamInputView{payload.data(), payload.size()}};
 
         THEN("it carries no message, names the reason and is not undecodable: the state answers it") {
             REQUIRE(variant.get_type() == message_20::Type::None);
@@ -50,8 +50,8 @@ SCENARIO("A -20 Variant tells an undecodable frame from a decoded but unhandled 
 
     GIVEN("A payload the EXI decoder rejects") {
         const std::vector<uint8_t> payload{0xff, 0xff, 0xff, 0xff};
-        const message_20::Variant variant{io::v2gtp::PayloadType::Part20Main,
-                                          io::StreamInputView{payload.data(), payload.size()}};
+        const message_20::RequestVariant variant{v2gtp::PayloadType::Part20Main,
+                                                 io::StreamInputView{payload.data(), payload.size()}};
 
         THEN("it is undecodable [V2G20-800]") {
             REQUIRE(variant.get_type() == message_20::Type::None);
@@ -60,7 +60,7 @@ SCENARIO("A -20 Variant tells an undecodable frame from a decoded but unhandled 
     }
 
     GIVEN("An empty payload") {
-        const message_20::Variant variant{io::v2gtp::PayloadType::Part20Main, io::StreamInputView{nullptr, 0}};
+        const message_20::RequestVariant variant{v2gtp::PayloadType::Part20Main, io::StreamInputView{nullptr, 0}};
 
         THEN("it is undecodable [V2G20-800]") {
             REQUIRE(variant.is_undecodable());

@@ -29,6 +29,13 @@ SCENARIO("Se/Deserialize ISO-2 pre charge messages") {
             REQUIRE(from_physical_value(msg.ev_target_voltage) == 400);
             REQUIRE(from_physical_value(msg.ev_target_current) == 2);
         }
+
+        THEN("The wire carries the right units, which from_physical_value does not read") {
+            const auto& raw = decode_helper(serialized).V2G_Message.Body.PreChargeReq;
+
+            REQUIRE(raw.EVTargetVoltage.Unit == iso2_unitSymbolType_V);
+            REQUIRE(raw.EVTargetCurrent.Unit == iso2_unitSymbolType_A);
+        }
     }
 
     GIVEN("Round-trip pre_charge_res") {

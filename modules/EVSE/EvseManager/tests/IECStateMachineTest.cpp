@@ -341,6 +341,47 @@ TEST(IECStateMachine, deadlock_fix) {
     // if there is a deadlock the test won't finish
 }
 
+struct BspStubRecorder : public BspStub {
+    std::vector<std::string> calls;
+    std::vector<double> pwm_on_values;
+
+    Result call_cp_state_X1(Parameters p) override {
+        calls.push_back("cp_state_X1");
+        return BspStub::call_cp_state_X1(p);
+    }
+    Result call_cp_state_F(Parameters p) override {
+        calls.push_back("cp_state_F");
+        return BspStub::call_cp_state_F(p);
+    }
+    Result call_pwm_on(Parameters p) override {
+        calls.push_back("pwm_on");
+        pwm_on_values.push_back(p.at("value").get<double>());
+        return BspStub::call_pwm_on(p);
+    }
+};
+
+struct SetPwmTest : public testing::Test {
+    BspStubRecorder bsp;
+    std::unique_ptr<evse_board_supportIntf> bsp_if{std::make_unique<module::stub::evse_board_supportIntfStub>(bsp)};
+    module::IECStateMachine state_machine{bsp_if, true, false, false, 0};
+};
+
+TEST_F(SetPwmTest, duty_cycle_between_0_and_1_is_pwm_on) {
+    state_machine.set_pwm(0.5);
+    EXPECT_EQ(bsp.calls, std::vector<std::string>{"pwm_on"});
+    EXPECT_EQ(bsp.pwm_on_values, std::vector<double>{50.});
+}
+
+TEST_F(SetPwmTest, duty_cycle_1_is_cp_state_X1) {
+    state_machine.set_pwm(1.0);
+    EXPECT_EQ(bsp.calls, std::vector<std::string>{"cp_state_X1"});
+}
+
+TEST_F(SetPwmTest, duty_cycle_0_is_cp_state_F) {
+    state_machine.set_pwm(0.0);
+    EXPECT_EQ(bsp.calls, std::vector<std::string>{"cp_state_F"});
+}
+
 // ---------------------------------------------------------------------------
 // Tests for auth-aware connector locking
 //

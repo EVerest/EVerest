@@ -7,6 +7,9 @@
 #include <ocpp/common/call_types.hpp>
 #include <ocpp/common/ocpp_logging.hpp>
 #include <ocpp/common/types.hpp>
+#include <ocpp/common/utils.hpp>
+
+#include <everest/util/json/nesting_depth.hpp>
 
 #include <boost/algorithm/string.hpp>
 
@@ -468,6 +471,10 @@ void MessageLogging::log_output(LogType typ, const std::string& message_type, co
 FormattedMessageWithType MessageLogging::format_message(const std::string& message_type, const std::string& json_str) {
     auto extracted_message_type = message_type;
     auto formatted_message = json_str;
+
+    if (everest::lib::util::exceeds_json_nesting_depth(json_str, MAX_JSON_NESTING_DEPTH)) {
+        return {extracted_message_type, formatted_message};
+    }
 
     try {
         auto json_object = json::parse(json_str);

@@ -220,17 +220,16 @@ components:
       contentType: application/json
       payload:
         type: object
-        required:
-          - headers
         properties:
           headers:
             type: object
-            required:
-              - replyTo
             properties:
               replyTo:
                 type: string
-                description: Address to send the response to.
+                minLength: 1
+                description: >-
+                  Address to send the response to. Omit it to discard the response. An invalid address, see
+                  the EVerest API explanation, rejects the request.
       examples:
         - summary: ""
           payload:
@@ -252,17 +251,16 @@ components:
       contentType: application/json
       payload:
         type: object
-        required:
-          - headers
         properties:
           headers:
             type: object
-            required:
-              - replyTo
             properties:
               replyTo:
                 type: string
-                description: Address to send the response to.
+                minLength: 1
+                description: >-
+                  Address to send the response to. Omit it to discard the response. An invalid address, see
+                  the EVerest API explanation, rejects the request.
       examples:
         - summary: ""
           payload:
@@ -284,17 +282,16 @@ components:
       contentType: application/json
       payload:
         type: object
-        required:
-          - headers
         properties:
           headers:
             type: object
-            required:
-              - replyTo
             properties:
               replyTo:
                 type: string
-                description: Address to send the response to.
+                minLength: 1
+                description: >-
+                  Address to send the response to. Omit it to discard the response. An invalid address, see
+                  the EVerest API explanation, rejects the request.
       examples:
         - summary: ""
           payload:
@@ -359,7 +356,10 @@ components:
             $ref: 'display_message_API.yaml#/components/schemas/MessageContent'
     CommunicationCheck:
       type: boolean
-      description: "Send 'true' at least every 'cfg_communication_check_to_s' seconds to signal module is alive. Send 'false' to stop communication check'"
+      description: >-
+        Send true at least every cfg_communication_check_to_s seconds to signal that the client is alive, otherwise
+        EVerest raises a CommunicationFault, which the next message clears. Send false to stop the check until the
+        module restarts.
 
     HeartBeatId:
       type: integer

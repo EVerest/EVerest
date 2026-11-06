@@ -16,12 +16,12 @@
 #include <utils/mqtt_config_service.hpp>
 
 using namespace Everest;
-using namespace Everest::config;
-using namespace Everest::tests;
+using namespace ::Everest::config;
+using namespace ::Everest::tests;
 
 // ─── Minimal ConfigServiceInterface stub for handler tests ───────────────────
 
-struct StubConfigService : Everest::config::ConfigServiceInterface {
+struct StubConfigService : ::Everest::config::ConfigServiceInterface {
     SetConfigParameterResult last_set_results;
     everest::config::ModuleConfigurations module_configurations;
 

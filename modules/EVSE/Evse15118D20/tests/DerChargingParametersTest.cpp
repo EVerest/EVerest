@@ -212,6 +212,7 @@ TEST(DerChargingParametersTest, sae_each_mapped_bit_yields_its_directive) {
         {SaeFn::ConstantPowerFactorUnderExcitedFunction, DT::FixedPFAbsorb},
         {SaeFn::ConstantPowerFactorOverExcitedFunction, DT::FixedPFInject},
         {SaeFn::ConstantReactivePowerFunction, DT::FixedVar},
+        {SaeFn::ConstantActivePowerFunction, DT::FixedWatt},
         {SaeFn::FrequencyDroopFunction, DT::FreqDroop},
         {SaeFn::HighFrequencyMayTripFunction, DT::HFMayTrip},
         {SaeFn::HighFrequencyMustTripFunction, DT::HFMustTrip},
@@ -246,7 +247,6 @@ TEST(DerChargingParametersTest, sae_unmappable_bits_are_dropped_without_error) {
     auto ev = make_sae_ev_limits();
     ev.supported_modes = iso15118::sae::sae_function_bit(SaeFn::ChargeFunction) |
                          iso15118::sae::sae_function_bit(SaeFn::DischargeFunction) |
-                         iso15118::sae::sae_function_bit(SaeFn::ConstantActivePowerFunction) |
                          iso15118::sae::sae_function_bit(SaeFn::LowFrequencyMayTripFunction) |
                          iso15118::sae::sae_function_bit(SaeFn::EVSETargetReactivePowerFunction) |
                          iso15118::sae::sae_function_bit(SaeFn::EVSETargetActivePowerFunction);
@@ -350,8 +350,8 @@ TEST(DerChargingParametersTest, sae_full_bitmap_yields_all_mappable_directives) 
 
     const auto params = module::to_der_charging_parameters(ev);
 
-    // 24 defined bits, 6 with no DirectiveType counterpart (charge, discharge, constant watt,
-    // under frequency may trip, the two EVSE target powers).
+    // 24 defined bits, 5 with no DirectiveType counterpart (charge, discharge, under frequency may
+    // trip, the two EVSE target powers).
     ASSERT_TRUE(params.ev_supported_dercontrol.has_value());
-    EXPECT_EQ(params.ev_supported_dercontrol->size(), 18u);
+    EXPECT_EQ(params.ev_supported_dercontrol->size(), 19u);
 }

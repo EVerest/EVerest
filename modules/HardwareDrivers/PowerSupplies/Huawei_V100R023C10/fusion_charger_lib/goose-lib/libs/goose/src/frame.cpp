@@ -7,6 +7,21 @@
 
 using namespace goose::frame;
 
+namespace {
+
+// The power supply sends these strings with their null terminator, so a value may fill the whole buffer only if it
+// ends in one.
+template <std::size_t N>
+void copy_terminated_string(char (&destination)[N], const std::vector<std::uint8_t>& value, const char* name) {
+    if (value.size() > N || (value.size() == N && value.back() != 0)) {
+        throw std::runtime_error(std::string("GoosePDU: ") + name + " is too long");
+    }
+    memset(destination, 0, N);
+    memcpy(destination, value.data(), value.size());
+}
+
+} // namespace
+
 GooseTimestamp::GooseTimestamp(const std::vector<std::uint8_t>& raw) {
     if (raw.size() != 8) {
         throw std::runtime_error("GooseTimestamp: raw data is not 8 bytes");
@@ -78,10 +93,7 @@ GoosePDU::GoosePDU(const std::vector<std::uint8_t>& pdu) {
     if (go_cb_ref_entry.tag != 0x80) {
         throw std::runtime_error("GoosePDU: go_cb_ref tag is not 0x80");
     }
-    if (go_cb_ref_entry.value.size() > 65) { // todo: check length
-        throw std::runtime_error("GoosePDU: go_cb_ref is too long");
-    }
-    memcpy(go_cb_ref, go_cb_ref_entry.value.data(), go_cb_ref_entry.value.size());
+    copy_terminated_string(go_cb_ref, go_cb_ref_entry.value, "go_cb_ref");
 
     // time_allowed_to_live
     ber::PrimitiveBEREntry<std::uint32_t> time_allowed_to_live_entry(root_value, 0x81);
@@ -92,20 +104,14 @@ GoosePDU::GoosePDU(const std::vector<std::uint8_t>& pdu) {
     if (dat_set_entry.tag != 0x82) {
         throw std::runtime_error("GoosePDU: dat_set tag is not 0x82");
     }
-    if (dat_set_entry.value.size() > 65) { // todo: check length
-        throw std::runtime_error("GoosePDU: dat_set is too long");
-    }
-    memcpy(dat_set, dat_set_entry.value.data(), dat_set_entry.value.size());
+    copy_terminated_string(dat_set, dat_set_entry.value, "dat_set");
 
     // go_id
     goose::frame::ber::BEREntry go_id_entry(&root_value);
     if (go_id_entry.tag != 0x83) {
         throw std::runtime_error("GoosePDU: go_id tag is not 0x83");
     }
-    if (go_id_entry.value.size() > 65) { // todo: check length
-        throw std::runtime_error("GoosePDU: go_id is too long");
-    }
-    memcpy(go_id, go_id_entry.value.data(), go_id_entry.value.size());
+    copy_terminated_string(go_id, go_id_entry.value, "go_id");
 
     // timestamp
     goose::frame::ber::BEREntry timestamp_entry(&root_value);
@@ -254,14 +260,17 @@ GooseFrameIntf::GooseFrameIntf(const goose_ethernet::EthernetFrame& ethernet_fra
     this->priority = (tag_802_1q & 0xE000) >> 13;
     this->vlan_id = tag_802_1q & 0x0FFF;
 
-    // appid
-    if (ethernet_frame.payload.size() < 2) {
-        throw std::runtime_error("GooseFrame: no appid");
+    // appid, length, reserve1, reserve2
+    if (ethernet_frame.payload.size() < 8) {
+        throw std::runtime_error("GooseFrame: header too short");
     }
     appid[0] = ethernet_frame.payload[0];
     appid[1] = ethernet_frame.payload[1];
 
     std::uint16_t length = (ethernet_frame.payload[2] << 8) | ethernet_frame.payload[3];
+    if (length < 8 || length > ethernet_frame.payload.size()) {
+        throw std::runtime_error("GooseFrame: length does not fit the payload");
+    }
 
     std::uint16_t reserve1 = (ethernet_frame.payload[4] << 8) | ethernet_frame.payload[5];
     std::uint16_t reserve2 = (ethernet_frame.payload[6] << 8) | ethernet_frame.payload[7];
@@ -345,6 +354,9 @@ SecureGooseFrame::SecureGooseFrame(const goose_ethernet::EthernetFrame& ethernet
     }
     if (extended_length < 32) {
         throw std::runtime_error("GooseFrame: reserve1 byte 2 is less than 32, thus no hmac 256 fits");
+    }
+    if (static_cast<std::size_t>(length) + extended_length > ethernet_frame.payload.size()) {
+        throw std::runtime_error("GooseFrame: extended length does not fit the payload");
     }
 
     std::vector<std::uint8_t> reserve2_crc_data;

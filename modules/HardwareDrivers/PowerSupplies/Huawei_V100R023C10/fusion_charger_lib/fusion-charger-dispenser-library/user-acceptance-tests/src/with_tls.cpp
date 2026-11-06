@@ -275,11 +275,12 @@ TEST_F(DispenserWithTlsTest, CheckMaximumRatedChargeCurrentIsSet) {
 }
 
 TEST_F(DispenserWithTlsTest, ReadDispenserInformationAndConfiguration) {
-    auto expected_dispenser_information = DispenserInformation{.manufacturer = 0x0002,
-                                                               .model = 0x0080,
-                                                               .protocol_version = 1,
-                                                               .hardware_version = 3,
-                                                               .software_version = "v1.2.3+456"};
+    DispenserInformation expected_dispenser_information;
+    expected_dispenser_information.manufacturer = 0x0002;
+    expected_dispenser_information.model = 0x0080;
+    expected_dispenser_information.protocol_version = 1;
+    expected_dispenser_information.hardware_version = 3;
+    expected_dispenser_information.software_version = "v1.2.3+456";
 
     EXPECT_EQ(power_stack_mock->get_dispenser_information(), expected_dispenser_information);
 
@@ -471,17 +472,17 @@ TEST_F(DispenserWithTlsTest, String) {
     printf("%s\n", e.to_error_log_string().c_str());
 
     e.error_category = ErrorCategory::ChargingPowerUnit;
-    e.error_subcategory = {.charging_power_unit = ErrorSubcategoryChargingPowerUnit::PhaseSequenceAbornmalAlarm};
+    e.error_subcategory.charging_power_unit = ErrorSubcategoryChargingPowerUnit::PhaseSequenceAbornmalAlarm;
     e.payload.alarm = AlarmStatus::NORMAL;
     printf("%s\n", e.to_error_log_string().c_str());
 
     e.error_category = ErrorCategory::ChargingPowerUnit;
-    e.error_subcategory = {.charging_power_unit = ErrorSubcategoryChargingPowerUnit::ModbusTcpCertificate};
+    e.error_subcategory.charging_power_unit = ErrorSubcategoryChargingPowerUnit::ModbusTcpCertificate;
     e.payload.error_flags = 2;
     printf("%s\n", e.to_error_log_string().c_str());
 
     e.error_category = ErrorCategory::CoolingSection;
-    e.error_subcategory = {.cooling_section = ErrorSubcategoryCoolingSection::CoolingUnit1};
+    e.error_subcategory.cooling_section = ErrorSubcategoryCoolingSection::CoolingUnit1;
     e.payload.error_flags = 0x12345678;
     printf("%s\n", e.to_error_log_string().c_str());
 

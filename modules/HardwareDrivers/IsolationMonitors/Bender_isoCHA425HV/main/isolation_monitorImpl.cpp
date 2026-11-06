@@ -100,7 +100,7 @@ void isolation_monitorImpl::start_self_test() {
 
         if (mod->r_serial_comm_hub->call_modbus_write_multiple_registers(
                 config.imd_device_id, static_cast<int>(8005),
-                (types::serial_comm_hub_requests::VectorUint16){{0x5445}}) !=
+                types::serial_comm_hub_requests::VectorUint16{{0x5445}}) !=
             types::serial_comm_hub_requests::StatusCodeEnum::Success) {
             set_deviceFault("Failed to start self test");
             self_test_started = false;
@@ -137,8 +137,7 @@ bool isolation_monitorImpl::disable_faster_cable_check_mode() {
 
 bool isolation_monitorImpl::send_to_imd(const uint16_t& command, const uint16_t& value) {
     if (mod->r_serial_comm_hub->call_modbus_write_multiple_registers(
-            config.imd_device_id, static_cast<int>(command),
-            (types::serial_comm_hub_requests::VectorUint16){{value}}) !=
+            config.imd_device_id, static_cast<int>(command), types::serial_comm_hub_requests::VectorUint16{{value}}) !=
         types::serial_comm_hub_requests::StatusCodeEnum::Success) {
         EVLOG_error << "ModBus Command failed: " << command << " Value: " << value;
         set_deviceFault("Failed to write registers");

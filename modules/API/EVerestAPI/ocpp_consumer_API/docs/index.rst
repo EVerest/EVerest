@@ -21,5 +21,5 @@ form (empty ``component.name``, ``variable.name`` = configuration key) is
 deprecated: it is only accepted while OCPP 1.6 is active and will be removed
 per the deprecation policy. See the "Configuration access" and "Migration from
 OCPP 1.6 key addressing" sections in the OCPPmulti module documentation
-(:ref:`everest_modules_handwritten_OCPPmulti`) for examples and the migration
+(:ref:`everest_modules_OCPPmulti`) for examples and the migration
 guide.

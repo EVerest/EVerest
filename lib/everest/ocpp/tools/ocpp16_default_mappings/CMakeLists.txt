@@ -28,6 +28,7 @@ target_link_libraries(ocpp16_default_mappings_generator
         nlohmann_json::nlohmann_json
         ryml::ryml
         date::date-tz
+        everest::date
         everest::timer
 )
 if(EVEREST_CUSTOM_LOGGING_LIBRARY)

@@ -41,6 +41,7 @@ enum class Slot {
     WattVar,
     ConstantVar,
     VoltWatt,
+    ConstantWatt,
     FrequencyDroop,
     LimitMaxDischarge,
     ConstantPowerFactor,
@@ -75,6 +76,8 @@ std::optional<Slot> slot_for(gs::DirectiveType type) {
         return Slot::ConstantVar;
     case gs::DirectiveType::VoltWatt:
         return Slot::VoltWatt;
+    case gs::DirectiveType::FixedWatt:
+        return Slot::ConstantWatt;
     case gs::DirectiveType::FreqDroop:
         return Slot::FrequencyDroop;
     case gs::DirectiveType::LimitMaxDischarge:
@@ -365,6 +368,32 @@ bool apply_constant_var(sae::ConstantVar& out, const gs::Directive& d) {
     return true;
 }
 
+bool apply_constant_watt(sae::ConstantWatt& out, const gs::Directive& d) {
+    if (not d.fixed_watt.has_value()) {
+        warn_rejected(d, "missing fixed_watt payload");
+        return false;
+    }
+    const auto& fw = d.fixed_watt.value();
+    if (fw.setpoint < -100.0f or fw.setpoint > 100.0f) {
+        warn_rejected(d, "setpoint outside the Table 94 WattSetpoint range -100..100");
+        return false;
+    }
+    const auto unit = unit_for(d, fw.unit, UnitFamily::ActivePower);
+    if (not unit.has_value()) {
+        return false;
+    }
+    out.enable = true;
+    out.priority = priority_of(d);
+    // Table M.26: a negative WattSetpoint discharges the EV battery, a positive one charges it. grid_support
+    // FixedWattParams.setpoint is "negative = charging, positive = discharging", so the two conventions are
+    // opposed. [V2G20-3183] mandates converting a foreign sign convention.
+    out.watt_setpoint = -fw.setpoint;
+    out.watt_setpoint_L2 = std::nullopt;
+    out.watt_setpoint_L3 = std::nullopt;
+    out.unit = unit.value();
+    return true;
+}
+
 bool apply_frequency_droop(sae::FrequencyDroop& out, const gs::Directive& d, float nominal_frequency_hz) {
     if (not d.freq_droop.has_value()) {
         warn_rejected(d, "missing freq_droop payload");
@@ -448,6 +477,14 @@ bool apply_enter_service(sae::EnterServiceCPDRes& out, const gs::Directive& d) {
         return false;
     }
     const auto& es = d.enter_service.value();
+    // AMD1 Table 1 restricts EnterServiceDelay, EnterServiceRandomizedDelay and EnterServiceRampTime to >= 0.
+    const auto is_valid_time = [](const std::optional<float>& s) {
+        return not s.has_value() or (std::isfinite(s.value()) and s.value() >= 0.0f);
+    };
+    if (not is_valid_time(es.delay) or not is_valid_time(es.random_delay) or not is_valid_time(es.ramp_rate)) {
+        warn_rejected(d, "enter_service delay, random_delay and ramp_rate must be finite and >= 0");
+        return false;
+    }
     if (es.delay.has_value() and not es.ramp_rate.has_value()) {
         warn_rejected(d, "enter_service delay requires ramp_rate");
         return false;
@@ -507,6 +544,8 @@ bool apply(sae::DERControl& control, Slot slot, const gs::Directive& d, float no
         return apply_constant_var(rps.constant_var, d);
     case Slot::VoltWatt:
         return apply_volt_watt(aps.volt_watt, d);
+    case Slot::ConstantWatt:
+        return apply_constant_watt(aps.constant_watt, d);
     case Slot::FrequencyDroop:
         return apply_frequency_droop(aps.frequency_droop, d, nominal_frequency_hz);
     case Slot::LimitMaxDischarge:

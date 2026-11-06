@@ -188,14 +188,16 @@ cmds:
       description: The path of the CA bundle file
       type: string
   get_verify_location:
-    description: Command to get the file path of the CA root directory that can be used for verification. Will also invoke c_rehash for that directory
+    description: >-
+      Command to get the path of the CA certificates for verification: the bundle file if the CA store is a file,
+      otherwise the directory (c_rehash is invoked on it)
     arguments:
       certificate_type:
         description: Specifies that CA certificate type
         type: string
         $ref: /evse_security#/CaCertificateType
     result:
-      description: The path of the CA certificates directory
+      description: Path of the CA bundle file or CA directory
       type: string
   get_leaf_expiry_days_count:
     description: >-

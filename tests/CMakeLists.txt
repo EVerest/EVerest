@@ -50,3 +50,30 @@ add_test(
         ${PROJECT_SOURCE_DIR}
         ${PROJECT_BINARY_DIR}
 )
+
+# generates the development PKI into the build tree, never into config/certs
+add_test(
+    NAME dev_pki_generation
+    COMMAND
+        ${CMAKE_COMMAND}
+        -DDEV_PKI_WORKING_DIR=${CMAKE_CURRENT_BINARY_DIR}/dev_pki
+        -DDEV_PKI_INSTALL_DIR=${CMAKE_CURRENT_BINARY_DIR}/dev_pki
+        -P ${PROJECT_SOURCE_DIR}/cmake/iso15118-dev-pki.cmake
+)
+set_tests_properties(dev_pki_generation PROPERTIES LABELS dev-pki)
+
+# a failing openssl call must fail the generation with the files it left out
+add_test(
+    NAME dev_pki_generation_fails
+    COMMAND
+        ${CMAKE_COMMAND}
+        -DDEV_PKI_WORKING_DIR=${CMAKE_CURRENT_BINARY_DIR}/dev_pki_fails
+        -DDEV_PKI_INSTALL_DIR=${CMAKE_CURRENT_BINARY_DIR}/dev_pki_fails
+        -P ${PROJECT_SOURCE_DIR}/cmake/iso15118-dev-pki.cmake
+)
+set_tests_properties(dev_pki_generation_fails PROPERTIES
+    LABELS dev-pki
+    ENVIRONMENT "PATH=${CMAKE_CURRENT_SOURCE_DIR}/dev_pki/openssl-shim:$ENV{PATH}"
+    PASS_REGULAR_EXPRESSION "exited with [1-9][0-9]*\\..*Missing or empty under.*ca/v2g/V2G_ROOT_CA.pem.*openssl shim: failing call 4"
+    FAIL_REGULAR_EXPRESSION "development certificates generated"
+)

@@ -29,17 +29,36 @@ on:
         required: true
         type: string
     secrets:
-      coverage_deploy_token:
-        description: 'The token to use to deploy the coverage report'
+      COVERAGE_DEPLOY_APP_CLIENT_ID:
+        description: >-
+          Client ID of the GitHub App installed on <owner>/everest.github.io with
+          contents:write, used to deploy the coverage report and badge.
+        required: true
+      COVERAGE_DEPLOY_APP_PRIVATE_KEY:
+        description: >-
+          Private key of the GitHub App identified by COVERAGE_DEPLOY_APP_CLIENT_ID.
         required: true
 jobs:
   create-coverage-badge:
     name: coverage badge
     runs-on: ${{ inputs.runner }}
+    permissions:
+      contents: read
     steps:
+      - name: Mint coverage deploy token
+        id: coverage-deploy-token
+        if: ${{ inputs.is_fork == 'false' }}
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.COVERAGE_DEPLOY_APP_CLIENT_ID }}
+          private-key: ${{ secrets.COVERAGE_DEPLOY_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: everest.github.io
+          permission-contents: write
       - name: Checkout local github actions
         uses: actions/checkout@v7
         with:
+          persist-credentials: false
           repository: ${{ github.repository_owner }}/everest-ci
           ref: ${{ inputs.ref_everest_ci }}
           path: everest-ci
@@ -62,16 +81,18 @@ jobs:
               f.write(f"line_coverage={line_coverage}\n")
               f.write(f"line_coverage_percentage={float(line_coverage) * 100}\n")
       - name: Generate coverage badge
+        env:
+          LINE_COVERAGE_PERCENTAGE: ${{ steps.parse_coverage_report.outputs.line_coverage_percentage }}
         run: |
           pip install anybadge
-          mkdir -p ${{ github.workspace }}/coverage-badge/
-          anybadge -o --label Coverage --value ${{ steps.parse_coverage_report.outputs.line_coverage_percentage }} -s "%" --file ${{ github.workspace }}/coverage-badge/coverage-badge.svg 20=red 40=orange 60=yellow 80=yellowgreen 100=green
+          mkdir -p "$GITHUB_WORKSPACE/coverage-badge/"
+          anybadge -o --label Coverage --value "$LINE_COVERAGE_PERCENTAGE" -s "%" --file "$GITHUB_WORKSPACE/coverage-badge/coverage-badge.svg" 20=red 40=orange 60=yellow 80=yellowgreen 100=green
       - name: Deploy coverage badge
         uses: ./everest-ci/github-actions/deploy-ci-artifact
         if: ${{ inputs.is_fork == 'false' }}
         with:
           target_repo: ${{ inputs.artifact_deploy_target_repo }}
-          github_token: ${{ secrets.coverage_deploy_token }}
+          github_token: ${{ steps.coverage-deploy-token.outputs.token }}
           artifact_name: coverage-badge
           artifact_directory: ${{ github.workspace }}/coverage-badge/
           deploy_global_artifact: true
@@ -86,7 +107,7 @@ jobs:
         if: ${{ inputs.is_fork == 'false' }}
         with:
           target_repo: ${{ inputs.artifact_deploy_target_repo }}
-          github_token: ${{ secrets.coverage_deploy_token }}
+          github_token: ${{ steps.coverage-deploy-token.outputs.token }}
           artifact_name: ${{ inputs.coverage_report_artifact_name }}
           artifact_directory: ${{ github.workspace }}/coverage-report/
           deploy_global_artifact: true

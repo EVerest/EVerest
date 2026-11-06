@@ -261,9 +261,11 @@ void v2g_ctx_init_charging_values(struct v2g_context* const ctx) {
         ctx->evse_v2g_data.payment_option_list.clear();
         ctx->evse_v2g_data.payment_option_list.push_back(ctx->session.iso_selected_payment_option);
     }
-    memset(ctx->session.gen_challenge, 0, sizeof(ctx->session.gen_challenge));
+    ctx->session.gen_challenge.reset();
+    ctx->session.provided_id_token.reset();
 
     ctx->session.authorization_rejected = false;
+    ctx->session.selected_vas_services_by_provider.clear();
 
     remove_service_from_service_list_if_exists(ctx, V2G_SERVICE_ID_CERTIFICATE);
 

@@ -5,7 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "sdp.hpp"
+#include <iso15118/v2gtp/sdp.hpp>
 
 namespace iso15118::io {
 

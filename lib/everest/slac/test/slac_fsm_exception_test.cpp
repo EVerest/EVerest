@@ -42,6 +42,16 @@ bool is_mmtype(messages::HomeplugMessage const& msg, std::uint16_t mmtype) {
     return msg.get_mmtype() == mmtype;
 }
 
+messages::HomeplugMessage create_cm_slac_parm_req() {
+    messages::cm_slac_parm_req req{};
+    req.application_type = defs::COMMON_APPLICATION_TYPE;
+    req.security_type = defs::COMMON_SECURITY_TYPE;
+    messages::HomeplugMessage message;
+    message.set_source({0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0x01});
+    message.setup_payload(&req, sizeof(req), defs::MMTYPE_CM_SLAC_PARAM | defs::MMTYPE_MODE_REQ, defs::MMV::AV_1_1);
+    return message;
+}
+
 messages::HomeplugMessage create_cm_set_key_cnf() {
     messages::cm_set_key_cnf cnf{};
     cnf.result = defs::CM_SET_KEY_CNF_RESULT_MODEM_COMPAT_SUCCESS;
@@ -285,8 +295,11 @@ bool test_evse_failed_state_publish_is_retried_on_the_next_event() {
     if (!assert_true(ctx.status.match_state == SlacState::Idle, test_name, "did not reach Idle")) {
         return false;
     }
-    bool ok = assert_true(throws_runtime_error([&] { machine.enter_bcd(); }, "publisher exploded"), test_name,
-                          "the failed MATCHING publish did not surface from enter_bcd()");
+    machine.enter_bcd();
+    // MATCHING goes out with the first CM_SLAC_PARM.REQ, not with enter_bcd.
+    bool ok =
+        assert_true(throws_runtime_error([&] { machine.message(create_cm_slac_parm_req()); }, "publisher exploded"),
+                    test_name, "the failed MATCHING publish did not surface from the CM_SLAC_PARM.REQ");
     ok &= assert_true(delivered.empty() or delivered.back() != D3State::Matching, test_name,
                       "MATCHING was delivered although the publisher threw");
     try {

@@ -75,22 +75,47 @@ async def _validate_inoperative_raised(
     )
 
 
-async def _validate_inoperative_cleared(
-    test_utility: TestUtility, charge_point_v16: ChargePoint16, vendor_error_code: str
+async def _validate_cleared(
+    test_utility: TestUtility,
+    charge_point_v16: ChargePoint16,
+    error_cleared: dict,
+    inoperative_vendor_error_code: str,
 ):
-    """Clearing the underlying error clears Inoperative too; the connector returns to NoError."""
-    return await wait_for_and_validate(
+    """Clearing the underlying error clears Inoperative too, and the connector returns to NoError.
+
+    EvseManager clears Inoperative in reaction to the underlying error, and the OCPP module receives
+    both clear events independently, so the two cleared StatusNotifications arrive in either order.
+    The first still carries the error code of the other active error, the last reports NoError.
+    """
+    error_payload = await wait_for_and_validate(
+        test_utility, charge_point_v16, "StatusNotification", {"connector_id": 1, **error_cleared}
+    )
+    assert error_payload, f"no StatusNotification for the cleared error {error_cleared}"
+
+    inoperative_payload = await wait_for_and_validate(
         test_utility,
         charge_point_v16,
         "StatusNotification",
         {
             "connector_id": 1,
-            "error_code": ChargePointErrorCode.no_error,
-            "info": f"{vendor_error_code} resolved",
+            "info": f"{inoperative_vendor_error_code} resolved",
             "vendor_id": INOPERATIVE_VENDOR_ID,
-            "vendor_error_code": vendor_error_code,
+            "vendor_error_code": inoperative_vendor_error_code,
         },
     )
+    assert inoperative_payload, "no StatusNotification for the cleared evse_manager/Inoperative error"
+
+    cleared = [(payload["info"], payload["vendor_id"]) for payload in (error_payload, inoperative_payload)]
+    last_cleared = None
+    for entry in charge_point_v16.message_history.messages:
+        if entry.initiator != "Chargepoint":
+            continue
+        message = json.loads(entry.message)
+        if message[0] == 2 and message[2] == "StatusNotification" and \
+                (message[3].get("info"), message[3].get("vendorId")) in cleared:
+            last_cleared = message[3]
+    assert last_cleared["errorCode"] == ChargePointErrorCode.no_error, \
+        f"the last cleared StatusNotification did not report NoError: {last_cleared}"
 
 
 @pytest.mark.asyncio
@@ -139,21 +164,12 @@ async def test_mrec_error_with_message_sets_status_notification_info(
         json.dumps({"type": MREC_ERROR_TYPE}),
     )
 
-    # The MREC error is cleared first, leaving the EVSEManager's Inoperative error
-    assert await wait_for_and_validate(
+    await _validate_cleared(
         test_utility,
         charge_point_v16,
-        "StatusNotification",
-        {
-            "connector_id": 1,
-            "info": MREC_CLEARED_INFO,
-            "vendor_id": MREC_VENDOR_ID,
-            "vendor_error_code": MREC_VENDOR_ERROR_CODE,
-        },
+        {"info": MREC_CLEARED_INFO, "vendor_id": MREC_VENDOR_ID, "vendor_error_code": MREC_VENDOR_ERROR_CODE},
+        MREC_ERROR_TYPE,
     )
-
-    # Inoperative clears too and the connector returns to NoError
-    assert await _validate_inoperative_cleared(test_utility, charge_point_v16, MREC_ERROR_TYPE)
 
 
 @pytest.mark.asyncio
@@ -202,19 +218,12 @@ async def test_mrec_error_without_message_is_unchanged_from_baseline(
 
     # Even when there is no `message` on the original error, the `info` value that is generated from
     # the `vendor_error_code` should still be present
-    assert await wait_for_and_validate(
+    await _validate_cleared(
         test_utility,
         charge_point_v16,
-        "StatusNotification",
-        {
-            "connector_id": 1,
-            "info": MREC_CLEARED_INFO,
-            "vendor_id": MREC_VENDOR_ID,
-            "vendor_error_code": MREC_VENDOR_ERROR_CODE,
-        },
+        {"info": MREC_CLEARED_INFO, "vendor_id": MREC_VENDOR_ID, "vendor_error_code": MREC_VENDOR_ERROR_CODE},
+        MREC_ERROR_TYPE,
     )
-
-    assert await _validate_inoperative_cleared(test_utility, charge_point_v16, MREC_ERROR_TYPE)
 
 
 @pytest.mark.asyncio
@@ -264,19 +273,16 @@ async def test_non_mrec_error_with_message_is_unchanged_from_baseline(
         json.dumps({"type": NON_MREC_ERROR_TYPE, "sub_type": sub_type}),
     )
 
-    assert await wait_for_and_validate(
+    await _validate_cleared(
         test_utility,
         charge_point_v16,
-        "StatusNotification",
         {
-            "connector_id": 1,
             "info": f"{non_mrec_vendor_error_code} resolved",
             "vendor_id": message,
             "vendor_error_code": non_mrec_vendor_error_code,
         },
+        non_mrec_vendor_error_code,
     )
-
-    assert await _validate_inoperative_cleared(test_utility, charge_point_v16, non_mrec_vendor_error_code)
 
 
 @pytest.mark.asyncio
@@ -325,19 +331,12 @@ async def test_mrec_error_with_overlong_message_is_truncated(
     )
 
     # The synthesized clear `info` is derived from the vendorErrorCode, unaffected by the truncated message
-    assert await wait_for_and_validate(
+    await _validate_cleared(
         test_utility,
         charge_point_v16,
-        "StatusNotification",
-        {
-            "connector_id": 1,
-            "info": MREC_CLEARED_INFO,
-            "vendor_id": MREC_VENDOR_ID,
-            "vendor_error_code": MREC_VENDOR_ERROR_CODE,
-        },
+        {"info": MREC_CLEARED_INFO, "vendor_id": MREC_VENDOR_ID, "vendor_error_code": MREC_VENDOR_ERROR_CODE},
+        MREC_ERROR_TYPE,
     )
-
-    assert await _validate_inoperative_cleared(test_utility, charge_point_v16, MREC_ERROR_TYPE)
 
 
 @pytest.mark.asyncio

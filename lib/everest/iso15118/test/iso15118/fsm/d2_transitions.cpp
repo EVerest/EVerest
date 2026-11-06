@@ -188,7 +188,7 @@ constexpr double AC_PROFILE_POWER_W = 1000.0;
 message_2::CertificateInstallationRequest certificate_installation_req() {
     message_2::CertificateInstallationRequest req;
     req.oem_provisioning_cert = {0x30, 0x82, 0x01, 0x02};
-    req.root_certificate_ids.push_back({"CN=V2G Root CA", 12345});
+    req.root_certificate_ids.push_back({"CN=V2G Root CA", {0x30, 0x39}});
     return req;
 }
 
@@ -197,7 +197,7 @@ message_2::CertificateUpdateRequest certificate_update_req() {
     req.contract_chain.certificate = {0x30, 0x82, 0x01, 0x02};
     req.contract_chain.sub_certificates.push_back({0x30, 0x82, 0x00, 0x55});
     req.emaid = "UKSWI123456791A";
-    req.root_certificate_ids.push_back({"CN=V2G Root CA", 12345});
+    req.root_certificate_ids.push_back({"CN=V2G Root CA", {0x30, 0x39}});
     return req;
 }
 
@@ -1482,15 +1482,42 @@ SCENARIO("ISO 15118-2 SECC external VAS providers") {
                 selection.selected_service_list.push_back({42, 7});
                 secc.drive(selection);
 
-                THEN("OK, the provider is told about the selection and the machine moves on") {
+                THEN("OK, and the provider is not told before authorization [V2G2-774]") {
                     const auto res = secc.fsm.response<message_2::PaymentServiceSelectionResponse>();
                     REQUIRE(res.has_value());
                     REQUIRE(res->response_code == dt::ResponseCode::OK);
-                    REQUIRE(selected.has_value());
-                    REQUIRE(selected->size() == 1);
-                    REQUIRE(selected->front().service_id == 42);
-                    REQUIRE(selected->front().parameter_set_id == 7);
+                    REQUIRE_FALSE(selected.has_value());
                     REQUIRE(secc.fsm.state() == StateID::Authorization);
+                }
+
+                AND_WHEN("Authorization is still ongoing") {
+                    secc.drive(message_2::AuthorizationRequest{});
+
+                    THEN("The provider is still not told") {
+                        REQUIRE_FALSE(selected.has_value());
+                    }
+
+                    AND_WHEN("Authorization finishes") {
+                        secc.fsm.control(d20::AuthorizationResponse{true});
+                        secc.drive(message_2::AuthorizationRequest{});
+
+                        THEN("The provider is told about the selection") {
+                            REQUIRE(secc.fsm.state() == StateID::ChargeParameterDiscovery);
+                            REQUIRE(selected.has_value());
+                            REQUIRE(selected->size() == 1);
+                            REQUIRE(selected->front().service_id == 42);
+                            REQUIRE(selected->front().parameter_set_id == 7);
+                        }
+                    }
+
+                    AND_WHEN("Authorization is rejected") {
+                        secc.fsm.control(d20::AuthorizationResponse{false});
+                        secc.drive(message_2::AuthorizationRequest{});
+
+                        THEN("The provider is never told") {
+                            REQUIRE_FALSE(selected.has_value());
+                        }
+                    }
                 }
             }
         }

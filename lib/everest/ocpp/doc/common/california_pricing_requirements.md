@@ -50,7 +50,7 @@ the DataTransfer message is converted to internally used structs as described ab
 | `Language` | Default language code for the stations UI (IETF RFC5646) (readwrite). |
 | `SupportedLanguages` | Comma separated list of supported languages, specified as IETF RFC5646 (readonly). |
 | `DefaultPriceText` | Holds an array (`priceTexts`) of default price texts in several languages. Each item has the `priceText` (string) in the given `language` (string) and a `priceTextOffline` (string) in the given language. The CSMS sends the DefaultPriceText per language: `"DefaultPriceText,\<language code\>"`, but libocpp will convert it to the above described json object. (readwrite) |
-| `TimeOffset` | As OCPP 1.6 does not have built-in support for timezones, you can set a timezone when displaying time related pricing information. This timezone is also used for the `atTime` trigger. (readwrite) |
+| `TimeOffset` | As OCPP 1.6 does not have built-in support for timezones, you can set a timezone when displaying time related pricing information. It does not affect `atTime` triggers, which are absolute date-times. (readwrite) |
 | `NextTimeOffsetTransitionDateTime` | When to change to summer or winter time, to the offset `TimeOffsetNextTransition` |
 | `TimeOffsetNextTransition` | What the new offset should be at the given `NextTimeOffsetTransationDateTime` (readwrite) |
 

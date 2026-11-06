@@ -31,6 +31,7 @@ cc_library(
         "include/everest_api_types/utilities/constants.hpp",
         "include/everest_api_types/utilities/deserialize_templates.inc",
         "private_include/everest_api_types/utilities/json_codec_helpers.hpp",
+        "private_include/everest_api_types/utilities/request_reply.hpp",
     ],
     includes = [
         "include",

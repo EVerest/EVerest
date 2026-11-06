@@ -72,12 +72,12 @@ SCENARIO("Session teardown primitives") {
         conn->fire(iso15118::io::ConnectionEvent::ACCEPTED);
 
         // First response goes out immediately and latches the tx timestamp.
-        conn->queue_v2gtp_packet(iso15118::io::v2gtp::PayloadType::SAP, sap_req, sizeof(sap_req));
+        conn->queue_v2gtp_packet(iso15118::v2gtp::PayloadType::SAP, sap_req, sizeof(sap_req));
         conn->fire(iso15118::io::ConnectionEvent::NEW_DATA);
         session.poll();
 
         // Second response is generated but held back by the 100 ms rate limiter.
-        conn->queue_v2gtp_packet(iso15118::io::v2gtp::PayloadType::Part20Main, session_setup_req,
+        conn->queue_v2gtp_packet(iso15118::v2gtp::PayloadType::Part20Main, session_setup_req,
                                  sizeof(session_setup_req));
         conn->fire(iso15118::io::ConnectionEvent::NEW_DATA);
         session.poll();
@@ -128,7 +128,7 @@ SCENARIO("Session teardown primitives") {
         iso15118::Session mid_session{std::move(mid_connection), session_config, recording, pause_ctx, d2_pause_ctx};
 
         mid->fire(iso15118::io::ConnectionEvent::ACCEPTED);
-        mid->queue_v2gtp_packet(iso15118::io::v2gtp::PayloadType::SAP, sap_req, sizeof(sap_req));
+        mid->queue_v2gtp_packet(iso15118::v2gtp::PayloadType::SAP, sap_req, sizeof(sap_req));
         mid->fire(iso15118::io::ConnectionEvent::NEW_DATA);
         // The SupportedAppProtocolRes is paced, so wait that out for the second poll to write it and hand
         // the session over to the ISO 15118-20 engine.

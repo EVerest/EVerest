@@ -1473,11 +1473,15 @@ void Charger::update_pwm_max_every_5seconds_ampere(float ampere) {
 }
 
 void Charger::update_pwm_now(float duty_cycle) {
-    auto start = std::chrono::steady_clock::now();
     if (duty_cycle >= 1.) {
-        // 100 % duty cycle is state X1 (no current available)
-        note_pwm_switched_off();
+        cp_state_X1();
+        return;
     }
+    if (duty_cycle <= 0.) {
+        cp_state_F();
+        return;
+    }
+    auto start = std::chrono::steady_clock::now();
     internal_context.update_pwm_last_duty_cycle = duty_cycle;
     shared_context.pwm_running = true;
 

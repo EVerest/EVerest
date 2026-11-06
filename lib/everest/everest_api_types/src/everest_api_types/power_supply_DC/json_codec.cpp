@@ -2,6 +2,7 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 
 #include "power_supply_DC/json_codec.hpp"
+#include "generic/json_codec.hpp"
 #include "nlohmann/json.hpp"
 #include "power_supply_DC/API.hpp"
 #include "power_supply_DC/codec.hpp"
@@ -193,8 +194,8 @@ void to_json(json& j, ChargingPhase const& k) noexcept {
     case ChargingPhase::Charging:
         j = "Charging";
         return;
-        j = "INVALID_VALUE__everest::lib::API::V1_0::types::power_supply_DC::ChargingPhase";
     }
+    j = "INVALID_VALUE__everest::lib::API::V1_0::types::power_supply_DC::ChargingPhase";
 }
 
 void from_json(json const& j, ChargingPhase& k) {
@@ -348,6 +349,9 @@ void to_json(json& j, const Error& k) noexcept {
     if (k.message) {
         j["message"] = k.message.value();
     };
+    if (k.trigger_value) {
+        j["trigger_value"] = k.trigger_value.value();
+    }
 }
 
 void from_json(const json& j, Error& k) {
@@ -357,6 +361,9 @@ void from_json(const json& j, Error& k) {
     }
     if (j.contains("message")) {
         k.message.emplace(j.at("message"));
+    }
+    if (j.contains("trigger_value")) {
+        k.trigger_value.emplace(j.at("trigger_value").get<generic::TriggerValue>());
     }
 }
 

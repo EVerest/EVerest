@@ -13,7 +13,7 @@ public:
         uint8_t pin;
     };
 
-    BSL_GPIO(_gpio_def _bsl = {.bank = 1, .pin = 12}, _gpio_def _reset = {.bank = 1, .pin = 23});
+    BSL_GPIO(_gpio_def _bsl = {1, 12}, _gpio_def _reset = {1, 23});
     bool hard_reset(uint16_t ms_reset_time = default_ms_reset_time);
     bool enter_bsl();
 

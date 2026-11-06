@@ -238,6 +238,12 @@ void EvseManager::init() {
     r_bsp->subscribe_request_stop_transaction(
         [this](types::evse_manager::StopTransactionRequest r) { charger->cancel_transaction(r); });
 
+    r_bsp->subscribe_telemetry([this](types::evse_board_support::Telemetry const& telemetry) {
+        if (telemetry.plug_temperature_C.has_value()) {
+            p_dc_external_derate->publish_plug_temperature_C(telemetry.plug_temperature_C.value());
+        }
+    });
+
     r_bsp->subscribe_capabilities([this](types::evse_board_support::HardwareCapabilities const& c) {
         hw_capabilities.apply_when_allowed(c);
         {
@@ -526,8 +532,8 @@ void EvseManager::ready() {
                 ev_info.target_soc = p.target_soc.value();
             }
             if (p.remaining_time_to_maximum_soc.has_value()) {
-                ev_info.estimated_time_full =
-                    Everest::Date::seconds_from_now_to_rfc3339(p.remaining_time_to_maximum_soc.value());
+                ev_info.estimated_time_full = Everest::Date::seconds_from_now_to_rfc3339(
+                    static_cast<std::uint32_t>(p.remaining_time_to_maximum_soc.value()));
             }
             if (p.battery_energy_capacity.has_value()) {
                 ev_info.battery_capacity = p.battery_energy_capacity.value();
@@ -599,19 +605,20 @@ void EvseManager::ready() {
                 p_evse->publish_ev_info(ev_info);
             });
 
-            r_hlc[0]->subscribe_ac_ev_dynamic_control_mode([this](
-                                                               types::iso15118::AcEvDynamicModeValues const& values) {
-                Everest::scoped_lock_timeout lock(ev_info_mutex,
-                                                  Everest::MutexDescription::EVSE_subscribe_ac_ev_dynamic_control_mode);
-                ev_info.target_energy_request = values.target_energy_request;
-                ev_info.max_energy_request = values.max_energy_request;
-                ev_info.min_energy_request = values.min_energy_request;
-                if (values.departure_time.has_value()) {
-                    ev_info.departure_time = Everest::Date::seconds_from_now_to_rfc3339(values.departure_time.value());
-                }
-                // TODO(SL): Missing max_v2x_energy_request & min_v2x_energy_request
-                p_evse->publish_ev_info(ev_info);
-            });
+            r_hlc[0]->subscribe_ac_ev_dynamic_control_mode(
+                [this](types::iso15118::AcEvDynamicModeValues const& values) {
+                    Everest::scoped_lock_timeout lock(
+                        ev_info_mutex, Everest::MutexDescription::EVSE_subscribe_ac_ev_dynamic_control_mode);
+                    ev_info.target_energy_request = values.target_energy_request;
+                    ev_info.max_energy_request = values.max_energy_request;
+                    ev_info.min_energy_request = values.min_energy_request;
+                    if (values.departure_time.has_value()) {
+                        ev_info.departure_time = Everest::Date::seconds_from_now_to_rfc3339(
+                            static_cast<std::uint32_t>(values.departure_time.value()));
+                    }
+                    // TODO(SL): Missing max_v2x_energy_request & min_v2x_energy_request
+                    p_evse->publish_ev_info(ev_info);
+                });
 
         } else if (config.charge_mode == "DC") {
             // Create voltage plausibility monitor for DC charging
@@ -932,9 +939,17 @@ void EvseManager::ready() {
                 Everest::scoped_lock_timeout lock(ev_info_mutex,
                                                   Everest::MutexDescription::EVSE_subscribe_dc_ev_maximum_limits);
 
-                ev_info.maximum_current_limit = l.dc_ev_maximum_current_limit;
-                ev_info.maximum_power_limit = l.dc_ev_maximum_power_limit;
-                ev_info.maximum_voltage_limit = l.dc_ev_maximum_voltage_limit;
+                // Optional in CurrentDemandReq (ISO 15118-2 Table 55, DIN SPEC 70121): an omitted limit keeps the
+                // one negotiated in ChargeParameterDiscovery.
+                if (l.dc_ev_maximum_current_limit.has_value()) {
+                    ev_info.maximum_current_limit = l.dc_ev_maximum_current_limit;
+                }
+                if (l.dc_ev_maximum_power_limit.has_value()) {
+                    ev_info.maximum_power_limit = l.dc_ev_maximum_power_limit;
+                }
+                if (l.dc_ev_maximum_voltage_limit.has_value()) {
+                    ev_info.maximum_voltage_limit = l.dc_ev_maximum_voltage_limit;
+                }
                 p_evse->publish_ev_info(ev_info);
 
                 // Update limits for over voltage monitoring

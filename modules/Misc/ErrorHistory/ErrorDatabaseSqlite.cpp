@@ -15,6 +15,14 @@
 
 namespace module {
 
+namespace {
+void bind_values(everest::db::sqlite::StatementInterface& stmt, const std::vector<std::string>& values) {
+    for (std::size_t i = 0; i < values.size(); i++) {
+        stmt.bind_text(static_cast<int>(i + 1), values[i], everest::db::sqlite::SQLiteString::Transient);
+    }
+}
+} // namespace
+
 ErrorDatabaseSqlite::ErrorDatabaseSqlite(const fs::path& db_path_, const bool reset_) :
     db_path(fs::absolute(db_path_)) {
     BOOST_LOG_FUNCTION();
@@ -164,61 +172,67 @@ void ErrorDatabaseSqlite::add_error_without_mutex(Everest::error::ErrorPtr error
     }
 }
 
-std::string ErrorDatabaseSqlite::filter_to_sql_condition(const Everest::error::ErrorFilter& filter) {
-    std::string condition{};
+ErrorDatabaseSqlite::SqlCondition
+ErrorDatabaseSqlite::filter_to_sql_condition(const Everest::error::ErrorFilter& filter) {
+    SqlCondition condition{};
     switch (filter.get_filter_type()) {
     case Everest::error::FilterType::State: {
-        condition = "(state = '" + Everest::error::state_to_string(filter.get_state_filter()) + "')";
+        condition = {"(state = ?)", {Everest::error::state_to_string(filter.get_state_filter())}};
     } break;
     case Everest::error::FilterType::Origin: {
-        condition = "(origin_module = '" + filter.get_origin_filter().module_id + "' AND " +
-                    "origin_implementation = '" + filter.get_origin_filter().implementation_id + "')";
+        condition = {"(origin_module = ? AND origin_implementation = ?)",
+                     {filter.get_origin_filter().module_id, filter.get_origin_filter().implementation_id}};
     } break;
     case Everest::error::FilterType::Type: {
-        condition = "(type = '" + filter.get_type_filter().value + "')";
+        condition = {"(type = ?)", {filter.get_type_filter().value}};
     } break;
     case Everest::error::FilterType::Severity: {
         switch (filter.get_severity_filter()) {
         case Everest::error::SeverityFilter::LOW_GE: {
-            condition = "(severity = '" + Everest::error::severity_to_string(Everest::error::Severity::Low) +
-                        "' OR severity = '" + Everest::error::severity_to_string(Everest::error::Severity::Medium) +
-                        "' OR severity = '" + Everest::error::severity_to_string(Everest::error::Severity::High) + "')";
+            condition = {"(severity = ? OR severity = ? OR severity = ?)",
+                         {Everest::error::severity_to_string(Everest::error::Severity::Low),
+                          Everest::error::severity_to_string(Everest::error::Severity::Medium),
+                          Everest::error::severity_to_string(Everest::error::Severity::High)}};
         } break;
         case Everest::error::SeverityFilter::MEDIUM_GE: {
-            condition = "(severity = '" + Everest::error::severity_to_string(Everest::error::Severity::Medium) +
-                        "' OR severity = '" + Everest::error::severity_to_string(Everest::error::Severity::High) + "')";
+            condition = {"(severity = ? OR severity = ?)",
+                         {Everest::error::severity_to_string(Everest::error::Severity::Medium),
+                          Everest::error::severity_to_string(Everest::error::Severity::High)}};
         } break;
         case Everest::error::SeverityFilter::HIGH_GE: {
-            condition = "(severity = '" + Everest::error::severity_to_string(Everest::error::Severity::High) + "')";
+            condition = {"(severity = ?)", {Everest::error::severity_to_string(Everest::error::Severity::High)}};
         } break;
         }
     } break;
     case Everest::error::FilterType::TimePeriod: {
-        condition = "(timestamp BETWEEN '" + Everest::Date::to_rfc3339(filter.get_time_period_filter().from) +
-                    "' AND '" + Everest::Date::to_rfc3339(filter.get_time_period_filter().to) + "')";
+        condition = {"(timestamp BETWEEN ? AND ?)",
+                     {Everest::Date::to_rfc3339(filter.get_time_period_filter().from),
+                      Everest::Date::to_rfc3339(filter.get_time_period_filter().to)}};
     } break;
     case Everest::error::FilterType::Handle: {
-        condition = "(uuid = '" + filter.get_handle_filter().to_string() + "')";
+        condition = {"(uuid = ?)", {filter.get_handle_filter().to_string()}};
     } break;
     case Everest::error::FilterType::SubType: {
-        condition = "(sub_type = '" + filter.get_sub_type_filter().value + "')";
+        condition = {"(sub_type = ?)", {filter.get_sub_type_filter().value}};
     } break;
     case Everest::error::FilterType::VendorId: {
-        condition = "(vendor_id = '" + filter.get_vendor_id_filter().value + "')";
+        condition = {"(vendor_id = ?)", {filter.get_vendor_id_filter().value}};
     } break;
     }
     return condition;
 }
 
-std::optional<std::string>
+std::optional<ErrorDatabaseSqlite::SqlCondition>
 ErrorDatabaseSqlite::filters_to_sql_condition(const std::list<Everest::error::ErrorFilter>& filters) {
-    std::optional<std::string> condition = std::nullopt;
+    std::optional<SqlCondition> condition = std::nullopt;
     if (!filters.empty()) {
         auto it = filters.begin();
         condition = filter_to_sql_condition(*it);
         it++;
         while (it != filters.end()) {
-            condition = condition.value() + " AND " + ErrorDatabaseSqlite::filter_to_sql_condition(*it);
+            const SqlCondition next = ErrorDatabaseSqlite::filter_to_sql_condition(*it);
+            condition->clause += " AND " + next.clause;
+            condition->values.insert(condition->values.end(), next.values.begin(), next.values.end());
             it++;
         }
     }
@@ -231,7 +245,8 @@ ErrorDatabaseSqlite::get_errors(const std::list<Everest::error::ErrorFilter>& fi
     return this->get_errors(ErrorDatabaseSqlite::filters_to_sql_condition(filters));
 }
 
-std::list<Everest::error::ErrorPtr> ErrorDatabaseSqlite::get_errors(const std::optional<std::string>& condition) const {
+std::list<Everest::error::ErrorPtr>
+ErrorDatabaseSqlite::get_errors(const std::optional<SqlCondition>& condition) const {
     BOOST_LOG_FUNCTION();
     std::list<Everest::error::ErrorPtr> result;
     try {
@@ -242,10 +257,13 @@ std::list<Everest::error::ErrorPtr> ErrorDatabaseSqlite::get_errors(const std::o
         }
         std::string sql = "SELECT * FROM errors";
         if (condition.has_value()) {
-            sql += " WHERE " + condition.value();
+            sql += " WHERE " + condition->clause;
         }
         EVLOG_debug << "Executing SQL statement: " << sql;
         auto stmt = db.new_statement(sql);
+        if (condition.has_value()) {
+            bind_values(*stmt, condition->values);
+        }
         int status;
         while ((status = stmt->step()) == SQLITE_ROW) {
             const Everest::error::ErrorType err_type(std::get<std::string>(stmt->column_variant("type")));
@@ -298,7 +316,7 @@ ErrorDatabaseSqlite::remove_errors(const std::list<Everest::error::ErrorFilter>&
 std::list<Everest::error::ErrorPtr>
 ErrorDatabaseSqlite::remove_errors_without_mutex(const std::list<Everest::error::ErrorFilter>& filters) {
     BOOST_LOG_FUNCTION();
-    std::optional<std::string> condition = ErrorDatabaseSqlite::filters_to_sql_condition(filters);
+    std::optional<SqlCondition> condition = ErrorDatabaseSqlite::filters_to_sql_condition(filters);
     std::list<Everest::error::ErrorPtr> result = this->get_errors(condition);
     try {
         everest::db::sqlite::Connection db(this->db_path);
@@ -308,9 +326,15 @@ ErrorDatabaseSqlite::remove_errors_without_mutex(const std::list<Everest::error:
         }
         std::string sql = "DELETE FROM errors";
         if (condition.has_value()) {
-            sql += " WHERE " + condition.value();
+            sql += " WHERE " + condition->clause;
         }
-        db.execute_statement(sql);
+        auto stmt = db.new_statement(sql);
+        if (condition.has_value()) {
+            bind_values(*stmt, condition->values);
+        }
+        if (stmt->step() != SQLITE_DONE) {
+            throw everest::db::QueryExecutionException(db.get_error_message());
+        }
     } catch (const std::exception& e) {
         EVLOG_error << "Error removing errors from database: " << e.what();
     }

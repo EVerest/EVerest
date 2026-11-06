@@ -284,5 +284,46 @@ SCENARIO("Check ErrorDatabaseSqlite class", "[!throws]") {
                 REQUIRE(errors.size() == 0);
             }
         }
+
+        const std::string injection = "x' OR '1'='1";
+        WHEN("Getting errors with SQL in string filters") {
+            THEN("The filter values should not be interpreted as SQL") {
+                REQUIRE(db.get_errors({Everest::error::ErrorFilter(Everest::error::TypeFilter(injection))}).empty());
+                REQUIRE(db.get_errors({Everest::error::ErrorFilter(Everest::error::OriginFilter(injection, injection))})
+                            .empty());
+                REQUIRE(db.get_errors({Everest::error::ErrorFilter(Everest::error::HandleFilter(injection))}).empty());
+                REQUIRE(db.get_errors({Everest::error::ErrorFilter(Everest::error::SubTypeFilter(injection))}).empty());
+                REQUIRE(
+                    db.get_errors({Everest::error::ErrorFilter(Everest::error::VendorIdFilter(injection))}).empty());
+            }
+        }
+        WHEN("Removing errors with SQL in the handle filter") {
+            db.remove_errors({Everest::error::ErrorFilter(Everest::error::HandleFilter(injection))});
+            THEN("No error should be removed") {
+                check_expected_errors_in_list(test_errors, db.get_errors(std::list<Everest::error::ErrorFilter>()));
+            }
+        }
+        WHEN("Editing errors with a stacked SQL statement in the handle filter") {
+            const auto edited = db.edit_errors(
+                {Everest::error::ErrorFilter(Everest::error::HandleFilter("x'); DROP TABLE errors; --"))},
+                [](Everest::error::ErrorPtr error) { error->state = Everest::error::State::ClearedByModule; });
+            THEN("No error should be edited and the table should be intact") {
+                REQUIRE(edited.empty());
+                check_expected_errors_in_list(test_errors, db.get_errors(std::list<Everest::error::ErrorFilter>()));
+            }
+        }
+        WHEN("Adding an error with a quote in its type") {
+            std::vector<Everest::error::ErrorPtr> quoted_errors = {std::make_shared<Everest::error::Error>(
+                "test_type_'quoted'", "test_sub_type", "test_message", "test_description",
+                ImplementationIdentifier("test_origin_module", "test_origin_implementation"), "everest-test",
+                Everest::error::Severity::Low, date::utc_clock::now(), Everest::error::UUID(),
+                Everest::error::State::Active)};
+            db.add_error(quoted_errors.at(0));
+            THEN("Filtering by that type should find exactly this error") {
+                check_expected_errors_in_list(
+                    quoted_errors,
+                    db.get_errors({Everest::error::ErrorFilter(Everest::error::TypeFilter("test_type_'quoted'"))}));
+            }
+        }
     }
 }

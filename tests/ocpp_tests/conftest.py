@@ -115,9 +115,10 @@ def everest_config_strategies(request, ocpp_impl, ocpp_version) -> list:
 
 
 @pytest.fixture(scope="session")
-def exi_generator():
+def exi_generator(request):
     certs_path = str(Path(__file__).parent / "test_sets" / "everest-aux" / "certs")
-    return everest_test_utils.EXIGenerator(certs_path)
+    library_path = everest_test_utils.find_exi_library(request.config.getoption("--everest-prefix"))
+    return everest_test_utils.EXIGenerator(certs_path, library_path)
 
 
 @pytest.fixture

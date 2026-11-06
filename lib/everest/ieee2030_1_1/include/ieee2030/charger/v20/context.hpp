@@ -20,7 +20,7 @@ struct CanBrokerContext {
     std::function<void(uint16_t)> update_reamining_time;
 };
 
-class StateBase;
+struct StateBase;
 using BasePointerType = std::unique_ptr<StateBase>;
 
 class Context {

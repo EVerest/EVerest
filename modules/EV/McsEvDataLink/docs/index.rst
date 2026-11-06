@@ -257,7 +257,7 @@ Restart request upward        ``request_error_routine``                   no suc
 Setup deadline                ``TT_EV_link_detect`` (4 s) plus            one deadline: ``TT_EV_link_detect`` /
                               ``TT_sync_repetition``                      ``T_conn_resume`` (V2G10-035); no
                                                                           repetition - see the warning above
-Pause                         ``dlink_pause``; stays MATCHED, keeps        no command; a sleeping comm module is
+Pause                         ``dlink_pause``; stays MATCHED, keeps       no command; a sleeping comm module is
                               D-LINK_READY (V2G10-041)                    reported as a link loss (V2G10-040)
 Explicit teardown             ``dlink_terminate``                         ``reset`` only
 Internal states               5 (adds ``paused``, ``retry_wait``)         3 - the published ones

@@ -16,9 +16,13 @@ jobs:
   bazel-cross-build:
     name: build
     runs-on: ${{ inputs.runner }}
+    permissions:
+      contents: read
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - name: Authenticate GitHub downloads
         env:
           GITHUB_TOKEN: ${{ github.token }}
@@ -47,9 +51,11 @@ jobs:
       - name: Record build start
         run: echo "BAZEL_BUILD_START=$(date +%s)" >> "$GITHUB_ENV"
       - name: Build all
+        env:
+          PLATFORM: ${{ inputs.platform }}
         run: >
-          bazelisk build --config=ci --config=${{ inputs.platform }} //...
-          --platforms=//third-party/bazel/toolchains:${{ inputs.platform }}
+          bazelisk build --config=ci "--config=${PLATFORM}" //...
+          "--platforms=//third-party/bazel/toolchains:${PLATFORM}"
           --@bazel_tools//tools/test:incompatible_use_default_test_toolchain=false
       - name: Save bazel repo cache
         if: ${{ github.ref == 'refs/heads/main' && steps.repo-cache.outputs.cache-hit != 'true' }}

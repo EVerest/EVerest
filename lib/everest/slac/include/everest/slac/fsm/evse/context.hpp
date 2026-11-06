@@ -179,6 +179,9 @@ struct Context {
 
     EvseSlacConfig slac_config{};
 
+    // Generates a key with slac_config and warns once per Context if it had to fall back to the clock.
+    void generate_nmk(Nmk& target_nmk);
+
     template <typename SlacMessageType> bool send_slac_message(MacAddress const& mac, SlacMessageType const& message) {
         messages::HomeplugMessage hp_message;
         hp_message.setup_payload(&message, sizeof(message), _context_detail::MMTYPE<SlacMessageType>::value,
@@ -233,6 +236,7 @@ struct Context {
     void telemetry(const std::string& block, const std::string& key, const std::string& value);
 
     defs::ModemVendor modem_vendor{defs::ModemVendor::Unknown};
+    bool clock_seeded_nmk_reported{false};
     MacAddress evse_mac{};
     MatchConfirmCache match_confirm_cache;
 
@@ -241,15 +245,6 @@ struct Context {
     // the number of BCB toggles the EV performed. Written from the framework/command thread and read
     // from the FSM thread, hence atomic.
     std::atomic<int> bc_transition_count{0};
-
-    // Set once the CM_VALIDATE process has produced its step-2 SUCCESS: the matching session must
-    // then receive the CM_SLAC_MATCH.REQ within TT_match_sequence (ISO 15118-5 CmSlacMatch_003/004
-    // cmValidate variant), which is much shorter than the overall TT_EVSE_match_session used when no
-    // validation is performed. validation_match_window bounds that post-validation match window.
-    bool validation_done{false};
-    everest::lib::slac::timer validation_match_window;
-    // The EV whose validation armed the window; only its session is held to it.
-    MacAddress validation_ev_mac{};
 
     // "Now" as seen by every timer during the current event. slac_fsm samples it once per event
     // from callbacks.now, so all deadlines evaluated in one event agree on the time.

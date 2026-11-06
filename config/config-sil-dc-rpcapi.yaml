@@ -10,11 +10,10 @@ active_modules:
         - module_id: evse_security
           implementation_id: main
   iso15118_car:
-    module: PyEvJosev
+    module: Ev15118
     config_module:
       device: auto
-      supported_DIN70121: true
-      supported_ISO15118_2: true
+      supported_protocols: ISO15118_2,DIN70121
   evse_manager:
     module: EvseManager
     mapping:

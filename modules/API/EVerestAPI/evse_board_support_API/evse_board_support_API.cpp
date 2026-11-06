@@ -10,6 +10,7 @@
 #include <everest_api_types/evse_manager/wrapper.hpp>
 #include <everest_api_types/generic/codec.hpp>
 #include <everest_api_types/generic/string.hpp>
+#include <everest_api_types/utilities/ErrorConversions.hpp>
 #include <everest_api_types/utilities/codec.hpp>
 
 #include "utils/error.hpp"
@@ -19,6 +20,22 @@ namespace module {
 namespace API_evse_manager = API_types::evse_manager;
 namespace API_generic = API_types::generic;
 using ev_API::deserialize;
+
+namespace {
+
+bool is_phase_count(int value) {
+    return value >= 1 and value <= 3;
+}
+
+// The schema limits every phase count to 1..3 and a minimum must not exceed its maximum
+bool phase_counts_valid(API_types_ext::HardwareCapabilities const& caps) {
+    return is_phase_count(caps.max_phase_count_import) and is_phase_count(caps.min_phase_count_import) and
+           is_phase_count(caps.max_phase_count_export) and is_phase_count(caps.min_phase_count_export) and
+           caps.min_phase_count_import <= caps.max_phase_count_import and
+           caps.min_phase_count_export <= caps.max_phase_count_export;
+}
+
+} // namespace
 
 void evse_board_support_API::init() {
     invoke_init(*p_main);
@@ -68,6 +85,10 @@ void evse_board_support_API::generate_api_var_ac_nr_of_phases() {
     helper.subscribe_api_topic("ac_nr_of_phases", [=](std::string const& data) {
         int ac_nr_of_phases_available = 0;
         if (deserialize(data, ac_nr_of_phases_available)) {
+            if (not is_phase_count(ac_nr_of_phases_available)) {
+                EVLOG_warning << "Ignoring ac_nr_of_phases " << ac_nr_of_phases_available << ": must be 1 to 3";
+                return true;
+            }
             p_main->publish_ac_nr_of_phases_available(ac_nr_of_phases_available);
             return true;
         }
@@ -79,6 +100,13 @@ void evse_board_support_API::generate_api_var_capabilities() {
     helper.subscribe_api_topic("capabilities", [=](std::string const& data) {
         API_types_ext::HardwareCapabilities ext;
         if (deserialize(data, ext)) {
+            if (not phase_counts_valid(ext)) {
+                EVLOG_warning
+                    << "Ignoring capabilities: phase counts must be 1 to 3 with minimum <= maximum, got import "
+                    << ext.min_phase_count_import << ".." << ext.max_phase_count_import << ", export "
+                    << ext.min_phase_count_export << ".." << ext.max_phase_count_export;
+                return true;
+            }
             p_main->publish_capabilities(to_internal_api(ext));
             return true;
         }
@@ -149,6 +177,7 @@ evse_board_support_API::ErrorHandler evse_board_support_API::make_error_handler(
     ErrorHandler result;
     auto sub_type_str = error.sub_type ? error.sub_type.value() : "";
     auto message_str = error.message ? error.message.value() : "";
+    auto trigger_value = ev_API::to_trigger_value(error.trigger_value);
     std::string error_id;
 
     switch (error.type) {
@@ -181,9 +210,9 @@ evse_board_support_API::ErrorHandler evse_board_support_API::make_error_handler(
     case ErrorEnum::VendorWarning:
     case ErrorEnum::CommunicationFault:
         error_id = "evse_board_support/" + error_str;
-        result.raiser = [this, sub_type_str, message_str, error_id]() {
+        result.raiser = [this, sub_type_str, message_str, error_id, trigger_value]() {
             auto ev_error = p_main->error_factory->create_error(error_id, sub_type_str, message_str,
-                                                                Everest::error::Severity::High);
+                                                                Everest::error::Severity::High, trigger_value);
             p_main->raise_error(ev_error);
         };
         result.clearer = [this, error_id, sub_type_str] { p_main->clear_error(error_id, sub_type_str); };
@@ -195,9 +224,9 @@ evse_board_support_API::ErrorHandler evse_board_support_API::make_error_handler(
     case ErrorEnum::ConnectorLockFailedUnlock:
     case ErrorEnum::MREC1ConnectorLockFailure:
         error_id = "connector_lock/" + error_str;
-        result.raiser = [this, sub_type_str, message_str, error_id]() {
-            auto ev_error = p_connector_lock->error_factory->create_error(error_id, sub_type_str, message_str,
-                                                                          Everest::error::Severity::High);
+        result.raiser = [this, sub_type_str, message_str, error_id, trigger_value]() {
+            auto ev_error = p_connector_lock->error_factory->create_error(
+                error_id, sub_type_str, message_str, Everest::error::Severity::High, trigger_value);
             p_connector_lock->raise_error(ev_error);
         };
         result.clearer = [this, error_id, sub_type_str] { p_connector_lock->clear_error(error_id, sub_type_str); };
@@ -207,9 +236,9 @@ evse_board_support_API::ErrorHandler evse_board_support_API::make_error_handler(
     case ErrorEnum::DC:
     case ErrorEnum::AC:
         error_id = "ac_rcd/" + error_str;
-        result.raiser = [this, sub_type_str, message_str, error_id]() {
-            auto ev_error =
-                p_rcd->error_factory->create_error(error_id, sub_type_str, message_str, Everest::error::Severity::High);
+        result.raiser = [this, sub_type_str, message_str, error_id, trigger_value]() {
+            auto ev_error = p_rcd->error_factory->create_error(error_id, sub_type_str, message_str,
+                                                               Everest::error::Severity::High, trigger_value);
             p_rcd->raise_error(ev_error);
         };
         result.clearer = [this, error_id, sub_type_str] { p_rcd->clear_error(error_id, sub_type_str); };

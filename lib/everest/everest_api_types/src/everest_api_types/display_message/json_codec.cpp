@@ -6,9 +6,16 @@
 #include "display_message/codec.hpp"
 
 #include "nlohmann/json.hpp"
+#include "utilities/json_codec_helpers.hpp"
+
 #include "text_message/json_codec.hpp"
+#include "utilities/date_time.hpp"
+#include <cstdint>
+#include <stdexcept>
 
 namespace everest::lib::API::V1_0::types::display_message {
+
+using utilities::json_number;
 
 void to_json(json& j, MessagePriorityEnum const& k) noexcept {
     switch (k) {
@@ -256,7 +263,7 @@ void to_json(json& j, DisplayMessage const& k) noexcept {
 void from_json(const json& j, DisplayMessage& k) {
     k.message = j.at("message");
     if (j.contains("id")) {
-        k.id.emplace(j.at("id"));
+        k.id.emplace(json_number<int32_t>(j.at("id")));
     }
     if (j.contains("priority")) {
         k.priority.emplace(j.at("priority"));
@@ -265,10 +272,10 @@ void from_json(const json& j, DisplayMessage& k) {
         k.state.emplace(j.at("state"));
     }
     if (j.contains("timestamp_from")) {
-        k.timestamp_from.emplace(j.at("timestamp_from"));
+        k.timestamp_from.emplace(date_time_from_json(j.at("timestamp_from")));
     }
     if (j.contains("timestamp_to")) {
-        k.timestamp_to.emplace(j.at("timestamp_to"));
+        k.timestamp_to.emplace(date_time_from_json(j.at("timestamp_to")));
     }
     if (j.contains("identifier_id")) {
         k.identifier_id.emplace(j.at("identifier_id"));
@@ -378,7 +385,7 @@ void to_json(json& j, ClearDisplayMessageRequest const& k) noexcept {
 }
 
 void from_json(const json& j, ClearDisplayMessageRequest& k) {
-    k.id = j.at("id");
+    k.id = json_number<int32_t>(j.at("id"));
 }
 
 void to_json(json& j, ClearDisplayMessageResponse const& k) noexcept {

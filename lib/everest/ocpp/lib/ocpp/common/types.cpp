@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
 
+#include <everest/date/date.hpp>
 #include <everest/logging.hpp>
 #include <ocpp/common/call_types.hpp>
 #include <ocpp/common/types.hpp>
@@ -29,25 +30,18 @@ DateTimeImpl::DateTimeImpl(const std::string& timepoint_str) {
 }
 
 std::string DateTimeImpl::to_rfc3339() const {
-    return date::format("%FT%TZ", std::chrono::time_point_cast<std::chrono::milliseconds>(this->timepoint));
+    return everest::lib::datetime::to_rfc3339(this->timepoint);
 }
 
 void DateTimeImpl::from_rfc3339(const std::string& timepoint_str) {
-    std::istringstream in{timepoint_str};
-    in >> date::parse("%FT%T%Ez", this->timepoint);
-    if (in.fail()) {
-        in.clear();
-        in.seekg(0);
-        in >> date::parse("%FT%TZ", this->timepoint);
-        if (in.fail()) {
-            in.clear();
-            in.seekg(0);
-            in >> date::parse("%FT%T", this->timepoint);
-            if (in.fail()) {
-                throw TimePointParseException(timepoint_str);
-            }
-        }
+    // RFC 3339 as in OCPP 2.x and the OCPP 1.6 JSON schemas, plus common ISO 8601 variants from the OCPP 1.6 text.
+    // Clamped instead of rejected outside the range of utc_clock: a CSMS may send 9999-12-31T23:59:59Z for "never
+    // expires", and rejecting it would discard the whole message, e.g. an Accepted Authorize.conf.
+    const auto timepoint = everest::lib::datetime::parse_rfc3339_lenient_clamped(timepoint_str);
+    if (!timepoint.has_value()) {
+        throw TimePointParseException(timepoint_str);
     }
+    this->timepoint = timepoint.value();
 }
 
 std::chrono::time_point<date::utc_clock> DateTimeImpl::to_time_point() const {

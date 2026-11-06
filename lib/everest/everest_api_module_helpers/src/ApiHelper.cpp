@@ -81,9 +81,9 @@ void ApiHelper::init_topics() {
 
 void ApiHelper::generate_api_entrypoint_cmd_discover() {
     subscribe_entrypoint_var("discover", [this](std::string const& data) {
-        std::string reply_to;
+        std::optional<std::string> reply_to;
         if (deserialize_request(data, reply_to)) {
-            mqtt.publish(reply_to, V1_0::types::entrypoint::serialize(discover_response));
+            mqtt.publish_reply(reply_to, V1_0::types::entrypoint::serialize(discover_response));
             return true;
         }
         return false;
@@ -96,10 +96,10 @@ void ApiHelper::generate_api_entrypoint_cmd_query_module() {
         topic << "query-modules/" << api_type;
 
         subscribe_entrypoint_var(topic.str(), [api_type = api_type, this](std::string const& data) {
-            std::string reply_to;
+            std::optional<std::string> reply_to;
             if (deserialize_request(data, reply_to)) {
                 if (module_query_response.count(api_type) > 0) {
-                    mqtt.publish(reply_to, V1_0::types::entrypoint::serialize(module_query_response[api_type]));
+                    mqtt.publish_reply(reply_to, V1_0::types::entrypoint::serialize(module_query_response[api_type]));
                 }
                 return true;
             }
@@ -118,7 +118,7 @@ void ApiHelper::subscribe_latched_value_request(std::string const& var, std::str
                                                 std::optional<std::string> deprecation_notice) {
     subscribe_api_topic(
         var + "/get", [this, var, topic, deprecation_notice = std::move(deprecation_notice)](std::string const& data) {
-            std::string reply_to;
+            std::optional<std::string> reply_to;
             if (deserialize_request(data, reply_to)) {
                 if (deprecation_notice.has_value()) {
                     EVLOG_warning << "Deprecated request for var '" << var << "': " << deprecation_notice.value();
@@ -132,9 +132,9 @@ void ApiHelper::subscribe_latched_value_request(std::string const& var, std::str
                     }
                 }
                 if (payload) {
-                    mqtt.publish(reply_to, *payload);
+                    mqtt.publish_reply(reply_to, *payload);
                 } else {
-                    mqtt.publish(reply_to, "null");
+                    mqtt.publish_reply(reply_to, "null");
                 }
                 return true;
             }

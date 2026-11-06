@@ -478,8 +478,6 @@ private:
     /// Idempotent. Invoked at construction and from the variable listener when Available flips false->true.
     void build_der_control_if_enabled();
 
-    void message_callback(const std::string& message);
-
     /// \brief Get the value optional offline flag
     /// \return true if the charge point is offline. std::nullopt if it is online;
     bool is_offline();
@@ -510,6 +508,7 @@ private:
     }
 
 protected:
+    void message_callback(const std::string& message);
     void handle_message(const EnhancedMessage<v2::MessageType>& message);
     void clear_invalid_charging_profiles();
 

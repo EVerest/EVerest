@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
+#include <algorithm>
 #include <array>
 #include <cbv2g/din/din_msgDefDecoder.h>
 #include <cbv2g/iso_2/iso2_msgDefDecoder.h>
@@ -19,6 +20,7 @@
 
 #include <iso15118/message/authorization.hpp>
 #include <iso15118/message/authorization_setup.hpp>
+#include <iso15118/message/decode.hpp>
 #include <iso15118/message/service_discovery.hpp>
 #include <iso15118/message/session_setup.hpp>
 #include <iso15118/message/session_stop.hpp>
@@ -91,7 +93,7 @@ struct SessionFixture {
 
 template <typename Request>
 void queue_request(MockConnection& conn, const Request& req,
-                   iso15118::io::v2gtp::PayloadType payload = iso15118::io::v2gtp::PayloadType::Part20Main) {
+                   iso15118::v2gtp::PayloadType payload = iso15118::v2gtp::PayloadType::Part20Main) {
     std::array<uint8_t, 256> buffer{};
     const auto size = serialize(req, iso15118::io::StreamOutputView{buffer.data(), buffer.size()});
     conn.written.clear();
@@ -106,29 +108,29 @@ void queue_sap(MockConnection& conn, iso15118::ProtocolId protocol) {
                                     : protocol == iso15118::ProtocolId::ISO15118_2 ? iso15118::ISO2_NAMESPACE
                                                                                    : iso15118::DIN70121_NAMESPACE;
     sap.app_protocol.push_back({protocol_namespace, protocol == iso15118::ProtocolId::ISO15118_20 ? 1u : 2u, 0, 1, 1});
-    queue_request(conn, sap, iso15118::io::v2gtp::PayloadType::SAP);
+    queue_request(conn, sap, iso15118::v2gtp::PayloadType::SAP);
 }
 
 void queue_setup(MockConnection& conn, iso15118::ProtocolId protocol) {
     if (protocol == iso15118::ProtocolId::ISO15118_2) {
-        queue_request(conn, iso15118::message_2::SessionSetupRequest{}, iso15118::io::v2gtp::PayloadType::SAP);
+        queue_request(conn, iso15118::message_2::SessionSetupRequest{}, iso15118::v2gtp::PayloadType::SAP);
     } else if (protocol == iso15118::ProtocolId::DIN70121) {
-        queue_request(conn, iso15118::message_din::SessionSetupRequest{}, iso15118::io::v2gtp::PayloadType::SAP);
+        queue_request(conn, iso15118::message_din::SessionSetupRequest{}, iso15118::v2gtp::PayloadType::SAP);
     } else {
         queue_request(conn, iso15118::message_20::SessionSetupRequest{});
     }
 }
 
 template <typename Response>
-Response
-response_from_wire(const MockConnection& conn,
-                   iso15118::io::v2gtp::PayloadType payload_type = iso15118::io::v2gtp::PayloadType::Part20Main) {
+Response response_from_wire(const MockConnection& conn,
+                            iso15118::v2gtp::PayloadType payload_type = iso15118::v2gtp::PayloadType::Part20Main) {
     const auto header_size = iso15118::io::SdpPacket::V2GTP_HEADER_SIZE;
     REQUIRE(conn.written.size() > header_size);
-    const iso15118::message_20::Variant response{
+    const auto response = iso15118::message_20::decode<Response>(
         payload_type,
-        iso15118::io::StreamInputView{conn.written.data() + header_size, conn.written.size() - header_size}};
-    return response.get<Response>();
+        iso15118::io::StreamInputView{conn.written.data() + header_size, conn.written.size() - header_size});
+    REQUIRE(response.has_value());
+    return *response;
 }
 
 dt::SessionId start_session(iso15118::Session& session, MockConnection& conn) {
@@ -222,7 +224,7 @@ template <typename Messages> struct Pre20Session : SessionFixture {
         queue_sap(*conn, Messages::protocol);
         poll_response();
         const auto sap_response = response_from_wire<iso15118::message_20::SupportedAppProtocolResponse>(
-            *conn, iso15118::io::v2gtp::PayloadType::SAP);
+            *conn, iso15118::v2gtp::PayloadType::SAP);
         REQUIRE(sap_response.response_code ==
                 iso15118::message_20::SupportedAppProtocolResponse::ResponseCode::OK_SuccessfulNegotiation);
         queue(typename Messages::SetupRequest{});
@@ -231,7 +233,7 @@ template <typename Messages> struct Pre20Session : SessionFixture {
     }
 
     template <typename Request> void queue(const Request& req) {
-        queue_request(*conn, req, iso15118::io::v2gtp::PayloadType::SAP);
+        queue_request(*conn, req, iso15118::v2gtp::PayloadType::SAP);
     }
 
     template <typename Response> Response response() {
@@ -482,10 +484,10 @@ TEST_CASE_METHOD(SessionFixture, "SAP and pre-20 default to request pacing") {
     REQUIRE(conn->written.empty());
     now = received + 100ms;
     session->poll();
-    REQUIRE(response_from_wire<iso15118::message_20::SupportedAppProtocolResponse>(
-                *conn, iso15118::io::v2gtp::PayloadType::SAP)
-                .response_code ==
-            iso15118::message_20::SupportedAppProtocolResponse::ResponseCode::OK_SuccessfulNegotiation);
+    REQUIRE(
+        response_from_wire<iso15118::message_20::SupportedAppProtocolResponse>(*conn, iso15118::v2gtp::PayloadType::SAP)
+            .response_code ==
+        iso15118::message_20::SupportedAppProtocolResponse::ResponseCode::OK_SuccessfulNegotiation);
 
     // Let the last response's gap expire: pre-20 must still wait after the next request.
     now += 200ms;
@@ -517,7 +519,7 @@ TEST_CASE_METHOD(SessionFixture, "Opt-in sends SAP and protocol handover respons
     queue_sap(*conn, protocol);
     session->poll();
     const auto sap_response = response_from_wire<iso15118::message_20::SupportedAppProtocolResponse>(
-        *conn, iso15118::io::v2gtp::PayloadType::SAP);
+        *conn, iso15118::v2gtp::PayloadType::SAP);
     REQUIRE(sap_response.response_code ==
             iso15118::message_20::SupportedAppProtocolResponse::ResponseCode::OK_SuccessfulNegotiation);
 
@@ -578,7 +580,7 @@ TEST_CASE_METHOD(SessionFixture, "Failed SAP responses bypass pacing only with t
     conn->fire(iso15118::io::ConnectionEvent::ACCEPTED);
     iso15118::message_20::SupportedAppProtocolRequest sap;
     sap.app_protocol.push_back({"unsupported", 1, 0, 1, 1});
-    queue_request(*conn, sap, iso15118::io::v2gtp::PayloadType::SAP);
+    queue_request(*conn, sap, iso15118::v2gtp::PayloadType::SAP);
     session->poll();
     if (not enabled) {
         REQUIRE(conn->written.empty());
@@ -586,7 +588,7 @@ TEST_CASE_METHOD(SessionFixture, "Failed SAP responses bypass pacing only with t
         session->poll();
     }
     const auto response = response_from_wire<iso15118::message_20::SupportedAppProtocolResponse>(
-        *conn, iso15118::io::v2gtp::PayloadType::SAP);
+        *conn, iso15118::v2gtp::PayloadType::SAP);
     REQUIRE(response.response_code ==
             iso15118::message_20::SupportedAppProtocolResponse::ResponseCode::Failed_NoNegotiation);
     REQUIRE(conn->closed);
@@ -616,6 +618,7 @@ TEST_CASE("ISO 15118-2 pause and terminate responses after power delivery stops"
     namespace mdt = iso15118::message_2::datatypes;
     const bool enabled = GENERATE(false, true);
     const auto action = GENERATE(mdt::ChargingSession::Pause, mdt::ChargingSession::Terminate);
+    const bool unplugged = GENERATE(false, true);
     Pre20Session<Iso2Messages> fixture{enabled};
     fixture.start_authorization();
     fixture.session->push_control_event(iso15118::d20::AuthorizationResponse{true});
@@ -654,12 +657,17 @@ TEST_CASE("ISO 15118-2 pause and terminate responses after power delivery stops"
     REQUIRE(fixture.conn->half_closed);
     REQUIRE_FALSE(fixture.conn->closed);
     REQUIRE_FALSE(fixture.session->is_finished());
+    if (unplugged) {
+        fixture.session->mark_unplugged();
+    }
     now += 500ms;
     fixture.session->poll();
     REQUIRE(fixture.conn->closed);
     REQUIRE(fixture.session->is_finished());
     REQUIRE(fixture.signals.back() == (paused ? iso15118::session::feedback::Signal::DLINK_PAUSE
                                               : iso15118::session::feedback::Signal::DLINK_TERMINATE));
+    // Only a pause with the EV still plugged in can be resumed
+    REQUIRE(fixture.d2_pause_ctx.has_value() == (paused and not unplugged));
 }
 
 TEST_CASE("DIN terminates with an authorization response held") {
@@ -730,7 +738,7 @@ TEST_CASE_METHOD(SessionFixture, "SAP handover waits for its paced wire response
     now = received + 100ms;
     REQUIRE(session->poll() == now);
     const auto response = response_from_wire<iso15118::message_20::SupportedAppProtocolResponse>(
-        *conn, iso15118::io::v2gtp::PayloadType::SAP);
+        *conn, iso15118::v2gtp::PayloadType::SAP);
     REQUIRE(response.response_code ==
             iso15118::message_20::SupportedAppProtocolResponse::ResponseCode::OK_SuccessfulNegotiation);
     REQUIRE_FALSE(session->is_v2g_session_established());
@@ -742,4 +750,80 @@ TEST_CASE_METHOD(SessionFixture, "SAP handover waits for its paced wire response
     session->poll();
     REQUIRE_FALSE(conn->written.empty());
     REQUIRE_FALSE(conn->closed);
+}
+
+namespace {
+iso15118::session::SessionConfig make_pnc_session_config() {
+    iso15118::session::EvseSetupConfig setup{};
+    setup.authorization_services = {dt::Authorization::EIM, dt::Authorization::PnC};
+    setup.enable_certificate_install_service = true;
+    setup.control_mobility_modes = {{dt::ControlMode::Scheduled, dt::MobilityNeedsMode::ProvidedByEvcc}};
+    return iso15118::session::SessionConfig{setup};
+}
+
+void require_eim_only(const iso15118::message_20::AuthorizationSetupResponse& res) {
+    REQUIRE(res.response_code == dt::ResponseCode::OK);
+    REQUIRE(res.authorization_services.size() == 1);
+    REQUIRE(res.authorization_services[0] == dt::Authorization::EIM);
+    REQUIRE_FALSE(res.certificate_installation_service);
+}
+} // namespace
+
+TEST_CASE_METHOD(SessionFixture, "ISO 15118-20 without TLS offers neither PnC nor certificate installation") {
+    SECTION("negotiated with SupportedAppProtocol") {
+        auto config = make_pnc_session_config();
+        config.supported_protocols = {iso15118::ProtocolId::ISO15118_20};
+        auto session = make_session(config, false);
+        conn->fire(iso15118::io::ConnectionEvent::ACCEPTED);
+
+        const auto exchange = [&](const auto& request, iso15118::v2gtp::PayloadType payload) {
+            queue_request(*conn, request, payload);
+            session->poll();
+            now += 200ms;
+            session->poll();
+        };
+        iso15118::message_20::SupportedAppProtocolRequest sap;
+        sap.app_protocol.push_back({iso15118::ISO20_AC_PROTOCOL_NAMESPACE, 1, 0, 1, 1});
+        exchange(sap, iso15118::v2gtp::PayloadType::SAP);
+        iso15118::message_20::SessionSetupRequest setup{};
+        setup.evccid = "EVCC";
+        exchange(setup, iso15118::v2gtp::PayloadType::Part20Main);
+        const auto session_id = response_from_wire<iso15118::message_20::SessionSetupResponse>(*conn).header.session_id;
+        exchange(iso15118::message_20::AuthorizationSetupRequest{{session_id, 0}},
+                 iso15118::v2gtp::PayloadType::Part20Main);
+
+        require_eim_only(response_from_wire<iso15118::message_20::AuthorizationSetupResponse>(*conn));
+    }
+
+    SECTION("handed over after an external SupportedAppProtocol") {
+        auto session = make_session(make_pnc_session_config(), true);
+        start_session(*session, *conn);
+
+        require_eim_only(response_from_wire<iso15118::message_20::AuthorizationSetupResponse>(*conn));
+    }
+}
+
+TEST_CASE_METHOD(SessionFixture, "ISO 15118-20 over TLS keeps PnC and certificate installation") {
+    conn->secure = true;
+    auto session = make_session(make_pnc_session_config(), true);
+    start_session(*session, *conn);
+
+    const auto res = response_from_wire<iso15118::message_20::AuthorizationSetupResponse>(*conn);
+    REQUIRE(res.response_code == dt::ResponseCode::OK);
+    REQUIRE(res.authorization_services.size() == 2);
+    REQUIRE(std::find(res.authorization_services.begin(), res.authorization_services.end(), dt::Authorization::PnC) !=
+            res.authorization_services.end());
+    REQUIRE(res.certificate_installation_service);
+}
+
+TEST_CASE_METHOD(SessionFixture, "An ISO 15118-20 session that ends without pausing leaves nothing to resume") {
+    conn->vehicle_cert_hash.emplace().fill(0x42);
+    auto session = make_session(make_eim_session_config(), true);
+    start_session(*session, *conn);
+    REQUIRE(pause_ctx.has_value());
+
+    conn->fire(iso15118::io::ConnectionEvent::CLOSED);
+    session->poll();
+    REQUIRE(session->is_finished());
+    REQUIRE_FALSE(pause_ctx.has_value());
 }

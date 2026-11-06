@@ -4,6 +4,7 @@
 #include "generic/json_codec.hpp"
 #include "generic/API.hpp"
 #include "nlohmann/json.hpp"
+#include "utilities/request_reply.hpp"
 #include <stdexcept>
 #include <string>
 
@@ -16,16 +17,14 @@ void to_json(json& j, RequestReply const& k) {
     } catch (...) {
         throw std::invalid_argument("payload is invalid json: " + k.payload);
     }
-    j["headers"]["replyTo"] = k.replyTo;
+    if (k.replyTo) {
+        j["headers"]["replyTo"] = *k.replyTo;
+    }
     j["payload"] = payload;
 }
 
 void from_json(json const& j, RequestReply& k) {
-    if (j.contains("headers") and j["headers"].contains("replyTo")) {
-        k.replyTo = j["headers"]["replyTo"];
-    } else {
-        k.replyTo = "";
-    }
+    k.replyTo = everest::lib::API::detail::request_reply_to(j);
 
     if (j.contains("payload")) {
         k.payload = j["payload"].dump();
@@ -67,6 +66,19 @@ void from_json(json const& j, ErrorEnum& k) {
                             " could not be converted to enum of type API_V1_0_TYPES_GENERIC_ErrorEnum");
 }
 
+void to_json(json& j, const TriggerValue& k) noexcept {
+    j = json::object();
+    if (k.text_repr) {
+        j["text_repr"] = k.text_repr.value();
+    }
+}
+
+void from_json(const json& j, TriggerValue& k) {
+    if (j.contains("text_repr")) {
+        k.text_repr.emplace(j.at("text_repr"));
+    }
+}
+
 void to_json(json& j, const Error& k) noexcept {
     j = json{
         {"type", k.type},
@@ -77,6 +89,9 @@ void to_json(json& j, const Error& k) noexcept {
     if (k.message) {
         j["message"] = k.message.value();
     };
+    if (k.trigger_value) {
+        j["trigger_value"] = k.trigger_value.value();
+    }
 }
 
 void from_json(const json& j, Error& k) {
@@ -86,6 +101,9 @@ void from_json(const json& j, Error& k) {
     }
     if (j.contains("message")) {
         k.message.emplace(j.at("message"));
+    }
+    if (j.contains("trigger_value")) {
+        k.trigger_value.emplace(j.at("trigger_value").get<TriggerValue>());
     }
 }
 

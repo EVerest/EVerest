@@ -45,9 +45,12 @@ config:
     default: allow
   terminate_connection_on_failed_response:
     description: >-
-      Controls how to handle a failed response code of the EVSE. If true the
-      V2G connection is terminated immediately on a failed response code, otherwise
-      the EV is responsible for closing of the V2G communication session with SessionStop.
+      If true the V2G connection is terminated right after a FAILED response, as
+      [V2G2-539] requires. If false the connection stays open so that the EV can run
+      its own stop sequence. Independent of this setting, the connection is always
+      terminated after FAILED_SequenceError and after a FAILED ISO 15118-2
+      PaymentDetailsRes or AuthorizationRes, so that a rejected identification is
+      never followed by further requests.
     type: boolean
     default: false
   tls_key_logging:

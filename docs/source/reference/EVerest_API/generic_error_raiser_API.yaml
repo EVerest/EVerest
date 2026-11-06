@@ -6,6 +6,8 @@ info:
   version: 1.1.0
   description: >-
     API for EVerest API clients for raising and clearing generic errors.
+    The errors are only reported, e.g. by OCPP and the error history. EvseManager does not act on them, so they
+    do not stop charging.
 
   license:
     name: Apache-2.0
@@ -135,8 +137,8 @@ components:
       description: |
         Type of error
         - CommunicationFault: The communication to the hardware or underlying driver is lost or has errors.
-        - VendorError: Vendor specific error code. Will stop charging session.
-        - VendorWarning: Vendor specific error code. Charging may continue.
+        - VendorError: Vendor specific error code.
+        - VendorWarning: Vendor specific error code.
 
       type: string
       enum:
@@ -171,10 +173,27 @@ components:
               characters. When the message is empty, the error description is sent
               instead.
           type: string
+        trigger_value:
+          description: |-
+            Optional value that caused this specific occurrence of the error, e.g. the
+            measurement that crossed a limit.
+          type: object
+          properties:
+            text_repr:
+              description: |-
+                Text representation of the value as the raising entity would print it,
+                including a unit where one applies, e.g. `85.3 degC`. EVerest passes it
+                on as is and does not parse it. Longer values are truncated to 2500
+                characters.
+              type: string
+              maxLength: 2500
 
     CommunicationCheck:
       type: boolean
-      description: "Send 'true' at least every 'cfg_communication_check_to_s' seconds to signal module is alive. Send 'false' to stop communication check'"
+      description: >-
+        Send true at least every cfg_communication_check_to_s seconds to signal that the client is alive, otherwise
+        EVerest raises a CommunicationFault, which the next message clears. Send false to stop the check until the
+        module restarts.
 
     HeartBeatId:
       type: integer

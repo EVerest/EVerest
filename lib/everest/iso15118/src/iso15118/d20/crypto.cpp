@@ -365,6 +365,11 @@ std::string profile_fault(X509* cert, ChainRole role, int sub_ca_index) {
         if (not has_cn or not has_o) {
             return "subject without CN and O";
         }
+        // [V2G20-1001]: the DomainComponent has to match the profile. Annex B fixes it to CSO, CPS and EV for the
+        // SECC, CPS and OEM provisioning leaves (Tables B.5 to B.8, B.11, B.12), so one of those is not a contract.
+        if (x509::subject_names_non_contract_profile(cert)) {
+            return "DomainComponent of another Annex B profile";
+        }
     }
     return {};
 }

@@ -1,0 +1,45 @@
+include(Catch)
+
+# Select one source file's tests with: test_ev_fsm -# "[#<file stem>]"
+add_executable(test_ev_fsm
+    ac_charge_loop.cpp
+    ac_charge_parameter_discovery.cpp
+    ac_der_iec_charge_loop.cpp
+    ac_der_iec_charge_parameter_discovery.cpp
+    ac_der_sae_charge_loop.cpp
+    ac_der_sae_charge_parameter_discovery.cpp
+    ac_phase_split.cpp
+    authorization.cpp
+    authorization_setup.cpp
+    context.cpp
+    dc_cable_check.cpp
+    dc_charge_loop.cpp
+    dc_charge_parameter_discovery.cpp
+    dc_charge_params.cpp
+    dc_pre_charge.cpp
+    dc_welding_detection.cpp
+    der_sae_control_validation.cpp
+    disposition.cpp
+    engine.cpp
+    message_exchange.cpp
+    power_delivery.cpp
+    request_construction.cpp
+    response_variant.cpp
+    sae_profile_emit.cpp
+    schedule_exchange.cpp
+    secc_clock.cpp
+    send_on_transition.cpp
+    service_detail.cpp
+    service_discovery.cpp
+    service_selection.cpp
+    session_setup.cpp
+    session_stop.cpp
+    supported_app_protocol.cpp
+    helper.cpp
+)
+target_link_libraries(test_ev_fsm
+    PRIVATE
+        iso15118_ev
+        Catch2::Catch2WithMain
+)
+catch_discover_tests(test_ev_fsm DISCOVERY_MODE PRE_TEST)

@@ -271,17 +271,16 @@ components:
       contentType: application/json
       payload:
         type: object
-        required:
-          - headers
         properties:
           headers:
             type: object
-            required:
-              - replyTo
             properties:
               replyTo:
                 type: string
-                description: Address to send the response to.
+                minLength: 1
+                description: >-
+                  Address to send the response to. Omit it to discard the response. An invalid address, see
+                  the EVerest API explanation, rejects the request.
       examples:
         - summary: ""
           payload:
@@ -335,7 +334,7 @@ components:
             Energy import/limits time series. The first entry is special as it will be active already now
             even if the timestamp is in the future, so it is good practice to set the
             first entry to current time. The time series can have arbitrary time difference
-            between entries and all timestamps are absolute UTC time.
+            between entries and all timestamps are absolute points in time.
             The last entry is valid for any time after the schedule ends.
           type: array
           items:
@@ -347,7 +346,7 @@ components:
             Energy export/limits time series. The first entry is special as it will be active already now
             even if the timestamp is in the future, so it is good practice to set the
             first entry to current time. The time series can have arbitrary time difference
-            between entries and all timestamps are absolute UTC time.
+            between entries and all timestamps are absolute points in time.
             The last entry is valid for any time after the schedule ends.
           type: array
           items:
@@ -360,7 +359,7 @@ components:
             as it will be active already now even if the timestamp is in the future,
             so it is good practice to set the first entry to current time. The time
             series can have arbitrary time difference between entries and all timestamps
-            are absolute UTC time.
+            are absolute points in time.
           type: array
           items:
             description: One entry for the time series.
@@ -477,7 +476,7 @@ components:
         - currency
       properties:
         timestamp:
-          description: Absolute timestamp for this sample in RFC3339 UTC format
+          description: Absolute timestamp for this sample in RFC3339 format
           type: string
           format: date-time
         value:
@@ -498,7 +497,7 @@ components:
         - limits_to_leaves
       properties:
         timestamp:
-          description: Absolute timestamp for this sample in RFC3339 UTC format
+          description: Absolute timestamp for this sample in RFC3339 format
           type: string
           format: date-time
         limits_to_root:
@@ -527,7 +526,7 @@ components:
         - limits_to_root
       properties:
         timestamp:
-          description: Absolute timestamp for this sample in RFC3339 UTC format
+          description: Absolute timestamp for this sample in RFC3339 format
           type: string
           format: date-time
         limits_to_root:
@@ -546,7 +545,7 @@ components:
         - timestamp
       properties:
         timestamp:
-          description: Absolute timestamp for this sample in RFC3339 UTC format
+          description: Absolute timestamp for this sample in RFC3339 format
           type: string
           format: date-time
         setpoint:
@@ -625,7 +624,10 @@ components:
 
     CommunicationCheck:
       type: boolean
-      description: "Send 'true' at least every 'cfg_communication_check_to_s' seconds to signal module is alive. Send 'false' to stop communication check'"
+      description: >-
+        Send true at least every cfg_communication_check_to_s seconds to signal that the client is alive, otherwise
+        EVerest raises a CommunicationFault, which the next message clears. Send false to stop the check until the
+        module restarts.
     HeartBeatId:
       type: integer
       description: "64bit unsigned integer. The id of every heartbeat increases by 1 and overflows when the maximum representable value is reached"

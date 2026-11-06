@@ -1,6 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <iso15118/message/dc_cable_check.hpp>
+#include <iso15118/message/decode.hpp>
 #include <iso15118/message/variant.hpp>
 
 #include "helper.hpp"
@@ -16,7 +17,7 @@ SCENARIO("Se/Deserialize dc cable check messages") {
 
         const io::StreamInputView stream_view{doc_raw, sizeof(doc_raw)};
 
-        message_20::Variant variant(io::v2gtp::PayloadType::Part20DC, stream_view);
+        message_20::RequestVariant variant(v2gtp::PayloadType::Part20DC, stream_view);
 
         THEN("It should be deserialized successfully") {
             REQUIRE(variant.get_type() == message_20::Type::DC_CableCheckReq);
@@ -66,12 +67,13 @@ SCENARIO("Se/Deserialize dc cable check messages") {
 
         const io::StreamInputView stream_view{doc_raw, sizeof(doc_raw)};
 
-        message_20::Variant variant(io::v2gtp::PayloadType::Part20DC, stream_view);
+        const auto decoded =
+            message_20::decode<message_20::DC_CableCheckResponse>(v2gtp::PayloadType::Part20DC, stream_view);
 
         THEN("It should be deserialized successfully") {
-            REQUIRE(variant.get_type() == message_20::Type::DC_CableCheckRes);
+            REQUIRE(decoded.has_value());
 
-            const auto& msg = variant.get<message_20::DC_CableCheckResponse>();
+            const auto& msg = *decoded;
             const auto& header = msg.header;
 
             REQUIRE(header.session_id == std::array<uint8_t, 8>{0x3D, 0x4C, 0xBF, 0x93, 0x37, 0x4E, 0xD8, 0x9B});
@@ -104,12 +106,13 @@ SCENARIO("Se/Deserialize dc cable check messages") {
 
         const io::StreamInputView stream_view{doc_raw, sizeof(doc_raw)};
 
-        message_20::Variant variant(io::v2gtp::PayloadType::Part20DC, stream_view);
+        const auto decoded =
+            message_20::decode<message_20::DC_CableCheckResponse>(v2gtp::PayloadType::Part20DC, stream_view);
 
         THEN("It should be deserialized successfully") {
-            REQUIRE(variant.get_type() == message_20::Type::DC_CableCheckRes);
+            REQUIRE(decoded.has_value());
 
-            const auto& msg = variant.get<message_20::DC_CableCheckResponse>();
+            const auto& msg = *decoded;
             const auto& header = msg.header;
 
             REQUIRE(header.session_id == std::array<uint8_t, 8>{0x3D, 0x4C, 0xBF, 0x93, 0x37, 0x4E, 0xD8, 0x9B});

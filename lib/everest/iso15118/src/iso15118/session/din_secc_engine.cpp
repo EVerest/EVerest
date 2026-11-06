@@ -180,7 +180,7 @@ DinSeccEngine::DinSeccEngine(io::StreamOutputView output_view, const session::Se
     fsm(ctx.create_state<din::state::SessionSetup>()) {
 }
 
-bool DinSeccEngine::on_packet(io::v2gtp::PayloadType, const io::StreamInputView& view) {
+bool DinSeccEngine::on_packet(v2gtp::PayloadType, const io::StreamInputView& view) {
     message_exchange.set_request(std::make_unique<message_din::Variant>(view));
 
     fsm.feed(din::Event::V2GTP_MESSAGE);

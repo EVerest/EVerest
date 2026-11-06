@@ -2,6 +2,8 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 #include "utils.hpp"
 
+#include <cmath>
+
 #include <everest/logging.hpp>
 
 #include <iso15118/d20/limits.hpp>
@@ -15,6 +17,12 @@ namespace module::charger {
 namespace dt = iso15118::message_20::datatypes;
 
 namespace {
+// [V2G20-1035]: the EV sends its discharge limits as <=0, and negative_bidirectional_limits stores
+// the EVSE's as <=0. V2XChargingParameters wants >=0, so both merge by magnitude.
+float discharge_magnitude(const dt::RationalNumber& value) {
+    return std::fabs(dt::from_RationalNumber(value));
+}
+
 dt::Parameter convert_parameter(const types::iso15118_vas::Parameter& parameter) {
     dt::Parameter out;
     out.name = parameter.name;
@@ -195,15 +203,15 @@ void fill_v2x_charging_parameters(types::iso15118::V2XChargingParameters& out_pa
     if (evse_limits.discharge_limits.has_value()) {
         const auto& evse_discharge_limits = evse_limits.discharge_limits.value();
 
-        out_params.min_discharge_power = std::max(dt::from_RationalNumber(evse_discharge_limits.power.min),
-                                                  dt::from_RationalNumber(ev_limits.min_discharge_power));
-        out_params.max_discharge_power = std::min(dt::from_RationalNumber(evse_discharge_limits.power.max),
-                                                  dt::from_RationalNumber(ev_limits.max_discharge_power));
+        out_params.min_discharge_power = std::max(discharge_magnitude(evse_discharge_limits.power.min),
+                                                  discharge_magnitude(ev_limits.min_discharge_power));
+        out_params.max_discharge_power = std::min(discharge_magnitude(evse_discharge_limits.power.max),
+                                                  discharge_magnitude(ev_limits.max_discharge_power));
 
-        out_params.min_discharge_current = std::max(dt::from_RationalNumber(evse_discharge_limits.current.min),
-                                                    dt::from_RationalNumber(ev_limits.min_discharge_current));
-        out_params.max_discharge_current = std::min(dt::from_RationalNumber(evse_discharge_limits.current.max),
-                                                    dt::from_RationalNumber(ev_limits.max_discharge_current));
+        out_params.min_discharge_current = std::max(discharge_magnitude(evse_discharge_limits.current.min),
+                                                    discharge_magnitude(ev_limits.min_discharge_current));
+        out_params.max_discharge_current = std::min(discharge_magnitude(evse_discharge_limits.current.max),
+                                                    discharge_magnitude(ev_limits.max_discharge_current));
     }
 }
 
@@ -245,30 +253,30 @@ void fill_v2x_charging_parameters(types::iso15118::V2XChargingParameters& out_pa
     if (evse_limits.discharge_power.has_value()) {
         const auto& evse_discharge_limits = evse_limits.discharge_power.value();
 
-        out_params.min_discharge_power = std::max(dt::from_RationalNumber(evse_discharge_limits.min),
-                                                  dt::from_RationalNumber(ev_limits.min_discharge_power));
-        out_params.max_discharge_power = std::min(dt::from_RationalNumber(evse_discharge_limits.max),
-                                                  dt::from_RationalNumber(ev_limits.max_discharge_power));
+        out_params.min_discharge_power = std::max(discharge_magnitude(evse_discharge_limits.min),
+                                                  discharge_magnitude(ev_limits.min_discharge_power));
+        out_params.max_discharge_power = std::min(discharge_magnitude(evse_discharge_limits.max),
+                                                  discharge_magnitude(ev_limits.max_discharge_power));
     }
 
     if (evse_limits.discharge_power_L2.has_value() && ev_limits.min_discharge_power_L2.has_value() &&
         ev_limits.max_discharge_power_L2.has_value()) {
         const auto& evse_discharge_limits = evse_limits.discharge_power_L2.value();
 
-        out_params.min_discharge_power_l2 = std::max(dt::from_RationalNumber(evse_discharge_limits.min),
-                                                     dt::from_RationalNumber(ev_limits.min_discharge_power_L2.value()));
-        out_params.max_discharge_power_l2 = std::min(dt::from_RationalNumber(evse_discharge_limits.max),
-                                                     dt::from_RationalNumber(ev_limits.max_discharge_power_L2.value()));
+        out_params.min_discharge_power_l2 = std::max(discharge_magnitude(evse_discharge_limits.min),
+                                                     discharge_magnitude(ev_limits.min_discharge_power_L2.value()));
+        out_params.max_discharge_power_l2 = std::min(discharge_magnitude(evse_discharge_limits.max),
+                                                     discharge_magnitude(ev_limits.max_discharge_power_L2.value()));
     }
 
     if (evse_limits.discharge_power_L3.has_value() && ev_limits.min_discharge_power_L3.has_value() &&
         ev_limits.max_discharge_power_L3.has_value()) {
         const auto& evse_discharge_limits = evse_limits.discharge_power_L3.value();
 
-        out_params.min_discharge_power_l3 = std::max(dt::from_RationalNumber(evse_discharge_limits.min),
-                                                     dt::from_RationalNumber(ev_limits.min_discharge_power_L3.value()));
-        out_params.max_discharge_power_l3 = std::min(dt::from_RationalNumber(evse_discharge_limits.max),
-                                                     dt::from_RationalNumber(ev_limits.max_discharge_power_L3.value()));
+        out_params.min_discharge_power_l3 = std::max(discharge_magnitude(evse_discharge_limits.min),
+                                                     discharge_magnitude(ev_limits.min_discharge_power_L3.value()));
+        out_params.max_discharge_power_l3 = std::min(discharge_magnitude(evse_discharge_limits.max),
+                                                     discharge_magnitude(ev_limits.max_discharge_power_L3.value()));
     }
 }
 

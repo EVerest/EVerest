@@ -108,6 +108,7 @@ namespace ocpp::v16::keys {
     mapping(MessageTypesDiscardForQueueing, MessageTypesDiscardForQueueing) \
     mapping(MessageQueueSizeThreshold, MessageQueueSizeThreshold) \
     mapping(MaxMessageSize, MaxMessageSize) \
+    mapping(MaxIncomingMessageSize, MaxIncomingMessageSize) \
     mapping(TLSKeylogFile, TLSKeylogFile) \
     mapping(EnableTLSKeylog, EnableTLSKeylog) \
     mapping(RetryBackoffWaitMinimum, RetryBackOffWaitMinimum)
@@ -274,6 +275,7 @@ namespace ocpp::v16::keys {
     key(Internal, LogRotationMaximumFileCount) \
     key(Internal, LogRotationMaximumFileSize) \
     key(Internal, MaxCompositeScheduleDuration) \
+    key(Internal, MaxIncomingMessageSize) \
     key(Internal, MaxMessageSize) \
     key(Internal, MessageQueueSizeThreshold) \
     key(Internal, MessageTypesDiscardForQueueing) \

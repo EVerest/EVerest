@@ -234,8 +234,8 @@ void RpcApi::subscribe_evse_manager(const std::unique_ptr<evse_managerIntf>& evs
             // calculate the distance of estimated_time_full to now, and if greater 0,
             // report it
             const auto secs = Everest::Date::rfc3339_to_seconds_from_now(ev_info.estimated_time_full.value());
-            if (secs >= 1) {
-                display_parameters.remaining_time_to_maximum_soc = static_cast<int>(secs);
+            if (secs > 0) {
+                display_parameters.remaining_time_to_maximum_soc = secs;
             }
         }
         // pass an empty optional object if no member was set

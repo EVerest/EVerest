@@ -30,6 +30,12 @@ std::string subject_common_name(X509* cert);
 
 std::string strip_dashes(std::string in);
 
+// True when a subject DomainComponent carries a value the certificate profiles fix for a leaf other than the
+// contract certificate: CPO, CPS, OEM and V2G in ISO 15118-2 Annex F (Tables F.1, F.2, F.3, F.5), CSO, CPS and
+// EV in ISO 15118-20 Annex B (Tables B.5 to B.8, B.11, B.12). Both standards leave the contract certificate's
+// DomainComponent open, so only this exclusion is standard-backed.
+bool subject_names_non_contract_profile(X509* cert);
+
 // Empty and logged when the PEM does not hold a usable private key.
 PKEY_ptr load_private_key(const std::string& pem, const std::optional<std::string>& password);
 

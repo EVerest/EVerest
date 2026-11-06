@@ -46,19 +46,22 @@ public:
         auto value_fut = value_prom->get_future();
         auto unsubscribe =
             mqtt.subscribe(reply_topic, [value_prom = weak_promise(value_prom)](const auto& raw_data) mutable {
+                auto shared = value_prom.lock();
+                if (not shared) {
+                    EVLOG_info << "Request expired before arrival of response!\n\n" << raw_data;
+                    return;
+                }
                 try {
-                    auto shared = value_prom.lock();
-                    if (shared) {
-                        auto data = json::parse(raw_data);
-                        shared->set_value(data);
-                    } else {
-                        EVLOG_info << "Request expired before arrival of response!\n\n" << raw_data;
-                    }
-
-                } catch (std::exception const& e) {
-                    EVLOG_info << "Could not parse: Exception!\n" << e.what() << "\n\n" << raw_data;
+                    shared->set_value(json::parse(raw_data));
+                } catch (std::future_error const&) {
+                    EVLOG_info << "Ignoring a further reply to an answered request\n\n" << raw_data;
                 } catch (...) {
-                    EVLOG_info << "Could not parse: Reply with valid data!\n\n" << raw_data;
+                    // The reply topic is unique to this request, so a reply that does not parse is final.
+                    EVLOG_info << "Could not parse reply, answering the request with its default\n\n" << raw_data;
+                    try {
+                        shared->set_exception(std::current_exception());
+                    } catch (std::future_error const&) {
+                    }
                 }
             });
         json req;
@@ -70,7 +73,10 @@ public:
 
         std::optional<ValueT> result = std::nullopt;
         if (value_fut.wait_for(timeout) == std::future_status::ready) {
-            result = value_fut.get();
+            try {
+                result = value_fut.get();
+            } catch (...) {
+            }
         }
         unsubscribe();
         return result;

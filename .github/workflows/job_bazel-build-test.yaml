@@ -12,10 +12,14 @@ jobs:
   bazel-build-and-test:
     name: build + test
     runs-on: ${{ inputs.runner }}
+    permissions:
+      contents: read
     steps:
-      - run: echo branch name is ${{ github.ref }}
+      - run: echo "branch name is $GITHUB_REF"
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - name: Authenticate GitHub downloads
         env:
           GITHUB_TOKEN: ${{ github.token }}

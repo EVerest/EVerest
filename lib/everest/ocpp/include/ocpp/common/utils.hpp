@@ -56,6 +56,10 @@ template <typename T, typename U> T constexpr clamp_to(U len) {
 }
 
 std::size_t convert_to_positive_size_t(float value);
+
+/// \brief Deepest JSON nesting accepted from the CSMS. OCPP messages nest far less deeply; the limit keeps a hostile
+/// message from overflowing the stack in the recursive copy, dump and destruction paths of nlohmann::json.
+constexpr std::size_t MAX_JSON_NESTING_DEPTH = 64;
 } // namespace ocpp
 
 #endif

@@ -57,6 +57,7 @@ private:
     void handle_transaction_finished(const types::evse_manager::SessionEvent& session_event);
     void set_latest_energy_import_wh(int32_t latest_energy_wh_import);
     void set_latest_energy_export_wh(int32_t latest_export_energy_wh);
+    void update_totals();
     bool is_session_running();
 };
 

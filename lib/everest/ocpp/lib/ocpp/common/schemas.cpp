@@ -6,6 +6,7 @@
 #include <stdexcept>
 
 #include <everest/logging.hpp>
+#include <ocpp/common/utils.hpp>
 
 namespace ocpp {
 
@@ -85,15 +86,12 @@ void Schemas::loader(const json_uri& uri, json& schema) {
 
 void Schemas::format_checker(const std::string& format, const std::string& value) {
     if (format == "date-time") {
-        if (!std::regex_match(value, Schemas::date_time_regex)) {
-            throw std::runtime_error("No format checker available for date-time");
+        if (!is_rfc3339_datetime(value)) {
+            throw std::runtime_error("Invalid date-time: " + value);
         }
     } else {
         nlohmann::json_schema::default_string_format_check(format, value);
     }
 }
 
-// NOLINTNEXTLINE(cert-err58-cpp)
-const std::regex Schemas::date_time_regex =
-    std::regex(R"(^((?:(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?))(Z|[\+-]\d{2}:\d{2})?)$)");
 } // namespace ocpp
