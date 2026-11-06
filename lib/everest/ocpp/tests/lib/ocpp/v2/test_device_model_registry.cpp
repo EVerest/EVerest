@@ -698,4 +698,24 @@ TEST_F(DeviceModelRegistryTest, registering_again_during_a_write_keeps_the_regis
     EXPECT_EQ(get(config_component, timeout), "75");
 }
 
+TEST_F(DeviceModelRegistryTest, providers_of_one_owner_may_unregister_it_from_concurrent_writes) {
+    register_config_view();
+    std::atomic<int> calls_entered{0};
+    provider->on_set = [this, &calls_entered](const Component&, const Variable&, const std::string&) {
+        ++calls_entered;
+        while (calls_entered.load() < 2) {
+            std::this_thread::yield();
+        }
+        dm->unregister_components(OWNER);
+    };
+
+    std::thread first([this]() { dm->set_value(config_component, timeout, AttributeEnum::Actual, "90", "csms"); });
+    std::thread second([this]() { dm->set_value(config_component, timeout, AttributeEnum::Actual, "100", "csms"); });
+    first.join();
+    second.join();
+
+    EXPECT_EQ(provider->received().size(), 2);
+    EXPECT_FALSE(visible(config_component, timeout));
+}
+
 } // namespace ocpp::v2

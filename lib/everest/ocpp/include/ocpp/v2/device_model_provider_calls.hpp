@@ -39,8 +39,8 @@ public:
     /// \brief Counts a call to the provider of \p owner. Does not block.
     Call begin(const std::string& owner);
 
-    /// \brief Waits until the calls to the provider of \p owner that are in progress on other threads returned. A call
-    /// on the calling thread is the one the provider makes this call from, which returns only after it.
+    /// \brief Waits until the calls to the provider of \p owner in progress returned. Called from inside a call to any
+    /// provider, it returns at once: two such calls waiting for each other would never return.
     void wait_idle(const std::string& owner);
 
 private:

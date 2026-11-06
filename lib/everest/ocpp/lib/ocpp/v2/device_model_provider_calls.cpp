@@ -40,11 +40,14 @@ ProviderCalls::Call ProviderCalls::begin(const std::string& owner) {
 void ProviderCalls::wait_idle(const std::string& owner) {
     const auto self = std::this_thread::get_id();
     auto calls_in_progress = this->calls_in_progress.handle();
-    calls_in_progress.wait([&calls_in_progress, &owner, self]() {
-        const auto it = calls_in_progress->find(owner);
-        return it == calls_in_progress->end() or
-               std::all_of(it->second.begin(), it->second.end(), [self](const auto& thread) { return thread == self; });
-    });
+    // A thread inside a provider call never waits: two such threads waiting for each other would never return
+    const bool inside_a_call = std::any_of(calls_in_progress->begin(), calls_in_progress->end(),
+                                           [self](const auto& entry) { return entry.second.count(self) != 0; });
+    if (inside_a_call) {
+        return;
+    }
+    calls_in_progress.wait(
+        [&calls_in_progress, &owner]() { return calls_in_progress->find(owner) == calls_in_progress->end(); });
 }
 
 } // namespace v2

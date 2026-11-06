@@ -108,14 +108,17 @@ public:
     /// model like writes to any other variable. A write that is in progress while \p owner registers again is not
     /// stored, the registered value stays. DeviceModel shares the ownership of the provider until \p owner is
     /// unregistered or registers with another provider, and until the calls to it in progress return; unregistering
-    /// and registering with another provider wait for the calls in progress on other threads.
+    /// and registering with another provider wait for the calls in progress, unless they are called from a call to a
+    /// provider, see unregister_components.
     virtual ComponentRegistrationResult register_components(const std::string& owner,
                                                             const std::vector<RegisteredComponent>& components,
                                                             std::shared_ptr<VariableValueProvider> provider) = 0;
 
     /// \brief Removes everything that \p owner registered. The monitors and stored values of its variables are kept
-    /// for its next registration. Returns once the calls to the provider of \p owner in
-    /// progress on other threads returned; a provider may call it from its set_value. The reserved owner is ignored.
+    /// for its next registration. Returns once the calls to the provider of \p owner in progress returned. A provider
+    /// may call it from its set_value: called from a call to any provider, it returns at once without waiting, since
+    /// two such calls waiting for each other would never return; the provider stays alive until its calls return. The
+    /// reserved owner is ignored.
     virtual void unregister_components(const std::string& owner) = 0;
 
     /// \brief Reports a value that \p owner of a registered variable changed itself. Updates the model in
