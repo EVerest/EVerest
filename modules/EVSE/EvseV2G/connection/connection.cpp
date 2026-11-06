@@ -32,9 +32,9 @@
 
 #include <everest/util/misc/change_tracker.hpp>
 
-#define DEFAULT_SOCKET_BACKLOG        3
-#define ERROR_SESSION_ALREADY_STARTED 2
-#define CLIENT_FIN_TIMEOUT            3000
+#define ERROR_SESSION_ALREADY_STARTED     2
+#define TCP_LISTENER_PAUSED_POLL_INTERVAL 100
+#define CLIENT_FIN_TIMEOUT                3000
 
 namespace telemetry_types = everest::lib::API::V1_0::types::telemetry;
 using V2gTransportTracker = everest::lib::util::change_tracker<telemetry_types::V2gTransport>;
@@ -257,6 +257,7 @@ int connection_init(struct v2g_context* v2g_ctx, std::string* failure_detail) {
          */
         v2g_ctx->local_tcp_addr->sin6_port = htons(v2g_ctx->tcp_port);
         v2g_ctx->tcp_socket = connection_create_socket(v2g_ctx->local_tcp_addr);
+        v2g_ctx->tcp_listener_paused = false;
         if (v2g_ctx->tcp_socket < 0) {
             set_failure_detail(failure_detail,
                                std::string("Failed to create TCP server socket on interface ") + v2g_ctx->if_name);
@@ -667,6 +668,10 @@ static void* connection_server(void* data) {
         /* wait for an incoming connection */
         conn->conn.socket_fd = accept(ctx->tcp_socket, (struct sockaddr*)&addr, &addrlen);
         if (conn->conn.socket_fd == -1) {
+            if (ctx->tcp_listener_paused) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(TCP_LISTENER_PAUSED_POLL_INTERVAL));
+                continue;
+            }
             dlog(DLOG_LEVEL_ERROR, "Accept(tcp) failed: %s", strerror(errno));
             continue;
         }

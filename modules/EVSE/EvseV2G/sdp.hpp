@@ -25,5 +25,7 @@ int sdp_init(struct v2g_context* v2g_ctx);
 int sdp_init(struct v2g_context* v2g_ctx, std::string* failure_detail);
 int sdp_listen(struct v2g_context* v2g_ctx);
 void sdp_set_dlink_ready(struct v2g_context* v2g_ctx, bool ready);
+int sdp_pause_tcp_listener(struct v2g_context* v2g_ctx);
+int sdp_resume_tcp_listener(struct v2g_context* v2g_ctx);
 
 #endif /* SDP_H */
