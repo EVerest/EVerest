@@ -422,6 +422,22 @@ def test_a_definition_without_key_value_entries_is_explained(tmp_path, content, 
     assert explanation in proc.stderr
 
 
+def test_missing_work_dir_fails_before_writing(tmp_path):
+    """Output defaults to a directory beneath it, which must not be created."""
+    work_dir = tmp_path / 'absent'
+    proc = run(
+        'types', 'generate-headers',
+        '--disable-clang-format',
+        '--schemas-dir', str(SCHEMAS_DIR),
+        '--everest-dir', str(EVEREST_DIR),
+        '--work-dir', str(work_dir),
+        check=False,
+    )
+    assert proc.returncode != 0
+    assert 'absent' in proc.stderr
+    assert not work_dir.exists()
+
+
 def test_everest_dir_without_entries_fails(tmp_path):
     proc = run(
         'interface', 'generate-headers',

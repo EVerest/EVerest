@@ -22,6 +22,14 @@ class EverestDirNotFound(EvCliError):
     """
 
 
+class WorkDirNotFound(EvCliError):
+    """The work directory is missing.
+
+    Raised before anything is written, since output defaults to a directory
+    beneath it and would otherwise be created there.
+    """
+
+
 class DefinitionNotFound(EvCliError):
     """A definition file could not be found in any of the everest directories."""
 

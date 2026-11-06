@@ -75,7 +75,8 @@ The `module`, `interface` and `types` commands have the following options in
 common:
 
 - ``--work-dir``:
-  work directory which also contains the manifest definitions (default: ``.``)
+  work directory which also contains the manifest definitions (default: ``.``).
+  It must exist.
 
 - ``--everest-dir``:
   root directory of EVerest core or any directory containing interface

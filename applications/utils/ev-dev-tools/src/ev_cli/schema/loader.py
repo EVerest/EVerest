@@ -17,7 +17,7 @@ from typing import Any, Sequence
 
 import yaml
 
-from ..errors import DefinitionNotFound, EverestDirNotFound, SchemaError
+from ..errors import DefinitionNotFound, EverestDirNotFound, SchemaError, WorkDirNotFound
 from ..ir.common import SourceRef
 from .diagnostics import Category, Diagnostic, Severity, Sink
 from .validate import DocumentKind, Validators
@@ -54,13 +54,14 @@ class SourceTree:
     def __init__(self, everest_dirs: Sequence[Path], work_dir: Path) -> None:
         self.everest_dirs = tuple(Path(d) for d in everest_dirs)
         self.work_dir = Path(work_dir)
-        self._reject_unusable_roots()
+        self._reject_unusable_directories()
 
-    def _reject_unusable_roots(self) -> None:
-        """A root that is not there is an error, not an empty search path.
+    def _reject_unusable_directories(self) -> None:
+        """A directory that is not there is an error, not something to work around.
 
-        Skipping it would turn a mistyped ``--everest-dir`` into a run that
-        finds no definitions and reports success.
+        A mistyped ``--everest-dir`` would otherwise make a run that finds no
+        definitions and reports success, and a mistyped ``--work-dir`` would be
+        created when output is written beneath it.
         """
         if not self.everest_dirs:
             raise EverestDirNotFound(
@@ -74,6 +75,11 @@ class SourceTree:
                 f'{", ".join(str(d) for d in missing)}. Every --everest-dir '
                 'entry must exist; out-of-tree definitions are not found '
                 'implicitly.'
+            )
+        if not self.work_dir.is_dir():
+            raise WorkDirNotFound(
+                f'not a directory: {self.work_dir}. --work-dir must name an '
+                f'existing directory.'
             )
 
     def resolve(self, relative: str | Path) -> Path:
