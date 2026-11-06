@@ -162,6 +162,7 @@ struct Callbacks {
     std::function<void(float)> dc_pre_charge_target_voltage;
     std::function<void(const DcChargeLoopReq&)> dc_charge_loop_req;
     std::function<void(const DcMaximumLimits&)> dc_max_limits;
+    std::function<void(const d20::DcTransferLimits&)> dc_evse_adjusted_limits;
 
     // Emitted on change only, since the EV repeats it in every DC request.
     std::function<void(const DcEvStatus&)> dc_ev_status;
@@ -211,6 +212,7 @@ public:
     void dc_pre_charge_target_voltage(float) const;
     void dc_charge_loop_req(const feedback::DcChargeLoopReq&) const;
     void dc_max_limits(const feedback::DcMaximumLimits&) const;
+    void dc_evse_adjusted_limits(const d20::DcTransferLimits&) const;
     void dc_ev_status(const feedback::DcEvStatus&) const;
     void ev_charge_parameters(const feedback::EvChargeParameters&) const;
     void dc_ev_charge_progress(const feedback::DcEvChargeProgress&) const;

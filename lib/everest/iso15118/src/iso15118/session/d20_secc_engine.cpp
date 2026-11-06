@@ -33,6 +33,36 @@ session::SessionConfig make_d20_config(session::SessionConfig config, bool tls_a
     config.cert_install_service = false;
     return config;
 }
+
+void clamp_dc_limits(const d20::DcTransferLimits& bounds, d20::DcTransferLimits& candidate) {
+    namespace dt = message_20::datatypes;
+
+    const auto clamp_max = [](const dt::RationalNumber& bound, dt::RationalNumber& value) {
+        if (dt::from_RationalNumber(value) > dt::from_RationalNumber(bound)) {
+            value = bound;
+        }
+    };
+    const auto clamp_min = [](const dt::RationalNumber& bound, dt::RationalNumber& value) {
+        if (dt::from_RationalNumber(value) < dt::from_RationalNumber(bound)) {
+            value = bound;
+        }
+    };
+
+    clamp_max(bounds.voltage.max, candidate.voltage.max);
+    clamp_max(bounds.charge_limits.current.max, candidate.charge_limits.current.max);
+    clamp_max(bounds.charge_limits.power.max, candidate.charge_limits.power.max);
+    clamp_min(bounds.voltage.min, candidate.voltage.min);
+    clamp_min(bounds.charge_limits.current.min, candidate.charge_limits.current.min);
+    clamp_min(bounds.charge_limits.power.min, candidate.charge_limits.power.min);
+
+    if (bounds.discharge_limits.has_value() and candidate.discharge_limits.has_value()) {
+        clamp_max(bounds.discharge_limits->current.max, candidate.discharge_limits->current.max);
+        clamp_max(bounds.discharge_limits->power.max, candidate.discharge_limits->power.max);
+        clamp_min(bounds.discharge_limits->current.min, candidate.discharge_limits->current.min);
+        clamp_min(bounds.discharge_limits->power.min, candidate.discharge_limits->power.min);
+    }
+}
+
 } // namespace
 
 D20SeccEngine::D20SeccEngine(io::StreamOutputView output_view, session::SessionConfig config,
@@ -74,7 +104,12 @@ void D20SeccEngine::on_control_event(const d20::ControlEvent& event) {
     active_control_event = event;
 
     if (const auto control_data = ctx.get_control_event<d20::DcTransferLimits>()) {
-        ctx.session_config.dc_limits = *control_data;
+        auto updated_limits = *control_data;
+        if (ctx.dc_limits_locked_after_charge_param) {
+            const auto& bounds = ctx.dc_limits_after_charge_param_bounds.value_or(ctx.session_config.dc_limits);
+            clamp_dc_limits(bounds, updated_limits);
+        }
+        ctx.session_config.dc_limits = updated_limits;
     } else if (const auto control_data = ctx.get_control_event<d20::UpdatePowersupplyLimits>()) {
         // They feed the DC_ChargeParameterDiscoveryRes offer, which a renegotiation re-sends mid-session.
         ctx.session_config.powersupply_limits = control_data->limits;
