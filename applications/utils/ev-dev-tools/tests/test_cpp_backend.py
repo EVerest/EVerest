@@ -55,7 +55,6 @@ class TestGuardsAndNames:
         ('energy', 'TYPES_ENERGY_TYPES_HPP'),
         ('power_supply_DC', 'TYPES_POWER_SUPPLY_DC_TYPES_HPP'),
         ('units_signed', 'TYPES_UNITS_SIGNED_TYPES_HPP'),
-        ('nested/deep', 'TYPES_NESTED_DEEP_TYPES_HPP'),
     ])
     def test_type_header_guard(self, unit, expected):
         assert naming.type_header_guard(unit) == expected
@@ -77,11 +76,9 @@ class TestGuardsAndNames:
 
     def test_namespaces(self):
         assert naming.unit_namespaces('energy') == ['types', 'energy']
-        assert naming.unit_namespaces('a/b') == ['types', 'a', 'b']
 
     def test_qualified_type(self):
         assert naming.qualified_type('energy', 'Power') == 'types::energy::Power'
-        assert naming.qualified_type('a/b', 'C') == 'types::a::b::C'
 
     @pytest.mark.parametrize('spelling, to_string, from_string', [
         ('EvseState', 'evse_state_to_string', 'string_to_evse_state'),

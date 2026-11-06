@@ -104,7 +104,7 @@ class TestLosslessness:
 
     def test_type_files_use_no_keyword_the_ir_drops(self):
         keys: set[str] = set()
-        for path in sorted((EVEREST_DIR / 'types').rglob('*.yaml')):
+        for path in sorted((EVEREST_DIR / 'types').glob('*.yaml')):
             document = yaml.safe_load(path.read_text()) or {}
             assert set(document) <= {'description', 'types'}
             for schema in (document.get('types') or {}).values():

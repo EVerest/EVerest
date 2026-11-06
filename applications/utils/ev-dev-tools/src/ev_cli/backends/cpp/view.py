@@ -59,8 +59,8 @@ class TypeUnitView:
 
     @property
     def name(self) -> str:
-        """The unit's namespace path, as it appears in generated comments."""
-        return naming.unit_namespace_path(self.unit.unit)
+        """The unit's namespace, as it appears in generated comments."""
+        return self.unit.unit
 
     @property
     def guard(self) -> str:

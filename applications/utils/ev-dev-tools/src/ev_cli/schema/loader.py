@@ -97,21 +97,19 @@ class SourceTree:
 
     def type_units(self) -> tuple[str, ...]:
         """Every type unit across all roots, first root winning on a clash."""
-        return self._discover(TYPES_DIR, recursive=True)
+        return self._discover(TYPES_DIR)
 
     def interface_names(self) -> tuple[str, ...]:
-        return self._discover(INTERFACES_DIR, recursive=False)
+        return self._discover(INTERFACES_DIR)
 
-    def _discover(self, subdir: str, *, recursive: bool) -> tuple[str, ...]:
+    def _discover(self, subdir: str) -> tuple[str, ...]:
         seen: dict[str, Path] = {}
         for root in self.everest_dirs:
             directory = root / subdir
             if not directory.is_dir():
                 continue
-            paths = directory.rglob('*.yaml') if recursive else directory.glob('*.yaml')
-            for path in paths:
-                name = path.relative_to(directory).with_suffix('').as_posix()
-                seen.setdefault(name, path)
+            for path in directory.glob('*.yaml'):
+                seen.setdefault(path.stem, path)
         return tuple(sorted(seen))
 
 

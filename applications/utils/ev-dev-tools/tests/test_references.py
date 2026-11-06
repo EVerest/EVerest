@@ -34,9 +34,9 @@ class TestLegacyDialect:
         parsed = parse_type_reference('/units#/Power', from_unit='energy')
         assert parsed.target == TypeRef('units', 'Power')
 
-    def test_nested_unit(self):
-        parsed = parse_type_reference('/nested/deep#/Thing', from_unit='energy')
-        assert parsed.target == TypeRef('nested/deep', 'Thing')
+    def test_rejects_a_unit_in_a_subdirectory(self):
+        with pytest.raises(MalformedReference, match='subdirectory'):
+            parse_type_reference('/nested/deep#/Thing', from_unit='energy')
 
     def test_from_a_non_type_document(self):
         """An interface refers to types the same way a type file does."""
@@ -73,14 +73,13 @@ class TestConformantDialect:
         parsed = parse_type_reference('units.yaml#/types/Power', from_unit='energy')
         assert parsed.target == TypeRef('units', 'Power')
 
-    def test_relative_to_the_referring_file(self):
-        parsed = parse_type_reference(
-            '../units.yaml#/types/Power', from_unit='nested/energy')
+    def test_normalises_the_path(self):
+        parsed = parse_type_reference('./units.yaml#/types/Power', from_unit='energy')
         assert parsed.target == TypeRef('units', 'Power')
 
-    def test_into_a_subdirectory(self):
-        parsed = parse_type_reference('nested/deep.yaml#/types/Thing', from_unit='energy')
-        assert parsed.target == TypeRef('nested/deep', 'Thing')
+    def test_rejects_a_subdirectory(self):
+        with pytest.raises(MalformedReference, match='subdirectory'):
+            parse_type_reference('nested/deep.yaml#/types/Thing', from_unit='energy')
 
     def test_from_a_non_type_document_is_relative_to_the_types_root(self):
         parsed = parse_type_reference('units.yaml#/types/Power', from_unit=None)
@@ -105,8 +104,6 @@ class TestBothDialectsAgree:
     @pytest.mark.parametrize('legacy, conformant, from_unit', [
         ('/energy#/Power', '#/types/Power', 'energy'),
         ('/units#/Power', 'units.yaml#/types/Power', 'energy'),
-        ('/nested/deep#/Thing', 'nested/deep.yaml#/types/Thing', 'energy'),
-        ('/units#/Power', '../units.yaml#/types/Power', 'nested/energy'),
     ])
     def test_resolve_to_the_same_target(self, legacy, conformant, from_unit):
         assert (
@@ -121,13 +118,12 @@ class TestConformantForm:
     @pytest.mark.parametrize('target, from_unit, expected', [
         (TypeRef('energy', 'Power'), 'energy', '#/types/Power'),
         (TypeRef('units', 'Power'), 'energy', 'units.yaml#/types/Power'),
-        (TypeRef('units', 'Power'), 'nested/energy', '../units.yaml#/types/Power'),
         (TypeRef('units', 'Power'), None, 'units.yaml#/types/Power'),
     ])
     def test_suggestion(self, target, from_unit, expected):
         assert conformant_form(target, from_unit=from_unit) == expected
 
-    @pytest.mark.parametrize('from_unit', ['energy', 'nested/energy', None])
+    @pytest.mark.parametrize('from_unit', ['energy', None])
     def test_suggestion_round_trips(self, from_unit):
         """The advice has to be advice that works."""
         target = TypeRef('units', 'Power')

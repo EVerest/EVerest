@@ -71,12 +71,7 @@ def check_identifier(name: str, where: str) -> str:
 
 def unit_namespaces(unit: str) -> list[str]:
     """The namespaces a type unit's declarations live in."""
-    return ['types', *unit.split('/')]
-
-
-def unit_namespace_path(unit: str) -> str:
-    """The unit's namespace as C++ writes it, without the ``types`` root."""
-    return '::'.join(unit.split('/'))
+    return ['types', unit]
 
 
 def qualified_type(unit: str, name: str) -> str:
@@ -86,12 +81,11 @@ def qualified_type(unit: str, name: str) -> str:
     have always done and it keeps the spelling of a reference independent of
     where it is used.
     """
-    return f'types::{unit_namespace_path(unit)}::{name}'
+    return f'types::{unit}::{name}'
 
 
 def type_header_guard(unit: str) -> str:
-    parts = ''.join(part[:1].upper() + part[1:] for part in unit.split('/'))
-    return f'TYPES_{snake_case(parts).upper()}_TYPES_HPP'
+    return f'TYPES_{snake_case(unit[:1].upper() + unit[1:]).upper()}_TYPES_HPP'
 
 
 def interface_header_guard(interface: str, kind: str) -> str:

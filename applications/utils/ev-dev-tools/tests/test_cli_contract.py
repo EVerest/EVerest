@@ -378,6 +378,29 @@ def test_missing_everest_dir_fails(tmp_path):
     assert not (tmp_path / 'out').exists()
 
 
+def test_type_units_are_read_only_from_the_types_directory(tmp_path):
+    """A file in a subdirectory of ``types`` is not a type unit."""
+    unit = (
+        'description: A unit\n'
+        'types:\n'
+        '  Thing:\n'
+        '    description: A thing\n'
+        '    type: string\n'
+        '    enum: [a]\n'
+    )
+    (tmp_path / 'types' / 'sub').mkdir(parents=True)
+    (tmp_path / 'types' / 'top.yaml').write_text(unit)
+    (tmp_path / 'types' / 'sub' / 'nested.yaml').write_text(unit)
+    run(
+        'types', 'generate-headers',
+        '--disable-clang-format',
+        '--schemas-dir', str(SCHEMAS_DIR),
+        '--everest-dir', str(tmp_path),
+        '--output-dir', str(tmp_path / 'out'),
+    )
+    assert relative_files(tmp_path / 'out') == {'top.hpp'}
+
+
 def test_everest_dir_without_entries_fails(tmp_path):
     proc = run(
         'interface', 'generate-headers',

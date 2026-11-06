@@ -27,7 +27,8 @@ from ..ir.types import TypeRef
 
 #: A single JSON pointer segment naming a type.
 _NAME = r'[A-Za-z_][A-Za-z0-9_.-]*'
-#: ``/<unit>#/<Type>``, where the unit may itself be a nested path.
+#: ``/<unit>#/<Type>``.  Also matches a unit in a subdirectory, so that one is
+#: rejected for being there rather than as unparsable.
 _LEGACY = re.compile(rf'^/(?P<unit>{_NAME}(?:/{_NAME})*)#/(?P<name>{_NAME})$')
 #: ``[<path>.yaml]#/types/<Type>``
 _CONFORMANT = re.compile(rf'^(?P<path>[^#]*)#/types/(?P<name>{_NAME})$')
@@ -83,12 +84,11 @@ class ParsedErrorReference:
 def parse_type_reference(raw: str, *, from_unit: str | None) -> ParsedReference:
     """Parse either dialect.
 
-    ``from_unit`` is the type unit doing the referring, as a ``/``-separated
-    path without its suffix (``energy``, or ``sub/energy`` for a nested file).
-    It is needed because a conformant reference is relative to the referring
-    file.  Pass ``None`` when the referring document is not itself a type unit
-    -- an interface or a manifest -- in which case a conformant reference is
-    read relative to the types root and must name a file.
+    ``from_unit`` is the type unit doing the referring, named by its file
+    without the suffix (``energy``).  It is needed because a reference without
+    a file part, ``#/types/Power``, names a type in that unit.  Pass ``None``
+    when the referring document is not itself a type unit -- an interface or a
+    manifest -- in which case a reference must name a file.
     """
     if not isinstance(raw, str):
         raise MalformedReference(f'reference must be a string, got {type(raw).__name__}')
@@ -96,7 +96,7 @@ def parse_type_reference(raw: str, *, from_unit: str | None) -> ParsedReference:
     legacy = _LEGACY.match(raw)
     if legacy:
         return ParsedReference(
-            target=TypeRef(unit=legacy.group('unit'), name=legacy.group('name')),
+            target=TypeRef(unit=_flat_unit(legacy.group('unit'), raw), name=legacy.group('name')),
             dialect=Dialect.LEGACY,
             raw=raw,
         )
@@ -139,14 +139,19 @@ def _resolve_relative_unit(path: str, *, from_unit: str | None, raw: str) -> str
             stem = stem[: -len(suffix)]
             break
 
-    if stem.startswith('/'):
-        return stem.lstrip('/')
-
-    base = posixpath.dirname(from_unit) if from_unit is not None else ''
-    unit = posixpath.normpath(posixpath.join(base, stem))
+    unit = posixpath.normpath(stem.lstrip('/'))
     if unit.startswith('..'):
         raise MalformedReference(
             f'reference {raw!r} points outside the types directory'
+        )
+    return _flat_unit(unit, raw)
+
+
+def _flat_unit(unit: str, raw: str) -> str:
+    if '/' in unit:
+        raise MalformedReference(
+            f'reference {raw!r} points into a subdirectory of the types '
+            f'directory, but type units are read only from the directory itself'
         )
     return unit
 
@@ -157,15 +162,9 @@ def conformant_form(target: TypeRef, *, from_unit: str | None) -> str:
     This is what the conformance report suggests, so that the eventual cleanup
     is a mechanical rewrite rather than a judgement call at 512 sites.
     """
-    if from_unit is None:
-        return f'{target.unit}.yaml#/types/{target.name}'
-
     if target.unit == from_unit:
         return f'#/types/{target.name}'
-
-    base = posixpath.dirname(from_unit)
-    relative = posixpath.relpath(f'{target.unit}.yaml', base or '.')
-    return f'{relative}#/types/{target.name}'
+    return f'{target.unit}.yaml#/types/{target.name}'
 
 
 def parse_error_reference(raw: str) -> ParsedErrorReference:
