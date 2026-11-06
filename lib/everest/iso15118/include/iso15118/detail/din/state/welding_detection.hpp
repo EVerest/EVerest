@@ -12,7 +12,6 @@ namespace dt = message_din::datatypes;
 
 message_din::WeldingDetectionResponse
 handle_request([[maybe_unused]] const message_din::WeldingDetectionRequest& req, float present_voltage,
-               const dt::SessionId& session_id, std::optional<dt::DcEvseStatusCode> error_status_code = std::nullopt,
-               bool charger_stop = false);
+               const dt::SessionId& session_id, std::optional<dt::DcEvseStatusCode> error_status_code = std::nullopt);
 
 } // namespace iso15118::din::state

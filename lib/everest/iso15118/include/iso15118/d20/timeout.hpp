@@ -26,11 +26,14 @@ enum class TimeoutType : uint8_t {
     STOP_CHARGING,
     // Bounds the wait for the request that carries the emergency-shutdown FAILED response.
     EMERGENCY_SHUTDOWN,
+    // Bounds how long a WeldingDetectionRes waits for values of the welding detection voltage source
+    // received after its request.
+    WELDING_VOLTAGE,
 };
 
-constexpr uint8_t TIMEOUT_TYPE_SIZE = 7;
+constexpr uint8_t TIMEOUT_TYPE_SIZE = 8;
 
-static_assert(TIMEOUT_TYPE_SIZE == to_underlying_value(TimeoutType::EMERGENCY_SHUTDOWN) + 1,
+static_assert(TIMEOUT_TYPE_SIZE == to_underlying_value(TimeoutType::WELDING_VOLTAGE) + 1,
               "TIMEOUT_TYPE_SIZE should be in sync with the TimeoutType enum definition");
 
 constexpr auto TIMEOUT_ONGOING = 1000 * 55;
@@ -41,6 +44,16 @@ constexpr auto TIMEOUT_STOP_CHARGING_GUARD = 1000 * 10;
 // over V2G ([V2G2-880] NOTE 1, [V2G-DC-638] NOTE 2), so this only bounds how long the reason stays
 // deliverable.
 constexpr auto TIMEOUT_EMERGENCY_SHUTDOWN_GUARD = 1000 * 2;
+// How long a WeldingDetectionRes waits for marked values of the welding detection voltage source received
+// after its request (IEC 61851-23:2023 CC.6.3, Table CC.9 t105 to t106): within the 1,5 s
+// V2G_SECC_Msg_Performance_Time(WeldingDetectionRes) of ISO 15118-2 (Table 109), DIN 70121 and ISO 15118-20
+// (Table 215), 100 ms kept for sending; runs concurrently with the CP State B wait. EvseV2G waits as long.
+constexpr auto TIMEOUT_WELDING_VOLTAGE = 1400;
+// How long PowerDeliveryRes(Stop) waits for the contactor to be reported open [IEC 61851-23:2023 Table CC.9
+// t103 before t104]: within V2G_SECC_Msg_Performance_Time(PowerDeliveryRes), 4,5 s in ISO 15118-2 (Table 109),
+// 1,5 s in DIN 70121 (Table 75) and ISO 15118-20 (Table 215), 100 ms kept for sending. EvseV2G waits as long.
+constexpr auto TIMEOUT_CONTACTOR_OPEN_ISO2 = 3000;
+constexpr auto TIMEOUT_CONTACTOR_OPEN = 1400;
 
 class Timeouts {
 public:
