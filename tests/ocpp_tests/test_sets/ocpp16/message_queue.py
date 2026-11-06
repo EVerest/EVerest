@@ -86,7 +86,7 @@ async def test_call_error_to_transaction_message(
     test_utility.messages.clear()
     test_utility.forbidden_actions.append("StartTransaction")
 
-    test_controller.plug_out()
+    test_controller.plug_out(abrupt=True)
 
     # expect StopTransaction.req
     assert await wait_for_and_validate(

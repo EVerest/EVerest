@@ -179,18 +179,29 @@ class EverestTestController(TestController):
         drv.configure_session(*_dc_session_for_energy_mode(energy_mode, params, drv.prefers_iso15118_20))
         world.plug()
 
-    def plug_out(self, connector_id=1):
-        self._world_drv(connector_id).unplug()
+    def plug_out(self, connector_id=1, abrupt=False):
+        """Unplug. Ends an active session cleanly first; abrupt=True pulls the plug mid-session."""
+        if abrupt:
+            self._world_drv(connector_id).unplug()
+            return
+        drv = self._ev_drv(connector_id)
+        world = self._world_drv(connector_id)
+        states = drv.payloads("state")
+        if states and states[-1] not in ("Unplugged", "Disabled"):
+            self._stop_session(drv)
+        world.unplug()
 
     def plug_out_iso(self, connector_id=1):
         drv = self._ev_drv(connector_id)
         world = self._world_drv(connector_id)
+        self._stop_session(drv)
+        world.unplug()
+
+    def _stop_session(self, drv: EvControllerDriver):
         after = drv.payload_count("state")
         drv.stop_session()
         drv.query_state()
-        # Unplug once the V2G session has stopped, as EvManager's iso_wait_v2g_session_stopped did.
         drv.wait_for("state", lambda s: s not in ("Charging", "Stopping"), timeout=30.0, after=after)
-        world.unplug()
 
     def pause_session(self, connector_id=1):
         drv = self._ev_drv(connector_id)

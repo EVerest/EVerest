@@ -844,6 +844,36 @@ async def test_tls_version_auto_runs_iso15118_2_over_tls_1_2(
     negotiates TLS 1.2, offers -2 alone and charges over ISO 15118-2."""
     await run_tls_version_auto_session(test_controller, everest_core, "ISO15118-2-2013")
 
+
+@pytest.mark.asyncio
+@pytest.mark.xdist_group(name="ISO15118")
+@pytest.mark.probe_module(
+    connections={
+        "evse_manager": [Requirement("evse_manager", "evse")],
+        "charger": [Requirement("iso15118_charger", "charger")],
+    }
+)
+@pytest.mark.everest_core_config("config-sil-dc-evsev2g.yaml")
+@pytest.mark.everest_config_adaptions(DcConfigAdjustmentStrategy())
+async def test_iso15118_plug_out_ends_with_session_stop(
+    test_controller: TestController, everest_core: EverestCore
+):
+    """Unplugging ends the active ISO 15118-2 session with SessionStop."""
+    probe_module, session_event_mock, powermeter_mock, _ = await setup_session_mocks(
+        test_controller, everest_core
+    )
+    v2g_messages_mock = Mock()
+    probe_module.subscribe_variable("charger", "v2g_messages", v2g_messages_mock)
+
+    await start_session(test_controller, session_event_mock, test_controller.plug_in_dc_iso)
+    await assert_energy_exceeds(powermeter_mock, energy_threshold_wh=10, timeout=15)
+    v2g_messages_mock.reset_mock()
+    test_controller.plug_out()
+    await wait_for_session_events(session_event_mock, ["TransactionFinished", "SessionFinished"])
+    message_ids = [call.args[0]["id"] for call in v2g_messages_mock.call_args_list]
+    assert "SessionStopReq" in message_ids, f"No SessionStopReq in v2g_messages: {message_ids}"
+
+
 @pytest.mark.asyncio
 @pytest.mark.probe_module(
     connections={"evse_manager": [Requirement("evse_manager", "evse")]}

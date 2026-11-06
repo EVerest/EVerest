@@ -1023,6 +1023,8 @@ PWM-driven AC, no SLAC/V2G. ``plug_in()`` defaults to 32 A / 3-phase.
     configure_session {"mode":"AcIec","params":{"charging_current_a":32.0,"three_phases":true}}
     plug              {}
     # ... charge ...
+    stop_session    {}
+    query_state     {}
     unplug          {}
 
 AC IEC: pause / resume
@@ -1053,6 +1055,8 @@ and rejects the ISO pause verbs with ``"AC IEC: ISO verbs not applicable"``.
     plug              {}
     pause_session   {}
     resume_session  {}
+    stop_session    {}
+    query_state     {}
     unplug          {}
 
 AC ISO 15118-2
@@ -1072,6 +1076,7 @@ SLAC → V2G → Charging. Optional ``payment`` (``"ExternalPayment"`` / ``"Cont
     configure_session {"mode":"AcIso2","params":{"charging_current_a":16.0,"three_phases":true,"payment":"ExternalPayment"}}
     plug              {}
     stop_session    {}
+    query_state     {}
     unplug          {}
 
 DC ISO 15118-2: basic
@@ -1093,6 +1098,7 @@ EVSE drives the setpoint.
     configure_session {"mode":"DcIso2","params":{"payment":"ExternalPayment"}}
     plug              {}
     stop_session    {}
+    query_state     {}
     unplug          {}
 
 DC ISO 15118-2: EV-initiated pause / resume
@@ -1125,7 +1131,7 @@ EvDriverSim ``inject_fault`` accepts ``DiodeFail``, ``RcdError`` and
     assert ctrl.state_collector.wait_for_state("Charging", timeout=30)
     ctrl.inject_fault("DiodeFail")
     assert ctrl.state_collector.wait_for_state_not("Charging", timeout=10)
-    ctrl.plug_out()
+    ctrl.plug_out(abrupt=True)
     assert ctrl.state_collector.wait_for_state("Unplugged", timeout=10)
     ctrl.clear_fault()
     ctrl.plug_in_dc_iso()
@@ -1156,6 +1162,7 @@ DC ISO 15118-20 (D20)
     configure_session {"mode":"DcIsoD20","params":{"payment":"ExternalPayment"}}
     plug              {}
     stop_session    {}
+    query_state     {}
     unplug          {}
 
 DC BPT (bidirectional, ISO-20)
