@@ -7,8 +7,7 @@ CI also builds with Bazel.
 
 Libraries that once lived in separate `lib*` repositories are now in-tree under
 `lib/everest/` and are edited in place; there is no upstream repository to mirror them
-to. A few EVerest components are still external dependencies in `dependencies.yaml`,
-notably the Python Josev stack (`ext-switchev-iso15118`).
+to. A few EVerest components are still external dependencies in `dependencies.yaml`.
 
 Contributor policy (licensing, DCO, review, and the project's position on AI-generated
 contributions) is in `docs/source/project/contributing.rst`. This file covers mechanics
@@ -52,7 +51,12 @@ job. When several agents share a host, cap the total to the core count.
 
 Dependencies are pinned in `dependencies.yaml` and fetched by edm at configure time;
 `-DDISABLE_EDM=ON` uses system packages. `ISO15118_2_GENERATE_AND_INSTALL_CERTIFICATES`
-defaults to ON, so development certificates need no extra flag.
+defaults to ON. With that option ON, edm enabled (packaging builds set `DISABLE_EDM`
+and must not ship the development keys) and one of Ev15118, EvseV2G or Evse15118D20
+built, CMake runs the vendored `cmake/assets/iso15118-pki/create_certs.sh`
+from a build-directory copy and writes the development PKI into the gitignored
+`config/certs` tree for installation; a failed generation fails configure. Default
+builds need no extra flag.
 
 To iterate faster, build one module (`cmake --build build --target OCPP201`) or skip
 heavy ones with `-DEVEREST_EXCLUDE_MODULES="EvseSlac;EvseV2G;IsoMux"`, quoting the
@@ -153,8 +157,15 @@ fixtures itself but not the venv, so activate `build/venv` first:
 ```
 
 OCPP suites also need the pip packages built into the venv once:
-`everestpy_pip_install_dist`, `everest-testing_pip_install_dist` and
-`iso15118_pip_install_dist` (`cmake --build build --target <name>`).
+`everestpy_pip_install_dist` and `everest-testing_pip_install_dist`
+(`cmake --build build --target <name>`).
+
+The OCPP Plug and Charge tests load the installed `libcbv2g_json_wrapper.so`;
+keep `EVEREST_BUILD_APPLICATIONS=ON` (the default) when building their prefix.
+`ocpp_tests/test_sets/ocpp201/test_exi_generator.py` checks the response bytes,
+four signed fragment digests and SignedInfo signature against an independent
+wire capture in `lib/everest/iso15118/test/data/`, which libiso15118's tests share.
+It runs with the OCPP 2.0.1 suite, without starting EVerest.
 
 ISO 15118 has no dedicated suite. It is covered by `tests/core_tests/smoke_tests.py`
 (AC and DC end to end), CSMS-side helpers in
@@ -243,6 +254,9 @@ Full C++ conventions: `docs/source/how-to-guides/c++-coding-guidelines.rst`.
   better name or a smaller function over a comment.
 - Return values and `std::optional` over exceptions for expected conditions.
 - JavaScript and YAML: prettier, 2-space indent, single quotes (`.prettierrc.yaml`).
+- GitHub workflows and actions: CI audits them with zizmor
+  (`.github/workflows/job_zizmor.yaml`, config `.github/zizmor.yml`). Pass values to
+  `run:` through `env:`, never as `${{ }}`; credential rules are in `.github/SECRETS.md`.
 
 ## Paths that surprise people
 
@@ -297,3 +311,10 @@ Commit subjects and pull request titles follow Conventional Commits and name the
 module, for example `fix(EvseManager): handle unplug during timed charging`. Changes land
 as GitHub squash merges, so the pull request title becomes the commit subject and the
 description becomes its body.
+
+## Pull request descriptions
+
+Pull request descriptions follow `.github/pull_request_template.md`: keep its `Why`,
+`What`, `How was this tested` and `Checklist` sections, in that order, and drop the HTML
+comments once filled in. Leave the checklist boxes unticked; ticking them is the human
+submitter's statement, not the agent's.

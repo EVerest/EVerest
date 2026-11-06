@@ -19,6 +19,7 @@
 
 #include <utils/date.hpp>
 
+#include <everest/conversions/iso15118/v2g_message_id.hpp>
 #include <everest/util/misc/container.hpp>
 
 #include <iso15118/config.hpp>
@@ -759,6 +760,18 @@ void ISO15118_chargerImpl::ready() {
 
     apply_active_der_directives();
 
+    if (mod->config.device == "auto") {
+        // Resolved once by the controller; there is no device name to watch.
+        controller->set_interface_present(true);
+    } else {
+        // The controller outlives the watcher (see the member order), so the callback needs no lock.
+        device_watcher = std::make_unique<NetworkDeviceWatcher>(
+            mod->config.device, [c = controller.get()](bool present) { c->set_interface_present(present); });
+        if (not device_watcher->start()) {
+            controller->set_interface_present(true);
+        }
+    }
+
     try {
         controller->loop();
     } catch (const std::exception& e) {
@@ -1317,7 +1330,7 @@ iso15118::session::feedback::Callbacks ISO15118_chargerImpl::create_callbacks() 
         // v2g_json stay unset: neither stack decodes the EXI back into a document.
         if (debug_mode) {
             types::iso15118::V2gMessages message;
-            message.id = convert_v2g_message_type(id);
+            message.id = module::conversions::to_v2g_message_id(id);
             if (exi_frame.payload != nullptr and exi_frame.payload_len > 0) {
                 message.exi = to_hex_string(exi_frame);
                 message.exi_base64 = to_base64_string(exi_frame);
@@ -2050,6 +2063,16 @@ void ISO15118_chargerImpl::handle_update_energy_transfer_modes(
             break;
         }
     }
+
+    // Several modes collapse to one -20 service category (AC_single_phase_core and AC_three_phase_core are both
+    // AC); the phase choice is offered per ServiceDetail parameter set from the AC connectors instead.
+    std::vector<dt::ServiceCategory> unique_services;
+    for (const auto service : services) {
+        if (std::find(unique_services.begin(), unique_services.end(), service) == unique_services.end()) {
+            unique_services.push_back(service);
+        }
+    }
+    services = std::move(unique_services);
 
     setup_config.supported_energy_services = services;
 

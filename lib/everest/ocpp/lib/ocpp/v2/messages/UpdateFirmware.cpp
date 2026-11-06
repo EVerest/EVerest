@@ -8,6 +8,8 @@
 #include <ostream>
 #include <string>
 
+#include <ocpp/common/json_number.hpp>
+
 using json = nlohmann::json;
 
 namespace ocpp {
@@ -37,15 +39,15 @@ void to_json(json& j, const UpdateFirmwareRequest& k) {
 
 void from_json(const json& j, UpdateFirmwareRequest& k) {
     // the required parts of the message
-    k.requestId = j.at("requestId");
+    k.requestId = ocpp::integer_from_json(j.at("requestId"));
     k.firmware = j.at("firmware");
 
     // the optional parts of the message
     if (j.contains("retries")) {
-        k.retries.emplace(j.at("retries"));
+        k.retries.emplace(ocpp::integer_from_json(j.at("retries")));
     }
     if (j.contains("retryInterval")) {
-        k.retryInterval.emplace(j.at("retryInterval"));
+        k.retryInterval.emplace(ocpp::integer_from_json(j.at("retryInterval")));
     }
     if (j.contains("customData")) {
         k.customData.emplace(j.at("customData"));

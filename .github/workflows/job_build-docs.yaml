@@ -50,8 +50,20 @@ on:
         default: ''
         type: string
     secrets:
-      SA_GITHUB_SSH_KEY:
-        description: 'SSH key for the service account used to deploy the documentation'
+      PRIVATE_DEPS_SSH_KEY:
+        description: >-
+          Optional SSH private key granting read access to private
+          dependencies. Leave unset when every dependency is public.
+        required: false
+      DOCS_DEPLOY_APP_CLIENT_ID:
+        description: >-
+          Client ID of the GitHub App installed on <owner>/everest.github.io.
+          Required whenever the build should read the deployed-docs repository
+          or deploy to it. When unset, documentation is built standalone.
+        required: false
+      DOCS_DEPLOY_APP_PRIVATE_KEY:
+        description: >-
+          Private key of the GitHub App identified by DOCS_DEPLOY_APP_CLIENT_ID.
         required: false
     outputs:
       docs_html_artifact_name:
@@ -63,49 +75,88 @@ jobs:
   build-docs:
     name: build
     runs-on: ${{ inputs.runner }}
+    permissions:
+      contents: read
     env:
       SSH_AUTH_SOCK: /tmp/ssh_agent.sock
       DOCS_HTML_ARTIFACT_NAME: docs-html
     outputs:
       docs_html_artifact_name: ${{ env.DOCS_HTML_ARTIFACT_NAME }}
     steps:
-      - name: Setup SSH Agent, optional with SSH key
-        env:
-          SSH_KEY: ${{ secrets.SA_GITHUB_SSH_KEY }}
-        run: |
-          ssh-agent -a $SSH_AUTH_SOCK > /dev/null
-          if [ -z "${{ env.SSH_KEY }}" ]; then
-            echo "No SSH key provided, skipping SSH key setup"
-            exit 0
-          fi
-          mkdir -p ~/.ssh
-          echo "${{ env.SSH_KEY }}" > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
-          # Check if github.com is already in known_hosts, if not, add it
-          if ! grep -q "^github.com " ~/.ssh/known_hosts; then
-            ssh-keyscan github.com >> ~/.ssh/known_hosts
-          fi
-          ssh-add ~/.ssh/id_ed25519
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          path: source
+      - name: Setup SSH agent for private dependencies
+        uses: ./source/.github/actions/setup-ssh-agent
+        with:
+          ssh_private_key: ${{ secrets.PRIVATE_DEPS_SSH_KEY }}
+          ssh_auth_sock: ${{ env.SSH_AUTH_SOCK }}
       - name: Sanitize instance name
         id: sanitize
         # Keep this formula in sync with the "Sanitize display_name into
         # instance name" step in .github/workflows/on_workflow_dispatch_delete.yaml.
+        env:
+          INSTANCE_NAME: ${{ inputs.instance_name }}
         run: |
-          sanitized=$(echo -n "${{ inputs.instance_name }}" | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9_' '_')
-          echo "instance_name=${sanitized}" >> $GITHUB_OUTPUT
+          set -euo pipefail
+          sanitized=$(echo -n "$INSTANCE_NAME" | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9_' '_')
+          echo "instance_name=${sanitized}" >> "$GITHUB_OUTPUT"
           echo "Sanitized instance name: ${sanitized}"
-      - name: Configure Git user
+      - name: Verify documentation deployment prerequisites
+        if: ${{ inputs.deploy_docs == true }}
+        env:
+          IS_FORK: ${{ inputs.is_fork }}
+          HAVE_APP: ${{ secrets.DOCS_DEPLOY_APP_CLIENT_ID != '' && secrets.DOCS_DEPLOY_APP_PRIVATE_KEY != '' }}
         run: |
-          git config --global user.name "Pionix Github Service Account"
-          git config --global user.email "compiler@pionix.de"
+          set -euo pipefail
+          if [ "$IS_FORK" = "true" ]; then
+            echo "::error::deploy_docs is enabled but this run originates from a fork. Forks cannot deploy documentation."
+            exit 1
+          fi
+          if [ "$HAVE_APP" != "true" ]; then
+            echo "::error::deploy_docs is enabled but DOCS_DEPLOY_APP_CLIENT_ID and DOCS_DEPLOY_APP_PRIVATE_KEY are not both configured."
+            exit 1
+          fi
+          echo "Documentation deployment prerequisites satisfied."
+      - name: Determine deployed-docs repository access
+        id: docs_access
+        env:
+          IS_FORK: ${{ inputs.is_fork }}
+          IS_RELEASE: ${{ inputs.is_release }}
+          HAVE_APP: ${{ secrets.DOCS_DEPLOY_APP_CLIENT_ID != '' && secrets.DOCS_DEPLOY_APP_PRIVATE_KEY != '' }}
+        run: |
+          set -euo pipefail
+          if [ "$IS_FORK" = "true" ] || [ "$HAVE_APP" != "true" ]; then
+            # No credential for the private deployed-docs repository. Build only
+            # this instance. Trailbook rejects DOWNLOAD_ALL_VERSIONS and
+            # IS_RELEASE both being off, so IS_RELEASE is forced on here; the
+            # effect is confined to this build directory and nothing is pushed.
+            echo "::notice::Building documentation standalone: no access to the deployed-docs repository. The version switcher will list only this instance."
+            {
+              echo "download_all_versions=OFF"
+              echo "is_release=true"
+              echo "artifact_path=build/docs/trailbook_everest_build"
+            } >> "$GITHUB_OUTPUT"
+          else
+            echo "Building documentation against the deployed-docs repository."
+            {
+              echo "download_all_versions=ON"
+              echo "is_release=$IS_RELEASE"
+              echo "artifact_path=build/docs/deployed_docs_repo/docs"
+            } >> "$GITHUB_OUTPUT"
+          fi
       - name: Download build-kit image
         uses: actions/download-artifact@v8
         with:
           name: ${{ inputs.build_kit_artifact_name }}
       - name: Load build-kit image
+        env:
+          BUILD_KIT_IMAGE_TAG: ${{ inputs.build_kit_image_tag }}
         run: |
           docker load -i build-kit.tar
-          docker image tag ${{ inputs.build_kit_image_tag }} build-kit
+          docker image tag "$BUILD_KIT_IMAGE_TAG" build-kit
       - name: Format branch name for cache key
         run: |
           BRANCH_NAME_FOR_CACHE="${GITHUB_REF_NAME//-/_}"
@@ -119,57 +170,83 @@ jobs:
           restore-keys: |
             compile-${{ env.branch_name_for_cache }}-
             compile-
-      - name: Checkout repository
-        uses: actions/checkout@v7
-        with:
-          path: source
       - name: Setup run scripts
+        env:
+          BUILD_KIT_SCRIPTS_DIRECTORY: ${{ inputs.build_kit_scripts_directory }}
         run: |
           mkdir scripts
-          rsync -a source/${{ inputs.build_kit_scripts_directory }}/ scripts
-      - name: Prepare github pages input
+          rsync -a "source/${BUILD_KIT_SCRIPTS_DIRECTORY}/" scripts
+      - name: Prepare deployed-docs repository URL
         id: github-pages-input
+        env:
+          OWNER: ${{ github.repository_owner }}
         run: |
-          if [ "${{ inputs.is_fork }}" = "true" ]; then
-            echo "Using https URL for GitHub Pages repo since this is a fork"
-            PREFIX="https://github.com/"
-          else
-            echo "Using SSH URL for GitHub Pages repo since this is not a fork"
-            PREFIX="git@github.com:"
-          fi
-          OWNER="${{ github.repository_owner }}"
-          REPO="everest.github.io"
-          URL="${PREFIX}${OWNER}/${REPO}"
-          echo "prefix=$PREFIX" >> $GITHUB_OUTPUT
-          echo "owner=$OWNER" >> $GITHUB_OUTPUT
-          echo "repo=$REPO" >> $GITHUB_OUTPUT
-          echo "url=$URL" >> $GITHUB_OUTPUT
+          set -euo pipefail
+          # Always HTTPS. Authentication is injected by build_docs.sh through a
+          # git credential helper, so the URL carries no credential and the same
+          # remote works for the runner-side push.
+          echo "url=https://github.com/$OWNER/everest.github.io" >> "$GITHUB_OUTPUT"
+      - name: Mint deployed-docs read token
+        id: docs-read-token
+        if: ${{ steps.docs_access.outputs.download_all_versions == 'ON' }}
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.DOCS_DEPLOY_APP_CLIENT_ID }}
+          private-key: ${{ secrets.DOCS_DEPLOY_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: everest.github.io
+          permission-contents: read
       - name: Build Documentation
+        env:
+          DOCS_REPO_READ_TOKEN: ${{ steps.docs-read-token.outputs.token }}
+          TRAILBOOK_everest_DOWNLOAD_ALL_VERSIONS: ${{ steps.docs_access.outputs.download_all_versions }}
+          TRAILBOOK_everest_IS_RELEASE: ${{ steps.docs_access.outputs.is_release }}
+          TRAILBOOK_everest_INSTANCE_NAME: ${{ steps.sanitize.outputs.instance_name }}
+          TRAILBOOK_everest_DISPLAY_NAME: ${{ inputs.display_name }}
+          TRAILBOOK_everest_OVERWRITE_EXISTING_INSTANCE: ${{ inputs.overwrite_existing_instance }}
+          EVEREST_DOCS_REPO_URL: ${{ steps.github-pages-input.outputs.url }}
         run: |
           docker run \
-          --mount type=bind,source=$SSH_AUTH_SOCK,target=/ssh-agent \
+          --mount "type=bind,source=$SSH_AUTH_SOCK,target=/ssh-agent" \
           --env SSH_AUTH_SOCK=/ssh-agent \
-          --env TRAILBOOK_everest_IS_RELEASE="${{ inputs.is_release }}" \
-          --env TRAILBOOK_everest_INSTANCE_NAME="${{ steps.sanitize.outputs.instance_name }}" \
-          --env TRAILBOOK_everest_DISPLAY_NAME="${{ inputs.display_name }}" \
-          --env TRAILBOOK_everest_OVERWRITE_EXISTING_INSTANCE="${{ inputs.overwrite_existing_instance }}" \
-          --env EVEREST_DOCS_REPO_URL=${{ steps.github-pages-input.outputs.url }} \
-          --volume "${{ github.workspace }}:/ext" \
+          --env DOCS_REPO_READ_TOKEN \
+          --env TRAILBOOK_everest_DOWNLOAD_ALL_VERSIONS \
+          --env TRAILBOOK_everest_IS_RELEASE \
+          --env TRAILBOOK_everest_INSTANCE_NAME \
+          --env TRAILBOOK_everest_DISPLAY_NAME \
+          --env TRAILBOOK_everest_OVERWRITE_EXISTING_INSTANCE \
+          --env EVEREST_DOCS_REPO_URL \
+          --volume "${GITHUB_WORKSPACE}:/ext" \
           --name build-docs-container \
           build-kit run-script build_docs
       - name: Upload Documentation Artifact
         uses: actions/upload-artifact@v7.0.1
         with:
           if-no-files-found: error
-          path: ${{ github.workspace }}/build/docs/deployed_docs_repo/docs/
+          path: ${{ github.workspace }}/${{ steps.docs_access.outputs.artifact_path }}/
           name: ${{ env.DOCS_HTML_ARTIFACT_NAME }}
+      - name: Mint deployed-docs write token
+        id: docs-write-token
+        if: ${{ inputs.deploy_docs == true }}
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.DOCS_DEPLOY_APP_CLIENT_ID }}
+          private-key: ${{ secrets.DOCS_DEPLOY_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: everest.github.io
+          permission-contents: write
       - name: Deploy Documentation
         if: ${{ inputs.deploy_docs == true }}
+        env:
+          DOCS_REPO_WRITE_TOKEN: ${{ steps.docs-write-token.outputs.token }}
+          COMMITTER_NAME: ${{ steps.docs-write-token.outputs.app-slug }}[bot]
+          COMMITTER_EMAIL: ${{ steps.docs-write-token.outputs.installation-id }}+${{ steps.docs-write-token.outputs.app-slug }}[bot]@users.noreply.github.com
         run: |
           docker run \
-          --mount type=bind,source=$SSH_AUTH_SOCK,target=/ssh-agent \
-          --env SSH_AUTH_SOCK=/ssh-agent \
-          --env GITHUB_SHA=${{ github.sha }} \
-          --volume "${{ github.workspace }}:/ext" \
+          --env DOCS_REPO_WRITE_TOKEN \
+          --env GITHUB_SHA \
+          --env COMMITTER_NAME \
+          --env COMMITTER_EMAIL \
+          --volume "${GITHUB_WORKSPACE}:/ext" \
           --name deploy-docs-container \
           build-kit run-script deploy_docs

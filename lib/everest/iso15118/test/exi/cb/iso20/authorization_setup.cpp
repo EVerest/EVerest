@@ -3,6 +3,7 @@
 #include <string>
 
 #include <iso15118/message/authorization_setup.hpp>
+#include <iso15118/message/decode.hpp>
 #include <iso15118/message/variant.hpp>
 
 #include "helper.hpp"
@@ -18,7 +19,7 @@ SCENARIO("Se/Deserialize authorization setup messages") {
 
         const io::StreamInputView stream_view{doc_raw, sizeof(doc_raw)};
 
-        message_20::Variant variant(io::v2gtp::PayloadType::Part20Main, stream_view);
+        message_20::RequestVariant variant(v2gtp::PayloadType::Part20Main, stream_view);
 
         THEN("It should be deserialized successfully") {
             REQUIRE(variant.get_type() == message_20::Type::AuthorizationSetupReq);
@@ -93,12 +94,13 @@ SCENARIO("Se/Deserialize authorization setup messages") {
 
         const io::StreamInputView stream_view{doc_raw, sizeof(doc_raw)};
 
-        message_20::Variant variant(io::v2gtp::PayloadType::Part20Main, stream_view);
+        const auto decoded =
+            message_20::decode<message_20::AuthorizationSetupResponse>(v2gtp::PayloadType::Part20Main, stream_view);
 
         THEN("It should be deserialized successfully") {
-            REQUIRE(variant.get_type() == message_20::Type::AuthorizationSetupRes);
+            REQUIRE(decoded.has_value());
 
-            const auto& msg = variant.get<message_20::AuthorizationSetupResponse>();
+            const auto& msg = *decoded;
             const auto& header = msg.header;
 
             REQUIRE(header.session_id == std::array<uint8_t, 8>{0xF2, 0x19, 0x15, 0xB9, 0xDD, 0xDC, 0x12, 0xD1});
@@ -118,12 +120,13 @@ SCENARIO("Se/Deserialize authorization setup messages") {
 
         const io::StreamInputView stream_view{doc_raw, sizeof(doc_raw)};
 
-        message_20::Variant variant(io::v2gtp::PayloadType::Part20Main, stream_view);
+        const auto decoded =
+            message_20::decode<message_20::AuthorizationSetupResponse>(v2gtp::PayloadType::Part20Main, stream_view);
 
         THEN("It should be deserialized successfully") {
-            REQUIRE(variant.get_type() == message_20::Type::AuthorizationSetupRes);
+            REQUIRE(decoded.has_value());
 
-            const auto& msg = variant.get<message_20::AuthorizationSetupResponse>();
+            const auto& msg = *decoded;
             const auto& header = msg.header;
 
             REQUIRE(header.session_id == std::array<uint8_t, 8>{0xF2, 0x19, 0x15, 0xB9, 0xDD, 0xDC, 0x12, 0xD1});

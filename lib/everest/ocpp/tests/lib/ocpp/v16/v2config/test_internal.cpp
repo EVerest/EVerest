@@ -395,6 +395,16 @@ TEST_P(Configuration, MaxMessageSize) {
     EXPECT_TRUE(kv.readonly);
 }
 
+TEST_P(Configuration, MaxIncomingMessageSize) {
+    ASSERT_NE(get(), nullptr);
+    // initial values are the schema and component config defaults
+    EXPECT_EQ(get()->getMaxIncomingMessageSize(), 4194304);
+    auto kv = get()->getMaxIncomingMessageSizeKeyValue();
+    EXPECT_EQ(kv.key, "MaxIncomingMessageSize");
+    EXPECT_EQ(kv.value, "4194304");
+    EXPECT_TRUE(kv.readonly);
+}
+
 TEST_P(Configuration, OcspRequestInterval) {
     ASSERT_NE(get(), nullptr);
     // initial values are from the JSON unit test config files

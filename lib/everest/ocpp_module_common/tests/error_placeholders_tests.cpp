@@ -73,6 +73,17 @@ TEST(SubstituteErrorPlaceholders, SubstitutedValuesAreNotExpandedAgain) {
     EXPECT_EQ(substitute_error_placeholders(error, "${message}"), "${type}");
 }
 
+TEST(SubstituteErrorPlaceholders, ReplacesTheTextReprOfTheTriggerValue) {
+    auto error = make_error();
+    error.trigger_value = Everest::error::TriggerValue{"85.3 degC"};
+
+    EXPECT_EQ(substitute_error_placeholders(error, "at ${trigger_value}"), "at 85.3 degC");
+}
+
+TEST(SubstituteErrorPlaceholders, TriggerValueIsEmptyWhenTheErrorNamesNone) {
+    EXPECT_EQ(substitute_error_placeholders(make_error(), "[${trigger_value}]"), "[]");
+}
+
 TEST(SubstituteErrorPlaceholders, EvseAndConnectorAreEmptyWithoutMapping) {
     EXPECT_EQ(substitute_error_placeholders(make_error(std::nullopt), "[${evse}][${connector}]"), "[][]");
 }
@@ -82,8 +93,9 @@ TEST(SubstituteErrorPlaceholders, ConnectorIsEmptyWhenMappingHasNoConnector) {
 }
 
 TEST(CheckErrorPlaceholders, KnowsEverySubstitutedName) {
-    for (const auto* name : {"type", "sub_type", "message", "description", "vendor_id", "origin", "origin_module",
-                             "origin_implementation", "evse", "connector", "severity", "state", "timestamp", "uuid"}) {
+    for (const auto* name :
+         {"type", "sub_type", "message", "description", "vendor_id", "origin", "origin_module", "origin_implementation",
+          "evse", "connector", "severity", "state", "timestamp", "uuid", "trigger_value"}) {
         const auto check = check_error_placeholders(std::string("${") + name + "}");
         EXPECT_TRUE(check.unknown.empty()) << name;
         EXPECT_EQ(check.static_length, 0U) << name;
@@ -91,8 +103,8 @@ TEST(CheckErrorPlaceholders, KnowsEverySubstitutedName) {
 }
 
 TEST(CheckErrorPlaceholders, ListsPlaceholdersWithoutMatch) {
-    const auto check = check_error_placeholders("a ${actual_value} b ${} c ${Type} ${type}");
-    EXPECT_EQ(check.unknown, (std::vector<std::string>{"${actual_value}", "${}", "${Type}"}));
+    const auto check = check_error_placeholders("a ${mesage} b ${} c ${Type} ${type}");
+    EXPECT_EQ(check.unknown, (std::vector<std::string>{"${mesage}", "${}", "${Type}"}));
     EXPECT_FALSE(check.unterminated);
 }
 

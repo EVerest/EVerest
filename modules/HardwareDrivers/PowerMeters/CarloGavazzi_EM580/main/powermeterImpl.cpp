@@ -535,8 +535,7 @@ void powermeterImpl::configure_device() {
         std::this_thread::sleep_for(std::chrono::seconds(2));
         // Initial time synchronization
         synchronize_time();
-        // Set timezone offset
-        set_timezone(config.timezone_offset_minutes);
+        write_timezone(false);
         // see if there is a pending closed transaction that needs to be read
         read_transaction_state_and_id();
     }
@@ -549,21 +548,25 @@ void powermeterImpl::ready() {
     live_measure_thread_ = std::thread([this] {
         std::atomic_bool device_not_configured = true;
         auto last_state_read = std::chrono::steady_clock::time_point{};
+        const auto measurement_interval = std::chrono::milliseconds{config.live_measurement_interval_ms};
+        const auto state_read_interval = std::chrono::milliseconds{config.device_state_read_interval_ms};
+        auto last_interval_overrun_warning = std::chrono::steady_clock::time_point{};
+        auto measurement_start = std::chrono::steady_clock::time_point{};
         while (!stop_requested_.load()) {
-            const auto measurement_interval = std::chrono::milliseconds{config.live_measurement_interval_ms};
-            const auto state_read_interval = std::chrono::milliseconds{config.device_state_read_interval_ms};
             try {
                 if (device_not_configured.load()) {
                     configure_device();
                     device_not_configured = false;
                     last_state_read = std::chrono::steady_clock::time_point{}; // force state read
                 }
+                measurement_start = std::chrono::steady_clock::now();
                 read_powermeter_values();
                 if (m_transaction_support) {
                     const auto now = std::chrono::steady_clock::now();
                     if (last_state_read == std::chrono::steady_clock::time_point{} ||
                         (now - last_state_read) >= state_read_interval) {
                         read_device_state();
+                        write_timezone(true);
                         if (config.monitor_transaction_state && m_transaction_active.load()) {
                             monitor_transaction_ocmf_state(read_ocmf_state());
                         }
@@ -583,10 +586,27 @@ void powermeterImpl::ready() {
                     stop_cv_.wait_for(lock, std::chrono::seconds{config.communication_error_pause_delay_s},
                                       [this] { return stop_requested_.load(); });
                 }
+                continue;
             }
             {
-                std::unique_lock<std::mutex> lock(stop_mutex_);
-                stop_cv_.wait_for(lock, measurement_interval, [this] { return stop_requested_.load(); });
+                const auto now = std::chrono::steady_clock::now();
+                // remaining time until the next measurement is due
+                auto time_to_wait = measurement_interval - (now - measurement_start);
+                if (time_to_wait > std::chrono::milliseconds{0}) {
+                    last_interval_overrun_warning = std::chrono::steady_clock::time_point{};
+                    std::unique_lock<std::mutex> lock(stop_mutex_);
+                    stop_cv_.wait_for(lock, time_to_wait, [this] { return stop_requested_.load(); });
+                } else {
+                    if (last_interval_overrun_warning == std::chrono::steady_clock::time_point{} ||
+                        (now - last_interval_overrun_warning) >= std::chrono::seconds{60}) {
+                        last_interval_overrun_warning = now;
+                        EVLOG_warning
+                            << "Measurement took longer than configured interval " << measurement_interval.count()
+                            << "ms, consider increasing interval or baudrate. Last measurement took "
+                            << std::chrono::duration_cast<std::chrono::milliseconds>(now - measurement_start).count()
+                            << "ms";
+                    }
+                }
             }
         }
     });
@@ -1105,10 +1125,43 @@ void powermeterImpl::set_timezone(int offset_minutes) {
         p_modbus_transport->write_multiple_registers(MODBUS_TIMEZONE_OFFSET_ADDRESS, data);
     } catch (const std::exception& e) {
         EVLOG_error << "Failed to set the timezone: " << e.what();
-        throw e;
+        throw;
     }
 
+    m_timezone_offset_minutes = offset_minutes;
     EVLOG_info << "Timezone set to: " << (offset_minutes >= 0 ? "+" : "") << offset_minutes << " minutes";
+}
+
+std::optional<int> powermeterImpl::system_timezone_offset_minutes() {
+    const auto time_zone = timezone_utils::local_time_zone(std::time(nullptr));
+    if (!time_zone.has_value()) {
+        EVLOG_warning << "Cannot determine the time zone of the host, the timezone offset of the device is kept";
+        return std::nullopt;
+    }
+    if (time_zone->name != m_system_time_zone_name) {
+        m_system_time_zone_name = time_zone->name;
+        EVLOG_info << "Time zone of the host: " << (time_zone->name.empty() ? "<unnamed>" : time_zone->name) << ", UTC"
+                   << (time_zone->utc_offset_minutes >= 0 ? "+" : "") << time_zone->utc_offset_minutes << " minutes";
+    }
+    return time_zone->utc_offset_minutes;
+}
+
+void powermeterImpl::write_timezone(bool only_if_changed) {
+    if (!config.use_system_timezone) {
+        if (!only_if_changed) {
+            set_timezone(config.timezone_offset_minutes);
+        }
+        return;
+    }
+    // Also written while a transaction is running: every OCMF reading carries the offset it was taken with.
+    const auto offset_minutes = system_timezone_offset_minutes();
+    if (!offset_minutes.has_value() || (only_if_changed && m_timezone_offset_minutes == offset_minutes)) {
+        return;
+    }
+    if (m_timezone_offset_minutes.has_value() && m_timezone_offset_minutes != offset_minutes) {
+        EVLOG_info << "System time zone offset changed, updating the device";
+    }
+    set_timezone(*offset_minutes);
 }
 
 void powermeterImpl::time_sync_thread() {

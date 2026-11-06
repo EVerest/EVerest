@@ -349,7 +349,9 @@ check reservation id against the token id when it should start charging, this
 must be handled in Auth module. EvseManager only needs to know whether it is
 reserved or not to emit an ReservatonStart/ReservationEnd event to notify other
 modules such as OCPP and API or e.g. switch on a specific LED signal on the
-charging port.
+charging port. For a reservation made for this specific EVSE, Auth passes the
+reservation details (id, id token, parent id token and expiry time) with the
+reserve command, and the ReservationStart event carries them.
 
 Energy Management
 =================
@@ -517,74 +519,319 @@ Do not enable this option in production.
 Error Handling
 ==============
 
-The control flow of this module can be influenced by the error implementation of its requirements. This section documents
-the side effects that can be caused by errors raised by a requirement.
+The control flow of this module is influenced by the errors of its requirements and by its own errors. An error that blocks
+charging stops a running charging session and prevents new sessions from being started. While at least one blocking error is
+active, the EvseManager is Inoperative and raises ``evse_manager/Inoperative``. Charging is possible again, and
+``evse_manager/Inoperative`` is cleared, when the last blocking error is cleared.
 
-This module subscribes to all errors of the following requirements:
+The EvseManager subscribes to all errors of the following requirements and re-evaluates the Inoperative state on every raise
+and clear. It does the same whenever it raises or clears one of its own ``evse_manager/*`` errors.
 
-* evse_manager
-* evse_board_support
-* connector_lock
-* ac_rcd
-* isolation_monitor
-* power_supply_DC
-* powermeter (if the config option fail_on_powermeter_errors is set true)
+* ``bsp`` (``evse_board_support``)
+* ``hlc`` (``ISO15118_charger``)
+* ``connector_lock`` (``connector_lock``)
+* ``ac_rcd`` (``ac_rcd``)
+* ``imd`` (``isolation_monitor``)
+* ``powersupply_DC`` (``power_supply_DC``)
+* the billing powermeter (``powermeter``), only if the config option ``fail_on_powermeter_errors`` is ``true``
+* ``slac`` (``slac``)
+* ``over_voltage_monitor`` (``over_voltage_monitor``)
 
-A raised error can cause the EvseManager to stop the charging session and become inoperative. Charging is not possible until the error is cleared.
-If no charging session is currently running, it will prevent sessions from being started. If a charging session is currently running and an error is raised
-this will interrupt the charging session.
+Every active error from these sources blocks charging unless its type is listed as non-blocking in the tables below. The
+decision depends only on the error type: neither the severity of an error nor the combination of active errors changes it.
+The severity only selects the kind of shutdown, see below. Errors raised by modules that are not requirements of the
+EvseManager, and errors of requirements not listed above, never make the EvseManager Inoperative.
 
-Almost all errors that are reported from the requirements of this module cause the EvseManager to become Inoperative until the error is cleared.
-The following sections provide an overview of the errors that do **not** cause the EvseManager to become Inoperative.
+The following tables list every error type each source can raise and whether it blocks charging.
 
 evse_manager
--------------
+------------
 
-* evse_manager/Inoperative
-* evse_manager/MREC11CableCheckFault
+Errors raised by the EvseManager itself.
 
+.. list-table::
+   :header-rows: 1
+
+   * - Error type
+     - Blocks charging
+   * - ``evse_manager/Internal``
+     - yes
+   * - ``evse_manager/MREC4OverCurrentFailure``
+     - yes
+   * - ``evse_manager/MREC5OverVoltage``
+     - yes
+   * - ``evse_manager/MREC9AuthorizationTimeout``
+     - yes
+   * - ``evse_manager/PowermeterTransactionStartFailed``
+     - yes
+   * - ``evse_manager/Inoperative``
+     - no
+   * - ``evse_manager/MREC22ResistanceFault``
+     - yes
+   * - ``evse_manager/MREC11CableCheckFault``
+     - yes
+   * - ``evse_manager/VoltagePlausibilityFault``
+     - yes
+
+``evse_manager/Inoperative`` is the result of the evaluation, not a cause.
 
 evse_board_support
 ------------------
 
-* evse_board_support/MREC3HighTemperature
-* evse_board_support/MREC18CableOverTempDerate
-* evse_board_support/VendorWarning
+.. list-table::
+   :header-rows: 1
+
+   * - Error type
+     - Blocks charging
+   * - ``evse_board_support/DiodeFault``
+     - yes
+   * - ``evse_board_support/VentilationNotAvailable``
+     - yes
+   * - ``evse_board_support/BrownOut``
+     - yes
+   * - ``evse_board_support/EnergyManagement``
+     - yes
+   * - ``evse_board_support/PermanentFault``
+     - yes
+   * - ``evse_board_support/MREC2GroundFailure``
+     - yes
+   * - ``evse_board_support/MREC3HighTemperature``
+     - no
+   * - ``evse_board_support/MREC4OverCurrentFailure``
+     - yes
+   * - ``evse_board_support/MREC5OverVoltage``
+     - yes
+   * - ``evse_board_support/MREC6UnderVoltage``
+     - yes
+   * - ``evse_board_support/MREC8EmergencyStop``
+     - yes
+   * - ``evse_board_support/MREC10InvalidVehicleMode``
+     - yes
+   * - ``evse_board_support/MREC14PilotFault``
+     - yes
+   * - ``evse_board_support/MREC15PowerLoss``
+     - yes
+   * - ``evse_board_support/MREC17EVSEContactorFault``
+     - yes
+   * - ``evse_board_support/MREC18CableOverTempDerate``
+     - no
+   * - ``evse_board_support/MREC19CableOverTempStop``
+     - yes
+   * - ``evse_board_support/MREC20PartialInsertion``
+     - yes
+   * - ``evse_board_support/MREC23ProximityFault``
+     - yes
+   * - ``evse_board_support/MREC24ConnectorVoltageHigh``
+     - yes
+   * - ``evse_board_support/MREC25BrokenLatch``
+     - yes
+   * - ``evse_board_support/MREC26CutCable``
+     - yes
+   * - ``evse_board_support/TiltDetected``
+     - yes
+   * - ``evse_board_support/WaterIngressDetected``
+     - yes
+   * - ``evse_board_support/EnclosureOpen``
+     - yes
+   * - ``evse_board_support/VendorError``
+     - yes
+   * - ``evse_board_support/VendorWarning``
+     - no
+   * - ``evse_board_support/CommunicationFault``
+     - yes
+
+The ``evse_board_support`` interface can also raise the ``ac_rcd`` error types. Raised through the ``bsp`` requirement, they
+block charging exactly as they do when raised through the ``ac_rcd`` requirement:
+
+.. list-table::
+   :header-rows: 1
+
+   * - Error type
+     - Blocks charging
+   * - ``ac_rcd/Selftest``
+     - yes
+   * - ``ac_rcd/DC``
+     - yes
+   * - ``ac_rcd/AC``
+     - yes
+   * - ``ac_rcd/MREC2GroundFailure``
+     - yes
+   * - ``ac_rcd/VendorError``
+     - yes
+   * - ``ac_rcd/VendorWarning``
+     - no
 
 connector_lock
 --------------
 
-* connector_lock/VendorWarning
+.. list-table::
+   :header-rows: 1
+
+   * - Error type
+     - Blocks charging
+   * - ``connector_lock/ConnectorLockCapNotCharged``
+     - yes
+   * - ``connector_lock/ConnectorLockUnexpectedOpen``
+     - yes
+   * - ``connector_lock/ConnectorLockUnexpectedClose``
+     - yes
+   * - ``connector_lock/ConnectorLockFailedLock``
+     - yes
+   * - ``connector_lock/ConnectorLockFailedUnlock``
+     - yes
+   * - ``connector_lock/MREC1ConnectorLockFailure``
+     - yes
+   * - ``connector_lock/VendorError``
+     - yes
+   * - ``connector_lock/VendorWarning``
+     - no
 
 ac_rcd
 ------
 
-* ac_rcd/VendorWarning
+Errors raised through the ``ac_rcd`` requirement.
+
+.. list-table::
+   :header-rows: 1
+
+   * - Error type
+     - Blocks charging
+   * - ``ac_rcd/Selftest``
+     - yes
+   * - ``ac_rcd/DC``
+     - yes
+   * - ``ac_rcd/AC``
+     - yes
+   * - ``ac_rcd/MREC2GroundFailure``
+     - yes
+   * - ``ac_rcd/VendorError``
+     - yes
+   * - ``ac_rcd/VendorWarning``
+     - no
 
 isolation_monitor
 -----------------
 
-* isolation_monitor/VendorWarning
+.. list-table::
+   :header-rows: 1
+
+   * - Error type
+     - Blocks charging
+   * - ``isolation_monitor/DeviceFault``
+     - yes
+   * - ``isolation_monitor/CommunicationFault``
+     - yes
+   * - ``isolation_monitor/VendorError``
+     - yes
+   * - ``isolation_monitor/VendorWarning``
+     - no
 
 power_supply_DC
 ---------------
 
-* power_supply_DC/VendorWarning
+.. list-table::
+   :header-rows: 1
+
+   * - Error type
+     - Blocks charging
+   * - ``power_supply_DC/CommunicationFault``
+     - yes
+   * - ``power_supply_DC/HardwareFault``
+     - yes
+   * - ``power_supply_DC/OverTemperature``
+     - yes
+   * - ``power_supply_DC/UnderTemperature``
+     - yes
+   * - ``power_supply_DC/UnderVoltageAC``
+     - yes
+   * - ``power_supply_DC/OverVoltageAC``
+     - yes
+   * - ``power_supply_DC/UnderVoltageDC``
+     - yes
+   * - ``power_supply_DC/OverVoltageDC``
+     - yes
+   * - ``power_supply_DC/OverCurrentAC``
+     - yes
+   * - ``power_supply_DC/OverCurrentDC``
+     - yes
+   * - ``power_supply_DC/VendorError``
+     - yes
+   * - ``power_supply_DC/VendorWarning``
+     - no
 
 powermeter
 ----------
 
-Powermeter errors cause the EvseManager to become Inoperative, if fail_on_powermeter_errors is configured to true. If it is configured to false, errors from the powermeter will not cause the EvseManager to become Inoperative.
+Only the billing powermeter is evaluated: ``powermeter_car_side`` if it is connected, otherwise ``powermeter_grid_side``.
+If ``fail_on_powermeter_errors`` is ``true``, ``powermeter/CommunicationFault`` and ``powermeter/VendorError`` block
+charging. If it is ``false``, none of them do. ``powermeter/VendorWarning`` never blocks charging.
 
-* powermeter/CommunicationFault
-* powermeter/VendorError
+.. list-table::
+   :header-rows: 1
 
-Note that ``powermeter/VendorWarning`` is explicitly ignored by the EvseManager's inoperative logic (similar to other ``VendorWarning`` errors)
-and will not block charging even if ``fail_on_powermeter_errors`` is set to true. It should be used to signal non-fatal conditions such as
-high temperature warnings from the powermeter.
+   * - Error type
+     - Blocks charging
+   * - ``powermeter/CommunicationFault``
+     - yes, if ``fail_on_powermeter_errors`` is ``true``
+   * - ``powermeter/VendorError``
+     - yes, if ``fail_on_powermeter_errors`` is ``true``
+   * - ``powermeter/VendorWarning``
+     - no
+
+slac
+----
+
+.. list-table::
+   :header-rows: 1
+
+   * - Error type
+     - Blocks charging
+   * - ``generic/CommunicationFault``
+     - yes
+   * - ``generic/VendorError``
+     - yes
+   * - ``generic/VendorWarning``
+     - no
+
+ISO15118_charger
+----------------
+
+.. list-table::
+   :header-rows: 1
+
+   * - Error type
+     - Blocks charging
+   * - ``generic/CommunicationFault``
+     - yes
+   * - ``generic/VendorError``
+     - yes
+   * - ``generic/VendorWarning``
+     - no
+
+over_voltage_monitor
+--------------------
+
+.. list-table::
+   :header-rows: 1
+
+   * - Error type
+     - Blocks charging
+   * - ``over_voltage_monitor/MREC5OverVoltage``
+     - yes
+   * - ``over_voltage_monitor/DeviceFault``
+     - yes
+   * - ``over_voltage_monitor/CommunicationFault``
+     - yes
+   * - ``over_voltage_monitor/VendorError``
+     - yes
+   * - ``over_voltage_monitor/VendorWarning``
+     - no
+
+Shutdown types
+--------------
 
 When a charging session is stopped because of an error, the EvseManager differentiates between **Emergency Shutdowns** and **Error Shutdowns**. The severity of the
-error influences the type of the shudown. Emergency shutdowns are caused by errors with `Severity::High` and error shutdowns are caused by errors with `Severity::Medium` or `Severity::Low`.
+error influences the type of the shutdown. Emergency shutdowns are caused by errors with `Severity::High` and error shutdowns are caused by errors with `Severity::Medium` or `Severity::Low`.
 
 In case of an **Emergency Shutdown** the EvseManager will immediately:
 

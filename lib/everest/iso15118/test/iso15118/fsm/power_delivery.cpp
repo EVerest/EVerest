@@ -8,6 +8,7 @@
 
 #include "helper.hpp"
 
+#include <iso15118/d20/pause_notification.hpp>
 #include <iso15118/d20/state/power_delivery.hpp>
 #include <iso15118/message/power_delivery.hpp>
 #include <iso15118/message/session_stop.hpp>
@@ -126,7 +127,7 @@ SCENARIO("ISO15118-20 power delivery answers before the contactor closes") {
 
     GIVEN("A PowerDeliveryReq(Start) selecting a schedule tuple that was never offered") {
         auto& profile = req.power_profile.emplace();
-        profile.time_anchor = 1691411798'000'000;
+        profile.time_anchor = 1691411798 * d20::MICROSECONDS_PER_SECOND;
         profile.control_mode.emplace<dt::Scheduled_EVPPTControlMode>().selected_schedule = 7;
         state_helper.handle_request(req);
         REQUIRE_FALSE(fsm.feed(d20::Event::V2GTP_MESSAGE).transitioned());
@@ -137,6 +138,61 @@ SCENARIO("ISO15118-20 power delivery answers before the contactor closes") {
             REQUIRE(res->response_code == dt::ResponseCode::FAILED_ScheduleSelectionInvalid);
             REQUIRE(ctx.session_stopped);
             REQUIRE(std::count(signals.begin(), signals.end(), session::feedback::Signal::AC_CLOSE_CONTACTOR) == 0);
+        }
+    }
+}
+
+// The EV's TimeAnchor is in microseconds (Table 103): the stored profile must apply its entry now, or a scheduled
+// pause is never released [V2G20-1198].
+SCENARIO("ISO15118-20 power delivery anchors the EV power profile for a scheduled pause") {
+
+    std::optional<d20::PauseContext> pause_ctx{std::nullopt};
+
+    session::feedback::Callbacks callbacks{};
+    const session::Feedback feedback{callbacks};
+
+    auto state_helper = FsmStateHelper(session::SessionConfig(create_default_evse_setup()), pause_ctx, callbacks);
+    auto& ctx = state_helper.get_context();
+    ctx.session = d20::Session(
+        d20::SelectedServiceParameters(dt::ServiceCategory::AC, dt::AcConnector::ThreePhase, dt::ControlMode::Scheduled,
+                                       dt::MobilityNeedsMode::ProvidedByEvcc, dt::Pricing::NoPricing, 230));
+
+    const auto now_s = static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count());
+    ctx.session.offered_schedules.emplace(1,
+                                          d20::OfferedSchedule{d20::PowerTimeline{now_s - 60, {{7200, 11000.0f}}}, {}});
+
+    fsm::v2::FSM<d20::StateBase> fsm{ctx.create_state<d20::state::PowerDelivery>()};
+
+    message_20::PowerDeliveryRequest req;
+    req.header.session_id = ctx.session.get_id();
+    req.header.timestamp = now_s;
+    req.processing = dt::Processing::Finished;
+    req.charge_progress = dt::Progress::Start;
+    auto& profile = req.power_profile.emplace();
+    profile.time_anchor = now_s * d20::MICROSECONDS_PER_SECOND;
+    profile.control_mode.emplace<dt::Scheduled_EVPPTControlMode>().selected_schedule = 1;
+
+    const auto pause_released = [&](dt::RationalNumber power) {
+        dt::PowerScheduleEntry entry{};
+        entry.duration = 3600;
+        entry.power = power;
+        req.power_profile->entries = {entry};
+        state_helper.handle_request(req);
+        fsm.feed(d20::Event::V2GTP_MESSAGE);
+        d20::PauseNotification notification;
+        return notification.update(true, false, ctx.session, feedback);
+    };
+
+    GIVEN("a profile whose entry at now is 0 W") {
+        THEN("the pause is released") {
+            REQUIRE(pause_released({0, 0}));
+        }
+    }
+
+    GIVEN("a profile whose entry at now is 11 kW") {
+        THEN("the pause is held back") {
+            REQUIRE_FALSE(pause_released({11, 3}));
         }
     }
 }

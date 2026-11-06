@@ -147,6 +147,38 @@ user-config or the configuration database, and EVerest does not carry them
 over to the successor module. :ref:`htg-upgrading-persisted-config` describes
 what to do for each storage mode.
 
+.. _project-upgrading-to-2026-10-iso15118-ev:
+
+ISO 15118 EV simulation
+=======================
+
+``PyEvJosev`` is removed and replaced by
+:ref:`Ev15118 <everest_modules_Ev15118>`, the EV side of the C++ ISO 15118
+stack. Change ``module: PyEvJosev`` to ``module: Ev15118`` and map the
+``config_module`` keys with the table in
+:ref:`everest_modules_handwritten_Ev15118_pyevjosev`.
+
+- ``supported_protocols`` must be set. It has no usable default, and the
+  module refuses to start until it lists at least one of ``ISO15118_20``,
+  ``ISO15118_2`` and ``DIN70121``.
+- ``start_charging`` takes ``DepartureTime`` in seconds from the call and
+  ``EAmount`` in kWh. ``0`` states none, and negative or non-finite values are
+  rejected.
+- A DC or MCS ``start_charging`` is rejected unless ``set_dc_params`` has
+  given a positive ``max_power_limit``, ``max_current_limit`` and
+  ``max_voltage_limit``. A ``set_dc_params`` call that leaves a field out
+  keeps its previous value, and a call with an invalid value is rejected
+  whole.
+- Out-of-tree modules that provide ``ISO15118_ev`` must implement three new
+  commands:
+
+  - ``abort_charging``: terminate the V2G session immediately, without the
+    SessionStop exchange.
+  - ``cp_state_changed``: the control pilot state the vehicle applies; E or F
+    during a session terminates it without SessionStop.
+  - ``update_present_values``: the electrical values the EV currently
+    measures.
+
 .. _project-upgrading-to-2026-10-ocpp:
 
 OCPP 2.x component configuration
@@ -193,6 +225,8 @@ Building and packaging
 - Rust modules need Rust 1.86 or newer.
 - The CMake options ``EVEREST_ENABLE_ADMIN_PANEL_BACKEND`` and
   ``EVEREST_INSTALL_ADMIN_PANEL`` are removed.
+- The Josev wheel targets are removed, and the development PKI no longer
+  contains Java keystores (``.jks``).
 
 Yocto
 -----
@@ -200,12 +234,19 @@ Yocto
 - Recipes shared between Yocto releases live in the
   ``meta-everest-common`` layer, which meta-everest adds automatically. They
   use ``${UNPACKDIR}``. Update bbappends that refer to ``${WORKDIR}`` paths of
-  ``everest-core``, ``ev-cli`` or ``python3-iso15118``.
+  ``everest-core`` or ``ev-cli``.
 - The compatibility recipes ``everest-framework``, ``everest-sqlite``,
   ``libcbv2g``, ``libevse-security``, ``libfsm``, ``libiso15118``,
   ``liblog``, ``libocpp``, ``libslac`` and ``libtimer``, the ``asyncapi``
   backport recipe and the admin-panel packages are removed. Drop them from
   ``IMAGE_INSTALL``, ``DEPENDS`` and ``RDEPENDS``.
+- Josev's recipe ``python3-iso15118`` and the recipes only it pulled in,
+  ``openjdk``, ``python3-aiofile``, ``python3-caio``, ``python3-environs``,
+  ``python3-marshmallow``, ``python3-netifaces``, ``python3-packaging``,
+  ``python3-poetry-core``, ``python3-py4j``, ``python3-pydantic``,
+  ``python3-python-dotenv`` and ``python3-typing-extensions``, are removed.
+  Drop them from ``IMAGE_INSTALL`` and ``RDEPENDS`` and delete bbappends for
+  them.
 - ``everest.service`` runs the manager with the configuration database
   ``/var/lib/everest/everest.db`` and the settings file
   ``settings-mqtt-uds.yaml``, and with ``systemd`` meta-everest configures
@@ -220,6 +261,45 @@ section for the service and the Mosquitto setup.
 
 EVerest APIs
 ============
+
+- ``evse_board_support`` (all BSP drivers, ``evse_board_support_API`` included):
+  EvseManager requests state X1 only with ``cp_state_X1``. Until 2026.10 most
+  paths already did, but a duty cycle of 100 % (for example a current limit
+  below 6 A in basic AC charging) was sent as ``pwm_on(100)``. ``pwm_on`` is
+  only called with a duty cycle strictly between 0 and 100 %.
+- ``evse_board_support_API`` and ``system_API``: commands without arguments
+  (``cp_state_X1``, ``cp_state_F``, ``cp_state_E``, ``lock``, ``unlock``,
+  ``self_test``, ``allow_firmware_installation``) carry an empty JSON object
+  ``{}`` as payload, like the other APIs, instead of an empty payload. Clients
+  that tested for an empty payload must accept ``{}``.
+- All EVerest API modules and the configuration and lifecycle APIs: a request
+  without ``headers.replyTo`` is executed and its reply discarded, as before,
+  but without a warning. A request is now rejected without being executed if it
+  is not a JSON object, if ``headers`` is not an object (``null`` included), or
+  if ``replyTo`` is not a string, not publishable (empty, ``+``, ``#``, NUL,
+  leading ``$``) or in a namespace EVerest subscribes or publishes to
+  (``everest/...``, ``everest_external/nodered/...``, and in ``everest_api``
+  everything but topics at least two levels below ``e2m``). Before, such
+  requests were executed and their reply was dropped, delivered as another
+  request or published as if it came from EVerest. A client that replies to
+  ``everest_api/.../e2m/<operation>`` without a unique level of its own below
+  it must add one, e.g. ``e2m/<operation>/<uuid>``. See :ref:`everest_apis`. In ``everest_api_types``,
+  ``generic::RequestReply::replyTo`` and the ``reply_to`` argument of
+  ``deserialize_request`` are ``std::optional<std::string>``; replies are sent
+  with ``MqttProviderInterface::publish_reply``, which publishes nothing when
+  there is no ``replyTo``.
+- All EVerest API modules: a number that does not fit the type it is stored in
+  (usually a 32-bit signed integer or a single-precision float) is rejected.
+  Before, an integer such as ``4294967297`` wrapped (to ``1`` for a connector
+  id) and a number beyond about 3.4e38 became infinity.
+- All EVerest API modules: a field declared as ``format: date-time`` has to be
+  an RFC 3339 date-time with a UTC offset, between
+  ``1677-09-21T00:12:43.146Z`` and ``2262-04-11T23:46:49.854Z``. Anything else,
+  such as a date-time without an offset or ``9999-12-31T23:59:59Z``, makes
+  EVerest discard the message with a warning; a request gets no reply. Before,
+  such values were forwarded unchecked and read as 1970, as the current time
+  or with their offset ignored. For an open end, such as ``timestamp_to`` in an
+  error history filter, use the latest accepted value ``2262-04-11T23:46:49.854Z``.
 
 The deprecated topics keep working until 2027.04.0 at the earliest. See
 :ref:`project-deprecation-index` for the full list, including:
@@ -236,3 +316,7 @@ The deprecated topics keep working until 2027.04.0 at the earliest. See
 
 API modules publish compact JSON. Only clients that compare raw payload
 strings are affected.
+
+API modules raise the initial ``CommunicationFault``, and EvseManager its
+``Inoperative``, only if no ``communication_check`` arrives within
+``cfg_communication_check_to_s``, no longer right at start.

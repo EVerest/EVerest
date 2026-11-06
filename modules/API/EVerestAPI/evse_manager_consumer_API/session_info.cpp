@@ -3,6 +3,7 @@
 
 #include "session_info.hpp"
 #include <everest/logging.hpp>
+#include <everest_api_types/evse_manager/wrapper.hpp>
 #include <utils/date.hpp>
 namespace module {
 
@@ -50,7 +51,7 @@ void SessionInfo::update_state(const types::evse_manager::SessionEvent& session_
             break;
         case Event::TransactionStarted:
             // EvseManager consumes the reservation at transaction start without sending ReservationEnd
-            this->ext.reserved = false;
+            this->clear_reservation();
             this->handle_transaction_started(session_event);
             break;
         case Event::ChargingStarted:
@@ -79,10 +80,10 @@ void SessionInfo::update_state(const types::evse_manager::SessionEvent& session_
             this->handle_session_finished(session_event);
             break;
         case Event::ReservationStart:
-            this->ext.reserved = true;
+            this->handle_reservation_start(session_event);
             break;
         case Event::ReservationEnd:
-            this->ext.reserved = false;
+            this->clear_reservation();
             break;
         default:
             break;
@@ -95,10 +96,10 @@ void SessionInfo::update_state(const types::evse_manager::SessionEvent& session_
 
 void SessionInfo::update_powermeter(const types::powermeter::Powermeter& powermeter) {
     try {
-        this->set_latest_energy_import_wh(powermeter.energy_Wh_import.total);
         if (powermeter.energy_Wh_export.has_value()) {
             this->set_latest_energy_export_wh(powermeter.energy_Wh_export.value().total);
         }
+        this->set_latest_energy_import_wh(powermeter.energy_Wh_import.total);
 
         if (powermeter.power_W.has_value()) {
             this->ext.latest_total_w = powermeter.power_W.value().total;
@@ -123,6 +124,19 @@ void SessionInfo::update_selected_protocol(const std::string& protocol) {
     }
 }
 
+void SessionInfo::handle_reservation_start(const types::evse_manager::SessionEvent& session_event) {
+    this->ext.reserved = true;
+    this->ext.reservation.reset();
+    if (session_event.reservation.has_value()) {
+        this->ext.reservation = to_external_api(session_event.reservation.value());
+    }
+}
+
+void SessionInfo::clear_reservation() {
+    this->ext.reserved = false;
+    this->ext.reservation.reset();
+}
+
 void SessionInfo::handle_session_started(const types::evse_manager::SessionEvent& session_event) {
     this->session_start_time_point = Everest::Date::from_rfc3339(session_event.timestamp);
     this->session_end_time_point = this->session_start_time_point;
@@ -144,6 +158,8 @@ void SessionInfo::handle_session_started(const types::evse_manager::SessionEvent
 
 void SessionInfo::handle_session_finished(const types::evse_manager::SessionEvent& session_event) {
     this->ext.session_end_time = session_event.timestamp;
+    this->session_end_time_point = Everest::Date::from_rfc3339(session_event.timestamp);
+    this->update_totals();
     this->ext.state = EvseStateEnum::Unplugged;
 }
 
@@ -173,6 +189,7 @@ void SessionInfo::handle_transaction_started(const types::evse_manager::SessionE
     }
 
     this->ext.transaction_start_time = Everest::Date::to_rfc3339(this->transaction_start_time_point);
+    this->update_totals();
 }
 
 void SessionInfo::handle_transaction_finished(const types::evse_manager::SessionEvent& session_event) {
@@ -202,25 +219,34 @@ void SessionInfo::handle_transaction_finished(const types::evse_manager::Session
     }
 
     this->ext.transaction_end_time = Everest::Date::to_rfc3339(this->transaction_end_time_point);
+    this->update_totals();
 }
 
 void SessionInfo::set_latest_energy_import_wh(int32_t latest_energy_wh_import) {
+    if (this->transaction_running) {
+        this->end_energy_import_wh = latest_energy_wh_import;
+    }
+    if (this->is_session_running()) {
+        this->session_end_time_point = date::utc_clock::now();
+        if (this->transaction_running) {
+            this->transaction_end_time_point = this->session_end_time_point;
+        }
+    }
+    this->update_totals();
+}
+
+void SessionInfo::update_totals() {
     this->ext.charged_energy_wh = this->end_energy_import_wh - this->start_energy_import_wh;
     if (this->start_energy_export_wh_was_set && this->end_energy_export_wh_was_set) {
         this->ext.discharged_energy_wh = this->end_energy_export_wh - this->start_energy_export_wh;
     }
-
     this->ext.session_duration_s =
         std::chrono::duration_cast<std::chrono::seconds>(this->session_end_time_point - this->session_start_time_point)
             .count();
-    this->session_end_time_point = date::utc_clock::now();
-
-    if (transaction_running) {
+    if (this->ext.transaction_start_time.has_value()) {
         this->ext.transaction_duration_s = std::chrono::duration_cast<std::chrono::seconds>(
                                                this->transaction_end_time_point - this->transaction_start_time_point)
                                                .count();
-        this->transaction_end_time_point = this->session_end_time_point;
-        this->end_energy_import_wh = latest_energy_wh_import;
     }
 }
 

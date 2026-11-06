@@ -130,10 +130,10 @@ auto evse_manager_consumer_API::forward_and_cache_api_var(std::string const& var
 
 void evse_manager_consumer_API::generate_api_cmd_get_evse() {
     helper.subscribe_api_topic("get_evse", [this](std::string const& data) {
-        std::string reply_to;
+        std::optional<std::string> reply_to;
         if (deserialize_request(data, reply_to)) {
             auto reply = API_types_ext::to_external_api(r_evse_manager->call_get_evse());
-            mqtt_v.publish(reply_to, serialize(reply));
+            mqtt_v.publish_reply(reply_to, serialize(reply));
             return true;
         }
         return false;
@@ -142,11 +142,11 @@ void evse_manager_consumer_API::generate_api_cmd_get_evse() {
 
 void evse_manager_consumer_API::generate_api_cmd_enable_disable() {
     helper.subscribe_api_topic("enable_disable", [this](std::string const& data) {
-        std::string reply_to;
+        std::optional<std::string> reply_to;
         API_types_ext::EnableDisableRequest payload;
         if (deserialize_request(data, reply_to, payload)) {
             auto reply = r_evse_manager->call_enable_disable(payload.connector_id, to_internal_api(payload.source));
-            mqtt_v.publish(reply_to, API_generic::serialize(reply));
+            mqtt_v.publish_reply(reply_to, API_generic::serialize(reply));
             return true;
         }
         return false;
@@ -155,10 +155,10 @@ void evse_manager_consumer_API::generate_api_cmd_enable_disable() {
 
 void evse_manager_consumer_API::generate_api_cmd_pause_charging() {
     helper.subscribe_api_topic("pause_charging", [this](std::string const& data) {
-        std::string reply_to;
+        std::optional<std::string> reply_to;
         if (deserialize_request(data, reply_to)) {
             auto result = r_evse_manager->call_pause_charging();
-            mqtt_v.publish(reply_to, result);
+            mqtt_v.publish_reply(reply_to, result);
             return true;
         }
         return false;
@@ -167,10 +167,10 @@ void evse_manager_consumer_API::generate_api_cmd_pause_charging() {
 
 void evse_manager_consumer_API::generate_api_cmd_resume_charging() {
     helper.subscribe_api_topic("resume_charging", [this](std::string const& data) {
-        std::string reply_to;
+        std::optional<std::string> reply_to;
         if (deserialize_request(data, reply_to)) {
             auto result = r_evse_manager->call_resume_charging();
-            mqtt_v.publish(reply_to, result);
+            mqtt_v.publish_reply(reply_to, result);
             return true;
         }
         return false;
@@ -179,11 +179,11 @@ void evse_manager_consumer_API::generate_api_cmd_resume_charging() {
 
 void evse_manager_consumer_API::generate_api_cmd_stop_transaction() {
     helper.subscribe_api_topic("stop_transaction", [this](std::string const& data) {
-        std::string reply_to;
+        std::optional<std::string> reply_to;
         API_types_ext::StopTransactionRequest_External payload;
         if (deserialize_request(data, reply_to, payload)) {
             auto result = r_evse_manager->call_stop_transaction(API_types_ext::to_internal_api(payload));
-            mqtt_v.publish(reply_to, result);
+            mqtt_v.publish_reply(reply_to, result);
             return true;
         }
         return false;
@@ -192,11 +192,11 @@ void evse_manager_consumer_API::generate_api_cmd_stop_transaction() {
 
 void evse_manager_consumer_API::generate_api_cmd_force_unlock() {
     helper.subscribe_api_topic("force_unlock", [this](std::string const& data) {
-        std::string reply_to;
+        std::optional<std::string> reply_to;
         int payload{};
         if (deserialize_request(data, reply_to, payload)) {
             auto result = r_evse_manager->call_force_unlock(payload);
-            mqtt_v.publish(reply_to, result);
+            mqtt_v.publish_reply(reply_to, result);
             return true;
         }
         return false;

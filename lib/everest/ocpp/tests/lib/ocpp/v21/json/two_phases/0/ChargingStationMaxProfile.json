@@ -1,0 +1,22 @@
+{
+    "id": 7,
+    "chargingProfileKind": "Absolute",
+    "chargingProfilePurpose": "ChargingStationMaxProfile",
+    "chargingSchedule": [
+        {
+            "id": 0,
+            "chargingRateUnit": "W",
+            "chargingSchedulePeriod": [
+                {
+                    "limit": 4000.0,
+                    "limit_L2": 4000.0,
+                    "numberPhases": 2,
+                    "startPeriod": 0
+                }
+            ],
+            "duration": 3000,
+            "startSchedule": "2024-01-17T18:00:00.000Z"
+        }
+    ],
+    "stackLevel": 0
+}

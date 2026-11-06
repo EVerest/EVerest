@@ -8,6 +8,7 @@
 #include <cctype>
 #include <chrono>
 #include <cstdint>
+#include <ctime>
 #include <iomanip>
 #include <optional>
 #include <sstream>
@@ -519,6 +520,29 @@ inline std::uint16_t type_to_value(types::powermeter::OCMFIdentificationType typ
 }
 
 } // namespace ocmf
+
+namespace timezone_utils {
+
+struct LocalTimeZone {
+    int utc_offset_minutes;
+    std::string name;
+};
+
+/// Time zone of the host (TZ or /etc/localtime) at \p when, including daylight saving time. Empty if it cannot be
+/// determined.
+inline std::optional<LocalTimeZone> local_time_zone(std::time_t when) {
+    // localtime_r() alone does not pick up a changed TZ or /etc/localtime.
+    tzset();
+    std::tm local{};
+    if (localtime_r(&when, &local) == nullptr) {
+        return std::nullopt;
+    }
+    constexpr long kSecondsPerMinute = 60;
+    return LocalTimeZone{static_cast<int>(local.tm_gmtoff / kSecondsPerMinute),
+                         local.tm_zone != nullptr ? local.tm_zone : ""};
+}
+
+} // namespace timezone_utils
 
 namespace device_state_utils {
 

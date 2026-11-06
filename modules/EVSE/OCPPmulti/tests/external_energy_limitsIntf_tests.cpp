@@ -278,8 +278,9 @@ TEST_F(GenericOcppProvidesTester, setExternalLimitsDischargePhases) {
     ocpp->set_external_limits({schedule});
 
     ASSERT_EQ(received.size(), 1);
+    // ac_max_current_A is one value for all phases: the most restrictive phase applies (K01.FR.147)
     const json expected_export =
-        json::array({limits_entry({{"ac_max_current_A", with_source(10.F)}, {"ac_max_phase_count", with_source(3)}},
+        json::array({limits_entry({{"ac_max_current_A", with_source(2.F)}, {"ac_max_phase_count", with_source(3)}},
                                   import_timestamp(received[0], 0))});
     EXPECT_EQ(received[0]["value"]["schedule_export"], expected_export);
 }
@@ -338,6 +339,53 @@ TEST_F(GenericOcppProvidesTester, setExternalLimitsChargingOnly) {
               json::array({limits_entry({{"ac_max_current_A", with_source(16.F)}}, import_timestamp(received[0], 0))}));
     ASSERT_EQ(value["schedule_setpoints"].size(), 1);
     EXPECT_EQ(value["schedule_setpoints"][0]["setpoint"]["ac_current_A"], json(10.F));
+}
+
+TEST_F(GenericOcppProvidesTester, setExternalLimitsWattsPerPhaseSummedUp) {
+    // OCPP 2.1: with chargingRateUnit W a period value is phase L1 when per-phase values are given. libocpp's composite
+    // schedule splits an 8280 W total into 3 x 2760 W once it is merged with a per-phase period, so total_power_W must
+    // be the sum.
+    std::vector<json> received;
+    interfaces->subscribe_var("external_energy_limits", "call_set_external_limits",
+                              [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
+
+    auto schedule = make_schedule(1, ChargingRateUnitEnum::W);
+    auto period = make_period(0, 2760.F, -1000.F);
+    period.limit_L2 = 2760.F;
+    period.limit_L3 = 2760.F;
+    period.dischargeLimit_L2 = -1000.F;
+    period.dischargeLimit_L3 = -1000.F;
+    period.setpoint = 1500.F;
+    period.setpoint_L2 = 1500.F;
+    period.setpoint_L3 = 1500.F;
+    schedule.chargingSchedulePeriod.push_back(period);
+
+    ocpp->set_external_limits({schedule});
+
+    ASSERT_EQ(received.size(), 1);
+    const auto& value = received[0]["value"];
+    const auto timestamp = import_timestamp(received[0], 0);
+    EXPECT_EQ(value["schedule_import"],
+              json::array({limits_entry({{"total_power_W", with_source(8280.F)}}, timestamp)}));
+    EXPECT_EQ(value["schedule_export"],
+              json::array({limits_entry({{"total_power_W", with_source(3000.F)}}, timestamp)}));
+    ASSERT_EQ(value["schedule_setpoints"].size(), 1);
+    EXPECT_EQ(value["schedule_setpoints"][0]["setpoint"]["total_power_W"], json(4500.F));
+}
+
+TEST_F(GenericOcppProvidesTester, setExternalLimitsWattsTotalWithoutPhases) {
+    std::vector<json> received;
+    interfaces->subscribe_var("external_energy_limits", "call_set_external_limits",
+                              [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
+
+    auto schedule = make_schedule(1, ChargingRateUnitEnum::W);
+    schedule.chargingSchedulePeriod.push_back(make_period(0, 8280.F, std::nullopt));
+
+    ocpp->set_external_limits({schedule});
+
+    ASSERT_EQ(received.size(), 1);
+    EXPECT_EQ(received[0]["value"]["schedule_import"],
+              json::array({limits_entry({{"total_power_W", with_source(8280.F)}}, import_timestamp(received[0], 0))}));
 }
 
 } // namespace

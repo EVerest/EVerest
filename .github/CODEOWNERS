@@ -39,7 +39,7 @@
 /modules/EnergyManagement/EnergyNode/ @corneliusclaussen @hikinggrass @pietfried @mlitre @djchhp
 /modules/EV/EvSlac/ @a-w50 @corneliusclaussen @SebaLukas @pietfried @hikinggrass
 /modules/EV/EvManager/ @SebaLukas @pietfried @james-ctc @mlitre @a-w50
-/modules/EV/PyEvJosev/ @SebaLukas @corneliusclaussen @pietfried @james-ctc @mlitre @a-w50
+/modules/EV/Ev15118/ @SebaLukas @corneliusclaussen @pietfried @james-ctc @mlitre @a-w50
 /modules/EVSE/Auth/ @pietfried @corneliusclaussen @hikinggrass @mlitre @a-w50
 /modules/EVSE/Evse15118D20/ @SebaLukas @a-w50 @corneliusclaussen @pietfried @hikinggrass @james-ctc @mlitre
 /modules/EVSE/EvseManager/ @corneliusclaussen @SebaLukas @hikinggrass @pietfried @mlitre @djchhp @a-w50
@@ -54,12 +54,10 @@
 /modules/HardwareDrivers/EVSE/MicroMegaWattBSP/ @corneliusclaussen @hikinggrass @a-w50
 /modules/HardwareDrivers/EVSE/PhyVersoBSP/ @pietfried @hikinggrass @corneliusclaussen @dorezyuk @rckstrh
 /modules/HardwareDrivers/EVSE/YetiDriver/ @corneliusclaussen @hikinggrass @a-w50
+/modules/HardwareDrivers/NfcReaders/PN532TokenProvider/ @mhei @pietfried @hikinggrass @corneliusclaussen @florinmihut @cburandt @djchhp @a-w50
 /modules/Misc/ErrorHistory/ @corneliusclaussen @hikinggrass @pietfried @andistorm
 /modules/Misc/PacketSniffer/ @corneliusclaussen @SebaLukas @hikinggrass @a-w50
 /modules/Misc/Setup/ @hikinggrass @corneliusclaussen @pietfried @a-w50
-/modules/Simulation/ @SebaLukas @pietfried @hikinggrass @a-w50
-/modules/Simulation/SlacSimulator/ @SebaLukas @pietfried @corneliusclaussen @james-ctc @mlitre @a-w50
-/modules/Simulation/YetiSimulator/ @SebaLukas @pietfried @corneliusclaussen @james-ctc @mlitre @a-w50
 **/Cargo.toml @SirVer @dorezyuk @pietfried @hikinggrass @a-w50
 **/Cargo.lock @SirVer @dorezyuk @pietfried @hikinggrass @a-w50
 

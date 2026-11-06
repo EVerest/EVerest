@@ -1785,6 +1785,7 @@ ChargePointConfigurationDeviceModel::get_websocket_connection_options(int32_t sl
                                         getIFace(),
                                         getEnableTLSKeylog(),
                                         getTLSKeylogFile()};
+        opts.max_incoming_message_size = static_cast<std::size_t>(getMaxIncomingMessageSize());
         return opts;
     } catch (const ocpp::v2::DeviceModelError& e) {
         EVLOG_error << "Could not configure v1.6 connection options, device model error: " << e.what();
@@ -1931,6 +1932,11 @@ bool ChargePointConfigurationDeviceModel::getVerifyCsmsCommonName() {
 
 int ChargePointConfigurationDeviceModel::getMaxMessageSize() {
     return get_value<int>(*storage, keys::valid_keys::MaxMessageSize);
+}
+
+int ChargePointConfigurationDeviceModel::getMaxIncomingMessageSize() {
+    return get_optional<int>(*storage, keys::valid_keys::MaxIncomingMessageSize)
+        .value_or(static_cast<int>(DEFAULT_MAX_INCOMING_MESSAGE_SIZE));
 }
 
 std::int32_t ChargePointConfigurationDeviceModel::getMaxCompositeScheduleDuration() {
@@ -2189,6 +2195,10 @@ KeyValue ChargePointConfigurationDeviceModel::getMaxCompositeScheduleDurationKey
 
 KeyValue ChargePointConfigurationDeviceModel::getMaxMessageSizeKeyValue() {
     return get_key_value(*storage, keys::valid_keys::MaxMessageSize);
+}
+
+KeyValue ChargePointConfigurationDeviceModel::getMaxIncomingMessageSizeKeyValue() {
+    return get_key_value(*storage, keys::valid_keys::MaxIncomingMessageSize);
 }
 
 KeyValue ChargePointConfigurationDeviceModel::getOcspRequestIntervalKeyValue() {
@@ -3831,6 +3841,7 @@ std::optional<ConfigurationStatus> ChargePointConfigurationDeviceModel::set(cons
         case keys::valid_keys::LogMessagesRaw:
         case keys::valid_keys::MaxCompositeScheduleDuration:
         case keys::valid_keys::MaxMessageSize:
+        case keys::valid_keys::MaxIncomingMessageSize:
         case keys::valid_keys::MessageQueueSizeThreshold:
         case keys::valid_keys::MessageTypesDiscardForQueueing:
         case keys::valid_keys::QueueAllMessages:

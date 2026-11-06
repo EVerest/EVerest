@@ -49,6 +49,16 @@ protected:
     ReservationHandler r{evses, "reservation_kvs", &kvs};
 };
 
+TEST_F(ReservationHandlerTest, get_evse_reservation) {
+    add_connector(1, 0, types::evse_manager::ConnectorTypeEnum::cCCS2, this->evses);
+    const Reservation reservation = create_reservation(types::evse_manager::ConnectorTypeEnum::cCCS2);
+    ASSERT_EQ(r.make_reservation(1, reservation), ReservationResult::Accepted);
+
+    EXPECT_EQ(r.get_evse_reservation(1, reservation.reservation_id), reservation);
+    EXPECT_EQ(r.get_evse_reservation(1, reservation.reservation_id + 1), std::nullopt);
+    EXPECT_EQ(r.get_evse_reservation(2, reservation.reservation_id), std::nullopt);
+}
+
 TEST_F(ReservationHandlerTest, global_reservation_scenario_01) {
     // Test global reservations (not bound to specific evse id). 3 EVSE's, one with cCCS2, two with cCCS2 and cType2.
     // Three cCCS2 reservations should be accepted.

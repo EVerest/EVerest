@@ -84,6 +84,7 @@ cc_library(
         "//third-party/bazel/openssl:ssl",
         "@com_github_nlohmann_json//:json",
         "@com_github_HowardHinnant_date//:date",
+        "//lib/everest/date",
         "//lib/everest/framework:framework",
         "//lib/everest/timer:libtimer",
         "//lib/everest/evse_security:libevse-security",
@@ -102,13 +103,5 @@ cc_library(
         "MIGRATION_FILE_VERSION_V16=1",
         "MIGRATION_FILE_VERSION_V2=6",
         "MIGRATION_DEVICE_MODEL_FILE_VERSION_V2=3",
-    ],
-    # See https://github.com/HowardHinnant/date/issues/324
-    local_defines = [
-        "BUILD_TZ_LIB=ON",
-        "USE_SYSTEM_TZ_DB=ON",
-        "USE_OS_TZDB=1",
-        "USE_AUTOLOAD=0",
-        "HAS_REMOTE_API=0",
     ],
 )

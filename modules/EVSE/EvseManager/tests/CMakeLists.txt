@@ -24,8 +24,10 @@ target_sources(${TEST_TARGET_NAME} PRIVATE
     PpAmpacityForwarderTest.cpp
     OverVoltageMonitorTest.cpp
     PowermeterLimitsTest.cpp
+    PowerSupplyMeasurementWaiterTest.cpp
     RandomDelayDurationTest.cpp
     SessionLogTest.cpp
+    V2gMessageTest.cpp
     VoltagePlausibilityMonitorTest.cpp
     ../CpStateFrameEmitter.cpp
     ../ErrorHandling.cpp
@@ -34,6 +36,7 @@ target_sources(${TEST_TARGET_NAME} PRIVATE
     ../backtrace.cpp
     ../energy_transfer_modes.cpp
     ../powermeter_limits.cpp
+    ../cable_check/PowerSupplyMeasurementWaiter.cpp
     ../over_voltage/OverVoltageMonitor.cpp
     ../voltage_plausibility/VoltagePlausibilityMonitor.cpp
     ../v2gMessage.cpp

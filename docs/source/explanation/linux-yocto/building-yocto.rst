@@ -95,6 +95,104 @@ Other debugging tools that may be useful during development phase are:
    The locale should be set to UTF-8 (otherwise BringUp & Qualification tools
    will look weird).
 
+systemd service
+===============
+
+With ``systemd`` in ``DISTRO_FEATURES``, ``everest-core`` installs
+``everest.service``. It starts only if ``/etc/everest/config.yaml`` exists and
+is not empty, which your own layer provides, and runs:
+
+.. code-block:: bash
+
+   manager --config /etc/everest/config.yaml --db /var/lib/everest/everest.db \
+           --settings /etc/everest/settings-mqtt-uds.yaml
+
+As long as the boot slot of the configuration database holds no modules,
+normally on the first start, it is seeded from the YAML, including
+``/etc/everest/user-config/config.yaml`` if present. From then on the module
+configuration comes from the database and edits of the YAML have no effect.
+The YAML is still parsed on every start, so it has to stay valid: if it cannot
+be parsed, the manager does not start even though the database holds a
+complete configuration. See :ref:`exp-configuration-service` for the details.
+
+The database holds no manager settings (MQTT broker, paths, telemetry). They
+come from the installed example settings file ``settings-mqtt-uds.yaml``, see
+:ref:`exp_config_service_settings`. A ``settings:`` block in ``config.yaml`` is
+ignored.
+
+Only the user running EVerest can access ``/var/lib/everest``, because module
+configurations can hold credentials. The directory has to be persistent and
+survive updates of the root file system, see
+:ref:`partitioning-schemes-for-rauc-ota`.
+
+To apply a changed YAML, delete the database, including its SQLite journal
+files, while the service is stopped. This also deletes all other configuration
+slots, e.g. those written through the configuration API:
+
+.. code-block:: bash
+
+   systemctl stop everest
+   rm -f /var/lib/everest/everest.db*
+   systemctl start everest
+
+The experimental manager option ``--reset-from-yaml`` replaces only the boot
+slot instead, and leaves the database untouched if the YAML is invalid, see
+:doc:`/reference/manager-cli`.
+
+To use other settings, override the command line in a drop-in of your layer.
+Base your settings file on ``settings-mqtt-uds.yaml``: the TCP listener does not
+give access to the internal topics.
+
+.. code-block:: ini
+
+   # /etc/systemd/system/everest.service.d/10-settings.conf
+   [Service]
+   ExecStart=
+   ExecStart=/usr/bin/manager --config /etc/everest/config.yaml --db /var/lib/everest/everest.db --settings /etc/everest/settings.yaml
+
+MQTT
+----
+
+``everest-core`` recommends the package ``everest-mosquitto-config``. It runs
+Mosquitto with ``/etc/mosquitto/everest.conf`` instead of the ``mosquitto.conf``
+of the ``mosquitto`` package:
+
+- A Unix domain socket ``/run/mosquitto/mosquitto.sock`` for the manager and
+  the modules, as recommended in :doc:`/how-to-guides/security-best-practices`.
+  It is the only way to reach the internal ``everest/`` topics.
+  ``/run/mosquitto`` has mode ``0750``, so only ``root`` and members of the
+  group ``mosquitto`` can connect. Add the user running EVerest to that group.
+- A TCP listener on ``localhost:1883`` without a password for local clients,
+  e.g. clients of the EVerest APIs, or ChargeBridge, which only connects over
+  TCP. ``/etc/mosquitto/everest-external.acl`` gives them every topic except
+  the internal ``everest/`` topics; it assumes the default
+  ``mqtt_everest_prefix``.
+
+To configure Mosquitto yourself, leave the package out of your image with
+``BAD_RECOMMENDATIONS += "everest-mosquitto-config"`` and pass EVerest a
+matching settings file. To reach topics from the network, add a listener with
+authentication and TLS.
+
+.. note::
+
+   Local clients that used the internal ``everest/`` topics over
+   ``localhost:1883``, e.g. custom tools or Node-RED flows, no longer receive
+   them: Mosquitto drops subscriptions and publishes the ACL denies without an
+   error. Connect them to the Unix domain socket as a member of the group
+   ``mosquitto``, or move them to the EVerest APIs.
+
+.. note::
+
+   The topics reachable over TCP include the management APIs of the manager,
+   ``everest_api/1/configuration/`` and ``everest_api/1/lifecycle/``. They are
+   only served when the manager runs with ``--configuration-api`` or
+   ``--lifecycle-api``, see :ref:`exp_management_apis`. In ``rw`` mode, any
+   local process can then change the configuration or stop and restart
+   modules. To keep them from local clients, add
+   ``topic deny everest_api/1/configuration/#`` and
+   ``topic deny everest_api/1/lifecycle/#`` to the ACL, so they are only
+   reachable over the Unix domain socket.
+
 Rust modules
 ============
 

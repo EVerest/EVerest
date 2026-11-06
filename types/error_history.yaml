@@ -84,11 +84,12 @@ types:
       sub_type:
         type: string
       description:
+        description: Description of the error type from its definition in the errors YAML files
         type: string
         minLength: 2
       message:
+        description: Free text chosen by the raiser of the error; empty if it gave none
         type: string
-        minLength: 2
       severity:
         $ref: /error_history#/Severity
       origin:

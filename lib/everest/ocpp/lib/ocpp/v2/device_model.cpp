@@ -650,6 +650,9 @@ DeviceModel::get_custom_report_data(const std::optional<std::vector<ComponentVar
                     for (const auto& variable_attribute :
                          this->read_attributes(component, variable, variable_meta_data)) {
                         report_data.variableAttribute.push_back(variable_attribute);
+                        if (variable_attribute.mutability == MutabilityEnum::WriteOnly) {
+                            report_data.variableAttribute.back().value.reset();
+                        }
                         report_data.variableCharacteristics = variable_map.at(variable).characteristics;
                     }
 
@@ -1280,6 +1283,9 @@ std::optional<WebsocketConnectionOptions> DeviceModel::get_websocket_connection_
             get_optional_value<std::string>(ControllerComponentVariables::IFace),
             get_optional_value<bool>(ControllerComponentVariables::EnableTLSKeylog).value_or(false),
             get_optional_value<std::string>(ControllerComponentVariables::TLSKeylogFile)};
+        opts.max_incoming_message_size =
+            static_cast<std::size_t>(get_optional_value<int>(ControllerComponentVariables::MaxIncomingMessageSize)
+                                         .value_or(static_cast<int>(DEFAULT_MAX_INCOMING_MESSAGE_SIZE)));
         return opts;
     } catch (const std::invalid_argument& e) {
         EVLOG_error << "Could not configure the connection options for slot " << slot << ": " << e.what();

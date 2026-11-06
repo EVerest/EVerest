@@ -69,6 +69,11 @@ private:
     // The modules do not regulate to 0 A, so a 0 A request switches the DC side off instead.
     bool off_for_zero_current{false};
     void apply_setpoint(double voltage, double current, types::power_supply_DC::Mode setpoint_mode);
+
+    std::mutex communication_mutex;
+    bool is_ready{false};
+    bool can_connected{true};
+    void update_communication_fault();
     // ev@3370e4dd-95f4-47a9-aaec-ea76f34a66c9:v1
 };
 

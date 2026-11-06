@@ -98,18 +98,13 @@ find_package(EDM REQUIRED)
 ```
 The **EDM** CMake module will be discovered automatically if you [registered the CMake module in the way it described in the *Setting up CMake integration* section of this readme](#setting-up-cmake-integration).
 
-To define dependencies you can now add a **dependencies.yaml** file to your source repository. It should look like this:
+To define dependencies you can now add a **dependencies.yaml** file to the top-level directory of your source repository. It should look like this:
 ```yaml
 ---
-liblog:
-  git: git@github.com:EVerest/liblog.git
-  git_tag: main
-  options: ["BUILD_EXAMPLES OFF"]
-libtimer:
-  git: git@github.com:EVerest/libtimer.git
-  git_tag: main
-  options: ["BUILD_EXAMPLES OFF"]
-
+ryml:
+  git: https://github.com/biojppm/rapidyaml
+  git_tag: v0.16.0
+  options: ["CMAKE_POSITION_INDEPENDENT_CODE ON", "RYML_WITH_LEGACY_OPERATORS ON"]
 ```
 
 If you want to conditionally include some dependencies, eg. for testing, you can do this in the following way:
@@ -121,6 +116,21 @@ catch2:
 
 ```
 Here *cmake_condition* can be any string that CMake can use in an if() block. Please be aware that any variables you use here must be defined before a call to *evc_setup_edm()* is made in your CMakeLists.txt
+
+To build a dependency from a local source tree instead of fetching it, set its *source_dir*. For example, to work on rapidyaml next to your project, clone it:
+```bash
+git clone --branch v0.16.0 https://github.com/biojppm/rapidyaml ../rapidyaml
+```
+and add *source_dir* to its entry in **dependencies.yaml**:
+```yaml
+ryml:
+  git: https://github.com/biojppm/rapidyaml
+  git_tag: v0.16.0
+  options: ["CMAKE_POSITION_INDEPENDENT_CODE ON", "RYML_WITH_LEGACY_OPERATORS ON"]
+  source_dir: ../rapidyaml
+```
+The next CMake run builds rapidyaml from *../rapidyaml* as it is checked out there; *git* and *git_tag* are not used for it while *source_dir* is set.
+A relative *source_dir* is resolved against the directory of the file that specifies it. If the directory does not exist, **edm** stops with an error. A *source_dir* is ignored for a dependency without *git*, which is looked up with *find_package*. Local source trees are used only when requested this way; a directory next to the project that is named like a dependency is not picked up.
 
 ## Selective package builds
 
@@ -171,6 +181,8 @@ libfmt:
   git: null
 catch2:
   git_tag: v1.2.3 # if you want to select a different git tag for a build this is also possible
+ryml:
+  source_dir: ../rapidyaml # build from a local source tree, relative to this file
 ```
 
 ## Create a workspace config from an existing directory tree

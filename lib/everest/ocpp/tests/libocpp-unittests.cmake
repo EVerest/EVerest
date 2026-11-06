@@ -33,6 +33,7 @@ set(LIBOCPP_3RDPARTY_PATH ${PROJECT_SOURCE_DIR}/3rd_party)
 # If the test is not linked against the ocpp library, those default sources can be linked against, they will often
 # be needed to link against.
 set(LIBOCPP_TEST_INCLUDE_COMMON_SOURCES ${LIBOCPP_LIB_PATH}/ocpp/common/types.cpp
+                                        ${LIBOCPP_LIB_PATH}/ocpp/common/json_number.cpp
                                         ${LIBOCPP_LIB_PATH}/ocpp/common/ocpp_logging.cpp
                                         ${LIBOCPP_LIB_PATH}/ocpp/common/utils.cpp
                                         ${LIBOCPP_LIB_PATH}/ocpp/common/call_types.cpp
@@ -85,6 +86,7 @@ function(add_libocpp_unittest)
         nlohmann_json::nlohmann_json
         nlohmann_json_schema_validator::validator
         date::date-tz
+        everest::date
         everest::log
         everest::util
         everest::evse_security
@@ -104,7 +106,8 @@ function(add_libocpp_unittest)
             MIGRATION_FILE_VERSION_V16=${MIGRATION_FILE_VERSION_V16}
             MIGRATION_FILE_VERSION_V2=${MIGRATION_FILE_VERSION_V2}
             MIGRATION_DEVICE_MODEL_FILE_VERSION_V2=${MIGRATION_DEVICE_MODEL_FILE_VERSION_V2})
-    target_compile_options(${arg_NAME} PRIVATE -pedantic-errors)
+    # Some tests use "#define private public" to reach into the classes under test
+    target_compile_options(${arg_NAME} PRIVATE -pedantic-errors $<$<CXX_COMPILER_ID:Clang,AppleClang>:-Wno-keyword-macro>)
     target_compile_features(${arg_NAME} PUBLIC cxx_std_17)
     target_include_directories(${arg_NAME} PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}

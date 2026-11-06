@@ -114,6 +114,7 @@ target_sources(everest_api_types
   src/everest_api_types/generic/string.cpp
 
   src/everest_api_types/utilities/codec.cpp
+  src/everest_api_types/utilities/date_time.cpp
   src/everest_api_types/utilities/Topics.cpp
 )
 
@@ -153,6 +154,7 @@ target_sources(everest_api_types
 target_link_libraries(everest_api_types
   PRIVATE nlohmann_json::nlohmann_json
   PRIVATE everest::util
+  PRIVATE everest::date
 )
 
 if (EVEREST_API_JSON_INDENT)

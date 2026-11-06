@@ -1,5 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include <iso15118/message/decode.hpp>
 #include <iso15118/message/session_setup.hpp>
 #include <iso15118/message/variant.hpp>
 
@@ -18,7 +19,7 @@ SCENARIO("Se/Deserialize session setup messages") {
 
         const io::StreamInputView stream_view{doc_raw, sizeof(doc_raw)};
 
-        message_20::Variant variant(io::v2gtp::PayloadType::Part20Main, stream_view);
+        message_20::RequestVariant variant(v2gtp::PayloadType::Part20Main, stream_view);
 
         THEN("It should be deserialized successfully") {
             REQUIRE(variant.get_type() == message_20::Type::SessionSetupReq);
@@ -47,6 +48,16 @@ SCENARIO("Se/Deserialize session setup messages") {
         THEN("It should be serialized successfully") {
             REQUIRE(serialize_helper(res) == expected);
         }
+
+        THEN("A response payload never exposes a session setup request") {
+            const auto encoded = serialize_helper(res);
+            const io::StreamInputView view{encoded.data(), encoded.size()};
+            const message_20::RequestVariant request(v2gtp::PayloadType::Part20Main, view);
+            REQUIRE(request.get_type() == message_20::Type::None);
+            REQUIRE(request.get_error() == "chosen message type unhandled");
+            REQUIRE(request.get_if<message_20::SessionSetupRequest>() == nullptr);
+            REQUIRE(request.get_exi_payload().empty());
+        }
     }
 
     GIVEN("Deserialize session_setup_res") {
@@ -56,12 +67,13 @@ SCENARIO("Se/Deserialize session setup messages") {
 
         const io::StreamInputView stream_view{doc_raw, sizeof(doc_raw)};
 
-        message_20::Variant variant(io::v2gtp::PayloadType::Part20Main, stream_view);
+        const auto decoded =
+            message_20::decode<message_20::SessionSetupResponse>(v2gtp::PayloadType::Part20Main, stream_view);
 
         THEN("It should be deserialized successfully") {
-            REQUIRE(variant.get_type() == message_20::Type::SessionSetupRes);
+            REQUIRE(decoded.has_value());
 
-            const auto& msg = variant.get<message_20::SessionSetupResponse>();
+            const auto& msg = *decoded;
             const auto& header = msg.header;
 
             REQUIRE(header.session_id == std::array<uint8_t, 8>{0x2E, 0xFA, 0x18, 0x94, 0xDC, 0x7B, 0x90, 0x11});
@@ -77,12 +89,13 @@ SCENARIO("Se/Deserialize session setup messages") {
 
         const io::StreamInputView stream_view{doc_raw, sizeof(doc_raw)};
 
-        message_20::Variant variant(io::v2gtp::PayloadType::Part20Main, stream_view);
+        const auto decoded =
+            message_20::decode<message_20::SessionSetupResponse>(v2gtp::PayloadType::Part20Main, stream_view);
 
         THEN("It should be deserialized successfully") {
-            REQUIRE(variant.get_type() == message_20::Type::SessionSetupRes);
+            REQUIRE(decoded.has_value());
 
-            const auto& msg = variant.get<message_20::SessionSetupResponse>();
+            const auto& msg = *decoded;
             const auto& header = msg.header;
 
             REQUIRE(header.session_id == std::array<uint8_t, 8>{0x76, 0x30, 0x44, 0xDE, 0x27, 0xB1, 0x15, 0xC1});

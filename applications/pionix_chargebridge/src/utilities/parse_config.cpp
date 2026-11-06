@@ -8,7 +8,11 @@
 #include <everest_api_types/evse_board_support/codec.hpp>
 #include <iostream>
 
+#include <cerrno>
 #include <filesystem>
+#include <fstream>
+#include <iterator>
+#include <system_error>
 // clang-format off
 #include <ryml_std.hpp>
 #include <ryml.hpp>
@@ -30,7 +34,8 @@ std::string print_yaml_location(ryml::Location const& loc) {
     if (loc) {
         if (not loc.name.empty()) {
             auto tmp = std::string(loc.name.str, loc.name.len);
-            if (charge_bridge::utilities::string_ends_with(tmp, ".hpp")) {
+            if (charge_bridge::utilities::string_ends_with(tmp, ".hpp") or
+                charge_bridge::utilities::string_ends_with(tmp, ".cpp")) {
                 return "";
             }
             error_msg << "\n  file ";
@@ -52,9 +57,9 @@ std::string print_yaml_location(ryml::Location const& loc) {
     std::stringstream error_msg;
     error_msg << "YAML parsing error: ";
     error_msg << print_yaml_location(loc);
+    msg = msg.trimr('\n');
     error_msg.write(msg.str, static_cast<std::streamsize>(msg.len));
 
-    std::cerr << error_msg.str() << std::endl;
     throw std::runtime_error(error_msg.str());
 }
 
@@ -67,35 +72,86 @@ std::string print_yaml_location(ryml::Location const& loc) {
     throw_yaml_error(msg, err.ymlloc);
 }
 
-[[noreturn]] void yaml_error_visit(c4::csubstr msg, const ryml::ErrorDataVisit& err, void*) {
-    throw_yaml_error(msg, err.cpploc);
+// A value that is valid YAML but does not convert; the caller prints the node's location.
+[[noreturn]] void yaml_error_visit(c4::csubstr msg, const ryml::ErrorDataVisit&, void*) {
+    msg = msg.trimr('\n');
+    throw std::runtime_error(std::string(msg.str, msg.len));
 }
 
 void print_location(ryml::ConstNodeRef node, ryml::Parser& parser) {
-    std::cerr << print_yaml_location(node.location(parser)) << std::endl;
+    if (node.invalid()) {
+        std::cerr << std::endl;
+        return;
+    }
+    // Node locations count from 0, unlike those passed to the error callback.
+    auto loc = node.location(parser);
+    loc.line += 1;
+    loc.col += 1;
+    std::cerr << print_yaml_location(loc) << std::endl;
+}
+
+// The kernel resolves ".." from the physical directory, not from the symlinked one the prompt shows.
+// A missing path is not normalized: dropping "dir/.." would hide a missing dir.
+std::string describe_path(std::string const& path) {
+    std::error_code ec;
+    auto resolved = std::filesystem::canonical(path, ec);
+    if (ec) {
+        resolved = std::filesystem::absolute(path, ec);
+    }
+    if (ec or resolved.empty() or resolved == path) {
+        return path;
+    }
+    return path + " (" + resolved.string() + ")";
+}
+
+std::string reason_from_errno() {
+    return errno != 0 ? std::generic_category().message(errno) : "unknown reason";
 }
 
 void load_yaml_file(const std::string& filename, ryml::Parser* parser, ryml::Tree* t) {
-    std::ifstream file(filename);
-    if (!file.is_open()) {
-        throw std::runtime_error("Could not open file: " + filename);
+    std::error_code ec;
+    auto status = std::filesystem::status(filename, ec);
+    if (ec) {
+        throw std::runtime_error("Cannot open config file: " + ec.message());
+    }
+    if (std::filesystem::is_directory(status)) {
+        throw std::runtime_error("Cannot read config file: " +
+                                 std::make_error_code(std::errc::is_a_directory).message());
     }
 
-    std::stringstream buffer;
-    buffer << file.rdbuf();
-    std::string file_content = buffer.str();
+    // iostreams carry no error code; the reason for a denied open or a failed read is errno, where the library sets it.
+    errno = 0;
+    std::ifstream file(filename);
+    if (not file.is_open()) {
+        throw std::runtime_error("Cannot open config file: " + reason_from_errno());
+    }
+    std::string file_content;
+    try {
+        file_content.assign(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
+    } catch (std::ios_base::failure const&) {
+        throw std::runtime_error("Cannot read config file: " + reason_from_errno());
+    }
 
     parse_in_arena(parser, ryml::to_csubstr(filename), ryml::to_csubstr(file_content), t);
 }
 
 template <class T> c4::yml::ConstNodeRef decode(c4::yml::ConstNodeRef const& node, T& rhs) {
     using namespace charge_bridge::utilities;
-    node >> rhs;
+    read_value(node, rhs);
     return node;
 }
 
+// ryml's own map check would fail on lookup inside a scalar, without naming the key.
+void require_block(c4::yml::ConstNodeRef node, std::string const& name, ryml::Parser& parser) {
+    if (not node.invalid() and not node.is_map()) {
+        std::cerr << name << " must be a block of settings" << std::flush;
+        print_location(node, parser);
+        throw std::runtime_error("");
+    }
+}
+
 std::pair<std::string, c4::yml::ConstNodeRef> find_node(c4::yml::NodeRef& config, std::string const& main,
-                                                        std::string const& sub) {
+                                                        std::string const& sub, ryml::Parser& parser) {
     auto main_str = ryml::to_csubstr(main);
     auto node_str = main;
     c4::yml::ConstNodeRef node;
@@ -103,6 +159,7 @@ std::pair<std::string, c4::yml::ConstNodeRef> find_node(c4::yml::NodeRef& config
         node_str = node_str + "::" + sub;
         auto sub_str = ryml::to_csubstr(sub);
         node = config.find_child(main_str);
+        require_block(node, main, parser);
         if (not node.invalid()) {
             node = config.find_child(main_str).find_child(sub_str);
         }
@@ -123,7 +180,8 @@ bool get_node_impl(c4::yml::ConstNodeRef node, ryml::Parser& parser, std::string
         return true;
     } catch (std::exception const& e) {
         std::cerr << "Cannot parse config: " << node_str << std::endl;
-        std::cerr << e.what() << std::endl;
+        std::cerr << e.what() << std::flush;
+        print_location(node, parser);
     } catch (charge_bridge::utilities::yml_node_error const& e) {
         std::cerr << "Error source: \n"
                   << "  parent " << node_str << "\n"
@@ -149,32 +207,36 @@ namespace charge_bridge::utilities {
 void parse_config_impl(c4::yml::NodeRef& config, charge_bridge_config& c, std::filesystem::path const& config_path,
                        ryml::Parser& parser) {
     auto get_node = [&config, &parser](auto& data, std::string const& main, std::string const& sub = "") {
-        auto [node_str, node] = find_node(config, main, sub);
+        auto [node_str, node] = find_node(config, main, sub, parser);
+        auto block = config.find_child(ryml::to_csubstr(main));
+        if (node.invalid() and not sub.empty() and not block.invalid()) {
+            std::cerr << "Node not found: " << node_str << ", missing from the block at" << std::flush;
+            print_location(block, parser);
+            throw std::runtime_error("");
+        }
         get_node_impl(node, parser, node_str, data);
     };
 
-    auto get_node_or_default = [&get_node, &config](auto& data, std::string const& main, std::string const& sub,
-                                                    auto fallback) {
-        auto [node_str, node] = find_node(config, main, sub);
+    // Only an absent key falls back: a present one that cannot be decoded is a broken config.
+    auto get_node_or_default = [&get_node, &config, &parser](auto& data, std::string const& main,
+                                                             std::string const& sub, auto fallback) {
+        auto [node_str, node] = find_node(config, main, sub, parser);
         if (node.invalid()) {
             data = fallback;
             return;
         }
-        try {
-            get_node(data, main, sub);
-        } catch (...) {
-            data = fallback;
-        }
+        get_node(data, main, sub);
     };
 
-    auto get_block = [&config, &c](std::string const& block, auto& block_cfg, auto const& ftor) {
+    auto get_block = [&config, &c, &get_node, &parser](std::string const& block, auto& block_cfg, auto const& ftor) {
         bool enable = false;
         auto block_str = ryml::to_csubstr(block);
+        require_block(config.find_child(block_str), block, parser);
         if (not config.find_child(block_str).invalid()) {
             if (config[block_str].find_child("enable").invalid()) {
                 enable = true;
             } else {
-                decode(config[block_str]["enable"], enable);
+                get_node(enable, block, "enable");
             }
         }
         if (enable) {
@@ -185,25 +247,22 @@ void parse_config_impl(c4::yml::NodeRef& config, charge_bridge_config& c, std::f
         }
     };
 
-    // True when the key exists at all, which is what tells a configured value from an absent one:
-    // get_node_or_default cannot, because it hands back the fallback either way.
-    auto has_node = [&config](std::string const& main, std::string const& sub = "") {
-        auto [node_str, node] = find_node(config, main, sub);
+    auto has_node = [&config, &parser](std::string const& main, std::string const& sub = "") {
+        auto [node_str, node] = find_node(config, main, sub, parser);
         (void)node_str;
         return not node.invalid();
     };
 
-    // Like get_node_or_default, except that a key which IS present must decode: get_node_or_default
-    // swallows a decode failure and hands back the fallback, which turns a broken value (a map or a
-    // sequence where a scalar belongs) into a silent default. Present-but-undecodable is a broken
-    // config, not an absent one.
-    auto get_node_if_present = [&get_node, &has_node](auto& data, std::string const& main, std::string const& sub,
-                                                      auto fallback) {
-        if (has_node(main, sub)) {
-            get_node(data, main, sub);
-        } else {
-            data = fallback;
-        }
+    auto print_location_of = [&config, &parser](std::string const& main, std::string const& sub) {
+        print_location(find_node(config, main, sub, parser).second, parser);
+    };
+
+    auto reject_value = [&print_location_of](std::string const& main, std::string const& sub,
+                                             std::string const& allowed, std::string const& value) {
+        std::cerr << "Configuration error: " << main << "::" << sub << " must be " << allowed << ", got '" << value
+                  << "'" << std::flush;
+        print_location_of(main, sub);
+        throw std::runtime_error("");
     };
 
     get_node(c.cb_name, "charge_bridge", "name");
@@ -220,7 +279,8 @@ void parse_config_impl(c4::yml::NodeRef& config, charge_bridge_config& c, std::f
             std::cerr << "Configuration error: charge_bridge::ip '" << c.cb_remote
                       << "' is not a valid discovery endpoint; expected ANY_EVSE, ANY_EV or ANY, optionally "
                          "followed by an interface list in parentheses, e.g. ANY_EVSE(eth0) or ANY_EV(!wlan0)"
-                      << std::endl;
+                      << std::flush;
+            print_location_of("charge_bridge", "ip");
             throw std::runtime_error("");
         }
     } else {
@@ -234,9 +294,6 @@ void parse_config_impl(c4::yml::NodeRef& config, charge_bridge_config& c, std::f
     // configured EV station from raising a permanent role alarm. Read before the blocks below because
     // it derives the plc.station_id default.
     if (has_node("charge_bridge", "type")) {
-        // get_node, not get_node_or_default: a key that is present but cannot be decoded (a map or a
-        // sequence where a string belongs) is a broken config, not an absent one, and must not fall
-        // back to a silent default.
         std::string type;
         get_node(type, "charge_bridge", "type");
         if (type == "EVSE") {
@@ -244,9 +301,7 @@ void parse_config_impl(c4::yml::NodeRef& config, charge_bridge_config& c, std::f
         } else if (type == "EV") {
             c.type = cb_role::ev;
         } else {
-            std::cerr << "Configuration error: charge_bridge::type must be 'EVSE' or 'EV', got '" << type << "'"
-                      << std::endl;
-            throw std::runtime_error("");
+            reject_value("charge_bridge", "type", "'EVSE' or 'EV'", type);
         }
     } else {
         c.type = cb_role::unspecified;
@@ -298,30 +353,26 @@ void parse_config_impl(c4::yml::NodeRef& config, charge_bridge_config& c, std::f
         // MMEs must cross the tap before any link exists. "firmware" mirrors the MCU's reported SPE
         // PHY state onto the carrier (MCS) and opts the MCU into sending link-status reports.
         std::string carrier;
-        get_node_if_present(carrier, main, "carrier", std::string("none"));
+        get_node_or_default(carrier, main, "carrier", std::string("none"));
         if (carrier == "none") {
             cfg.carrier = carrier_mode::none;
         } else if (carrier == "firmware") {
             cfg.carrier = carrier_mode::firmware;
         } else {
-            std::cerr << "Configuration error: plc::carrier must be 'none' or 'firmware', got '" << carrier << "'"
-                      << std::endl;
-            throw std::runtime_error("");
+            reject_value(main, "carrier", "'none' or 'firmware'", carrier);
         }
 
         // Optional: what to do when the kernel has no TUNSETCARRIER (pre-5.0) in "firmware" mode.
         // "fail" (the default) refuses to start the plc bridge, "warn" keeps bridging with the
         // carrier permanently on and degraded supervision. Ignored in "none" mode.
         std::string fallback;
-        get_node_if_present(fallback, main, "carrier_fallback", std::string("fail"));
+        get_node_or_default(fallback, main, "carrier_fallback", std::string("fail"));
         if (fallback == "fail") {
             cfg.carrier_fallback_policy = carrier_fallback::fail;
         } else if (fallback == "warn") {
             cfg.carrier_fallback_policy = carrier_fallback::warn;
         } else {
-            std::cerr << "Configuration error: plc::carrier_fallback must be 'fail' or 'warn', got '" << fallback << "'"
-                      << std::endl;
-            throw std::runtime_error("");
+            reject_value(main, "carrier_fallback", "'fail' or 'warn'", fallback);
         }
 
         // Optional: additionally gate the carrier on basic-signalling state. "none" (the default)
@@ -329,15 +380,13 @@ void parse_config_impl(c4::yml::NodeRef& config, charge_bridge_config& c, std::f
         // status reports a mated CE state, so the netdev's link exists exactly while a vehicle is
         // physically present. Requires "firmware" mode and a BSP block (validated below).
         std::string gate;
-        get_node_if_present(gate, main, "carrier_gate", std::string("none"));
+        get_node_or_default(gate, main, "carrier_gate", std::string("none"));
         if (gate == "none") {
             cfg.gate = carrier_gate::none;
         } else if (gate == "ce_mated") {
             cfg.gate = carrier_gate::ce_mated;
         } else {
-            std::cerr << "Configuration error: plc::carrier_gate must be 'none' or 'ce_mated', got '" << gate << "'"
-                      << std::endl;
-            throw std::runtime_error("");
+            reject_value(main, "carrier_gate", "'none' or 'ce_mated'", gate);
         }
     });
 
@@ -349,8 +398,11 @@ void parse_config_impl(c4::yml::NodeRef& config, charge_bridge_config& c, std::f
     if (wants_both && not discovery_sentinel(c.cb_remote).has_value()) {
         std::cerr << "Configuration error: Cannot enable EVSE and EV BSP at the same time (both are only "
                      "allowed with an ANY* mDNS endpoint, where the discovered board selects the role)"
-                  << std::endl;
-        throw std::exception();
+                  << std::flush;
+        print_location_of("ev_bsp", "enable");
+        std::cerr << "and" << std::flush;
+        print_location_of("evse_bsp", "enable");
+        throw std::runtime_error("");
     }
 
     get_block("evse_bsp", c.bsp, [&](auto& cfg, auto const& main) {
@@ -393,7 +445,8 @@ void parse_config_impl(c4::yml::NodeRef& config, charge_bridge_config& c, std::f
     // would leave c.io unset and send a zeroed GPIO config to the MCU (all pins disabled, IO MQTT
     // topics dead) with no warning.
     if (not config.find_child(ryml::to_csubstr("gpio")).invalid()) {
-        std::cerr << "Config error: the 'gpio' section was renamed to 'io'; please update the config" << std::endl;
+        std::cerr << "Config error: the 'gpio' section was renamed to 'io'; please update the config" << std::flush;
+        print_location(config.find_child(ryml::to_csubstr("gpio")), parser);
         throw std::runtime_error("");
     }
 
@@ -443,7 +496,7 @@ void parse_config_impl(c4::yml::NodeRef& config, charge_bridge_config& c, std::f
         if (c.can0) {
             get_node(cfg.cb_config.can, "can_0");
         }
-        get_node(cfg.cb_config.plc_powersaving_mode, "plc", "powersaving_mode");
+        get_node_or_default(cfg.cb_config.plc_powersaving_mode, "plc", "powersaving_mode", 0);
 
         // The role the MCU latches from the first config heartbeat after it boots.
         cfg.cb_config.cb_type = to_wire(c.type);
@@ -477,7 +530,8 @@ void parse_config_impl(c4::yml::NodeRef& config, charge_bridge_config& c, std::f
             // would be station 0 - the coordinator seat, which is exactly what a typo must not be able
             // to hand out silently.
             std::cerr << "Configuration error: plc::station_id " << station.station_id
-                      << " is not a PLCA node id (0..7, or -1 for collision detection)" << std::endl;
+                      << " is not a PLCA node id (0..7, or -1 for collision detection)" << std::flush;
+            print_location_of("plc", "station_id");
             break;
         case station_id_issue::none:
             break;
@@ -502,7 +556,8 @@ void parse_config_impl(c4::yml::NodeRef& config, charge_bridge_config& c, std::f
     // status and the carrier could never be raised at all. Reject the configuration instead of
     // silently keeping the link down.
     if (c.plc.has_value() and c.plc->carrier == carrier_mode::firmware and not c.heartbeat.has_value()) {
-        std::cerr << "Configuration error: plc::carrier: firmware requires an enabled 'heartbeat' block" << std::endl;
+        std::cerr << "Configuration error: plc::carrier: firmware requires an enabled 'heartbeat' block" << std::flush;
+        print_location_of("plc", "carrier");
         throw std::runtime_error("");
     }
 
@@ -512,13 +567,15 @@ void parse_config_impl(c4::yml::NodeRef& config, charge_bridge_config& c, std::f
     // silently does nothing is a misconfiguration, not a default.
     if (c.plc.has_value() and c.plc->gate not_eq carrier_gate::none) {
         if (c.plc->carrier not_eq carrier_mode::firmware) {
-            std::cerr << "Configuration error: plc::carrier_gate requires plc::carrier: firmware" << std::endl;
+            std::cerr << "Configuration error: plc::carrier_gate requires plc::carrier: firmware" << std::flush;
+            print_location_of("plc", "carrier_gate");
             throw std::runtime_error("");
         }
         if (not c.bsp.has_value()) {
             std::cerr << "Configuration error: plc::carrier_gate: ce_mated requires an enabled 'evse_bsp' or "
                          "'ev_bsp' block (the CE state rides in the BSP status packet)"
-                      << std::endl;
+                      << std::flush;
+            print_location_of("plc", "carrier_gate");
             throw std::runtime_error("");
         }
     }
@@ -598,15 +655,29 @@ charge_bridge_config set_config_placeholders(charge_bridge_config const& src, ch
 std::vector<charge_bridge_config> parse_config_multi(std::string const& config_file) {
     const static RymlCallbackInitializer ryml_callback_initializer;
 
+    // Outside the try, so that a yml_node_error can still be located in the tree.
+    ryml::EventHandlerTree evt_handler = {};
+    ryml::Parser parser(&evt_handler, ryml::ParserOptions().locations(true));
+    ryml::Tree config_tree;
     try {
-        ryml::EventHandlerTree evt_handler = {};
-        ryml::Parser parser(&evt_handler, ryml::ParserOptions().locations(true));
-        ryml::Tree config_tree;
         load_yaml_file(config_file, &parser, &config_tree);
         c4::yml::NodeRef config = config_tree.rootref();
-        if (config.invalid()) {
-            std::cerr << "Config file not found: " << config_file << std::endl;
-            return {};
+        // A leading "---" makes the root a stream that holds the mapping as its only document.
+        if (not config.invalid() and config.is_stream()) {
+            std::vector<c4::yml::NodeRef> docs;
+            for (auto doc : config.children()) {
+                if (doc.is_container() or (doc.has_val() and not doc.val_is_null())) {
+                    docs.push_back(doc);
+                }
+            }
+            if (docs.size() > 1) {
+                throw std::runtime_error("Config file holds " + std::to_string(docs.size()) +
+                                         " YAML documents, expected one");
+            }
+            config = docs.empty() ? c4::yml::NodeRef() : docs.front();
+        }
+        if (config.invalid() or not config.is_map()) {
+            throw std::runtime_error("Config file is empty or not a YAML mapping");
         }
         charge_bridge_config base_config;
         parse_config_impl(config, base_config, config_file, parser);
@@ -615,8 +686,20 @@ std::vector<charge_bridge_config> parse_config_multi(std::string const& config_f
         if (ip_list_node.invalid()) {
             return {base_config};
         }
+        if (not ip_list_node.is_seq() or ip_list_node.num_children() == 0) {
+            std::cerr << "charge_bridge_ip_list must be a non-empty list of addresses" << std::flush;
+            print_location(ip_list_node, parser);
+            throw std::runtime_error("");
+        }
         std::vector<std::string> ip_list;
-        ip_list_node >> ip_list;
+        for (auto item : ip_list_node.children()) {
+            if (item.is_container() or not item.has_val() or item.val_is_null() or item.val().empty()) {
+                std::cerr << "charge_bridge_ip_list entries must be addresses" << std::flush;
+                print_location(item, parser);
+                throw std::runtime_error("");
+            }
+            ip_list.emplace_back(item.val().str, item.val().len);
+        }
         std::vector<charge_bridge_config> cb_config_list(ip_list.size());
 
         // The "##" placeholder counts from 1, not 0: it is also used as the last octet of the
@@ -626,9 +709,18 @@ std::vector<charge_bridge_config> parse_config_multi(std::string const& config_f
         }
 
         return cb_config_list;
+    } catch (std::exception const& e) {
+        // Semantic errors were already printed and carry an empty message.
+        if (e.what()[0] != '\0') {
+            std::cerr << e.what() << std::endl;
+        }
+    } catch (yml_node_error const& e) {
+        std::cerr << e.m_msg << std::flush;
+        print_location(e.m_node, parser);
     } catch (...) {
-        std::cerr << "FAILED to parse configuration!" << std::endl;
+        std::cerr << "Unexpected error" << std::endl;
     }
+    std::cerr << "FAILED to parse configuration " << describe_path(config_file) << std::endl;
     return {};
 }
 

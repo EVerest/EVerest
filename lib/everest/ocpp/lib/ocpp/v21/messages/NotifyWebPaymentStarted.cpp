@@ -8,6 +8,8 @@
 #include <ostream>
 #include <string>
 
+#include <ocpp/common/json_number.hpp>
+
 using json = nlohmann::json;
 
 namespace ocpp {
@@ -31,8 +33,8 @@ void to_json(json& j, const NotifyWebPaymentStartedRequest& k) {
 
 void from_json(const json& j, NotifyWebPaymentStartedRequest& k) {
     // the required parts of the message
-    k.evseId = j.at("evseId");
-    k.timeout = j.at("timeout");
+    k.evseId = ocpp::integer_from_json(j.at("evseId"));
+    k.timeout = ocpp::integer_from_json(j.at("timeout"));
 
     // the optional parts of the message
     if (j.contains("customData")) {

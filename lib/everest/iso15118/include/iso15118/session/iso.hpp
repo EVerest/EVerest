@@ -104,7 +104,13 @@ public:
 
     void request_shutdown();
 
+    void mark_unplugged() {
+        unplugged = true;
+    }
+
 private:
+    // Only a session paused by SessionStopReq is resumable ([V2G2-741], [V2G20-1541]).
+    void release_stale_pause_contexts();
     // The TCP connection may still be open while we wait for the EV to close it first.
     bool session_over() const;
     void finish_session();
@@ -149,6 +155,7 @@ private:
     bool driver_stopped{false};
     // The controller then drops the communication-setup timeout (is_v2g_session_established()).
     bool v2g_session_established{false};
+    bool unplugged{false};
     bool finished_reported{false};
     // Deadline for the EV-first TCP close, after which we close the connection ourselves.
     std::optional<TimePoint> connection_close_deadline{std::nullopt};

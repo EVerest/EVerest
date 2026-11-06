@@ -6,12 +6,12 @@
 namespace module {
 
 void InfyPower_BEG1K075G::init() {
-    // open DCDC CAN device
-    if (!acdc.open_device(config.can_device.c_str())) {
-        EVLOG_AND_THROW(EVEXCEPTION(Everest::EverestConfigError, "Could not open CAN interface ", config.can_device));
-    }
-
     invoke_init(*p_main);
+
+    // Opened after the implementation subscribed to the driver signals, so it sees the first connection state.
+    if (!acdc.open_device(config.can_device)) {
+        EVLOG_AND_THROW(EVEXCEPTION(Everest::EverestConfigError, "Invalid CAN interface name ", config.can_device));
+    }
 }
 
 void InfyPower_BEG1K075G::ready() {

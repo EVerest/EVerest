@@ -289,9 +289,16 @@ RationalNumber from_float(float in) {
         out.value = 0;
         return out;
     }
-    out.exponent = static_cast<int8_t>(floor(log10(fabs(in))));
-    out.exponent -= 3; // add 3 digits of precision
-    out.value = static_cast<int16_t>(in * pow(10, -out.exponent));
+    // Keep 4 significant digits.
+    auto exponent = static_cast<int8_t>(std::floor(std::log10(std::fabs(in))) - 3);
+    auto value = std::round(in * std::pow(10.0, -exponent));
+    // Rounding can carry into a fifth digit, as 9999.6 does.
+    if (std::fabs(value) >= 10000.0) {
+        value /= 10.0;
+        ++exponent;
+    }
+    out.exponent = exponent;
+    out.value = static_cast<int16_t>(value);
     return out;
 }
 

@@ -10,8 +10,8 @@
 #include <arpa/inet.h>
 
 #include <iso15118/io/connection_abstract.hpp>
-#include <iso15118/io/sdp.hpp>
 #include <iso15118/io/sdp_packet.hpp>
+#include <iso15118/v2gtp/sdp.hpp>
 
 namespace iso15118::test {
 
@@ -56,12 +56,14 @@ public:
     }
 
     bool is_secure() const override {
-        return false;
+        return secure;
     }
 
     std::optional<io::sha512_hash_t> get_vehicle_cert_hash() const override {
-        return std::nullopt;
+        return vehicle_cert_hash;
     }
+
+    std::optional<io::sha512_hash_t> vehicle_cert_hash;
 
     // Inject a connection event through the stored callback.
     void fire(io::ConnectionEvent event) {
@@ -71,7 +73,7 @@ public:
     }
 
     // Queue a full V2GTP frame (8-byte header + payload) for read() to deliver.
-    void queue_v2gtp_packet(io::v2gtp::PayloadType payload_type, const uint8_t* payload, std::size_t payload_len) {
+    void queue_v2gtp_packet(v2gtp::PayloadType payload_type, const uint8_t* payload, std::size_t payload_len) {
         read_buffer.resize(io::SdpPacket::V2GTP_HEADER_SIZE + payload_len);
         read_buffer[0] = io::SDP_PROTOCOL_VERSION;
         read_buffer[1] = io::SDP_INVERSE_PROTOCOL_VERSION;
@@ -97,6 +99,7 @@ public:
 
     io::ReadResult next_read_result{};
     bool closed{false};
+    bool secure{false};
     std::vector<uint8_t> written;
     bool half_closed{false};
     bool half_close_ready{true};

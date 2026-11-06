@@ -481,8 +481,8 @@ void evse_managerImpl::handle_withdraw_authorization() {
     this->mod->charger->deauthorize();
 };
 
-bool evse_managerImpl::handle_reserve(int& reservation_id) {
-    return mod->reserve(reservation_id, true);
+bool evse_managerImpl::handle_reserve(types::evse_manager::ReserveRequest& request) {
+    return mod->reserve(request, true);
 };
 
 void evse_managerImpl::handle_cancel_reservation() {

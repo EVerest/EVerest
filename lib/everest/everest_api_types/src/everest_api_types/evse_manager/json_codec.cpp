@@ -11,10 +11,16 @@
 #include "powermeter/API.hpp"
 #include "powermeter/codec.hpp"
 #include "powermeter/json_codec.hpp"
+#include "utilities/date_time.hpp"
+#include "utilities/json_codec_helpers.hpp"
+
+#include <cstdint>
 #include <stdexcept>
 #include <string>
 
 namespace everest::lib::API::V1_0::types::evse_manager {
+
+using utilities::json_number;
 
 void to_json(json& j, StopTransactionReason const& k) noexcept {
     switch (k) {
@@ -543,6 +549,9 @@ void to_json(json& j, SessionEvent const& k) noexcept {
     if (k.source) {
         j["source"] = k.source.value();
     }
+    if (k.reservation) {
+        j["reservation"] = k.reservation.value();
+    }
 }
 
 void from_json(json const& j, SessionEvent& k) {
@@ -575,6 +584,9 @@ void from_json(json const& j, SessionEvent& k) {
     }
     if (j.contains("source")) {
         k.source.emplace(j.at("source"));
+    }
+    if (j.contains("reservation")) {
+        k.reservation.emplace(j.at("reservation"));
     }
 }
 
@@ -666,55 +678,64 @@ void to_json(json& j, EVInfo const& k) noexcept {
 
 void from_json(json const& j, EVInfo& k) {
     if (j.contains("soc")) {
-        k.soc.emplace(j.at("soc"));
+        k.soc.emplace(json_number<float>(j.at("soc")));
     }
     if (j.contains("present_voltage")) {
-        k.present_voltage.emplace(j.at("present_voltage"));
+        k.present_voltage.emplace(json_number<float>(j.at("present_voltage")));
     }
     if (j.contains("present_current")) {
-        k.present_current.emplace(j.at("present_current"));
+        k.present_current.emplace(json_number<float>(j.at("present_current")));
     }
     if (j.contains("target_voltage")) {
-        k.target_voltage.emplace(j.at("target_voltage"));
+        k.target_voltage.emplace(json_number<float>(j.at("target_voltage")));
     }
     if (j.contains("target_current")) {
-        k.target_current.emplace(j.at("target_current"));
+        k.target_current.emplace(json_number<float>(j.at("target_current")));
     }
     if (j.contains("maximum_current_limit")) {
-        k.maximum_current_limit.emplace(j.at("maximum_current_limit"));
+        k.maximum_current_limit.emplace(json_number<float>(j.at("maximum_current_limit")));
     }
     if (j.contains("minimum_current_limit")) {
-        k.minimum_current_limit.emplace(j.at("minimum_current_limit"));
+        k.minimum_current_limit.emplace(json_number<float>(j.at("minimum_current_limit")));
     }
     if (j.contains("maximum_voltage_limit")) {
-        k.maximum_voltage_limit.emplace(j.at("maximum_voltage_limit"));
+        k.maximum_voltage_limit.emplace(json_number<float>(j.at("maximum_voltage_limit")));
     }
     if (j.contains("maximum_power_limit")) {
-        k.maximum_power_limit.emplace(j.at("maximum_power_limit"));
+        k.maximum_power_limit.emplace(json_number<float>(j.at("maximum_power_limit")));
     }
     if (j.contains("estimated_time_full")) {
-        k.estimated_time_full.emplace(j.at("estimated_time_full"));
+        k.estimated_time_full.emplace(date_time_from_json(j.at("estimated_time_full")));
     }
     if (j.contains("departure_time")) {
-        k.departure_time.emplace(j.at("departure_time"));
+        k.departure_time.emplace(date_time_from_json(j.at("departure_time")));
     }
     if (j.contains("estimated_time_bulk")) {
-        k.estimated_time_bulk.emplace(j.at("estimated_time_bulk"));
+        k.estimated_time_bulk.emplace(date_time_from_json(j.at("estimated_time_bulk")));
     }
     if (j.contains("evcc_id")) {
         k.evcc_id.emplace(j.at("evcc_id"));
     }
     if (j.contains("remaining_energy_needed")) {
-        k.remaining_energy_needed.emplace(j.at("remaining_energy_needed"));
+        k.remaining_energy_needed.emplace(json_number<float>(j.at("remaining_energy_needed")));
     }
     if (j.contains("battery_capacity")) {
-        k.battery_capacity.emplace(j.at("battery_capacity"));
+        k.battery_capacity.emplace(json_number<float>(j.at("battery_capacity")));
     }
     if (j.contains("battery_full_soc")) {
-        k.battery_full_soc.emplace(j.at("battery_full_soc"));
+        k.battery_full_soc.emplace(json_number<float>(j.at("battery_full_soc")));
     }
     if (j.contains("battery_bulk_soc")) {
-        k.battery_bulk_soc.emplace(j.at("battery_bulk_soc"));
+        k.battery_bulk_soc.emplace(json_number<float>(j.at("battery_bulk_soc")));
+    }
+    if (k.soc.has_value() and (k.soc.value() < 0 or k.soc.value() > 100)) {
+        throw std::invalid_argument("EVInfo: soc out of range");
+    }
+    if (k.battery_full_soc.has_value() and (k.battery_full_soc.value() < 0 or k.battery_full_soc.value() > 100)) {
+        throw std::invalid_argument("EVInfo: battery_full_soc out of range");
+    }
+    if (k.battery_bulk_soc.has_value() and (k.battery_bulk_soc.value() < 0 or k.battery_bulk_soc.value() > 100)) {
+        throw std::invalid_argument("EVInfo: battery_bulk_soc out of range");
     }
 }
 
@@ -1327,7 +1348,10 @@ void to_json(json& j, EnableDisableSource const& k) noexcept {
 void from_json(json const& j, EnableDisableSource& k) {
     k.enable_source = j.at("enable_source");
     k.enable_state = j.at("enable_state");
-    k.enable_priority = j.at("enable_priority");
+    k.enable_priority = json_number<int32_t>(j.at("enable_priority"));
+    if (k.enable_priority < 0 or k.enable_priority > 10000) {
+        throw std::invalid_argument("EnableDisableSource: enable_priority must be between 0 and 10000");
+    }
 }
 
 void to_json(json& j, EnableDisableRequest const& k) noexcept {
@@ -1338,7 +1362,7 @@ void to_json(json& j, EnableDisableRequest const& k) noexcept {
 }
 
 void from_json(json const& j, EnableDisableRequest& k) {
-    k.connector_id = j.at("connector_id");
+    k.connector_id = json_number<int32_t>(j.at("connector_id"));
     k.source = j.at("source");
 }
 
@@ -1474,6 +1498,28 @@ void from_json(json const& j, EvseStateEnum& k) {
                             " could not be converted to enum of type API_V1_0_TYPES_EVSE_MANAGER_EvseStateEnum");
 }
 
+void to_json(json& j, Reservation const& k) noexcept {
+    j = json{
+        {"id", k.id},
+        {"id_token", k.id_token},
+        {"expiry_time", k.expiry_time},
+    };
+
+    if (k.parent_id_token.has_value()) {
+        j["parent_id_token"] = k.parent_id_token.value();
+    }
+}
+
+void from_json(json const& j, Reservation& k) {
+    k.id = j.at("id");
+    k.id_token = j.at("id_token");
+    k.expiry_time = j.at("expiry_time");
+
+    if (j.contains("parent_id_token")) {
+        k.parent_id_token = j.at("parent_id_token");
+    }
+}
+
 void to_json(json& j, SessionInfo const& k) noexcept {
     j = json{
         {"state", k.state},
@@ -1503,6 +1549,9 @@ void to_json(json& j, SessionInfo const& k) noexcept {
     if (k.transaction_end_time.has_value()) {
         j["transaction_end_time"] = k.transaction_end_time.value();
     }
+    if (k.reservation.has_value()) {
+        j["reservation"] = k.reservation.value();
+    }
 }
 
 void from_json(json const& j, SessionInfo& k) {
@@ -1531,6 +1580,9 @@ void from_json(json const& j, SessionInfo& k) {
     }
     if (j.contains("transaction_end_time")) {
         k.transaction_end_time = j.at("transaction_end_time");
+    }
+    if (j.contains("reservation")) {
+        k.reservation.emplace(j.at("reservation"));
     }
 }
 } // namespace everest::lib::API::V1_0::types::evse_manager

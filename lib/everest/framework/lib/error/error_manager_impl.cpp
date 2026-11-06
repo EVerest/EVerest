@@ -11,11 +11,29 @@
 
 #include <everest/logging.hpp>
 
+#include <cstddef>
 #include <list>
 #include <memory>
 
 namespace Everest {
 namespace error {
+
+namespace {
+/// \returns the number of bytes of the first \p max_chars UTF-8 code points of \p str
+std::size_t utf8_prefix_size(const std::string& str, std::size_t max_chars) {
+    std::size_t chars = 0;
+    for (std::size_t i = 0; i < str.size(); ++i) {
+        const auto is_continuation_byte = (static_cast<unsigned char>(str[i]) & 0xC0) == 0x80;
+        if (not is_continuation_byte) {
+            if (chars == max_chars) {
+                return i;
+            }
+            ++chars;
+        }
+    }
+    return str.size();
+}
+} // namespace
 
 ErrorManagerImpl::ErrorManagerImpl(std::shared_ptr<ErrorTypeMap> error_type_map_,
                                    std::shared_ptr<ErrorDatabase> error_database_,
@@ -39,6 +57,18 @@ ErrorManagerImpl::ErrorManagerImpl(std::shared_ptr<ErrorTypeMap> error_type_map_
 }
 
 void ErrorManagerImpl::raise_error(const Error& error) {
+    if (error.trigger_value.has_value()) {
+        const auto& text_repr = error.trigger_value.value().text_repr;
+        const auto prefix_size = utf8_prefix_size(text_repr, TriggerValue::text_repr_max_length);
+        if (prefix_size < text_repr.size()) {
+            EVLOG_warning << "Trigger value of error type " << error.type << " exceeds "
+                          << TriggerValue::text_repr_max_length << " characters, truncated.";
+            Error truncated = error;
+            truncated.trigger_value.value().text_repr.resize(prefix_size);
+            raise_error(truncated);
+            return;
+        }
+    }
     if (validate_error_types) {
         if (std::find(allowed_error_types.begin(), allowed_error_types.end(), error.type) ==
             allowed_error_types.end()) {

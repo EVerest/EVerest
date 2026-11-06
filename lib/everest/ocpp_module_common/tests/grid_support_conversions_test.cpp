@@ -5,10 +5,12 @@
 
 #include <cmath>
 #include <limits>
+#include <vector>
 
 #include <everest/ocpp_module_common/conversions.hpp>
 
 #include <generated/types/grid_support.hpp>
+#include <generated/types/iso15118.hpp>
 #include <ocpp/v2/ocpp_enums.hpp>
 #include <ocpp/v21/messages/NotifyDERAlarm.hpp>
 #include <ocpp/v21/messages/SetDERControl.hpp>
@@ -254,6 +256,34 @@ TEST(GridSupportConversions, TranslateActiveControlsSkipsUnmappedAndContinues) {
     EXPECT_EQ(directives.at(0).directive_type, gs::DirectiveType::VoltVar);
     EXPECT_EQ(directives.at(1).id, "good-2");
     EXPECT_EQ(directives.at(1).directive_type, gs::DirectiveType::VoltWatt);
+}
+
+types::iso15118::ChargingNeeds make_charging_needs(std::vector<gs::DirectiveType> ev_supported) {
+    types::iso15118::ChargingNeeds needs{};
+    needs.requested_energy_transfer = types::iso15118::EnergyTransferMode::AC_three_phase_core;
+    types::iso15118::DERChargingParameters der{};
+    der.ev_supported_dercontrol = std::move(ev_supported);
+    needs.der_charging_parameters = der;
+    return needs;
+}
+
+TEST(GridSupportConversions, ChargingNeedsWithOnlyFixedWattLeavesEvSupportedDERControlUnset) {
+    // OCPP evSupportedDERControl has minItems 1, so an all-unmappable list must not become an empty array.
+    const auto needs =
+        ocpp_module_common::conversions::to_ocpp_charging_needs(make_charging_needs({gs::DirectiveType::FixedWatt}));
+
+    ASSERT_TRUE(needs.derChargingParameters.has_value());
+    EXPECT_FALSE(needs.derChargingParameters->evSupportedDERControl.has_value());
+}
+
+TEST(GridSupportConversions, ChargingNeedsDropsFixedWattAndKeepsMappedControls) {
+    const auto needs = ocpp_module_common::conversions::to_ocpp_charging_needs(
+        make_charging_needs({gs::DirectiveType::FixedWatt, gs::DirectiveType::VoltVar}));
+
+    ASSERT_TRUE(needs.derChargingParameters.has_value());
+    ASSERT_TRUE(needs.derChargingParameters->evSupportedDERControl.has_value());
+    const std::vector<ocpp::v2::DERControlEnum> expected{ocpp::v2::DERControlEnum::VoltVar};
+    EXPECT_EQ(needs.derChargingParameters->evSupportedDERControl.value(), expected);
 }
 
 } // namespace

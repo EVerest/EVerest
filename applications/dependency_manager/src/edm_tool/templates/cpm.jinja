@@ -1,7 +1,6 @@
-set(ENV{EVEREST_EDM_WORKSPACE} {{ workspace["workspace"] }})
 set(CPM_USE_NAMED_CACHE_DIRECTORIES ON)
-{% for dep in checkout %}
-set(CPM_{{ dep["name"] }}_SOURCE "{{ dep["path"] }}")
+{% for local_source in local_sources %}
+set(CPM_{{ local_source["name"] }}_SOURCE "{{ local_source["path"] }}")
 {% endfor %}
 {% for name, value in dependencies.items() %}
 if("{{name}}" IN_LIST EVEREST_EXCLUDE_DEPENDENCIES)

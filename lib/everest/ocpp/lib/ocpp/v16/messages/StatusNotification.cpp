@@ -8,6 +8,8 @@
 #include <ostream>
 #include <string>
 
+#include <ocpp/common/json_number.hpp>
+
 using json = nlohmann::json;
 
 namespace ocpp {
@@ -41,7 +43,7 @@ void to_json(json& j, const StatusNotificationRequest& k) {
 
 void from_json(const json& j, StatusNotificationRequest& k) {
     // the required parts of the message
-    k.connectorId = j.at("connectorId");
+    k.connectorId = ocpp::integer_from_json(j.at("connectorId"));
     k.errorCode = conversions::string_to_charge_point_error_code(j.at("errorCode"));
     k.status = conversions::string_to_charge_point_status(j.at("status"));
 

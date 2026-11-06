@@ -8,6 +8,8 @@
 #include <ostream>
 #include <string>
 
+#include <ocpp/common/json_number.hpp>
+
 using json = nlohmann::json;
 
 namespace ocpp {
@@ -36,8 +38,8 @@ void from_json(const json& j, NotifyPeriodicEventStream& k) {
     for (const auto& val : j.at("data")) {
         k.data.push_back(val);
     }
-    k.id = j.at("id");
-    k.pending = j.at("pending");
+    k.id = ocpp::integer_from_json(j.at("id"));
+    k.pending = ocpp::integer_from_json(j.at("pending"));
     k.basetime = ocpp::DateTime(std::string(j.at("basetime")));
 
     // the optional parts of the message

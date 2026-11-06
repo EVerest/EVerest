@@ -381,9 +381,9 @@ bool evSerial::reset(const int reset_pin) {
 
     if (reset_pin > 0) {
         EVLOG_info << "Hard-resetting PhyVerso";
-        auto bsl_gpio = BSL_GPIO({.bank = 1, .pin = 12}, // BSL pins are unused here so keep defaults
-                                 {.bank = static_cast<uint8_t>(verso_config.conf.reset_gpio_bank),
-                                  .pin = static_cast<uint8_t>(verso_config.conf.reset_gpio_pin)});
+        auto bsl_gpio = BSL_GPIO({1, 12}, // BSL pins are unused here so keep defaults
+                                 {static_cast<uint8_t>(verso_config.conf.reset_gpio_bank),
+                                  static_cast<uint8_t>(verso_config.conf.reset_gpio_pin)});
         bsl_gpio.hard_reset(25);
     } else {
         // Try to soft reset phyVERSO controller to be in a known state

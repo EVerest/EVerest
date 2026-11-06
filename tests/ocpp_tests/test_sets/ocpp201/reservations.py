@@ -1,6 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright Pionix GmbH and Contributors to EVerest
 
+import asyncio
+import json
+from copy import deepcopy
 from datetime import datetime, timezone
 import pytest
 import logging
@@ -12,6 +15,8 @@ from everest.testing.ocpp_utils.charge_point_utils import wait_for_and_validate,
 from everest.testing.ocpp_utils.fixtures import charge_point_v201
 from everest.testing.core_utils.controller.test_controller_interface import TestController
 from everest.testing.core_utils._configuration.libocpp_configuration_helper import GenericOCPP2XConfigAdjustment
+from everest.testing.core_utils import EverestConfigAdjustmentStrategy
+from everest.testing.core_utils.everest_core import EverestCore
 from everest_test_utils import *
 
 from ocpp.v201.enums import (IdTokenEnumType as IdTokenTypeEnum, ReserveNowStatusEnumType, ConnectorStatusEnumType,
@@ -23,6 +28,67 @@ from ocpp.v201 import call_result as call_result201
 from validations import (
     validate_remote_start_stop_transaction, wait_for_callerror_and_validate)
 from ocpp.routing import on, create_route_map
+
+
+EVSE_MANAGER_CONSUMER_API_ID = "evse_manager_consumer_api_1"
+
+
+class EvseManagerConsumerApiConfigAdjustment(EverestConfigAdjustmentStrategy):
+    """Adds an evse_manager_consumer_API module for connector_1, so tests can observe its session_info."""
+
+    def adjust_everest_configuration(self, everest_config: dict) -> dict:
+        adjusted_config = deepcopy(everest_config)
+        adjusted_config["active_modules"][EVSE_MANAGER_CONSUMER_API_ID] = {
+            "module": "evse_manager_consumer_API",
+            "config_module": {"cfg_communication_check_to_s": 0, "cfg_heartbeat_interval_ms": 0},
+            "connections": {"evse_manager": [{"module_id": "connector_1", "implementation_id": "evse"}]},
+        }
+        return adjusted_config
+
+
+def subscribe_session_infos(everest_core: EverestCore, mqtt_client) -> list:
+    session_infos = []
+
+    def on_message(_client, _userdata, msg):
+        session_infos.append(json.loads(msg.payload))
+
+    mqtt_client.on_message = on_message
+    mqtt_client.subscribe(
+        f"{everest_core.mqtt_external_prefix}everest_api/1/evse_manager_consumer/"
+        f"{EVSE_MANAGER_CONSUMER_API_ID}/e2m/session_info")
+    return session_infos
+
+
+def reserved_for(reservation_id: int, id_token: str):
+    return lambda session_info: session_info.get("reserved") is True and \
+        session_info.get("reservation", {}).get("id") == reservation_id and \
+        session_info.get("reservation", {}).get("id_token") == id_token
+
+
+def not_reserved(session_info: dict) -> bool:
+    return session_info.get("reserved") is False and "reservation" not in session_info
+
+
+async def reserve_now_accepted(charge_point: ChargePoint201, test_utility: TestUtility, reservation_id: int,
+                               id_token: str, evse_id: int) -> bool:
+    await charge_point.reserve_now_req(
+        id=reservation_id,
+        id_token=IdTokenType(id_token=id_token, type=IdTokenTypeEnum.iso14443),
+        expiry_date_time=(datetime.now(timezone.utc) + timedelta(minutes=10)).isoformat(),
+        evse_id=evse_id
+    )
+    return await wait_for_and_validate(
+        test_utility, charge_point, "ReserveNow", call_result201.ReserveNow(ReserveNowStatusEnumType.accepted))
+
+
+async def wait_for_latest_session_info(session_infos: list, predicate, timeout_s: float = 10.0) -> bool:
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout_s
+    while loop.time() < deadline:
+        if session_infos and predicate(session_infos[-1]):
+            return True
+        await asyncio.sleep(0.1)
+    return False
 
 
 @pytest.mark.asyncio
@@ -1695,3 +1761,81 @@ async def test_reservation_with_parentid(
         "TransactionEvent",
         {"eventType": "Ended"}
     )
+
+
+@pytest.mark.asyncio
+@pytest.mark.ocpp_version("ocpp2.0.1")
+@pytest.mark.everest_config_adaptions(EvseManagerConsumerApiConfigAdjustment())
+async def test_reservation_replaced_with_same_id_updates_session_info(
+        test_config: OcppTestConfiguration,
+        charge_point_v201: ChargePoint201,
+        test_utility: TestUtility,
+        everest_core: EverestCore,
+        connected_mqtt_client,
+):
+    """
+    Test that replacing a reservation with the same reservation id (H01.FR.01) for another id token publishes the
+    details of the replacing reservation in the session_info of the evse_manager_consumer_API.
+    """
+    logging.info("######### test_reservation_replaced_with_same_id_updates_session_info #########")
+
+    session_infos = subscribe_session_infos(everest_core, connected_mqtt_client)
+    id_tag_1 = test_config.authorization_info.valid_id_tag_1
+    id_tag_2 = test_config.authorization_info.valid_id_tag_2
+
+    assert await reserve_now_accepted(charge_point_v201, test_utility, 5, id_tag_1, 1)
+    assert await wait_for_and_validate(
+        test_utility,
+        charge_point_v201,
+        "StatusNotification",
+        call_201.StatusNotification(ANY, ConnectorStatusEnumType.reserved, 1, 1),
+    )
+    assert await wait_for_latest_session_info(session_infos, reserved_for(5, id_tag_1))
+
+    test_utility.messages.clear()
+
+    assert await reserve_now_accepted(charge_point_v201, test_utility, 5, id_tag_2, 1)
+    assert await wait_for_latest_session_info(session_infos, reserved_for(5, id_tag_2))
+
+    # The connector stays reserved, so replacing the reservation sends no StatusNotification
+    assert not await wait_for_and_validate(
+        test_utility,
+        charge_point_v201,
+        "StatusNotification",
+        {},
+        validate_payload_func=lambda _meta_data, msg, _exp_payload: msg.message_type_id == 2 and
+        msg.action == "StatusNotification",
+        timeout=2,
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.ocpp_version("ocpp2.0.1")
+@pytest.mark.everest_config_adaptions(EvseManagerConsumerApiConfigAdjustment())
+async def test_reservation_moved_to_other_evse_clears_session_info(
+        test_config: OcppTestConfiguration,
+        charge_point_v201: ChargePoint201,
+        test_utility: TestUtility,
+        everest_core: EverestCore,
+        connected_mqtt_client,
+):
+    """
+    Test that replacing a reservation with the same reservation id (H01.FR.01) on another evse ends the reservation on
+    the evse it was on, so its session_info no longer shows it.
+    """
+    logging.info("######### test_reservation_moved_to_other_evse_clears_session_info #########")
+
+    session_infos = subscribe_session_infos(everest_core, connected_mqtt_client)
+    id_tag_1 = test_config.authorization_info.valid_id_tag_1
+
+    assert await reserve_now_accepted(charge_point_v201, test_utility, 5, id_tag_1, 1)
+    assert await wait_for_latest_session_info(session_infos, reserved_for(5, id_tag_1))
+
+    assert await reserve_now_accepted(charge_point_v201, test_utility, 5, id_tag_1, 2)
+    assert await wait_for_and_validate(
+        test_utility,
+        charge_point_v201,
+        "StatusNotification",
+        call_201.StatusNotification(ANY, ConnectorStatusEnumType.reserved, 2, 1),
+    )
+    assert await wait_for_latest_session_info(session_infos, not_reserved)

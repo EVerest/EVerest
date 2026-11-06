@@ -7,7 +7,9 @@
 #include <cerrno>
 #include <chrono>
 #include <cstring>
+#include <exception>
 #include <fcntl.h>
+#include <functional>
 #include <ifaddrs.h>
 #include <iostream>
 #include <linux/if_packet.h>
@@ -17,6 +19,7 @@
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <poll.h>
+#include <random>
 #include <sstream>
 #include <stdexcept>
 #include <string.h>
@@ -212,37 +215,130 @@ void set_multicast_if(int fd, std::string const& device, struct sockaddr* ai_add
 // when SO_BINDTODEVICE is not permitted. @p port == 0 picks an ephemeral port.
 void bind_socket_to_interface_address(int fd, std::string const& device, std::uint16_t port) {
     std::string ip = get_interface_address(device);
-    if (ip.empty()) {
-        throw std::runtime_error("Cannot bind socket to device " + device +
-                                 ": no IPv4 address on interface (and SO_BINDTODEVICE not permitted)");
-    }
     sockaddr_in local{};
     local.sin_family = AF_INET;
     local.sin_port = htons(port);
     if (inet_pton(AF_INET, ip.c_str(), &local.sin_addr) != 1) {
-        throw std::runtime_error("Failed to parse interface address " + ip);
+        throw socket_error("Failed to parse interface address " + ip, EINVAL);
     }
     if (::bind(fd, reinterpret_cast<struct sockaddr*>(&local), sizeof(local)) < 0) {
         throw_errno("Fallback bind to interface " + device + " (" + ip + ":" + std::to_string(port) + ") failed");
     }
 }
-} // namespace
-
-void bind_socket_to_device(int fd, std::string const& device) {
+// Device binding without the source-IP fallback. Returns false when only that fallback is left,
+// so a caller that still has to bind a port can do both in a single bind().
+bool apply_device_binding(int fd, std::string const& device) {
     if (device.empty()) {
-        return;
+        return true;
     }
     if (apply_so_bindtodevice(fd, device)) {
-        return;
+        return true;
     }
     // Try IP[_V6]_UNICAST_IF for outgoing unicast routing without privilege. Works for both
     // IPv4 and IPv6 client sockets.
-    if (apply_unicast_if(fd, device)) {
-        return;
+    return apply_unicast_if(fd, device);
+}
+
+// The ports of a range, each once, from a random start and wrapping around.
+class source_port_walk {
+public:
+    explicit source_port_walk(SourcePortRange const& range) : m_range(range) {
+        if (range.min == 0 or range.max < range.min) {
+            throw socket_error("Invalid source port range", EINVAL);
+        }
+        static thread_local std::mt19937 generator{std::random_device{}()};
+        m_size = range.max - range.min + 1u;
+        m_start = std::uniform_int_distribution<std::uint32_t>(0, m_size - 1)(generator);
     }
-    // Last resort for IPv4 sockets with an unusable family: bind a source IP belonging to the
-    // interface (IPv4 only).
-    bind_socket_to_interface_address(fd, device, 0);
+
+    // The next untried port, nullopt once every port was tried.
+    std::optional<std::uint16_t> next() {
+        if (exhausted()) {
+            return std::nullopt;
+        }
+        return static_cast<std::uint16_t>(m_range.min + (m_start + m_tried++) % m_size);
+    }
+
+    bool exhausted() const {
+        return m_tried == m_size;
+    }
+
+    std::string describe() const {
+        return std::to_string(m_range.min) + "-" + std::to_string(m_range.max);
+    }
+
+private:
+    SourcePortRange m_range;
+    std::uint32_t m_size{0};
+    std::uint32_t m_start{0};
+    std::uint32_t m_tried{0};
+};
+
+// Bind the next free port of @p walk. @p source_ip empty binds the family wildcard address,
+// otherwise that IPv4 address (the source-IP fallback of apply_device_binding).
+void bind_source_port(int fd, int family, source_port_walk& walk, std::string const& source_ip) {
+    sockaddr_in local4{};
+    local4.sin_family = AF_INET;
+    local4.sin_addr.s_addr = htonl(INADDR_ANY);
+    if (not source_ip.empty() and inet_pton(AF_INET, source_ip.c_str(), &local4.sin_addr) != 1) {
+        throw socket_error("Failed to parse interface address " + source_ip, EINVAL);
+    }
+    sockaddr_in6 local6{};
+    local6.sin6_family = AF_INET6;
+    local6.sin6_addr = in6addr_any;
+    const bool v6 = family == AF_INET6 and source_ip.empty();
+
+    // Every port taken is reported as such.
+    int error = EADDRINUSE;
+    while (auto const port = walk.next()) {
+        local4.sin_port = htons(*port);
+        local6.sin6_port = htons(*port);
+        const int status = v6 ? ::bind(fd, reinterpret_cast<sockaddr*>(&local6), sizeof(local6))
+                              : ::bind(fd, reinterpret_cast<sockaddr*>(&local4), sizeof(local4));
+        if (status == 0) {
+            return;
+        }
+        error = errno;
+        // Only a taken port is worth the next one, any other cause repeats identically.
+        if (error != EADDRINUSE) {
+            break;
+        }
+    }
+    throw_error("Failed to bind a source port in " + walk.describe(), error);
+}
+} // namespace
+
+event::unique_fd open_first_address(addrinfo const* addresses,
+                                    std::function<event::unique_fd(addrinfo const&)> const& try_address) {
+    std::optional<socket_error> last_socket_error;
+    std::optional<std::string> last_failure;
+    for (auto* p = addresses; p != nullptr; p = p->ai_next) {
+        try {
+            return try_address(*p);
+        } catch (socket_error const& e) {
+            last_socket_error = e;
+        } catch (std::exception const& e) {
+            last_failure = e.what();
+        } catch (...) {
+            last_failure = "Unknown failure";
+        }
+    }
+    // A failure without an errno must not hide the cause an earlier address gave.
+    if (last_socket_error) {
+        throw *last_socket_error;
+    }
+    if (last_failure) {
+        throw socket_error(*last_failure, EIO);
+    }
+    throw socket_error("No address to open a socket for", EHOSTUNREACH);
+}
+
+void bind_socket_to_device(int fd, std::string const& device) {
+    if (not apply_device_binding(fd, device)) {
+        // Last resort for IPv4 sockets with an unusable family: bind a source IP belonging to the
+        // interface (IPv4 only).
+        bind_socket_to_interface_address(fd, device, 0);
+    }
 }
 
 event::unique_fd open_udp_server_socket(std::uint16_t port, std::string const& device) {
@@ -332,7 +428,8 @@ event::unique_fd open_udp_client_socket(std::string const& host, std::uint16_t p
 }
 
 event::unique_fd open_tcp_socket_with_timeout(const std::string& host, std::uint16_t port, unsigned int timeout_ms,
-                                              const std::string& device) {
+                                              const std::string& device,
+                                              std::optional<SourcePortRange> const& source_ports) {
     struct addrinfo hints {};
     hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_STREAM;
@@ -346,35 +443,51 @@ event::unique_fd open_tcp_socket_with_timeout(const std::string& host, std::uint
 
     handle_disposer<addrinfo, freeaddrinfo> addrinfo_disposer(servinfo);
 
-    // open the first possible socket
-    int last_error = 0;
-    for (auto* p = servinfo; p != NULL; p = p->ai_next) {
-        const auto socket_fd = ::socket(p->ai_family, p->ai_socktype, p->ai_protocol);
-
-        if (socket_fd == -1) {
-            last_error = errno;
-            continue;
+    auto const what = std::string("Could not open a socket for ") + host + ":" + std::to_string(port);
+    return open_first_address(servinfo, [&](addrinfo const& address) {
+        std::optional<source_port_walk> walk;
+        if (source_ports.has_value()) {
+            walk.emplace(*source_ports);
         }
-
-        try {
-            bind_socket_to_device(socket_fd, device);
-        } catch (...) {
-            close(socket_fd);
-            throw;
+        // Each round takes at least one port of the walk, so the range size bounds the rounds.
+        int connect_refusals{0};
+        while (true) {
+            event::unique_fd socket_fd(::socket(address.ai_family, address.ai_socktype, address.ai_protocol));
+            if (socket_fd == -1) {
+                throw_errno(what);
+            }
+            // A binding failure may be specific to this address (its family, a port taken there), so
+            // the next address is still worth a try.
+            // A device that fell back to a source-IP bind() cannot be bound a second time:
+            // address and port go into one bind().
+            const bool device_bound = apply_device_binding(socket_fd, device);
+            if (walk.has_value()) {
+                // A port of an earlier connection to the same peer may still sit in TIME_WAIT.
+                int const enable{1};
+                if (::setsockopt(socket_fd, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(enable)) != 0) {
+                    throw_errno("setsockopt(SO_REUSEADDR) failed");
+                }
+                bind_source_port(socket_fd, address.ai_family, *walk,
+                                 device_bound ? std::string{} : get_interface_address(device));
+            } else if (not device_bound) {
+                bind_socket_to_interface_address(socket_fd, device, 0);
+            }
+            // connect_with_timeout forwards the genuine errno.
+            if (-1 != connect_with_timeout(socket_fd, address.ai_addr, address.ai_addrlen, timeout_ms)) {
+                return socket_fd;
+            }
+            const int error = errno;
+            // EADDRNOTAVAIL: the bound port's connection to this peer still exists (TIME_WAIT
+            // towards a peer without TCP timestamps), or the route has no usable source address.
+            // The first is worth the next port on a fresh socket, the failed one cannot connect
+            // again. The second fails on every port, so a few refusals in a row end the walk.
+            constexpr int max_connect_refusals{8};
+            if (error != EADDRNOTAVAIL or not walk.has_value() or walk->exhausted() or
+                ++connect_refusals > max_connect_refusals) {
+                throw_error(what, error);
+            }
         }
-
-        if (-1 == connect_with_timeout(socket_fd, p->ai_addr, p->ai_addrlen, timeout_ms)) {
-            // connect_with_timeout forwards the genuine errno; read it before
-            // close(), which may overwrite it.
-            last_error = errno;
-            close(socket_fd);
-            continue;
-        }
-
-        return event::unique_fd{socket_fd};
-    }
-
-    throw_error(std::string("Could not open a socket for ") + host + ":" + std::to_string(port), last_error);
+    });
 }
 
 event::unique_fd open_tcp_socket(const std::string& host, std::uint16_t port, const std::string& device) {
@@ -815,7 +928,7 @@ std::string get_interface_address(std::string const& name) {
     struct ifaddrs* ifaddr{nullptr};
     struct ifaddrs* ifa{nullptr};
     if (getifaddrs(&ifaddr) == -1) {
-        throw std::runtime_error("Cannot get interfaces: " + std::string(strerror(errno)));
+        throw_errno("Cannot get interfaces");
     }
 
     handle_disposer<ifaddrs, freeifaddrs> ifaddr_disposer(ifaddr);
@@ -832,7 +945,7 @@ std::string get_interface_address(std::string const& name) {
         }
     }
 
-    throw std::runtime_error("Interface: " + name + " not found or has no IPv4");
+    throw socket_error("Interface: " + name + " not found or has no IPv4", EADDRNOTAVAIL);
 }
 
 std::vector<if_info> get_all_interfaces() {
@@ -885,7 +998,8 @@ std::vector<if_info> get_all_interfaces() {
     return interfaces;
 }
 
-event::unique_fd open_udp_unconnected_socket(udp::endpoint const& target, std::string const& iface) {
+event::unique_fd open_udp_unconnected_socket(udp::endpoint const& target, std::string const& iface,
+                                             std::optional<SourcePortRange> const& source_ports) {
     const auto family = target.family();
     if (family != AF_INET && family != AF_INET6) {
         throw std::runtime_error("open_udp_unconnected_socket: target has no usable address family");
@@ -897,9 +1011,12 @@ event::unique_fd open_udp_unconnected_socket(udp::endpoint const& target, std::s
     }
     set_non_blocking(sock);
 
-    // Wildcard bind on the target's family, ephemeral port. RX is by destination
-    // address and port; interface confinement (if any) comes from the options below.
-    if (family == AF_INET6) {
+    // Wildcard bind on the target's family, ephemeral port unless a range is given. RX is by
+    // destination address and port; interface confinement (if any) comes from the options below.
+    if (source_ports.has_value()) {
+        source_port_walk walk(*source_ports);
+        bind_source_port(sock, family, walk, {});
+    } else if (family == AF_INET6) {
         sockaddr_in6 local{};
         local.sin6_family = AF_INET6;
         local.sin6_addr = in6addr_any;

@@ -6,6 +6,7 @@ info:
   version: 1.1.0
   description: >-
     API for EVerest for over voltage monitoring.
+    Commands without arguments carry an empty JSON object ({}) as payload.
 
     This EVerest API defines a fast over voltage monitoring device according
     to IEC61851-23:2023 6.3.1.106.2 and 6.3.1.106.3 for DC charging.
@@ -29,10 +30,11 @@ info:
     Once an MREC5OverVoltage error was raised, it shall only be cleared when the reset_over_voltage_error command is called.
     All other errors shall be raised/cleared when they occur/are no longer active immediately.
 
-    The voltage_measurement_V should be published in regular intervals, e.g. 1 second. It is not
-    used to compare it with the overvoltage threshold setting in EVerest, that has to be done in the OVM device itself.
-    It will only be used to validate that the OVM and the IMD see the same voltage to ensure they are correctly wired to the same
-    charging port. If it is not available in hardware, do not publish the voltage_measurement_V at all.
+    The voltage_measurement_V should be published in regular intervals, e.g. 1 second. The over voltage detection has to
+    be done in the OVM device itself; while charging, EVerest compares voltage_measurement_V with the limits only as a
+    slow backup. It is also used to validate that all voltage sources of the charging port see the same voltage to
+    ensure they are correctly wired to the same charging port. If it is not available in hardware, do not publish the
+    voltage_measurement_V at all.
 
   license:
     name: Apache-2.0
@@ -191,12 +193,16 @@ components:
         Start monitoring. Called once at the beginning of power transfer.
         Use the last limits set by set_limits and make sure to update them when set_limits is called while monitoring is active.
         Trigger shutdowns and raise errors as needed.
+      contentType: application/json
+      payload: {}
     receive_stop:
       name: receive_stop
       title: Receive stop over voltage monitoring command
       summary: >-
           Stop monitoring. Called once at the end of power transfer.
           Do not raise any over voltage errors or trigger any shutdowns in this mode.
+      contentType: application/json
+      payload: {}
     receive_reset_over_voltage_error:
       name: receive_reset_over_voltage_error
       title: Receive reset command
@@ -204,6 +210,8 @@ components:
         Resets the detection logic to allow for new charging session after an over voltage error occured.
         This shall clear the over voltage error.
         If monitoring is still active, it shall be stopped.
+      contentType: application/json
+      payload: {}
 
     send_voltage_measurement_V:
       name: send_voltage_measurement_V
@@ -293,10 +301,9 @@ components:
     VoltageMeasurementV:
       description: >-
         The voltage measurement should be published in regular intervals,
-        e.g. 1 second. It is not  used to compare it with the overvoltage threshold
-        setting in EVerest, that has to be done in the OVM device itself.
-        It will only used to validate that the OVM and the IMD see the same voltage
-        to ensure they are correctly wired to the same charging port.
+        e.g. 1 second. The over voltage detection has to be done in the
+        OVM device itself; while charging, EVerest compares it with the limits only as a slow backup
+        and validates that all voltage sources of the charging port see the same voltage.
         If it is not available in hardware, do not publish the voltage_measurement_V at all.
       type: number
 
@@ -335,6 +342,20 @@ components:
               characters. When the message is empty, the error description is sent
               instead.
           type: string
+        trigger_value:
+          description: |-
+            Optional value that caused this specific occurrence of the error, e.g. the
+            measurement that crossed a limit.
+          type: object
+          properties:
+            text_repr:
+              description: |-
+                Text representation of the value as the raising entity would print it,
+                including a unit where one applies, e.g. `85.3 degC`. EVerest passes it
+                on as is and does not parse it. Longer values are truncated to 2500
+                characters.
+              type: string
+              maxLength: 2500
     ErrorEnum:
       description: |
         Type of error
@@ -363,7 +384,10 @@ components:
 
     CommunicationCheck:
       type: boolean
-      description: "Send 'true' at least every 'cfg_communication_check_to_s' seconds to signal module is alive. Send 'false' to stop communication check'"
+      description: >-
+        Send true at least every cfg_communication_check_to_s seconds to signal that the client is alive, otherwise
+        EVerest raises a CommunicationFault, which the next message clears. Send false to stop the check until the
+        module restarts.
     HeartBeatId:
       type: integer
       description: "64bit unsigned integer. The id of every heartbeat increases by 1 and overflows when the maximum representable value is reached"

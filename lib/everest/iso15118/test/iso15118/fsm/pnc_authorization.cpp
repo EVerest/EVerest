@@ -108,7 +108,7 @@ std::vector<uint8_t> signed_certificate_installation_req(const Pki& oem, const d
 message_20::AuthorizationResponse feed_authorization(FsmStateHelper& helper, d20::Context& ctx,
                                                      fsm::v2::FSM<d20::StateBase>& fsm,
                                                      const std::vector<uint8_t>& exi) {
-    helper.handle_raw_request(io::v2gtp::PayloadType::Part20Main, exi);
+    helper.handle_raw_request(v2gtp::PayloadType::Part20Main, exi);
     fsm.feed(d20::Event::V2GTP_MESSAGE);
     const auto res = ctx.get_response<message_20::AuthorizationResponse>();
     REQUIRE(res.has_value());
@@ -406,7 +406,7 @@ SCENARIO("ISO 15118-20 certificate installation relay") {
         REQUIRE_FALSE(req.empty());
 
         const auto feed = [&](const std::vector<uint8_t>& exi) {
-            helper.handle_raw_request(io::v2gtp::PayloadType::Part20Main, exi);
+            helper.handle_raw_request(v2gtp::PayloadType::Part20Main, exi);
             fsm.feed(d20::Event::V2GTP_MESSAGE);
             return ctx.get_response<message_20::CertificateInstallationResponse>();
         };
@@ -436,13 +436,13 @@ SCENARIO("ISO 15118-20 certificate installation relay") {
                     helper.set_active_control_event(response);
                     fsm.feed(d20::Event::CONTROL_MESSAGE);
 
-                    helper.handle_raw_request(io::v2gtp::PayloadType::Part20Main, req);
+                    helper.handle_raw_request(v2gtp::PayloadType::Part20Main, req);
                     fsm.feed(d20::Event::V2GTP_MESSAGE);
                     const auto [available, size, payload_type, type] =
                         helper.get_message_exchange().check_and_clear_response();
                     REQUIRE(available);
                     REQUIRE(size == backend.size());
-                    REQUIRE(payload_type == io::v2gtp::PayloadType::Part20Main);
+                    REQUIRE(payload_type == v2gtp::PayloadType::Part20Main);
                     REQUIRE(type == message_20::Type::CertificateInstallationRes);
                     REQUIRE(fsm.get_current_state_id() == d20::StateID::Authorization);
 
@@ -455,7 +455,7 @@ SCENARIO("ISO 15118-20 certificate installation relay") {
                     response.exi_response_base64 = base64_encode(last);
                     helper.set_active_control_event(response);
                     fsm.feed(d20::Event::CONTROL_MESSAGE);
-                    helper.handle_raw_request(io::v2gtp::PayloadType::Part20Main, req);
+                    helper.handle_raw_request(v2gtp::PayloadType::Part20Main, req);
                     fsm.feed(d20::Event::V2GTP_MESSAGE);
                     helper.get_message_exchange().check_and_clear_response();
 
@@ -528,7 +528,7 @@ SCENARIO("ISO 15118-20 certificate installation relay") {
         fsm::v2::FSM<d20::StateBase> fsm{ctx.create_state<d20::state::AuthorizationSetup>()};
         run_authorization_setup(helper, ctx, fsm);
 
-        helper.handle_raw_request(io::v2gtp::PayloadType::Part20Main,
+        helper.handle_raw_request(v2gtp::PayloadType::Part20Main,
                                   signed_certificate_installation_req(oem, ctx, oem.leaf_private_key()));
         fsm.feed(d20::Event::V2GTP_MESSAGE);
 
@@ -666,7 +666,7 @@ TEST_CASE("ISO 15118-20: expiring certificate permits certificate installation")
     helper.set_active_control_event(d20::AuthorizationResponse{true});
     fsm.feed(d20::Event::CONTROL_MESSAGE);
     REQUIRE(feed_authorization(helper, ctx, fsm, req).response_code == dt::ResponseCode::OK_CertificateExpiresSoon);
-    helper.handle_raw_request(io::v2gtp::PayloadType::Part20Main,
+    helper.handle_raw_request(v2gtp::PayloadType::Part20Main,
                               signed_certificate_installation_req(oem, ctx, oem.leaf_private_key()));
     fsm.feed(d20::Event::V2GTP_MESSAGE);
     CHECK_FALSE(ctx.session_stopped);
@@ -675,7 +675,7 @@ TEST_CASE("ISO 15118-20: expiring certificate permits certificate installation")
     helper.set_active_control_event(
         d20::CertificateResponse{true, base64_encode(backend_certificate_installation_res(renewed, ctx, 0))});
     fsm.feed(d20::Event::CONTROL_MESSAGE);
-    helper.handle_raw_request(io::v2gtp::PayloadType::Part20Main,
+    helper.handle_raw_request(v2gtp::PayloadType::Part20Main,
                               signed_certificate_installation_req(oem, ctx, oem.leaf_private_key()));
     fsm.feed(d20::Event::V2GTP_MESSAGE);
     CHECK(ctx.session.authorization.contract_leaf_der == pki.leaf_der());
@@ -704,16 +704,16 @@ TEST_CASE("ISO 15118-20: eMSPUnknown installation warning permits retry without 
     });
     const auto prioritized = crypto::sign_document(
         prioritized_unsigned, crypto::SignedElement::CertificateInstallationReq, "oem1", oem.leaf_private_key());
-    helper.handle_raw_request(io::v2gtp::PayloadType::Part20Main, prioritized);
+    helper.handle_raw_request(v2gtp::PayloadType::Part20Main, prioritized);
     fsm.feed(d20::Event::V2GTP_MESSAGE);
     const auto warning = mutate_document(backend_certificate_installation_res(pki, ctx, 0), [](iso20_exiDocument& doc) {
         doc.CertificateInstallationRes.ResponseCode = iso20_responseCodeType_WARNING_eMSPUnknown;
     });
     helper.set_active_control_event(d20::CertificateResponse{true, base64_encode(warning)});
     fsm.feed(d20::Event::CONTROL_MESSAGE);
-    helper.handle_raw_request(io::v2gtp::PayloadType::Part20Main, prioritized);
+    helper.handle_raw_request(v2gtp::PayloadType::Part20Main, prioritized);
     fsm.feed(d20::Event::V2GTP_MESSAGE);
-    helper.handle_raw_request(io::v2gtp::PayloadType::Part20Main, req);
+    helper.handle_raw_request(v2gtp::PayloadType::Part20Main, req);
     fsm.feed(d20::Event::V2GTP_MESSAGE);
     CHECK_FALSE(ctx.session_stopped);
     CHECK(recorded.certificate_requests.size() == 2);
@@ -754,14 +754,15 @@ TEST_CASE("ISO 15118-20: an Ed448 signed installation request reaches the CPS") 
     fsm::v2::FSM<d20::StateBase> fsm{ctx.create_state<d20::state::AuthorizationSetup>()};
     run_authorization_setup(helper, ctx, fsm);
     const auto req = signed_certificate_installation_req(oem, ctx, oem.leaf_private_key());
-    helper.handle_raw_request(io::v2gtp::PayloadType::Part20Main, req);
+    helper.handle_raw_request(v2gtp::PayloadType::Part20Main, req);
     fsm.feed(d20::Event::V2GTP_MESSAGE);
     REQUIRE(recorded.certificate_requests.size() == 1);
     CHECK(base64_decode(recorded.certificate_requests.front().exi_request_base64) == req);
     CHECK_FALSE(ctx.session_stopped);
 }
 
-TEST_CASE("ISO 15118-20: invalid certificate relay produces a Finished warning") {
+TEST_CASE("ISO 15118-20: a relayed installation response is judged when it arrives") {
+    const auto contract = make_pki("secp521r1");
     const auto oem = make_pki("secp521r1", {"DE8PAA00003C4D58Y2"});
     Recorded recorded;
     std::optional<d20::PauseContext> pause;
@@ -770,11 +771,41 @@ TEST_CASE("ISO 15118-20: invalid certificate relay produces a Finished warning")
     fsm::v2::FSM<d20::StateBase> fsm{ctx.create_state<d20::state::AuthorizationSetup>()};
     run_authorization_setup(helper, ctx, fsm);
     const auto req = signed_certificate_installation_req(oem, ctx, oem.leaf_private_key());
-    helper.handle_raw_request(io::v2gtp::PayloadType::Part20Main, req);
+    helper.handle_raw_request(v2gtp::PayloadType::Part20Main, req);
     fsm.feed(d20::Event::V2GTP_MESSAGE);
-    helper.set_active_control_event(d20::CertificateResponse{true, base64_encode({0, 1, 2, 3})});
+    REQUIRE(recorded.certificate_requests.size() == 1);
+
+    std::vector<uint8_t> relayed;
+    std::string rejection;
+    SECTION("undecodable") {
+        relayed = {0, 1, 2, 3};
+        rejection = "undecodable";
+    }
+    SECTION("another session") {
+        relayed = mutate_document(backend_certificate_installation_res(contract, ctx, 0), [](iso20_exiDocument& doc) {
+            doc.CertificateInstallationRes.Header.SessionID.bytes[0] ^= 0xff;
+        });
+        rejection = "for another session";
+    }
+    SECTION("still processing") {
+        relayed = mutate_document(backend_certificate_installation_res(contract, ctx, 0), [](iso20_exiDocument& doc) {
+            doc.CertificateInstallationRes.EVSEProcessing = iso20_processingType_Ongoing;
+        });
+        rejection = "not finished";
+    }
+
+    std::vector<std::string> warnings;
+    io::set_logging_callback([&warnings](LogLevel level, std::string message) {
+        if (level == LogLevel::Warning) {
+            warnings.push_back(std::move(message));
+        }
+    });
+    helper.set_active_control_event(d20::CertificateResponse{true, base64_encode(relayed)});
     fsm.feed(d20::Event::CONTROL_MESSAGE);
-    helper.handle_raw_request(io::v2gtp::PayloadType::Part20Main, req);
+    io::set_logging_callback([](LogLevel, std::string) {});
+    CHECK(warnings == std::vector<std::string>{"Authorization: the backend certificate response is " + rejection});
+
+    helper.handle_raw_request(v2gtp::PayloadType::Part20Main, req);
     fsm.feed(d20::Event::V2GTP_MESSAGE);
     const auto response = ctx.get_response<message_20::CertificateInstallationResponse>();
     REQUIRE(response);
@@ -782,6 +813,57 @@ TEST_CASE("ISO 15118-20: invalid certificate relay produces a Finished warning")
     CHECK(response->evse_processing == dt::Processing::Finished);
     ctx.set_active_timeout(d20::TimeoutType::ONGOING);
     fsm.feed(d20::Event::TIMEOUT);
+    CHECK_FALSE(ctx.session_stopped);
+}
+
+TEST_CASE("ISO 15118-20: a second backend installation response is ignored") {
+    const auto contract = make_pki("secp521r1");
+    const auto oem = make_pki("secp521r1", {"DE8PAA00003C4D58Y2"});
+    Recorded recorded;
+    std::optional<d20::PauseContext> pause;
+    FsmStateHelper helper(session::SessionConfig(pnc_setup("")), pause, make_callbacks(recorded));
+    auto& ctx = helper.get_context();
+    fsm::v2::FSM<d20::StateBase> fsm{ctx.create_state<d20::state::AuthorizationSetup>()};
+    run_authorization_setup(helper, ctx, fsm);
+    const auto req = signed_certificate_installation_req(oem, ctx, oem.leaf_private_key());
+    helper.handle_raw_request(v2gtp::PayloadType::Part20Main, req);
+    fsm.feed(d20::Event::V2GTP_MESSAGE);
+    const auto valid = backend_certificate_installation_res(contract, ctx, 1);
+    const std::vector<uint8_t> undecodable{0, 1, 2, 3};
+
+    const auto deliver = [&](const std::vector<uint8_t>& exi) {
+        helper.set_active_control_event(d20::CertificateResponse{true, base64_encode(exi)});
+        fsm.feed(d20::Event::CONTROL_MESSAGE);
+    };
+
+    SECTION("after a valid one, the valid one is relayed") {
+        deliver(valid);
+        deliver(undecodable);
+        helper.handle_raw_request(v2gtp::PayloadType::Part20Main, req);
+        fsm.feed(d20::Event::V2GTP_MESSAGE);
+        const auto [available, size, payload_type, type] = helper.get_message_exchange().check_and_clear_response();
+        REQUIRE(available);
+        CHECK(size == valid.size());
+        CHECK(type == message_20::Type::CertificateInstallationRes);
+
+        // One chain remains, so the next request goes to the backend again.
+        helper.handle_raw_request(v2gtp::PayloadType::Part20Main, req);
+        fsm.feed(d20::Event::V2GTP_MESSAGE);
+        const auto next = ctx.get_response<message_20::CertificateInstallationResponse>();
+        REQUIRE(next);
+        CHECK(next->response_code == dt::ResponseCode::OK);
+        CHECK(next->evse_processing == dt::Processing::Ongoing);
+        CHECK(recorded.certificate_requests.size() == 2);
+    }
+    SECTION("after a failed one, the failure stands") {
+        deliver(undecodable);
+        deliver(valid);
+        helper.handle_raw_request(v2gtp::PayloadType::Part20Main, req);
+        fsm.feed(d20::Event::V2GTP_MESSAGE);
+        const auto response = ctx.get_response<message_20::CertificateInstallationResponse>();
+        REQUIRE(response);
+        CHECK(response->response_code == dt::ResponseCode::WARNING_NoCertificateAvailable);
+    }
     CHECK_FALSE(ctx.session_stopped);
 }
 

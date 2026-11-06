@@ -72,7 +72,9 @@ or in short
 
   Alternatively, you can also install ``edm`` in a python virtual environment.
   Make sure edm is available in your PATH after the installation. You can verify
-  this by running ``edm --version``.
+  this by running ``edm --version``. If an edm is found, the build requires it to be
+  at least the version this EVerest needs and stops otherwise; without one, the build
+  installs its own edm into its python virtual environment.
 
 Next you could run
 
@@ -100,7 +102,6 @@ dependencies for EVerest:
 	├── everest-framework
 	├── everest-sqlite
 	├── everest-utils
-	├── Josev
 	├── libcbv2g
 	├── libevse-security
 	├── libfsm
@@ -185,8 +186,8 @@ CMakeLists.txt file in the respective source repository:
 
    find_package(EDM REQUIRED)
 
-To define dependencies you can now add a dependencies.yaml file to your source
-repository. It should look like this:
+To define dependencies you can now add a dependencies.yaml file to the top-level
+directory of your source repository. It should look like this:
 
 .. code-block:: bash
 
@@ -217,6 +218,22 @@ Here *cmake_condition* can be any string that CMake can use in an if() block.
 Please be aware that any variables you use here must be defined before a call to
 *evc_setup_edm()* is made in your ``CMakeLists.txt``
 
+To build a dependency from a local source tree instead of fetching it, set its
+``source_dir``:
+
+.. code-block:: yaml
+
+  libfoo:
+    git: https://github.com/example/libfoo.git
+    git_tag: v1.0.0
+    source_dir: ../libfoo
+
+A relative ``source_dir`` is resolved against the directory of the file that
+specifies it. If the directory does not exist, edm stops with an error. A
+``source_dir`` is ignored for a dependency without ``git``, which is looked up
+with ``find_package``. Local source trees are used only when requested this way;
+a directory next to the project that is named like a dependency is not picked up.
+
 Additionally you can set the ``EVEREST_MODIFY_DEPENDENCIES`` environment variable
 to a file containing modifications to the projects ``dependencies.yaml`` files when
 running cmake:
@@ -236,6 +253,8 @@ The ``dependencies_modified.yaml`` file can contain something along these lines:
 	  git: null
 	catch2:
 	  git_tag: v1.2.3 # select a different git tag for a build
+	libfoo:
+	  source_dir: ../libfoo # build from a local source tree, relative to this file
 
 Selective package builds
 ########################
@@ -250,7 +269,7 @@ prefix with ``find_package()``.
    * - Package
      - Contents
    * - ``base``
-     - log, timer, util, sqlite, evse_security, tls
+     - log, timer, util, sqlite, evse_security, tls, io
    * - ``iso15118``
      - libiso15118 and the cbv2g EXI codec libraries
    * - ``ocpp``
@@ -260,6 +279,9 @@ prefix with ``find_package()``.
        out-of-tree module projects build against
    * - ``runtime``
      - the in-tree modules, applications and configurations (no CMake package)
+
+``base`` needs mosquitto for io: EDM fetches it, and with ``DISABLE_EDM=ON`` it is found with
+pkg-config as ``libmosquitto``.
 
 The default builds all five. Only ``libocpp`` and what it needs, for example:
 
@@ -289,6 +311,10 @@ the same prefix:
     -DCMAKE_PREFIX_PATH=/opt/everest -DCMAKE_INSTALL_PREFIX=/opt/everest
   cmake -S . -B b4 -DDISABLE_EDM=ON -DEVEREST_PACKAGES=runtime \
     -DCMAKE_PREFIX_PATH=/opt/everest -DCMAKE_INSTALL_PREFIX=/opt/everest
+
+When b4 builds the Ev15118 module, b2 needs ``-DISO15118_BUILD_EV_SIDE=ON``: without core or
+runtime in the same build, libiso15118 does not build its EV side, the ``everest::iso15118_ev``
+target.
 
 With EDM, ``cmake --install`` installs what is needed to run EVerest (the manager, modules,
 libraries and configurations) but no CMake packages and no development files such as the generated
@@ -473,7 +499,7 @@ following command.
 
 .. code-block:: bash
 
-  edm --create-config custom-config.yaml --include-remotes https://github.com/EVerest/everest* https://github.com/EVerest/ext-switchev-iso15118.git
+  edm --create-config custom-config.yaml --include-remotes https://github.com/EVerest/everest*
 
 If you want to include all repositories, including external dependencies, in
 the config you can use the following command:

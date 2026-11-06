@@ -719,6 +719,46 @@ types::reservation::ReservationResult AuthHandler::handle_reservation(const Rese
     return reservation_handler.make_reservation(evse, reservation);
 }
 
+types::reservation::ReservationResult AuthHandler::place_reservation(const Reservation& reservation) {
+    std::optional<int> replaced_evse_id;
+    if (const auto evse_id = this->reservation_handler.get_evse_id_of_reservation(reservation.reservation_id)) {
+        replaced_evse_id = static_cast<int>(evse_id.value());
+    }
+
+    const auto cancel_replaced_if_dropped = [this, &reservation, &replaced_evse_id]() {
+        if (replaced_evse_id.has_value() &&
+            !this->reservation_handler.is_evse_reserved(static_cast<uint32_t>(replaced_evse_id.value()),
+                                                        reservation.reservation_id)) {
+            this->call_reservation_cancelled(reservation.reservation_id, ReservationEndReason::Cancelled,
+                                             replaced_evse_id, false);
+            replaced_evse_id.reset();
+        }
+    };
+
+    auto result = this->handle_reservation(reservation);
+    // Release the evse of the replaced reservation before reserving the new one, so global reservations can claim it.
+    cancel_replaced_if_dropped();
+    if (result != ReservationResult::Accepted) {
+        return result;
+    }
+
+    if (!this->call_reserved(reservation.reservation_id, reservation.evse_id)) {
+        this->handle_cancel_reservation(reservation.reservation_id);
+        cancel_replaced_if_dropped();
+        return ReservationResult::Rejected;
+    }
+
+    if (reservation.evse_id.has_value() && reservation.evse_id.value() > 0 &&
+        !this->reservation_handler.is_evse_reserved(static_cast<uint32_t>(reservation.evse_id.value()),
+                                                    reservation.reservation_id)) {
+        // Cancelled or expired while the EvseManager was being called, possibly before it was reserved.
+        this->reservation_cancelled_callback(reservation.evse_id, reservation.reservation_id,
+                                             ReservationEndReason::Cancelled, false);
+    }
+
+    return result;
+}
+
 std::pair<bool, std::optional<int32_t>> AuthHandler::handle_cancel_reservation(const int32_t reservation_id) {
     std::lock_guard<std::mutex> lk(this->event_mutex);
     std::pair<bool, std::optional<uint32_t>> reservation_cancelled = this->reservation_handler.cancel_reservation(
@@ -778,7 +818,12 @@ ReservationCheckStatus AuthHandler::handle_reservation_exists(std::string& id_to
 }
 
 bool AuthHandler::call_reserved(const int reservation_id, const std::optional<int>& evse_id) {
-    const bool reserved = this->reserved_callback(evse_id, reservation_id);
+    std::optional<types::reservation::Reservation> reservation;
+    if (evse_id.has_value() && evse_id.value() >= 0) {
+        reservation =
+            this->reservation_handler.get_evse_reservation(static_cast<uint32_t>(evse_id.value()), reservation_id);
+    }
+    const bool reserved = this->reserved_callback(evse_id, reservation_id, reservation);
     if (reserved) {
         this->check_evse_reserved_and_send_updates();
     }
@@ -1008,7 +1053,8 @@ void AuthHandler::register_stop_transaction_callback(
 }
 
 void AuthHandler::register_reserved_callback(
-    const std::function<bool(const std::optional<int>& evse_id, const int& reservation_id)>& callback) {
+    const std::function<bool(const std::optional<int>& evse_id, const int& reservation_id,
+                             const std::optional<types::reservation::Reservation>& reservation)>& callback) {
     this->reserved_callback = callback;
 }
 
@@ -1187,7 +1233,7 @@ void AuthHandler::check_evse_reserved_and_send_updates() {
     for (const auto& reserved_evse : reservation_status.reserved) {
         EVLOG_debug << "Evse " << reserved_evse << " is now reserved";
         if (this->reserved_callback != nullptr) {
-            const bool reserved = this->reserved_callback(reserved_evse, -1);
+            const bool reserved = this->reserved_callback(reserved_evse, -1, std::nullopt);
             if (!reserved) {
                 EVLOG_warning << "Could not reserve " << reserved_evse << " for non evse specific reservations";
             }

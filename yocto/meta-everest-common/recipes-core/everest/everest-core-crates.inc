@@ -10,7 +10,7 @@ SRC_URI += " \
     crate://crates.io/anstyle-parse/0.2.6 \
     crate://crates.io/anstyle-query/1.1.2 \
     crate://crates.io/anstyle-wincon/3.0.7 \
-    crate://crates.io/anyhow/1.0.95 \
+    crate://crates.io/anyhow/1.0.103 \
     crate://crates.io/argh/0.1.13 \
     crate://crates.io/argh_derive/0.1.13 \
     crate://crates.io/argh_shared/0.1.13 \
@@ -137,7 +137,7 @@ SRC_URI += " \
     crate://crates.io/time/0.3.37 \
     crate://crates.io/time-core/0.1.2 \
     crate://crates.io/time-macros/0.2.19 \
-    crate://crates.io/tokio/1.52.1 \
+    crate://crates.io/tokio/1.53.3 \
     crate://crates.io/tokio-macros/2.7.0 \
     crate://crates.io/tokio-stream/0.1.17 \
     crate://crates.io/unicode-ident/1.0.16 \
@@ -179,7 +179,7 @@ SRC_URI[anstyle-1.0.10.sha256sum] = "55cc3b69f167a1ef2e161439aa98aed94e6028e5f9a
 SRC_URI[anstyle-parse-0.2.6.sha256sum] = "3b2d16507662817a6a20a9ea92df6652ee4f94f914589377d69f3b21bc5798a9"
 SRC_URI[anstyle-query-1.1.2.sha256sum] = "79947af37f4177cfead1110013d678905c37501914fba0efea834c3fe9a8d60c"
 SRC_URI[anstyle-wincon-3.0.7.sha256sum] = "ca3534e77181a9cc07539ad51f2141fe32f6c3ffd4df76db8ad92346b003ae4e"
-SRC_URI[anyhow-1.0.95.sha256sum] = "34ac096ce696dc2fcabef30516bb13c0a68a11d30131d3df6f04711467681b04"
+SRC_URI[anyhow-1.0.103.sha256sum] = "2a4385e2e34eb35d6b3efe798b9eb88096925d87726c0798709bf56d9ed84af3"
 SRC_URI[argh-0.1.13.sha256sum] = "34ff18325c8a36b82f992e533ece1ec9f9a9db446bd1c14d4f936bac88fcd240"
 SRC_URI[argh_derive-0.1.13.sha256sum] = "adb7b2b83a50d329d5d8ccc620f5c7064028828538bdf5646acd60dc1f767803"
 SRC_URI[argh_shared-0.1.13.sha256sum] = "a464143cc82dedcdc3928737445362466b7674b5db4e2eb8e869846d6d84f4f6"
@@ -306,7 +306,7 @@ SRC_URI[thiserror-impl-2.0.17.sha256sum] = "3ff15c8ecd7de3849db632e14d18d2571fa0
 SRC_URI[time-0.3.37.sha256sum] = "35e7868883861bd0e56d9ac6efcaaca0d6d5d82a2a7ec8209ff492c07cf37b21"
 SRC_URI[time-core-0.1.2.sha256sum] = "ef927ca75afb808a4d64dd374f00a2adf8d0fcff8e7b184af886c3c87ec4a3f3"
 SRC_URI[time-macros-0.2.19.sha256sum] = "2834e6017e3e5e4b9834939793b282bc03b37a3336245fa820e35e233e2a85de"
-SRC_URI[tokio-1.52.1.sha256sum] = "b67dee974fe86fd92cc45b7a95fdd2f99a36a6d7b0d431a231178d3d670bbcc6"
+SRC_URI[tokio-1.53.3.sha256sum] = "ce3335fa71841cda333a58d7615b03901380ecf09d59b3296d21f8bbac0dde4e"
 SRC_URI[tokio-macros-2.7.0.sha256sum] = "385a6cb71ab9ab790c5fe8d67f1645e6c450a7ce006a33de03daa956cf70a496"
 SRC_URI[tokio-stream-0.1.17.sha256sum] = "eca58d7bba4a75707817a2c44174253f9236b2d5fbd055602e9d5c07c139a047"
 SRC_URI[unicode-ident-1.0.16.sha256sum] = "a210d160f08b701c8721ba1c726c11662f877ea6b7094007e1ca9a1041945034"

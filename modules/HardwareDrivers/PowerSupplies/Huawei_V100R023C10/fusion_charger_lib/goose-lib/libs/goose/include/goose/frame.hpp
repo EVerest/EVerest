@@ -42,15 +42,12 @@ struct GooseTimestamp {
 };
 
 struct GoosePDU {
-    // todo: check length
     char go_cb_ref[65]; // 64 bytes + null terminator
 
     std::uint32_t time_allowed_to_live; // seconds
 
-    // todo: check length
     char dat_set[65]; // 64 bytes + null terminator
 
-    // todo: check length
     char go_id[65]; // 64 bytes + null terminator
 
     // already parsed

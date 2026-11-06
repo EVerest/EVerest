@@ -68,6 +68,7 @@ target_compile_definitions(${TEST_TARGET_NAME} PRIVATE
   ACTUAL_TYPE_FILE_HASHES_CSV_PATH="${ACTUAL_TYPE_HASHES_CSV}"
   EXPECTED_IFC_FILE_HASHES_CSV_PATH="${EXPECTED_IFC_HASHES_CSV}"
   ACTUAL_IFC_FILE_HASHES_CSV_PATH="${ACTUAL_IFC_HASHES_CSV}"
+  EVEREST_API_SPEC_DIR="${PROJECT_SOURCE_DIR}/docs/source/reference/EVerest_API"
 )
 
 ####################### GTest and automatic (de-)serialization tests
@@ -84,10 +85,18 @@ target_include_directories(${TEST_TARGET_NAME} PUBLIC
 target_sources(${TEST_TARGET_NAME} PRIVATE
   manual_tests/serialization/generic.hpp
   manual_tests/serialization/generic.cpp
+  manual_tests/serialization/auth.cpp
+  manual_tests/serialization/date_time.cpp
+  manual_tests/serialization/dc_external_derate.cpp
+  manual_tests/serialization/energy.cpp
   manual_tests/serialization/evse_board_support.cpp
   manual_tests/serialization/evse_manager.cpp
+  manual_tests/serialization/evse_manager_enable_disable.cpp
+  manual_tests/serialization/powermeter.cpp
+  manual_tests/serialization/strict_inputs.cpp
   manual_tests/serialization/telemetry.cpp
   manual_tests/source_file_hash_check/source_file_hash_check.cpp
+  manual_tests/spec_check/e2m_channel_depth.cpp
 )
 
 target_link_libraries(${TEST_TARGET_NAME} PRIVATE
@@ -103,6 +112,7 @@ add_test(${TEST_TARGET_NAME} ${TEST_TARGET_NAME})
 file(GLOB API_FILES CONFIGURE_DEPENDS ${PROJECT_SOURCE_DIR}/lib/everest/everest_api_types/include/everest_api_types/*/API.hpp)
 file(GLOB TEST_GENERATOR_PY_FILES ${PROJECT_SOURCE_DIR}/lib/everest/everest_api_types/tests/test_file_autogenerator/*.py)
 set (TEST_DISABLE_FILE ${PROJECT_SOURCE_DIR}/lib/everest/everest_api_types/tests/test_file_autogenerator/disable.csv)
+set (TEST_DATE_TIME_FIELDS_FILE ${PROJECT_SOURCE_DIR}/lib/everest/everest_api_types/tests/test_file_autogenerator/date_time_fields.csv)
 set (SERIALIZATION_TEST_HELPERS_HPP ${PROJECT_SOURCE_DIR}/lib/everest/everest_api_types/tests/SerializationTestHelpers.hpp)
 
 set(GENERATED_TESTS_LOCATION ${CMAKE_BINARY_DIR}/generated/lib/everest/everest_api_types/tests/)
@@ -116,6 +126,7 @@ set(
      "${PROJECT_SOURCE_DIR}/lib/everest/everest_api_types/tests/"
      "${TEST_DISABLE_FILE}"
      "${GENERATED_TESTS_LOCATION}"
+     "${TEST_DATE_TIME_FIELDS_FILE}"
 )
 
 execute_process(
@@ -131,9 +142,10 @@ set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
     ${API_FILES}
     ${TEST_GENERATOR_PY_FILES}
     ${TEST_DISABLE_FILE}
+    ${TEST_DATE_TIME_FIELDS_FILE}
     ${SERIALIZATION_TEST_HELPERS_HPP}
 )
 
-add_dependencies(${TEST_TARGET_NAME} generate_actual_hash_csv)
+add_dependencies(${TEST_TARGET_NAME} generate_actual_hash_csv generate_actual_ifc_hash_csv)
 
 add_subdirectory(${GENERATED_TESTS_LOCATION} ${GENERATED_TESTS_LOCATION})

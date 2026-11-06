@@ -23,21 +23,31 @@ def _deps_impl(module_ctx):
         strip_prefix = "Catch2-3.16.1",
     )
 
+    # the bazel-central-registry has no pugixml 1.16 yet
+    maybe(
+        http_archive,
+        name = "pugixml",
+        url = "https://github.com/zeux/pugixml/releases/download/v1.16/pugixml-1.16.tar.gz",
+        sha256 = "4cee1ca4aad395170f4c7a07824f3bdd41f28316c6e1e1090a1425b278ec0b4b",
+        strip_prefix = "pugixml-1.16/src",
+        build_file = "@everest-core//third-party/bazel:BUILD.pugixml.bazel",
+    )
+
     maybe(
         http_archive,
         name = "com_github_HowardHinnant_date",
-        url = "https://github.com/HowardHinnant/date/archive/f94b8f36c6180be0021876c4a397a054fe50c6f2.tar.gz",
-        sha256 = "8be4c3a52d99b22a4478ce3e2a23fa4b38587ea3d3bc3d1a4d68de22c2e65fb2",
-        strip_prefix = "date-f94b8f36c6180be0021876c4a397a054fe50c6f2",
+        url = "https://github.com/HowardHinnant/date/archive/refs/tags/v3.0.5.tar.gz",
+        sha256 = "ef786edc203daec76475825640b3af247bd08e31fc52217e5ce8f76107b4bb05",
+        strip_prefix = "date-3.0.5",
         build_file = "@everest-core//third-party/bazel:BUILD.date.bazel",
     )
 
     maybe(
         http_archive,
         name = "com_github_pboettch_json-schema-validator",
-        url = "https://github.com/pboettch/json-schema-validator/archive/c780404a84dd9ba978ba26bc58d17cb43fa7bc80.tar.gz",
-        sha256 = "5b6ef2fd33c7fbc38fefc851f07281699fc45add5a558c2ac3f24be3e36eb0b6",
-        strip_prefix = "json-schema-validator-c780404a84dd9ba978ba26bc58d17cb43fa7bc80",
+        url = "https://github.com/pboettch/json-schema-validator/archive/refs/tags/2.4.1.tar.gz",
+        sha256 = "0c8bf7ba59bd50e312d82da4bab1d49cf3e2211cfbd659472f9c90505d2a4e4c",
+        strip_prefix = "json-schema-validator-2.4.1",
         build_file = "@everest-core//third-party/bazel:BUILD.json-schema-validator.bazel",
     )
 
@@ -73,9 +83,9 @@ def _deps_impl(module_ctx):
     maybe(
         http_archive,
         name = "openssl_source",
-        url = "https://github.com/openssl/openssl/releases/download/openssl-3.5.8/openssl-3.5.8.tar.gz",
-        sha256 = "a8f84a39918ec6415ce765d9b429d313ba97b8143169c172e734b9514464f5b2",
-        strip_prefix = "openssl-3.5.8",
+        url = "https://github.com/openssl/openssl/releases/download/openssl-3.5.9/openssl-3.5.9.tar.gz",
+        sha256 = "603f5602e2eef00d77fbd429d34dcd5822bb301757a1bc9cdb24c670f1eb859a",
+        strip_prefix = "openssl-3.5.9",
         build_file = "@everest-core//third-party/bazel:BUILD.openssl-foreign-cc.bazel",
     )
 

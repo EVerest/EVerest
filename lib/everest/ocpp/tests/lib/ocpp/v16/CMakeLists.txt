@@ -31,7 +31,9 @@ target_sources(libocpp_unit_tests PRIVATE
         test_devicemodel_connectivity.cpp
         test_charge_point_status_notification.cpp
         test_charge_point_suspend_reason.cpp
+        test_charge_point_malformed_call.cpp
         test_charge_point_malformed_call_result.cpp
+        test_charge_point_stop_transaction_auth_cache.cpp
         test_charge_point_change_configuration.cpp
         test_charge_point_firmware_status.cpp
         test_config_validation.cpp
@@ -41,6 +43,7 @@ target_sources(libocpp_unit_tests PRIVATE
         test_utils.cpp
         test_variable_resolver.cpp
         test_known_keys_yaml.cpp
+        test_message_from_json.cpp
 )
 
 # Copy the json files used for testing to the destination directory

@@ -8,6 +8,8 @@
 #include <ostream>
 #include <string>
 
+#include <ocpp/common/json_number.hpp>
+
 using json = nlohmann::json;
 
 namespace ocpp {
@@ -43,7 +45,7 @@ void from_json(const json& j, CertificateSignedRequest& k) {
         k.certificateType.emplace(conversions::string_to_certificate_signing_use_enum(j.at("certificateType")));
     }
     if (j.contains("requestId")) {
-        k.requestId.emplace(j.at("requestId"));
+        k.requestId.emplace(ocpp::integer_from_json(j.at("requestId")));
     }
     if (j.contains("customData")) {
         k.customData.emplace(j.at("customData"));

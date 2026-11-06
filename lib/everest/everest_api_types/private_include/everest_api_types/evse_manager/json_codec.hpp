@@ -109,6 +109,8 @@ void from_json(json const& j, PlugAndChargeConfiguration& k);
 void to_json(json& j, EvseStateEnum const& k) noexcept;
 void from_json(json const& j, EvseStateEnum& k);
 
+void to_json(json& j, Reservation const& k) noexcept;
+void from_json(json const& j, Reservation& k);
 void to_json(json& j, SessionInfo const& k) noexcept;
 void from_json(json const& j, SessionInfo& k);
 

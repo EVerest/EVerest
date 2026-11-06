@@ -8,6 +8,8 @@
 #include <ostream>
 #include <string>
 
+#include <ocpp/common/json_number.hpp>
+
 using json = nlohmann::json;
 
 namespace ocpp {
@@ -35,8 +37,8 @@ void from_json(const json& j, StatusNotificationRequest& k) {
     // the required parts of the message
     k.timestamp = ocpp::DateTime(std::string(j.at("timestamp")));
     k.connectorStatus = conversions::string_to_connector_status_enum(j.at("connectorStatus"));
-    k.evseId = j.at("evseId");
-    k.connectorId = j.at("connectorId");
+    k.evseId = ocpp::integer_from_json(j.at("evseId"));
+    k.connectorId = ocpp::integer_from_json(j.at("connectorId"));
 
     // the optional parts of the message
     if (j.contains("customData")) {

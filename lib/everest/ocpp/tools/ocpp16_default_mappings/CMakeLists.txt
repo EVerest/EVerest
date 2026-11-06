@@ -8,6 +8,7 @@ endif()
 set(LIBOCPP_LIB_PATH ${PROJECT_SOURCE_DIR}/lib/ocpp)
 add_executable(ocpp16_default_mappings_generator
     main.cpp
+    ${LIBOCPP_LIB_PATH}/common/json_number.cpp
     ${LIBOCPP_LIB_PATH}/common/types.cpp
     ${LIBOCPP_LIB_PATH}/common/utils.cpp
     ${LIBOCPP_LIB_PATH}/v16/known_keys.cpp
@@ -27,6 +28,7 @@ target_link_libraries(ocpp16_default_mappings_generator
         nlohmann_json::nlohmann_json
         ryml::ryml
         date::date-tz
+        everest::date
         everest::timer
 )
 if(EVEREST_CUSTOM_LOGGING_LIBRARY)

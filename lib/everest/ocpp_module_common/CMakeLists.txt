@@ -16,6 +16,7 @@ target_sources(ocpp_module_common
         src/error_handling.cpp
         src/error_mapping.cpp
         src/error_placeholders.cpp
+        src/external_limits.cpp
         src/transaction_handler.cpp
         src/v16/conversions.cpp
         src/device_model/composed_device_model_storage.cpp

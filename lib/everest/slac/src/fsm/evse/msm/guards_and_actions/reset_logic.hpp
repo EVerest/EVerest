@@ -27,9 +27,9 @@ template <class ResetSm> void select_nmk_for_reset(ResetSm& sm) {
     auto& config = sm.ctx->slac_config;
     if (config.regenerate_key_on_reset) {
         if (config.set_key_handling_mode == fsm::evse::SetKeyHandlingMode::retry_confirmed) {
-            config.generate_nmk(sm.pending_nmk);
+            sm.ctx->generate_nmk(sm.pending_nmk);
         } else {
-            config.generate_nmk(config.session_nmk);
+            sm.ctx->generate_nmk(config.session_nmk);
         }
     } else {
         sm.pending_nmk = config.session_nmk;

@@ -12,6 +12,10 @@ generate_config_run_script(CONFIG sil-ac-d20)
 generate_config_run_script(CONFIG sil-ac-d20-der-iec)
 generate_config_run_script(CONFIG sil-ac-d20-der-sae)
 generate_config_run_script(CONFIG sil-dc-d20)
+generate_config_run_script(CONFIG sil-ac-d20-iso2)
+generate_config_run_script(CONFIG sil-dc-d20-iso2-din)
+generate_config_run_script(CONFIG sil-dc-d20-iso2-tls)
+generate_config_run_script(CONFIG sil-dc-d20-iso2-tls-pnc)
 generate_config_run_script(CONFIG sil-dc-rpcapi)
 generate_config_run_script(CONFIG sil-dc-tls)
 generate_config_run_script(CONFIG sil-dc-sae-v2g)
@@ -29,6 +33,7 @@ generate_config_run_script(CONFIG example)
 generate_config_run_script(CONFIG sil-dc-consumer-api)
 generate_config_run_script(CONFIG sil-mcs)
 generate_config_run_script(CONFIG eebus)
+generate_config_run_script(CONFIG test-all-external-api)
 generate_config_run_script(CONFIG sil-evsev2g)
 generate_config_run_script(CONFIG sil-dc-evsev2g)
 generate_config_run_script(CONFIG sil-dc-tls-evsev2g)
@@ -46,7 +51,7 @@ install(
 install(
     DIRECTORY "certs"
     DESTINATION "${CMAKE_INSTALL_SYSCONFDIR}/everest"
-    FILES_MATCHING PATTERN "*.pem" PATTERN "*.key" PATTERN "*.der" PATTERN "*.txt" PATTERN "*.jks" PATTERN "*.p12"
+    FILES_MATCHING PATTERN "*.pem" PATTERN "*.key" PATTERN "*.der" PATTERN "*.txt" PATTERN "*.p12"
 )
 
 install(

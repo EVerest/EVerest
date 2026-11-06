@@ -7,9 +7,15 @@
 #include "ev_board_support/json_codec.hpp"
 #include "evse_board_support/API.hpp"
 #include "nlohmann/json.hpp"
+#include "utilities/json_codec_helpers.hpp"
+
+#include <cstdint>
+#include <stdexcept>
 #include <string>
 
 namespace everest::lib::API::V1_0::types::ev_board_support {
+
+using utilities::json_number;
 
 void to_json(json& j, EvCpState const& k) noexcept {
     switch (k) {
@@ -72,10 +78,10 @@ void to_json(json& j, BspMeasurement const& k) noexcept {
 
 void from_json(json const& j, BspMeasurement& k) {
     k.proximity_pilot = j.at("proximity_pilot");
-    k.cp_pwm_duty_cycle = j.at("cp_pwm_duty_cycle");
+    k.cp_pwm_duty_cycle = json_number<float>(j.at("cp_pwm_duty_cycle"));
 
     if (j.contains("rcd_current_mA")) {
-        k.rcd_current_mA.emplace(j.at("rcd_current_mA"));
+        k.rcd_current_mA.emplace(json_number<float>(j.at("rcd_current_mA")));
     }
 }
 

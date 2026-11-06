@@ -6,6 +6,7 @@ info:
   version: 1.1.0
   description: >-
     API for EVerest API clients implementing SLAC.
+    Commands without arguments carry an empty JSON object ({}) as payload.
   license:
     name: Apache-2.0
     url: https://opensource.org/licenses/Apache-2.0
@@ -217,10 +218,14 @@ components:
       name: receive_enter_bcd
       title: 'Enter B/C/D'
       summary: Signal pilot state change to B/C/D from A/E/F.
+      contentType: application/json
+      payload: {}
     receive_leave_bcd:
       name: receive_leave_bcd
       title: 'Leave B/C/D'
       summary: Signal pilot state change to A/E/F from B/C/D.
+      contentType: application/json
+      payload: {}
     receive_count_bc:
       name: receive_count_bc
       title: 'B/C transition count'
@@ -238,14 +243,20 @@ components:
       name: receive_dlink_terminate
       title: 'Dlink terminate'
       summary: Terminate the data link and become UNMATCHED.
+      contentType: application/json
+      payload: {}
     receive_dlink_error:
       name: receive_dlink_error
       title: 'Dlink error'
       summary: Terminate the data link and restart the matching process.
+      contentType: application/json
+      payload: {}
     receive_dlink_pause:
       name: receive_dlink_pause
       title: 'Dlink pause'
       summary: Request power saving mode, while staying MATCHED.
+      contentType: application/json
+      payload: {}
     
     send_state:
       name: send_state
@@ -385,6 +396,20 @@ components:
             Optional additional information about the error
             OCPP 1.6: Sets `info` on MREC errors and `vendorId` otherwise
             OCPP 2.x: Sets `techInfo`
+        trigger_value:
+          description: |-
+            Optional value that caused this specific occurrence of the error, e.g. the
+            measurement that crossed a limit.
+          type: object
+          properties:
+            text_repr:
+              description: |-
+                Text representation of the value as the raising entity would print it,
+                including a unit where one applies, e.g. `85.3 degC`. EVerest passes it
+                on as is and does not parse it. Longer values are truncated to 2500
+                characters.
+              type: string
+              maxLength: 2500
     ErrorEnum:
       description: |
         Type of Error
@@ -398,7 +423,10 @@ components:
         - VendorWarning
     CommunicationCheck:
       type: boolean
-      description: "Send 'true' at least every 'cfg_communication_check_to_s' seconds to signal module is alive. Send 'false' to stop communication check'"
+      description: >-
+        Send true at least every cfg_communication_check_to_s seconds to signal that the client is alive, otherwise
+        EVerest raises a CommunicationFault, which the next message clears. Send false to stop the check until the
+        module restarts.
 
     HeartBeatId:
       type: integer

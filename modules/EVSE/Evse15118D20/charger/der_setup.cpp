@@ -173,12 +173,14 @@ to_der_charging_parameters(const dt::sae::DER_SAE_AC_CPDReqEnergyTransferMode& e
     types::iso15118::DERChargingParameters params{};
 
     // SAE function bit -> grid_support DirectiveType. Over-excited constant power factor is var
-    // injection (FixedPFInject), under-excited is var absorption (FixedPFAbsorb).
+    // injection (FixedPFInject), under-excited is var absorption (FixedPFAbsorb). Constant watt maps
+    // onto the EVerest-only FixedWatt.
     static constexpr std::pair<DerBitMapFunctions, DT> table[] = {
         {DerBitMapFunctions::EnterService, DT::EnterService},
         {DerBitMapFunctions::ConstantPowerFactorUnderExcitedFunction, DT::FixedPFAbsorb},
         {DerBitMapFunctions::ConstantPowerFactorOverExcitedFunction, DT::FixedPFInject},
         {DerBitMapFunctions::ConstantReactivePowerFunction, DT::FixedVar},
+        {DerBitMapFunctions::ConstantActivePowerFunction, DT::FixedWatt},
         {DerBitMapFunctions::FrequencyDroopFunction, DT::FreqDroop},
         {DerBitMapFunctions::HighFrequencyMayTripFunction, DT::HFMayTrip},
         {DerBitMapFunctions::HighFrequencyMustTripFunction, DT::HFMustTrip},
@@ -213,17 +215,17 @@ to_der_charging_parameters(const dt::sae::DER_SAE_AC_CPDReqEnergyTransferMode& e
 
     // Bits with no DirectiveType counterpart are dropped. The never-enableable ones (charge,
     // discharge, charge loop target powers) are set by every conforming EV, so they only get a
-    // debug line; the genuinely informative drops stay at info.
+    // debug line; the rest are informative and stay at info.
     const auto dropped = ev.supported_modes & iso15118::sae::SAE_MODE_BITMAP_MASK & ~mapped_mask;
     const auto expected_drops = dropped & iso15118::sae::SAE_NOT_ENABLEABLE_MASK;
     const auto informative_drops = dropped & ~iso15118::sae::SAE_NOT_ENABLEABLE_MASK;
     if (expected_drops != 0) {
-        EVLOG_debug << "SAE DER functions without a grid_support DirectiveType counterpart dropped from "
+        EVLOG_debug << "SAE DER functions with no grid_support DirectiveType dropped from "
                        "ev_supported_dercontrol: "
                     << iso15118::sae::sae_function_names(expected_drops);
     }
     if (informative_drops != 0) {
-        EVLOG_info << "SAE DER functions without a grid_support DirectiveType counterpart dropped from "
+        EVLOG_info << "SAE DER functions with no grid_support DirectiveType dropped from "
                       "ev_supported_dercontrol: "
                    << iso15118::sae::sae_function_names(informative_drops);
     }

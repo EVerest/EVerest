@@ -63,10 +63,7 @@ EthernetInterface::EthernetInterface(const char* interface_name) {
             {0x6, 0, 0, 0x00040000},
             {0x6, 0, 0, 0x00000000},
         };
-        struct sock_fprog socket_filter = {
-            .len = sizeof(code) / sizeof(*code),
-            .filter = code,
-        };
+        struct sock_fprog socket_filter = {sizeof(code) / sizeof(*code), code};
 
         int ret = setsockopt(this->fd, SOL_SOCKET, SO_ATTACH_FILTER, &socket_filter, sizeof(socket_filter));
         if (ret < 0) {

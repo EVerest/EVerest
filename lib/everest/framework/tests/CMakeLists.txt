@@ -16,6 +16,8 @@ target_sources(${TEST_TARGET_NAME} PRIVATE
     test_config_userconfig.cpp
     test_conversions.cpp
     test_database_migration_files.cpp
+    test_error_json.cpp
+    test_error_manager_impl.cpp
     test_everest_external_mqtt.cpp
     test_everest_incoming_data.cpp
     test_filesystem_helpers.cpp

@@ -9,6 +9,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include <ocpp/common/json_number.hpp>
 #include <ocpp/common/types.hpp>
 #include <ocpp/v16/ocpp_enums.hpp>
 
@@ -97,12 +98,12 @@ void to_json(json& j, const ChargingSchedulePeriod& k) {
 /// \brief Conversion from a given json object \p j to a given ChargingSchedulePeriod \p k
 void from_json(const json& j, ChargingSchedulePeriod& k) {
     // the required parts of the message
-    k.startPeriod = j.at("startPeriod");
-    k.limit = j.at("limit");
+    k.startPeriod = ocpp::integer_from_json(j.at("startPeriod"));
+    k.limit = ocpp::decimal_from_json(j.at("limit"));
 
     // the optional parts of the message
     if (j.contains("numberPhases")) {
-        k.numberPhases.emplace(j.at("numberPhases"));
+        k.numberPhases.emplace(ocpp::integer_from_json(j.at("numberPhases")));
     }
 }
 
@@ -142,13 +143,13 @@ void from_json(const json& j, ChargingSchedule& k) {
 
     // the optional parts of the message
     if (j.contains("duration")) {
-        k.duration.emplace(j.at("duration"));
+        k.duration.emplace(ocpp::integer_from_json(j.at("duration")));
     }
     if (j.contains("startSchedule")) {
         k.startSchedule.emplace(j.at("startSchedule").get<std::string>());
     }
     if (j.contains("minChargingRate")) {
-        k.minChargingRate.emplace(j.at("minChargingRate"));
+        k.minChargingRate.emplace(ocpp::decimal_from_json(j.at("minChargingRate")));
     }
 }
 
@@ -343,15 +344,15 @@ void to_json(json& j, const ChargingProfile& k) {
 /// \brief Conversion from a given json object \p j to a given ChargingProfile \p k
 void from_json(const json& j, ChargingProfile& k) {
     // the required parts of the message
-    k.chargingProfileId = j.at("chargingProfileId");
-    k.stackLevel = j.at("stackLevel");
+    k.chargingProfileId = ocpp::integer_from_json(j.at("chargingProfileId"));
+    k.stackLevel = ocpp::integer_from_json(j.at("stackLevel"));
     k.chargingProfilePurpose = conversions::string_to_charging_profile_purpose_type(j.at("chargingProfilePurpose"));
     k.chargingProfileKind = conversions::string_to_charging_profile_kind_type(j.at("chargingProfileKind"));
     k.chargingSchedule = j.at("chargingSchedule");
 
     // the optional parts of the message
     if (j.contains("transactionId")) {
-        k.transactionId.emplace(j.at("transactionId"));
+        k.transactionId.emplace(ocpp::integer_from_json(j.at("transactionId")));
     }
     if (j.contains("recurrencyKind")) {
         k.recurrencyKind.emplace(conversions::string_to_recurrency_kind_type(j.at("recurrencyKind")));

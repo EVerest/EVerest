@@ -144,12 +144,12 @@ V2GTPReadResult read_single_v2gtp_packet(io::IConnection& connection, io::SdpPac
     return V2GTPReadResult::complete;
 }
 
-static size_t setup_response_header(uint8_t* buffer, iso15118::io::v2gtp::PayloadType payload_type, size_t size) {
+static size_t setup_response_header(uint8_t* buffer, iso15118::v2gtp::PayloadType payload_type, size_t size) {
     buffer[0] = iso15118::io::SDP_PROTOCOL_VERSION;
     buffer[1] = iso15118::io::SDP_INVERSE_PROTOCOL_VERSION;
 
     const uint16_t response_payload_type =
-        htons(static_cast<std::underlying_type_t<iso15118::io::v2gtp::PayloadType>>(payload_type));
+        htons(static_cast<std::underlying_type_t<iso15118::v2gtp::PayloadType>>(payload_type));
 
     std::memcpy(buffer + 2, &response_payload_type, sizeof(response_payload_type));
 
@@ -248,7 +248,7 @@ Session::Session(std::unique_ptr<io::IConnection> connection_, session::SessionC
         vehicle_cert_hash = connection->get_vehicle_cert_hash();
         engine.emplace<D20SeccEngine>(engine_output_view(), config, pause_ctx, callbacks, timeouts,
                                       d20::EVSupportedAppProtocols{}, message_20::SupportedAppProtocol{},
-                                      vehicle_cert_hash, skip_app_protocol_negotiation);
+                                      vehicle_cert_hash, connection->is_secure(), skip_app_protocol_negotiation);
     }
 }
 
@@ -293,11 +293,20 @@ session::feedback::Signal Session::teardown_signal() const {
     return Signal::DLINK_ERROR;
 }
 
+void Session::release_stale_pause_contexts() {
+    const bool paused = visit_engine([](const auto& e) { return e.is_paused(); });
+    if (unplugged or (v2g_session_established and not paused)) {
+        pause_ctx.reset();
+        d2_pause_ctx.reset();
+    }
+}
+
 void Session::finish_session() {
     if (finished_reported) {
         return;
     }
     finished_reported = true;
+    release_stale_pause_contexts();
 
     connection->close(); // idempotent; no-op if the EV already closed and the EOF path cleaned up
     open_power_path();
@@ -383,7 +392,7 @@ TimePoint const& Session::poll() {
             logf_warning("Ignoring data received after the V2G session ended");
             packet.reset();
             state.new_data = false; // reset new_data flag
-        } else if (not io::v2gtp::is_known_payload_type(packet.get_payload_type())) {
+        } else if (not v2gtp::is_known_payload_type(packet.get_payload_type())) {
             // Dropped here, after the full frame was read, so the stream stays in sync.
             logf_warning("Ignoring V2GTP packet with unknown payload type");
             packet.reset();
@@ -572,8 +581,8 @@ bool Session::create_engine(const SapEngine::Negotiated& negotiated) {
         switch (negotiated.protocol_id) {
         case ProtocolId::ISO15118_20:
             engine.emplace<D20SeccEngine>(engine_output_view(), config, pause_ctx, callbacks, timeouts,
-                                          negotiated.offered_protocols, negotiated.selected_protocol,
-                                          vehicle_cert_hash);
+                                          negotiated.offered_protocols, negotiated.selected_protocol, vehicle_cert_hash,
+                                          connection->is_secure());
             return true;
         case ProtocolId::ISO15118_2:
             dlink_setup_timer_anchor = true;
@@ -674,6 +683,7 @@ void Session::close() {
         return; // already closed and signaled
     }
     finished_reported = true;
+    release_stale_pause_contexts();
     connection->close();
     open_power_path();
     feedback.signal(session::feedback::Signal::DLINK_TERMINATE);

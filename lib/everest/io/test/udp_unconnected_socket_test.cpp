@@ -8,6 +8,7 @@
 // a second time directly here.
 
 #include <cstring>
+#include <fstream>
 #include <string>
 
 #include <arpa/inet.h>
@@ -19,6 +20,7 @@
 
 #include <gtest/gtest.h>
 
+using everest::lib::io::socket::SourcePortRange;
 using everest::lib::io::udp::endpoint;
 using everest::lib::io::udp::udp_payload;
 using everest::lib::io::udp::udp_unconnected_socket;
@@ -75,6 +77,21 @@ std::uint16_t bound_port(int fd) {
     EXPECT_EQ(::getsockname(fd, reinterpret_cast<sockaddr*>(&ss), &len), 0);
     return ntohs(ss.ss_family == AF_INET6 ? reinterpret_cast<sockaddr_in6*>(&ss)->sin6_port
                                           : reinterpret_cast<sockaddr_in*>(&ss)->sin_port);
+}
+
+// A one-port range on a port that was free a moment ago: the bound port then proves the range
+// was applied, whatever the host's ephemeral range.
+SourcePortRange free_port_range(int family) {
+    const auto port = peer(family).port;
+    return {port, port};
+}
+
+void source_port_range_for_family(int family) {
+    peer p(family);
+    const auto range = free_port_range(family);
+    udp_unconnected_socket u;
+    ASSERT_TRUE(u.open(endpoint(loopback(family), p.port), {}, range));
+    EXPECT_EQ(bound_port(u.get_fd()), range.min);
 }
 
 bool wait_readable(int fd, int timeout_ms) {
@@ -212,4 +229,37 @@ TEST(udp_unconnected_socket_test, client_alias_constructs) {
     auto const& raw = client.get_raw_handler();
     ASSERT_NE(raw, nullptr);
     EXPECT_GE(raw->get_fd(), 0);
+}
+
+TEST(udp_unconnected_socket_test, source_port_range_binds_the_local_port_within_the_range_ipv4) {
+    source_port_range_for_family(AF_INET);
+}
+
+TEST(udp_unconnected_socket_test, source_port_range_binds_the_local_port_within_the_range_ipv6) {
+    source_port_range_for_family(AF_INET6);
+}
+
+// Without the option the kernel picks from its ephemeral range, which is what every existing
+// caller gets.
+TEST(udp_unconnected_socket_test, without_a_source_port_range_the_kernel_picks_the_port) {
+    std::ifstream proc("/proc/sys/net/ipv4/ip_local_port_range");
+    unsigned int low = 0;
+    unsigned int high = 0;
+    ASSERT_TRUE(proc >> low >> high);
+
+    peer p(AF_INET);
+    udp_unconnected_socket u;
+    ASSERT_TRUE(u.open(endpoint("127.0.0.1", p.port)));
+    const auto local_port = bound_port(u.get_fd());
+    EXPECT_GE(local_port, low);
+    EXPECT_LE(local_port, high);
+}
+
+TEST(udp_unconnected_socket_test, client_alias_forwards_the_source_port_range) {
+    peer p(AF_INET);
+    const auto range = free_port_range(AF_INET);
+    everest::lib::io::udp::udp_unconnected_client client(endpoint("127.0.0.1", p.port), std::string{}, range);
+    auto const& raw = client.get_raw_handler();
+    ASSERT_NE(raw, nullptr);
+    EXPECT_EQ(bound_port(raw->get_fd()), range.min);
 }

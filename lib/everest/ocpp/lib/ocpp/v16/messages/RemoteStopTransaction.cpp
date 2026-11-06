@@ -7,6 +7,8 @@
 #include <ostream>
 #include <string>
 
+#include <ocpp/common/json_number.hpp>
+
 using json = nlohmann::json;
 
 namespace ocpp {
@@ -26,7 +28,7 @@ void to_json(json& j, const RemoteStopTransactionRequest& k) {
 
 void from_json(const json& j, RemoteStopTransactionRequest& k) {
     // the required parts of the message
-    k.transactionId = j.at("transactionId");
+    k.transactionId = ocpp::integer_from_json(j.at("transactionId"));
 
     // the optional parts of the message
 }

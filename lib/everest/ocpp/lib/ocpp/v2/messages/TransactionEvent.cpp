@@ -8,6 +8,8 @@
 #include <ostream>
 #include <string>
 
+#include <ocpp/common/json_number.hpp>
+
 using json = nlohmann::json;
 
 namespace ocpp {
@@ -71,7 +73,7 @@ void from_json(const json& j, TransactionEventRequest& k) {
     k.eventType = conversions::string_to_transaction_event_enum(j.at("eventType"));
     k.timestamp = ocpp::DateTime(std::string(j.at("timestamp")));
     k.triggerReason = conversions::string_to_trigger_reason_enum(j.at("triggerReason"));
-    k.seqNo = j.at("seqNo");
+    k.seqNo = ocpp::integer_from_json(j.at("seqNo"));
     k.transactionInfo = j.at("transactionInfo");
 
     // the optional parts of the message
@@ -90,13 +92,13 @@ void from_json(const json& j, TransactionEventRequest& k) {
         k.offline.emplace(j.at("offline"));
     }
     if (j.contains("numberOfPhasesUsed")) {
-        k.numberOfPhasesUsed.emplace(j.at("numberOfPhasesUsed"));
+        k.numberOfPhasesUsed.emplace(ocpp::integer_from_json(j.at("numberOfPhasesUsed")));
     }
     if (j.contains("cableMaxCurrent")) {
-        k.cableMaxCurrent.emplace(j.at("cableMaxCurrent"));
+        k.cableMaxCurrent.emplace(ocpp::integer_from_json(j.at("cableMaxCurrent")));
     }
     if (j.contains("reservationId")) {
-        k.reservationId.emplace(j.at("reservationId"));
+        k.reservationId.emplace(ocpp::integer_from_json(j.at("reservationId")));
     }
     if (j.contains("preconditioningStatus")) {
         k.preconditioningStatus.emplace(
@@ -166,10 +168,10 @@ void from_json(const json& j, TransactionEventResponse& k) {
 
     // the optional parts of the message
     if (j.contains("totalCost")) {
-        k.totalCost.emplace(j.at("totalCost"));
+        k.totalCost.emplace(ocpp::decimal_from_json(j.at("totalCost")));
     }
     if (j.contains("chargingPriority")) {
-        k.chargingPriority.emplace(j.at("chargingPriority"));
+        k.chargingPriority.emplace(ocpp::integer_from_json(j.at("chargingPriority")));
     }
     if (j.contains("idTokenInfo")) {
         k.idTokenInfo.emplace(j.at("idTokenInfo"));

@@ -7,8 +7,8 @@
 namespace module::board_support {
 
 namespace {
-types::evse_board_support::HardwareCapabilities set_default_capabilities(double max_current_A_import,
-                                                                         double min_current_A_import) {
+types::evse_board_support::HardwareCapabilities set_default_capabilities(float max_current_A_import,
+                                                                         float min_current_A_import) {
     return {max_current_A_import,                                          // max_current_A_import
             min_current_A_import,                                          // min_current_A_import
             3,                                                             // max_phase_count_import

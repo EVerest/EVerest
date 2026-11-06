@@ -138,7 +138,9 @@ This module makes use of the following commands of this interface:
 * **enable_disable** to set the EVSE to operative or inoperative, e.g. in case the CSMS sends a **ChangeAvailability.req**. This command can be called from
   different sources. It therefore contains an argument **priority** in order to override the status if required. OCPP2 uses a priority of 5000, which is
   mid-range.
-* **set_external_limits** to apply power or ampere limits at the EVSE received by the CSMS using the SmartCharging feature profile. Libocpp contains the
+* **set_external_limits** to apply power or ampere limits at the EVSE received by the CSMS using the SmartCharging feature profile. Limits become
+  import limits, OCPP 2.1 discharge limits export limits and setpoints are forwarded as setpoints. Per-phase values of an OCPP 2.1
+  period are summed up for W and collapse to the most restrictive phase for A. Libocpp contains the
   business logic to calculate the composite schedule for received charging profiles. This module gets notified in case charging profiles are added,
   changed, or cleared. When notified, this module requests the composite schedule from libocpp and publishes the result via the provided
   :ref:`ocpp_generic <handwritten_ocpp201_provides-ocpp_generic>` interface implementation. The duration of the composite schedule can be configured by the configuration parameter

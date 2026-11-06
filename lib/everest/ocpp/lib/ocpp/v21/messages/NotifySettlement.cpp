@@ -8,6 +8,8 @@
 #include <ostream>
 #include <string>
 
+#include <ocpp/common/json_number.hpp>
+
 using json = nlohmann::json;
 
 namespace ocpp {
@@ -53,7 +55,7 @@ void from_json(const json& j, NotifySettlementRequest& k) {
     // the required parts of the message
     k.pspRef = j.at("pspRef");
     k.status = ocpp::v2::conversions::string_to_payment_status_enum(j.at("status"));
-    k.settlementAmount = j.at("settlementAmount");
+    k.settlementAmount = ocpp::decimal_from_json(j.at("settlementAmount"));
     k.settlementTime = ocpp::DateTime(std::string(j.at("settlementTime")));
 
     // the optional parts of the message

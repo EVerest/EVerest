@@ -6,6 +6,7 @@ info:
   version: 1.1.0
   description: >-
     API for EVerest API clients implementing evse board support, AC RCD and connector lock.
+    Commands without arguments carry an empty JSON object ({}) as payload.
 
   license:
     name: Apache-2.0
@@ -327,6 +328,11 @@ components:
       name: receive_pwm_on
       title: 'Receive PWM duty cycle'
       summary: Turns PWM on with duty cycle (in percent)
+      description: >-
+        EVerest only requests duty cycles strictly between 0 and 100 (5 % for high level communication,
+        10 % for 6 A up to 97 % for 80 A).
+        State X1 (no current available, PWM off) is requested with cp_state_X1 and state F with cp_state_F,
+        never as a duty cycle of 100 or 0 here.
       contentType: application/json
       payload:
         $ref: '#/components/schemas/PWMDutyCycle'
@@ -338,14 +344,20 @@ components:
       name: receive_cp_state_X1
       title: 'Receive CP state X1'
       summary: Turn PWM off and set CP to constant high voltage (state X1)
+      contentType: application/json
+      payload: {}
     receive_cp_state_F:
       name: receive_cp_state_F
       title: 'Receive CP state F'
       summary: Turn PWM off with error F (constant negative voltage)
+      contentType: application/json
+      payload: {}
     receive_cp_state_E:
       name: receive_cp_state_E
       title: 'Receive CP state E'
       summary: Set CP to 0 V (state E)
+      contentType: application/json
+      payload: {}
     receive_allow_power_on:
       name: receive_allow_power_on
       title: 'Receive permission to switch relays on'
@@ -407,6 +419,9 @@ components:
       name: send_ac_nr_of_phases
       title: 'Send phase count'
       summary: Instantaneous phase count available to car
+      description: >-
+        Values outside 1..3 are rejected with a log warning. Not required at start: the initial phase count
+        comes from max_phase_count_import of the capabilities.
       contentType: application/json
       payload:
         $ref: '#/components/schemas/PhaseCount'
@@ -417,12 +432,11 @@ components:
     send_capabilities:
       name: send_capabilities
       title: 'Send hardware capabilities'
-      summary:  >-
-        Hardware capabilities/limits. Initially EvseManager will call get_hw_capabilities once to fetch the
-        limits and caches the limits internally. The BSP module does not have to publish this variable at all,
-        then the initially fetched capabilities will be used. The BSP may publish this variable to update
-        limits in case they change during runtime, e.g. if the maximum current changes because the hardware
-        gets too hot.
+      summary: >-
+        Hardware capabilities/limits. Publish them once after start, before the first charging session: on AC,
+        EVerest does not offer current before it has them, and on AC and DC they set connector_type and
+        supports_cp_state_E. Publish them again whenever a limit changes, e.g. when the
+        maximum current drops because the hardware gets too hot.
       contentType: application/json
       payload:
         $ref: '#/components/schemas/HardwareCapabilities'
@@ -474,6 +488,8 @@ components:
       title: 'Receive signal for selftest'
       summary: >-
         Executes a self test of the RCD. If it fails, an error of type Selftest should be raised.
+      contentType: application/json
+      payload: {}
     receive_request_reset:
       name: receive_request_reset
       title: 'Request to reset RCD'
@@ -482,9 +498,13 @@ components:
       contentType: application/json
       payload:
         type: object
+        required:
+          - headers
         properties:
           headers:
             type: object
+            required:
+              - replyTo
             properties:
               replyTo:
                 type: string
@@ -520,11 +540,15 @@ components:
       title: 'Receive signal to lock'
       summary: >-
         Lock connector lock
+      contentType: application/json
+      payload: {}
     receive_unlock:
       name: receive_unlock
       title: 'Receive signal to unlock'
       summary: >-
         Unlock connector lock. (e.g. normal unlock or enforced by OCPP)
+      contentType: application/json
+      payload: {}
 
 
     send_raise_error:
@@ -738,10 +762,12 @@ components:
             - A_32
             - A_63_3ph_70_1ph
     PWMDutyCycle:
-      description: PWM duty cycle
+      description: >-
+        PWM duty cycle in percent, strictly between 0 and 100. EVerest requests 100 % (X1) and 0 % (F) through
+        cp_state_X1 and cp_state_F instead.
       type: number
-      minimum: 0
-      maximum: 100
+      exclusiveMinimum: 0
+      exclusiveMaximum: 100
     Success:
       description: 'Success: true, failure: false'
       type: boolean
@@ -785,6 +811,11 @@ components:
         - EnclosureOpen: 'The EVSE enclosure is open, e.g. a door or panel is not properly closed.'
         - VendorError: 'Vendor specific error code. Will stop charging session.'
         - VendorWarning: 'Vendor specific error code. Charging may continue.'
+
+        The ConnectorLock errors and MREC1ConnectorLockFailure are raised on the connector_lock interface,
+        Selftest, DC and AC on ac_rcd, all others on evse_board_support. EvseManager sees connector_lock and
+        ac_rcd errors only if its connector_lock and ac_rcd requirements are connected to this module. Only
+        MREC3HighTemperature, MREC18CableOverTempDerate and VendorWarning let charging continue.
 
       type: string
       enum:
@@ -855,10 +886,27 @@ components:
               characters. When the message is empty, the error description is sent
               instead.
           type: string
+        trigger_value:
+          description: |-
+            Optional value that caused this specific occurrence of the error, e.g. the
+            measurement that crossed a limit.
+          type: object
+          properties:
+            text_repr:
+              description: |-
+                Text representation of the value as the raising entity would print it,
+                including a unit where one applies, e.g. `85.3 degC`. EVerest passes it
+                on as is and does not parse it. Longer values are truncated to 2500
+                characters.
+              type: string
+              maxLength: 2500
 
     CommunicationCheck:
       type: boolean
-      description: "Send 'true' at least every 'cfg_communication_check_to_s' seconds to signal module is alive. Send 'false' to stop communication check'"
+      description: >-
+        Send true at least every cfg_communication_check_to_s seconds to signal that the client is alive, otherwise
+        EVerest raises a CommunicationFault, which the next message clears. Send false to stop the check until the
+        module restarts.
     HeartBeatId:
       type: integer
       description: "64bit unsigned integer. The id of every heartbeat increases by 1 and overflows when the maximum representable value is reached"

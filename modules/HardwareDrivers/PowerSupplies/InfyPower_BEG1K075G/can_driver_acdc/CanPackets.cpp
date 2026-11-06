@@ -26,13 +26,13 @@ uint32_t encode_can_id(uint8_t source_address, uint8_t destination_address, uint
 */
 uint32_t encode_can_id(uint8_t destination_address, uint8_t command_number) {
     uint8_t device_number;
-    if (destination_address == 0x3F) {
+    if (destination_address == ADDR_BROADCAST) {
         device_number = 0x0A;
     } else {
         device_number = 0x0B;
     }
 
-    return encode_can_id(0xF0, destination_address, command_number, device_number, 0);
+    return encode_can_id(ADDR_CONTROLLER, destination_address, command_number, device_number, 0);
 }
 
 uint8_t destination_address_from_can_id(uint32_t id) {

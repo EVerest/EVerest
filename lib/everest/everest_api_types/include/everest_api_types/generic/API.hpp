@@ -14,14 +14,22 @@ enum class ErrorEnum {
     VendorWarning
 };
 
+/// \brief The value that caused an error
+struct TriggerValue {
+    /// text representation of the value as the raising entity would print it, truncated to 2500 characters
+    /// when raised
+    std::optional<std::string> text_repr;
+};
+
 struct Error {
     ErrorEnum type;
     std::optional<std::string> sub_type;
     std::optional<std::string> message;
+    std::optional<TriggerValue> trigger_value;
 };
 
 struct RequestReply {
-    std::string replyTo;
+    std::optional<std::string> replyTo;
     std::string payload;
 };
 

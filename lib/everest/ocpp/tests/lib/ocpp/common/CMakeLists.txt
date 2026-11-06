@@ -2,10 +2,15 @@ target_sources(libocpp_unit_tests PRIVATE
     test_charging_station_base.cpp
     test_connectivity_manager.cpp
     test_database_migration_files.cpp
+    test_date_time.cpp
+    test_json_number.cpp
     test_message_queue.cpp
+    test_websocket_receive.cpp
     test_websocket_teardown.cpp
     test_websocket_uri.cpp
 )
+
+target_link_libraries(libocpp_unit_tests PRIVATE OpenSSL::Crypto)
 
 
 set(TEST_UTILS_SOURCES ${LIBOCPP_LIB_PATH}/ocpp/common/utils.cpp)

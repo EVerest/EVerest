@@ -1,14 +1,37 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
-#include <charconv>
+#include <cstddef>
 #include <exception>
 #include <string_view>
 
+#include <everest/date/date.hpp>
 #include <everest/logging.hpp>
 #include <utils/date.hpp>
 
 namespace Everest {
 namespace Date {
+
+namespace {
+
+bool is_digit(char c) {
+    return c >= '0' and c <= '9';
+}
+
+// Length of YYYY-MM-DDTHH:MM:SS[.frac], or 0 if a digit follows it
+std::size_t date_time_length(std::string_view input) {
+    std::size_t end = 19;
+    if (end + 1 < input.size() and input[end] == '.' and is_digit(input[end + 1])) {
+        for (end += 2; end < input.size() and is_digit(input[end]); ++end) {
+        }
+    }
+    return end < input.size() and is_digit(input[end]) ? 0 : end;
+}
+
+std::optional<std::chrono::time_point<date::utc_clock>> parse_ignoring_utc_offset(std::string_view input) {
+    return everest::lib::datetime::parse_rfc3339_lenient(input.substr(0, date_time_length(input)));
+}
+
+} // namespace
 
 void preload_tzdb() {
     try {
@@ -19,92 +42,18 @@ void preload_tzdb() {
 }
 
 std::string to_rfc3339(const std::chrono::time_point<date::utc_clock>& t) {
-    return date::format("%FT%TZ", std::chrono::time_point_cast<std::chrono::milliseconds>(t));
+    return everest::lib::datetime::to_rfc3339(t);
 }
 
-std::chrono::time_point<date::utc_clock> from_rfc3339_slow(const std::string& t) {
-    std::istringstream infile{t};
-    std::chrono::time_point<date::utc_clock> tp;
-    infile >> date::parse("%FT%T", tp);
-    return tp;
+std::optional<std::chrono::time_point<date::utc_clock>> try_from_rfc3339(const std::string& t) {
+    return everest::lib::datetime::parse_rfc3339(t);
 }
-
-constexpr std::size_t typical_len = 24;
 
 std::chrono::time_point<date::utc_clock> from_rfc3339(const std::string& t) {
-    std::string_view input(t);
-    // attempt a slow parse if input size doesn't match our expectations
-    if (input.size() < typical_len) {
-        return from_rfc3339_slow(t);
+    if (const auto tp = try_from_rfc3339(t)) {
+        return *tp;
     }
-    std::string_view y_str = input.substr(0, 4);
-    std::string_view m_str = input.substr(5, 2);
-    std::string_view d_str = input.substr(8, 2);
-    std::string_view h_str = input.substr(11, 2);
-    std::string_view M_str = input.substr(14, 2);
-    std::string_view s_str = input.substr(17, 2);
-    std::string_view ms_str = input.substr(20, 3);
-
-    int y;
-    {
-        auto [ptr, ec] = std::from_chars(y_str.data(), y_str.data() + y_str.size(), y);
-        if (ec != std::errc{}) {
-            return from_rfc3339_slow(t);
-        }
-    }
-
-    int m;
-    {
-        auto [ptr, ec] = std::from_chars(m_str.data(), m_str.data() + m_str.size(), m);
-        if (ec != std::errc{}) {
-            return from_rfc3339_slow(t);
-        }
-    }
-
-    int d;
-    {
-        auto [ptr, ec] = std::from_chars(d_str.data(), d_str.data() + d_str.size(), d);
-        if (ec != std::errc{}) {
-            return from_rfc3339_slow(t);
-        }
-    }
-
-    int h;
-
-    {
-        auto [ptr, ec] = std::from_chars(h_str.data(), h_str.data() + h_str.size(), h);
-        if (ec != std::errc{}) {
-            return from_rfc3339_slow(t);
-        }
-    }
-
-    int M;
-    {
-        auto [ptr, ec] = std::from_chars(M_str.data(), M_str.data() + M_str.size(), M);
-        if (ec != std::errc{}) {
-            return from_rfc3339_slow(t);
-        }
-    }
-
-    int s;
-    {
-        auto [ptr, ec] = std::from_chars(s_str.data(), s_str.data() + s_str.size(), s);
-        if (ec != std::errc{}) {
-            return from_rfc3339_slow(t);
-        }
-    }
-
-    int ms;
-    {
-        auto [ptr, ec] = std::from_chars(ms_str.data(), ms_str.data() + ms_str.size(), ms);
-        if (ec != std::errc{}) {
-            return from_rfc3339_slow(t);
-        }
-    }
-
-    using namespace date;
-    using namespace std::chrono;
-    return utc_clock::from_sys(sys_days{year{y} / m / d} + hours{h} + minutes{M} + seconds{s} + milliseconds{ms});
+    return parse_ignoring_utc_offset(t).value_or(date::utc_clock::time_point{});
 }
 
 } // namespace Date

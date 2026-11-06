@@ -1,4 +1,4 @@
-.. _everest_modules_handwritten_OCPPmulti:
+.. _everest_modules_handwritten_ocppmulti:
 
 .. *******************************************
 .. OCPPmulti
@@ -399,7 +399,9 @@ Requires: evse_energy_sink (0-129)
 
 Typically fulfilled by :ref:`EnergyNode <everest_modules_EnergyNode>` modules. Used to apply power or ampere limits
 received from the CSMS via the SmartCharging feature (**set_external_limits**), one sink per EVSE plus one for EVSE
-id 0 (the whole charging station). See the energy management section below.
+id 0 (the whole charging station). Limits become import limits, OCPP 2.1 discharge limits export limits and setpoints
+are forwarded as setpoints. Per-phase values of an OCPP 2.1 period are summed up for W and collapse to the most
+restrictive phase for A. See the energy management section below.
 
 Requires: evse_manager (1-128)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -680,6 +682,8 @@ error:
      - Time the error was raised, RFC 3339
    * - ``${uuid}``
      - Unique id of the error instance
+   * - ``${trigger_value}``
+     - Value the error was raised with, from the error's ``trigger_value``; empty when the error names none
 
 Any other name, and a ``${`` without a closing ``}``, is warned about and sent as written. Substituted values are not
 scanned for placeholders again. The character limits of the OCPP fields, 255 for ``vendorId``, 500 for ``techInfo`` and

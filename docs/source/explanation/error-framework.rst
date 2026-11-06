@@ -44,6 +44,12 @@ required to handle the error. Data members include:
 - timestamp
 - uuid
 - state (active, cleared, ...)
+- optional trigger value: the value that caused this occurrence of the error,
+  e.g. the measurement that crossed a limit. It holds a single field
+  `text_repr`, the text representation of the value as the raising module
+  would print it, including a unit where one applies (e.g. `85.3 degC`). It
+  is passed on as is and never parsed by the framework. Raising an error
+  truncates `text_repr` to 2500 characters.
 
 Raise an error
 --------------
@@ -110,11 +116,12 @@ interface, with correct default values.
 The `ErrorFactory` is used to create the initial error object.
 This error object can be raised as it is, or can be modified before raising.
 
-The ErrorFactory provides five signatures for the create_error function:
+The ErrorFactory provides six signatures for the create_error function:
 
 - *Default*: Takes no arguments and initializes with default values.
 - *Standard*: Requires `ErrorType`, `ErrorSubType`, and `message`.
 - *Contextual*: Extends the *standard* signature by adding either `severity`, `state`, or *both*.
+- *Triggered*: Extends the *standard* signature by adding `severity` and an optional `TriggerValue`.
 
 The ErrorStateMonitor
 ---------------------

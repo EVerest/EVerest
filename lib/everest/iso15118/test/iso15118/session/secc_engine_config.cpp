@@ -5,12 +5,19 @@
 // session config and applying a mid-session control event must land on the same fields.
 #include <catch2/catch_test_macros.hpp>
 
+#include <cbv2g/iso_20/iso20_CommonMessages_Encoder.h>
+#include <iso15118/detail/cb_exi.hpp>
+
 #include <limits>
 #include <utility>
 #include <vector>
 
 #include <iso15118/detail/session/d2_secc_engine.hpp>
 #include <iso15118/detail/session/din_secc_engine.hpp>
+#include <iso15118/io/log_levels.hpp>
+#include <iso15118/io/logging.hpp>
+#include <iso15118/message/power_delivery.hpp>
+#include <iso15118/session/d20_secc_engine.hpp>
 
 using namespace iso15118;
 
@@ -528,4 +535,97 @@ SCENARIO("Authorization Ongoing timeouts") {
             REQUIRE(session::auth_timeout_to_ms(std::numeric_limits<uint32_t>::max()) == MAX_S * 1000);
         }
     }
+}
+
+TEST_CASE("ISO15118-20 SECC reports the received response type") {
+    std::array<uint8_t, 1024> output{};
+    std::array<uint8_t, 1024> input{};
+    std::optional<d20::PauseContext> pause;
+    d20::Timeouts timeouts;
+    std::vector<V2gMessageType> received;
+    session::feedback::Callbacks callbacks;
+    callbacks.v2g_message = [&](const V2gMessageType& type, const io::StreamInputView&) { received.push_back(type); };
+    D20SeccEngine engine{io::StreamOutputView{output.data(), output.size()},
+                         make_session_config({}),
+                         pause,
+                         callbacks,
+                         timeouts,
+                         {},
+                         {},
+                         std::nullopt,
+                         true};
+    message_20::PowerDeliveryResponse response{};
+    response.response_code = m20dt::ResponseCode::OK;
+    const auto size = message_20::serialize(response, io::StreamOutputView{input.data(), input.size()});
+    REQUIRE(size > 0);
+    engine.on_packet(v2gtp::PayloadType::Part20Main, io::StreamInputView{input.data(), size});
+    REQUIRE(received == std::vector<V2gMessageType>{message_20::Type::PowerDeliveryRes});
+}
+
+TEST_CASE("ISO15118-20 SECC reports a malformed frame once") {
+    std::array<uint8_t, 1024> output{};
+    const std::array<uint8_t, 1> input{0xff};
+    std::optional<d20::PauseContext> pause;
+    d20::Timeouts timeouts;
+    D20SeccEngine engine{io::StreamOutputView{output.data(), output.size()},
+                         make_session_config({}),
+                         pause,
+                         {},
+                         timeouts,
+                         {},
+                         {},
+                         std::nullopt,
+                         true};
+    std::vector<std::string> errors;
+    io::set_logging_callback([&](LogLevel level, const std::string& message) {
+        if (level == LogLevel::Error) {
+            errors.push_back(message);
+        }
+    });
+    const auto handled =
+        engine.on_packet(v2gtp::PayloadType::Part20Main, io::StreamInputView{input.data(), input.size()});
+    io::set_logging_callback([](LogLevel, const std::string&) {});
+    REQUIRE(errors.size() == 1);
+    REQUIRE(errors.front().find("decode_iso20_exiDocument failed") != std::string::npos);
+    // [V2G20-800]: an undecodable frame is ignored and the session carries on.
+    REQUIRE_FALSE(handled);
+    REQUIRE_FALSE(engine.is_finished());
+}
+
+TEST_CASE("ISO15118-20 SECC reports an unhandled request once") {
+    std::array<uint8_t, 1024> output{};
+    std::array<uint8_t, 1024> input{};
+    iso20_exiDocument doc{};
+    init_iso20_exiDocument(&doc);
+    doc.VehicleCheckInReq_isUsed = 1;
+    doc.VehicleCheckInReq.Header.SessionID.bytesLen = 8;
+    auto stream = get_exi_output_stream(io::StreamOutputView{input.data(), input.size()});
+    REQUIRE(encode_iso20_exiDocument(&stream, &doc) == 0);
+    const auto size = exi_bitstream_get_length(&stream);
+    std::vector<V2gMessageType> received;
+    session::feedback::Callbacks callbacks;
+    callbacks.v2g_message = [&](const V2gMessageType& type, const io::StreamInputView&) { received.push_back(type); };
+    std::optional<d20::PauseContext> pause;
+    d20::Timeouts timeouts;
+    D20SeccEngine engine{io::StreamOutputView{output.data(), output.size()},
+                         make_session_config({}),
+                         pause,
+                         callbacks,
+                         timeouts,
+                         {},
+                         {},
+                         std::nullopt,
+                         true};
+    std::vector<std::string> errors;
+    io::set_logging_callback([&](LogLevel level, const std::string& message) {
+        if (level == LogLevel::Error) {
+            errors.push_back(message);
+        }
+    });
+    engine.on_packet(v2gtp::PayloadType::Part20Main, io::StreamInputView{input.data(), size});
+    io::set_logging_callback([](LogLevel, const std::string&) {});
+    REQUIRE(errors.size() == 1);
+    REQUIRE(errors.front().find("chosen message type unhandled") != std::string::npos);
+    REQUIRE(received == std::vector<V2gMessageType>{message_20::Type::None});
+    REQUIRE(engine.is_finished());
 }

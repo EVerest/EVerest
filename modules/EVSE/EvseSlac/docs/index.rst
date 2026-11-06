@@ -84,6 +84,13 @@ the whole procedure takes well under a second on a good connection.
    dlink_ready(true) is published:
    high level communication starts
 
+The published ``state`` follows the matching process, not the arming: it
+stays ``UNMATCHED`` while the module listens and becomes ``MATCHING`` with the
+first ``CM_SLAC_PARM.REQ``. A failed attempt that ``reset_instead_of_fail``
+turns into a retry keeps ``MATCHING``; only the terminal failure goes back to
+``UNMATCHED``. EvseManager relies on this to tell an EIM that completes before
+any SLAC from one during a running matching ([V2G3-M06-08]).
+
 When the car is unplugged, EvseManager calls ``leave_bcd``. From a matched or
 failed session the module leaves the logical network, generates a new key and
 re-arms itself; while still matching it just returns to idle, since no network
@@ -147,7 +154,10 @@ If a car wants extra certainty that it is paired with the right charger, it
 can start the optional CM_VALIDATE procedure from ISO 15118-3: the car
 briefly toggles its Control Pilot state (B → C → B) a number of times and
 asks the charger how many toggles it saw. EvseSlac implements the full
-two-step exchange, including the timed observation window. The toggle count
+two-step exchange, including the timed observation window. It answers only
+a car whose matching session has finished the attenuation measurement and
+waits for CM_SLAC_MATCH.REQ; validation requests from any other sender are
+ignored. The toggle count
 itself comes from EvseManager via the ``count_bc`` command of the slac
 interface, so this works out of the box in a standard EVerest setup.
 

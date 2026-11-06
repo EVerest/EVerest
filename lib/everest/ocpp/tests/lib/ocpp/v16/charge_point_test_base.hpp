@@ -9,6 +9,7 @@
 #include <filesystem>
 #include <fstream>
 #include <functional>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -81,9 +82,18 @@ protected:
             /*message_callback=*/nullptr);
     }
 
-    /// \brief Capture an outgoing call and queue a CallResult for the responder thread.
+    /// \brief Capture an outgoing call and queue a CallResult for the responder thread. CallResults and CallErrors the
+    /// charge point sends are recorded by their message id.
     bool record_and_answer(const std::string& message) {
         const auto call = nlohmann::json::parse(message, nullptr, false);
+        if (not call.is_discarded() and call.is_array() and call.size() >= 3 and (call.at(0) == 3 or call.at(0) == 4)) {
+            {
+                const std::lock_guard<std::mutex> lock(this->mtx);
+                this->answers[call.at(1)] = call;
+            }
+            this->cv.notify_all();
+            return true;
+        }
         if (call.is_discarded() or not call.is_array() or call.size() < 4 or call.at(0) != 2) {
             return true;
         }
@@ -177,6 +187,16 @@ protected:
         return count;
     }
 
+    /// \brief Wait for the CallResult or CallError the charge point sends for \p message_id
+    std::optional<nlohmann::json> wait_for_answer(const std::string& message_id) {
+        std::unique_lock<std::mutex> lock(this->mtx);
+        if (not this->cv.wait_for(lock, WAIT_TIMEOUT,
+                                  [this, &message_id]() { return this->answers.count(message_id) > 0; })) {
+            return std::nullopt;
+        }
+        return this->answers.at(message_id);
+    }
+
     /// \brief The payload of the most recent call with \p action , if any was sent.
     std::optional<nlohmann::json> last_payload(const std::string& action) {
         const std::lock_guard<std::mutex> lock(this->mtx);
@@ -196,6 +216,7 @@ protected:
     std::mutex mtx;
     std::condition_variable cv;
     std::vector<nlohmann::json> sent;
+    std::map<std::string, nlohmann::json> answers;
     std::deque<nlohmann::json> pending_responses;
     std::vector<std::string> escaped_exceptions;
     std::size_t delivered{0};

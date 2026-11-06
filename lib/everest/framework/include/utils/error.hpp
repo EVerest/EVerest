@@ -3,6 +3,8 @@
 #ifndef UTILS_ERROR_HPP
 #define UTILS_ERROR_HPP
 
+#include <cstddef>
+#include <optional>
 #include <string>
 
 #include <utils/date.hpp>
@@ -54,6 +56,16 @@ std::string state_to_string(const State& s);
 State string_to_state(const std::string& s);
 
 ///
+/// \brief The value that caused an error
+///
+struct TriggerValue {
+    /// maximum number of characters (UTF-8 code points) of text_repr, longer ones are truncated when raised
+    static constexpr std::size_t text_repr_max_length = 2500;
+    /// text representation of the value as the raising entity would print it, e.g. "85.3 degC"
+    std::string text_repr;
+};
+
+///
 /// \brief The Error struct represents an error object
 ///
 struct Error {
@@ -79,6 +91,8 @@ struct Error {
     time_point timestamp;
     UUID uuid;
     State state;
+    /// unset when the raising entity named no value
+    std::optional<TriggerValue> trigger_value;
 };
 
 using ErrorHandle = UUID;

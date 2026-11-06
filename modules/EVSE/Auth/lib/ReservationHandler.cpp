@@ -276,6 +276,28 @@ bool ReservationHandler::is_evse_reserved(const uint32_t evse_id, const int32_t 
     return it != this->evse_reservations.end() && it->second.reservation_id == reservation_id;
 }
 
+std::optional<types::reservation::Reservation> ReservationHandler::get_evse_reservation(const uint32_t evse_id,
+                                                                                        const int32_t reservation_id) {
+    std::lock_guard<std::recursive_mutex> lk(this->event_mutex);
+    const auto it = this->evse_reservations.find(evse_id);
+    if (it == this->evse_reservations.end() || it->second.reservation_id != reservation_id) {
+        return std::nullopt;
+    }
+    return it->second;
+}
+
+std::optional<uint32_t> ReservationHandler::get_evse_id_of_reservation(const int32_t reservation_id) {
+    std::lock_guard<std::recursive_mutex> lk(this->event_mutex);
+    const auto it = std::find_if(this->evse_reservations.begin(), this->evse_reservations.end(),
+                                 [reservation_id](const auto& evse_reservation) {
+                                     return evse_reservation.second.reservation_id == reservation_id;
+                                 });
+    if (it == this->evse_reservations.end()) {
+        return std::nullopt;
+    }
+    return it->first;
+}
+
 std::pair<bool, std::optional<uint32_t>>
 ReservationHandler::cancel_reservation(const int reservation_id, const bool execute_callback,
                                        const types::reservation::ReservationEndReason reason) {

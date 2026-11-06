@@ -16,6 +16,7 @@ class ValidatingMqttProxy : public MqttProviderInterface {
 public:
     explicit ValidatingMqttProxy(Everest::MqttProvider& provider_);
 
+    using MqttProviderInterface::publish;
     void publish(const std::string& topic, const std::string& data) override;
     void publish(const std::string& topic, bool data) override;
 
@@ -24,8 +25,6 @@ public:
 
 private:
     Everest::MqttProvider& provider;
-
-    [[nodiscard]] static bool is_topic_valid(std::string_view topic);
 };
 
 } // namespace everest::lib::API::Mqtt

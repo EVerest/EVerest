@@ -803,6 +803,7 @@ class TestChargePoint : public ChargePoint {
 public:
     using ChargePoint::get_certificate_status_from_csms;
     using ChargePoint::handle_message;
+    using ChargePoint::message_callback;
 
     TestChargePoint(const std::map<std::int32_t, std::int32_t>& evse_connector_structure,
                     std::shared_ptr<DeviceModel> device_model, std::shared_ptr<DatabaseHandler> database_handler,
@@ -1223,6 +1224,82 @@ TEST_F(ChargePointConstructorTestFixtureV2, ConnectThenDisconnectAwaitCallInFlig
     charge_point.stop();
 }
 
+// Invalid payloads, sent over the websocket of a registered charging station: an integer beyond the
+// int32 range, one beyond the uint64 range, which nlohmann parses as a double, and a float.
+TEST_F(ChargePointConstructorTestFixtureV2, OutOfRangeIntegerInCallIsAnsweredWithFormationViolation) {
+    configure_callbacks_with_mocks();
+
+    auto connectivity_manager = std::make_shared<::testing::NiceMock<ConnectivityManagerMock>>();
+    ON_CALL(*connectivity_manager, is_websocket_connected()).WillByDefault(::testing::Return(false));
+    std::function<void(const std::string&)> csms_to_charge_point;
+    ON_CALL(*connectivity_manager, set_message_callback(::testing::_))
+        .WillByDefault(
+            ::testing::Invoke([&csms_to_charge_point](const std::function<void(const std::string&)>& callback) {
+                csms_to_charge_point = callback;
+            }));
+
+    std::mutex mtx;
+    std::condition_variable cv;
+    std::optional<std::string> boot_notification_id;
+    std::map<std::string, json> answers;
+    ON_CALL(*connectivity_manager, send_to_websocket(::testing::_))
+        .WillByDefault(::testing::Invoke([&](const std::string& message) {
+            const auto frame = json::parse(message);
+            std::lock_guard<std::mutex> lock(mtx);
+            if (frame.at(MESSAGE_TYPE_ID) == MessageTypeId::CALL && frame.at(CALL_ACTION) == "BootNotification" &&
+                !boot_notification_id.has_value()) {
+                boot_notification_id = frame.at(MESSAGE_ID).get<std::string>();
+            } else if (frame.at(MESSAGE_TYPE_ID) == MessageTypeId::CALLRESULT ||
+                       frame.at(MESSAGE_TYPE_ID) == MessageTypeId::CALLERROR) {
+                answers[frame.at(MESSAGE_ID).get<std::string>()] = frame;
+            }
+            cv.notify_all();
+            return true;
+        }));
+    const auto wait_for_answer = [&](const std::string& message_id) -> std::optional<json> {
+        std::unique_lock<std::mutex> lock(mtx);
+        if (!cv.wait_for(lock, std::chrono::seconds(5), [&] { return answers.count(message_id) > 0; })) {
+            return std::nullopt;
+        }
+        return answers.at(message_id);
+    };
+
+    ocpp::v2::ChargePoint charge_point(evse_connector_structure, device_model, database_handler, evse_security,
+                                       connectivity_manager, "/tmp", callbacks);
+    charge_point.start(BootReasonEnum::PowerUp, false);
+    NetworkConnectionProfile network_connection_profile;
+    network_connection_profile.messageTimeout = 30;
+    charge_point.on_websocket_connected(1, network_connection_profile, OcppProtocolVersion::v201);
+
+    std::string boot_id;
+    {
+        std::unique_lock<std::mutex> lock(mtx);
+        ASSERT_TRUE(cv.wait_for(lock, std::chrono::seconds(5), [&] { return boot_notification_id.has_value(); }));
+        boot_id = boot_notification_id.value();
+    }
+    const json accepted = {{"currentTime", ocpp::DateTime().to_rfc3339()}, {"interval", 300}, {"status", "Accepted"}};
+    csms_to_charge_point(json{MessageTypeId::CALLRESULT, boot_id, accepted}.dump());
+
+    for (const auto& [message_id, payload] : std::vector<std::pair<std::string, std::string>>{
+             {"beyond-int32", R"({"operationalStatus":"Inoperative","evse":{"id":2147483648}})"},
+             {"beyond-uint64", R"({"operationalStatus":"Inoperative","evse":{"id":100000000000000000000000}})"},
+             {"float", R"({"operationalStatus":"Inoperative","evse":{"id":1.0}})"},
+         }) {
+        csms_to_charge_point(R"([2, ")" + message_id + R"(", "ChangeAvailability", )" + payload + "]");
+        const auto answer = wait_for_answer(message_id);
+        ASSERT_TRUE(answer.has_value()) << "no answer to " << payload;
+        EXPECT_EQ(answer->at(MESSAGE_TYPE_ID), MessageTypeId::CALLERROR) << payload;
+        EXPECT_EQ(answer->at(CALLERROR_ERROR_CODE), "FormationViolation") << payload;
+    }
+
+    csms_to_charge_point(R"([2, "in-range", "ChangeAvailability", {"operationalStatus":"Operative","evse":{"id":1}}])");
+    const auto answer = wait_for_answer("in-range");
+    ASSERT_TRUE(answer.has_value());
+    EXPECT_EQ(answer->at(MESSAGE_TYPE_ID), MessageTypeId::CALLRESULT);
+
+    charge_point.stop();
+}
+
 /// \brief Stands in for the CSMS transport: collects what the message queue sends so the test can answer it
 class FakeCsmsTransport {
 public:
@@ -1331,6 +1408,32 @@ TEST_P(ChargePointCsmsReplyTestFixtureV2, MalformedGetCertificateStatusResponse_
     } catch (const std::exception& e) {
         ADD_FAILURE() << "get_certificate_status_from_csms threw: " << e.what();
     }
+}
+
+/// \brief A registered charging station whose DataTransfer handler throws
+class ChargePointThrowingHandlerTestFixtureV2 : public ChargePointCsmsReplyTestFixtureV2 {
+public:
+    void SetUp() override {
+        callbacks.data_transfer_callback = [](const DataTransferRequest&) -> DataTransferResponse {
+            throw std::runtime_error("simulated handler failure");
+        };
+        ChargePointCsmsReplyTestFixtureV2::SetUp();
+    }
+};
+
+TEST_F(ChargePointThrowingHandlerTestFixtureV2, ExceptionWhileHandlingACall_IsAnsweredWithInternalError) {
+    const json request = json::array({2, "throws", "DataTransfer", {{"vendorId", "test"}}});
+
+    EXPECT_NO_THROW(charge_point->message_callback(request.dump()));
+
+    while (const auto sent = csms.next_sent_message(std::chrono::seconds(5))) {
+        if (sent->at(MESSAGE_TYPE_ID) == 4 and sent->at(MESSAGE_ID) == "throws") {
+            EXPECT_EQ(sent->at(2), "InternalError");
+            EXPECT_EQ(sent->at(3), "simulated handler failure");
+            return;
+        }
+    }
+    FAIL() << "the request was not answered with a CALLERROR";
 }
 
 INSTANTIATE_TEST_SUITE_P(MalformedPayloads, ChargePointCsmsReplyTestFixtureV2,
