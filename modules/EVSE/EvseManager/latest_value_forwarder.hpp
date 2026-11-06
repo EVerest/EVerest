@@ -8,24 +8,24 @@
 #include <optional>
 #include <utility>
 
-#include <generated/types/board_support_common.hpp>
-
 namespace module {
 
-/// PP ampacity the BSP may publish before ready() can handle it. Subscribing in ready() would lose
+/// Value a requirement may publish before ready() can handle it. Subscribing in ready() would lose
 /// a value published earlier, e.g. a cable already in the socket at boot.
-class PpAmpacityForwarder {
+template <typename T> class LatestValueForwarder {
 public:
-    using Sink = std::function<void(const types::board_support_common::ProximityPilot&)>;
+    using Sink = std::function<void(const T&)>;
 
-    /// Forwards pp to the sink, or keeps it as the latest value until connect() runs.
-    void publish(const types::board_support_common::ProximityPilot& pp) {
+    /// Forwards value to the sink, or keeps it as the latest value until connect() runs. Returns whether the
+    /// sink received it, so a caller can follow up outside the lock.
+    bool publish(const T& value) {
         std::scoped_lock lock(mutex);
         if (sink) {
-            sink(pp);
-        } else {
-            latest = pp;
+            sink(value);
+            return true;
         }
+        latest = value;
+        return false;
     }
 
     /// Sets the sink and replays the latest value kept so far. The sink runs under the lock, so a
@@ -42,7 +42,7 @@ public:
 private:
     std::mutex mutex;
     Sink sink;
-    std::optional<types::board_support_common::ProximityPilot> latest;
+    std::optional<T> latest;
 };
 
 } // namespace module

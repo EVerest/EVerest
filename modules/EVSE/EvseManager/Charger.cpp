@@ -299,6 +299,7 @@ void Charger::run_state_machine() {
                 internal_context.no_energy_warning_printed = false;
                 internal_context.ac_x1_fallback_nominal_timeout_running = false;
                 internal_context.auth_received_printed = false;
+                internal_context.connector_lock_wait_started.reset();
 
                 bsp->allow_power_on(false, types::evse_board_support::Reason::PowerOff);
 
@@ -425,6 +426,10 @@ void Charger::run_state_machine() {
                 if (not internal_context.auth_received_printed) {
                     internal_context.auth_received_printed = true;
                     session_log.evse(false, "EIM Authorization received");
+                }
+
+                if (not connector_lock_allows_charging()) {
+                    break;
                 }
 
                 // If we are restarting, the transaction may already be active
@@ -558,6 +563,10 @@ void Charger::run_state_machine() {
                 }
                 // Contract / Plug and Charge
             } else if (shared_context.flag_authorized and shared_context.authorized_pnc) {
+
+                if (not connector_lock_allows_charging()) {
+                    break;
+                }
 
                 if (not shared_context.flag_transaction_active) {
                     if (!start_transaction()) {
@@ -1978,6 +1987,8 @@ void Charger::setup(const SetupConfig& config) {
     config_context.sleep_before_enabling_pwm_hlc_mode_ms = config.sleep_before_enabling_pwm_hlc_mode_ms;
     config_context.session_id_type = config.session_id_type;
     config_context.hlc_charge_loop_without_energy_timeout_s = config.hlc_charge_loop_without_energy_timeout_s;
+    config_context.connector_lock_confirmation_timeout_ms =
+        config.charge_mode == ChargeMode::AC ? config.connector_lock_confirmation_timeout_ms : 0;
 
     if (config_context.charge_mode == ChargeMode::DC) {
         shared_context.hlc_charging_active = true;
@@ -2002,6 +2013,55 @@ bool Charger::get_authorized_pnc() {
 bool Charger::get_authorized_eim() {
     Everest::scoped_lock_timeout lock(state_machine_mutex, Everest::MutexDescription::Charger_get_authorized_eim);
     return (shared_context.flag_authorized and not shared_context.authorized_pnc);
+}
+
+void Charger::set_connector_lock_state(types::connector_lock::LockState state) {
+    Everest::scoped_lock_timeout lock(state_machine_mutex, Everest::MutexDescription::Charger_set_connector_lock_state);
+    shared_context.connector_lock_state = state;
+}
+
+bool Charger::connector_lock_ready() {
+    Everest::scoped_lock_timeout lock(state_machine_mutex, Everest::MutexDescription::Charger_connector_lock_ready);
+    return connector_lock_ready_internal();
+}
+
+bool Charger::connector_lock_ready_internal() const {
+    return config_context.connector_lock_confirmation_timeout_ms == 0 or
+           shared_context.connector_lock_state == types::connector_lock::LockState::Locked;
+}
+
+bool Charger::connector_lock_allows_charging() {
+    auto& wait_started = internal_context.connector_lock_wait_started;
+    if (connector_lock_ready_internal()) {
+        if (wait_started.has_value()) {
+            wait_started.reset();
+            session_log.evse(false, "Connector lock confirmed");
+        }
+        return true;
+    }
+
+    const auto now = std::chrono::steady_clock::now();
+    if (not wait_started.has_value()) {
+        wait_started = now;
+        session_log.evse(false, "Waiting for connector lock confirmation");
+    }
+    if (now - *wait_started >= std::chrono::milliseconds(config_context.connector_lock_confirmation_timeout_ms)) {
+        wait_started.reset();
+        end_authorization_on_connector_lock_timeout();
+    }
+    return false;
+}
+
+void Charger::end_authorization_on_connector_lock_timeout() {
+    session_log.evse(false, "Connector lock not confirmed within timeout");
+    // Dropping the authorization lets the lock open again (if it only locks when authorized). The session itself
+    // ends through the raised error, so stop_session() is not called here.
+    signal_simple_event(types::evse_manager::SessionEventEnum::Deauthorized);
+    shared_context.flag_authorized = false;
+    shared_context.authorized_pnc = false;
+    error_handling->raise_connector_lock_confirmation_timeout_error(fmt::format(
+        "Connector lock not confirmed within {} ms", config_context.connector_lock_confirmation_timeout_ms));
+    signal_hlc_connector_lock_timeout();
 }
 
 bool Charger::get_authorized_pnc_ready_for_hlc() {
@@ -2987,6 +3047,7 @@ void Charger::clear_errors_on_unplug() {
     error_handling->clear_internal_error();
     error_handling->clear_powermeter_transaction_start_failed_error();
     error_handling->clear_authorization_timeout_error();
+    error_handling->clear_connector_lock_confirmation_timeout_error();
     error_handling->clear_isolation_resistance_fault("Resistance");
     error_handling->clear_isolation_resistance_fault("VoltageToEarth");
     error_handling->clear_cable_check_fault();

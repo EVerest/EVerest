@@ -6,6 +6,7 @@
 #pragma GCC diagnostic ignored "-Wignored-qualifiers"
 #pragma GCC diagnostic ignored "-Wunused-function"
 #include "generated/types/board_support_common.hpp"
+#include "generated/types/connector_lock.hpp"
 #include "generated/types/evse_board_support.hpp"
 #pragma GCC diagnostic pop
 
@@ -58,5 +59,11 @@ using ProximityPilot_External = ProximityPilot;
 
 ProximityPilot_Internal to_internal_api(ProximityPilot_External const& val);
 ProximityPilot_External to_external_api(ProximityPilot_Internal const& val);
+
+using LockState_Internal = ::types::connector_lock::LockState;
+using LockState_External = LockState;
+
+LockState_Internal to_internal_api(LockState_External const& val);
+LockState_External to_external_api(LockState_Internal const& val);
 
 } // namespace everest::lib::API::V1_0::types::evse_board_support

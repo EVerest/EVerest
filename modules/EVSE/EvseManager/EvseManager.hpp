@@ -53,8 +53,8 @@
 #include "VarContainer.hpp"
 #include "bsp_capabilities_store.hpp"
 #include "cable_check/PowerSupplyMeasurementWaiter.hpp"
+#include "latest_value_forwarder.hpp"
 #include "over_voltage/OverVoltageMonitor.hpp"
-#include "pp_ampacity_forwarder.hpp"
 #include "scoped_lock_timeout.hpp"
 #include "voltage_plausibility/VoltagePlausibilityMonitor.hpp"
 #include <everest/util/async/monitor.hpp>
@@ -151,6 +151,7 @@ struct Conf {
     bool lock_connector_in_state_b;
     bool unlock_when_deauthorized;
     int keep_cable_locked_lock_delay_ms;
+    int connector_lock_confirmation_timeout_ms;
     int state_F_after_fault_ms;
     bool fail_on_powermeter_errors;
     bool raise_mrec9;
@@ -391,7 +392,8 @@ private:
 
     Everest::Thread energyThreadHandle;
     BspCapabilitiesStore hw_capabilities{types::evse_board_support::HardwareCapabilities{}};
-    PpAmpacityForwarder pp_ampacity;
+    LatestValueForwarder<types::board_support_common::ProximityPilot> pp_ampacity;
+    LatestValueForwarder<types::connector_lock::LockState> connector_lock_state;
 
     types::energy::ExternalLimits external_local_energy_limits;
     const float EVSE_ABSOLUTE_MAX_CURRENT = 80.0;

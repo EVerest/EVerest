@@ -614,4 +614,49 @@ void from_json(json const& j, ProximityPilot& k) {
     k.ampacity = j.at("ampacity");
 }
 
+void to_json(json& j, LockState const& k) noexcept {
+    switch (k) {
+    case LockState::Unknown:
+        j = "Unknown";
+        return;
+    case LockState::Unlocked:
+        j = "Unlocked";
+        return;
+    case LockState::Locked:
+        j = "Locked";
+        return;
+    }
+    j = "INVALID_VALUE__everest::lib::API::V1_0::types::evse_board_support::LockState";
+}
+
+void from_json(json const& j, LockState& k) {
+    std::string s = j;
+    if (s == "Unknown") {
+        k = LockState::Unknown;
+        return;
+    }
+    if (s == "Unlocked") {
+        k = LockState::Unlocked;
+        return;
+    }
+    if (s == "Locked") {
+        k = LockState::Locked;
+        return;
+    }
+
+    throw std::out_of_range(
+        "Provided string " + s +
+        " could not be converted to enum of type everest::lib::API::1_0::types::evse_board_support::LockState");
+}
+
+void to_json(json& j, LockStatus const& k) noexcept {
+    j = json{
+        {"lock_state", k.lock_state},
+    };
+}
+
+void from_json(json const& j, LockStatus& k) {
+    k.lock_state = j.at("lock_state");
+}
+
 } // namespace everest::lib::API::V1_0::types::evse_board_support
