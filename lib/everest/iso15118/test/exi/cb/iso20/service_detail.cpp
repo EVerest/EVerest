@@ -1,5 +1,9 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include <stdexcept>
+
+#include <cbv2g/iso_20/iso20_CommonMessages_Datatypes.h>
+
 #include <iso15118/message/service_detail.hpp>
 #include <iso15118/message/variant.hpp>
 
@@ -69,6 +73,32 @@ SCENARIO("Se/Deserialize service_detail messages") {
 
         THEN("It should be serialized successfully") {
             REQUIRE(serialize_helper(res) == expected);
+        }
+    }
+
+    GIVEN("Serialize service_detail_res with more entries than the cbv2g arrays hold") {
+
+        message_20::ServiceDetailResponse res;
+
+        res.header = message_20::Header{{0x3D, 0x4C, 0xBF, 0x93, 0x37, 0x4E, 0xD8, 0x9B}, 1725456323};
+        res.response_code = message_20::datatypes::ResponseCode::OK;
+        res.service = message_20::to_underlying_value(message_20::datatypes::ServiceCategory::AC);
+        res.service_parameter_list.clear();
+
+        THEN("Too many parameter sets are rejected") {
+            for (uint16_t id = 0; id <= iso20_ParameterSetType_4_ARRAY_SIZE; id++) {
+                res.service_parameter_list.push_back(message_20::datatypes::ParameterSet(id));
+            }
+            REQUIRE_THROWS_AS(serialize_helper(res), std::runtime_error);
+        }
+
+        THEN("Too many parameters in a set are rejected") {
+            auto& parameter_set = res.service_parameter_list.emplace_back();
+            parameter_set.id = 0;
+            for (int32_t i = 0; i <= iso20_ParameterType_8_ARRAY_SIZE; i++) {
+                parameter_set.parameter.push_back({"Parameter", i});
+            }
+            REQUIRE_THROWS_AS(serialize_helper(res), std::runtime_error);
         }
     }
 

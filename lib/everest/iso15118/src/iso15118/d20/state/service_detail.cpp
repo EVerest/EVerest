@@ -3,7 +3,12 @@
 #include <iso15118/d20/state/service_detail.hpp>
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
+#include <map>
+#include <vector>
+
+#include <cbv2g/iso_20/iso20_CommonMessages_Datatypes.h>
 
 #include <iso15118/d20/state/service_selection.hpp>
 
@@ -60,6 +65,54 @@ void fill_parking_parameter_list(std::vector<message_20::datatypes::ParkingParam
     }
 }
 
+// 32 parameter sets of 32 parameters each are allowed by the schema, but cbExiGen generates much smaller arrays.
+// Do not offer more than can be encoded.
+constexpr std::size_t MAX_PARAMETER_SETS = iso20_ParameterSetType_4_ARRAY_SIZE;
+constexpr std::size_t MAX_PARAMETERS = iso20_ParameterType_8_ARRAY_SIZE;
+
+bool can_offer_another_set(const message_20::ServiceDetailResponse& res) {
+    if (res.service_parameter_list.size() < MAX_PARAMETER_SETS) {
+        return true;
+    }
+    logf_warning("Service %u has more parameter sets than a ServiceDetailRes carries (%zu), dropping the rest",
+                 res.service, MAX_PARAMETER_SETS);
+    return false;
+}
+
+template <typename ParameterList>
+void offer_parameter_sets(message_20::ServiceDetailResponse& res, const std::vector<ParameterList>& parameter_lists,
+                          std::map<uint8_t, ParameterList>& offered) {
+    uint8_t id = 0;
+    for (const auto& parameter_list : parameter_lists) {
+        if (not can_offer_another_set(res)) {
+            break;
+        }
+        offered[id] = parameter_list;
+        res.service_parameter_list.push_back(dt::ParameterSet(id++, parameter_list));
+    }
+}
+
+void drop_unencodable_vas_parameters(message_20::ServiceDetailResponse& res) {
+    auto& parameter_sets = res.service_parameter_list;
+    if (parameter_sets.size() > MAX_PARAMETER_SETS) {
+        logf_warning("VAS %u has %zu parameter sets, a ServiceDetailRes carries at most %zu, dropping the rest",
+                     res.service, parameter_sets.size(), MAX_PARAMETER_SETS);
+        while (parameter_sets.size() > MAX_PARAMETER_SETS) {
+            parameter_sets.pop_back();
+        }
+    }
+    for (auto& parameter_set : parameter_sets) {
+        if (parameter_set.parameter.size() > MAX_PARAMETERS) {
+            logf_warning("VAS %u parameter set %u has %zu parameters, a ServiceDetailRes carries at most %zu, dropping "
+                         "the rest",
+                         res.service, parameter_set.id, parameter_set.parameter.size(), MAX_PARAMETERS);
+            while (parameter_set.parameter.size() > MAX_PARAMETERS) {
+                parameter_set.parameter.pop_back();
+            }
+        }
+    }
+}
+
 } // namespace
 
 message_20::ServiceDetailResponse handle_request(const message_20::ServiceDetailRequest& req, d20::Session& session,
@@ -99,75 +152,53 @@ message_20::ServiceDetailResponse handle_request(const message_20::ServiceDetail
     if (custom_vas_parameters.has_value()) {
         logf_info("Sending custom vas parameters");
 
-        const auto& vas_services = custom_vas_parameters.value();
+        res.service = req.service;
+        res.service_parameter_list = custom_vas_parameters.value();
+        drop_unencodable_vas_parameters(res);
 
         std::vector<uint16_t> parameter_set_ids{};
-        for (auto& vas : vas_services) {
+        for (const auto& vas : res.service_parameter_list) {
             parameter_set_ids.push_back(vas.id);
         }
         session.offered_services.custom_vas_list[req.service] = parameter_set_ids;
 
-        res.service = req.service;
-        res.service_parameter_list = vas_services;
         set_response_code(res, dt::ResponseCode::OK);
         return res;
     }
 
-    uint8_t id = 0;
-
     if (req.service == message_20::to_underlying_value(dt::ServiceCategory::AC)) {
         res.service = message_20::to_underlying_value(dt::ServiceCategory::AC);
-        for (auto& parameter_set : config.ac_parameter_list) {
-            session.offered_services.ac_parameter_list[id] = parameter_set;
-            res.service_parameter_list.push_back(dt::ParameterSet(id++, parameter_set));
-        }
+        offer_parameter_sets(res, config.ac_parameter_list, session.offered_services.ac_parameter_list);
     } else if (req.service == message_20::to_underlying_value(dt::ServiceCategory::AC_BPT)) {
         res.service = message_20::to_underlying_value(dt::ServiceCategory::AC_BPT);
-        for (auto& parameter_set : config.ac_bpt_parameter_list) {
-            session.offered_services.ac_bpt_parameter_list[id] = parameter_set;
-            res.service_parameter_list.push_back(dt::ParameterSet(id++, parameter_set));
-        }
+        offer_parameter_sets(res, config.ac_bpt_parameter_list, session.offered_services.ac_bpt_parameter_list);
     } else if (req.service == message_20::to_underlying_value(dt::ServiceCategory::AC_DER_IEC)) {
         res.service = message_20::to_underlying_value(dt::ServiceCategory::AC_DER_IEC);
-        for (auto& parameter_set : config.ac_der_iec_parameter_list) {
-            session.offered_services.ac_der_iec_parameter_list[id] = parameter_set;
-            res.service_parameter_list.push_back(dt::ParameterSet(id++, parameter_set));
-        }
+        offer_parameter_sets(res, config.ac_der_iec_parameter_list, session.offered_services.ac_der_iec_parameter_list);
     } else if (req.service == message_20::to_underlying_value(dt::ServiceCategory::AC_DER_SAE)) {
         res.service = message_20::to_underlying_value(dt::ServiceCategory::AC_DER_SAE);
         // Using AC parameter list
-        for (auto& parameter_set : config.ac_parameter_list) {
-            session.offered_services.ac_parameter_list[id] = parameter_set;
-            res.service_parameter_list.push_back(dt::ParameterSet(id++, parameter_set));
-        }
+        offer_parameter_sets(res, config.ac_parameter_list, session.offered_services.ac_parameter_list);
     } else if (req.service == message_20::to_underlying_value(dt::ServiceCategory::DC)) {
         res.service = message_20::to_underlying_value(dt::ServiceCategory::DC);
-        for (auto& parameter_set : config.dc_parameter_list) {
-            session.offered_services.dc_parameter_list[id] = parameter_set;
-            res.service_parameter_list.push_back(dt::ParameterSet(id++, parameter_set));
-        }
+        offer_parameter_sets(res, config.dc_parameter_list, session.offered_services.dc_parameter_list);
     } else if (req.service == message_20::to_underlying_value(dt::ServiceCategory::DC_BPT)) {
         res.service = message_20::to_underlying_value(dt::ServiceCategory::DC_BPT);
-        for (auto& parameter_set : config.dc_bpt_parameter_list) {
-            session.offered_services.dc_bpt_parameter_list[id] = parameter_set;
-            res.service_parameter_list.push_back(dt::ParameterSet(id++, parameter_set));
-        }
+        offer_parameter_sets(res, config.dc_bpt_parameter_list, session.offered_services.dc_bpt_parameter_list);
     } else if (req.service == message_20::to_underlying_value(dt::ServiceCategory::MCS)) {
         res.service = message_20::to_underlying_value(dt::ServiceCategory::MCS);
-        for (auto& parameter_set : config.mcs_parameter_list) {
-            session.offered_services.mcs_parameter_list[id] = parameter_set;
-            res.service_parameter_list.push_back(dt::ParameterSet(id++, parameter_set));
-        }
+        offer_parameter_sets(res, config.mcs_parameter_list, session.offered_services.mcs_parameter_list);
     } else if (req.service == message_20::to_underlying_value(dt::ServiceCategory::MCS_BPT)) {
         res.service = message_20::to_underlying_value(dt::ServiceCategory::MCS_BPT);
-        for (auto& parameter_set : config.mcs_bpt_parameter_list) {
-            session.offered_services.mcs_bpt_parameter_list[id] = parameter_set;
-            res.service_parameter_list.push_back(dt::ParameterSet(id++, parameter_set));
-        }
+        offer_parameter_sets(res, config.mcs_bpt_parameter_list, session.offered_services.mcs_bpt_parameter_list);
     } else if (req.service == message_20::to_underlying_value(dt::ServiceCategory::Internet)) {
         res.service = message_20::to_underlying_value(dt::ServiceCategory::Internet);
 
+        uint8_t id = 0;
         for (auto& parameter_set : config.internet_parameter_list) {
+            if (not can_offer_another_set(res)) {
+                break;
+            }
             // TODO(sl): Possibly refactor, define const
             if (parameter_set.port == dt::Port::Port20) {
                 id = 1;
@@ -183,11 +214,7 @@ message_20::ServiceDetailResponse handle_request(const message_20::ServiceDetail
         }
     } else if (req.service == message_20::to_underlying_value(dt::ServiceCategory::ParkingStatus)) {
         res.service = message_20::to_underlying_value(dt::ServiceCategory::ParkingStatus);
-
-        for (auto& parameter_set : config.parking_parameter_list) {
-            session.offered_services.parking_parameter_list[id] = parameter_set;
-            res.service_parameter_list.push_back(dt::ParameterSet(id++, parameter_set));
-        }
+        offer_parameter_sets(res, config.parking_parameter_list, session.offered_services.parking_parameter_list);
     } else {
         logf_warning("There is no parameters for this service %u available. Sending an \"empty\" response.",
                      req.service);
