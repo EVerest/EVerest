@@ -403,14 +403,7 @@ class _InterfaceBuild:
 
     def _cmd(self, name: str, schema: Mapping[str, Any], source: SourceRef) -> CmdDef:
         arguments = tuple(
-            ArgDef(
-                name=argument,
-                description=argument_schema['description'],
-                type=self._payload(
-                    argument_schema, source.child('arguments', argument)),
-                source=source.child('arguments', argument),
-                constraints=Constraints.from_schema(argument_schema),
-            )
+            self._argument(argument, argument_schema, source.child('arguments', argument))
             # Declaration order is the order of the generated handler's
             # parameters, so it is taken from the document as written.
             for argument, argument_schema in (schema.get('arguments') or {}).items()
@@ -433,6 +426,15 @@ class _InterfaceBuild:
                 Constraints.from_schema(result_schema) if result_schema
                 else Constraints()
             ),
+        )
+
+    def _argument(self, name: str, schema: Mapping[str, Any], source: SourceRef) -> ArgDef:
+        return ArgDef(
+            name=name,
+            description=schema['description'],
+            type=self._payload(schema, source),
+            source=source,
+            constraints=Constraints.from_schema(schema),
         )
 
     # -- payloads -----------------------------------------------------------
@@ -603,15 +605,18 @@ class ModuleBuilder:
         self, entries: Mapping[str, Any] | None, source: SourceRef
     ) -> tuple[ConfigEntry, ...]:
         return tuple(
-            ConfigEntry(
-                name=name,
-                description=schema['description'],
-                type=json_type_of(schema['type'], source.child(name)),
-                source=source.child(name),
-                mutability=self._mutability(schema, source.child(name)),
-                constraints=Constraints.from_schema(schema),
-            )
+            self._config_entry(name, schema, source.child(name))
             for name, schema in (entries or {}).items()
+        )
+
+    def _config_entry(self, name: str, schema: Mapping[str, Any], source: SourceRef) -> ConfigEntry:
+        return ConfigEntry(
+            name=name,
+            description=schema['description'],
+            type=json_type_of(schema['type'], source),
+            source=source,
+            mutability=self._mutability(schema, source),
+            constraints=Constraints.from_schema(schema),
         )
 
     def _mutability(self, schema: Mapping[str, Any], source: SourceRef) -> Mutability:
