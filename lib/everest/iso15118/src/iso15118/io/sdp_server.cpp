@@ -14,6 +14,7 @@
 #include <iso15118/v2gtp/sdp.hpp>
 
 #include <iso15118/detail/helper.hpp>
+#include <iso15118/detail/io/socket_helper.hpp>
 
 namespace iso15118 {
 
@@ -21,19 +22,8 @@ namespace iso15118 {
 static constexpr auto LINK_LOCAL_MULTICAST = "ff02::1";
 
 static void log_peer_address(const struct sockaddr_in6& address) {
-    char address_name[INET6_ADDRSTRLEN];
-
-    // Only the numeric address is needed: inet_ntop() is enough and more widely available than getnameinfo()
-    const auto get_if_name_result = inet_ntop(AF_INET6, &address.sin6_addr, address_name, sizeof(address_name));
-
-    if (nullptr != get_if_name_result) {
-        // Append the scope like getnameinfo() does, e.g. fe80::1%eth1
-        char scope_name[IF_NAMESIZE];
-        if (address.sin6_scope_id != 0 && if_indextoname(address.sin6_scope_id, scope_name) != nullptr) {
-            logf_info("Got SDP request from %s%%%s", address_name, scope_name);
-        } else {
-            logf_info("Got SDP request from %s", address_name);
-        }
+    if (const auto address_name = io::sockaddr_in6_to_name(address)) {
+        logf_info("Got SDP request from %s", address_name.get());
     } else {
         logf_warning("Got SDP request, but failed to get the address");
     }
