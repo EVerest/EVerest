@@ -22,6 +22,9 @@ template <> struct adl_serializer<Everest::error::Error> {
         if (e.origin.mapping.has_value()) {
             j["origin"]["mapping"] = e.origin.mapping.value();
         }
+        if (e.trigger_value.has_value()) {
+            j["trigger_value"] = {{"text_repr", e.trigger_value.value().text_repr}};
+        }
     }
     static Everest::error::Error from_json(const json& j) {
         const Everest::error::ErrorType type = j.at("type");
@@ -40,7 +43,13 @@ template <> struct adl_serializer<Everest::error::Error> {
         const Everest::error::ErrorSubType sub_type(j.at("sub_type"));
         const std::string vendor_id = j.at("vendor_id");
 
-        return {type, sub_type, message, description, origin, vendor_id, severity, timestamp, uuid, state};
+        Everest::error::Error error(type, sub_type, message, description, origin, vendor_id, severity, timestamp, uuid,
+                                    state);
+        const auto trigger_value = j.find("trigger_value");
+        if (trigger_value != j.end() and trigger_value->contains("text_repr")) {
+            error.trigger_value = Everest::error::TriggerValue{trigger_value->at("text_repr").get<std::string>()};
+        }
+        return error;
     }
 };
 

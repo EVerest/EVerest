@@ -2,6 +2,7 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 
 #include "over_voltage_monitor/json_codec.hpp"
+#include "generic/json_codec.hpp"
 #include "nlohmann/json.hpp"
 #include "over_voltage_monitor/API.hpp"
 
@@ -99,6 +100,9 @@ void to_json(json& j, const Error& k) noexcept {
     if (k.severity) {
         j["severity"] = k.severity.value();
     }
+    if (k.trigger_value) {
+        j["trigger_value"] = k.trigger_value.value();
+    }
 }
 
 void from_json(const json& j, Error& k) {
@@ -111,6 +115,9 @@ void from_json(const json& j, Error& k) {
     }
     if (j.contains("severity")) {
         k.severity.emplace(j.at("severity"));
+    }
+    if (j.contains("trigger_value")) {
+        k.trigger_value.emplace(j.at("trigger_value").get<generic::TriggerValue>());
     }
 }
 

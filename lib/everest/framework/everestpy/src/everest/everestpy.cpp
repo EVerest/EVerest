@@ -66,6 +66,12 @@ PYBIND11_MODULE(everestpy, m) {
         .value("ClearedByReboot", Everest::error::State::ClearedByReboot)
         .export_values();
 
+    py::class_<Everest::error::TriggerValue>(error_submodule, "TriggerValue")
+        .def(py::init<>())
+        .def(py::init([](const std::string& text_repr) { return Everest::error::TriggerValue{text_repr}; }),
+             py::arg("text_repr"))
+        .def_readwrite("text_repr", &Everest::error::TriggerValue::text_repr);
+
     py::class_<Everest::error::Error>(error_submodule, "Error")
         .def(py::init<>())
         .def_readwrite("type", &Everest::error::Error::type)
@@ -76,7 +82,8 @@ PYBIND11_MODULE(everestpy, m) {
         .def_readwrite("origin", &Everest::error::Error::origin)
         .def_readwrite("timestamp", &Everest::error::Error::timestamp)
         .def_readwrite("uuid", &Everest::error::Error::uuid)
-        .def_readwrite("state", &Everest::error::Error::state);
+        .def_readwrite("state", &Everest::error::Error::state)
+        .def_readwrite("trigger_value", &Everest::error::Error::trigger_value);
 
     py::class_<Everest::error::ErrorStateMonitor::StateCondition>(error_submodule, "ErrorStateCondition")
         .def(py::init<std::string, std::string, bool>())
@@ -107,7 +114,12 @@ PYBIND11_MODULE(everestpy, m) {
                                  &Everest::error::ErrorFactory::create_error, py::const_))
         .def("create_error", py::overload_cast<const Everest::error::ErrorType&, const Everest::error::ErrorSubType&,
                                                const std::string&, Everest::error::Severity, Everest::error::State>(
-                                 &Everest::error::ErrorFactory::create_error, py::const_));
+                                 &Everest::error::ErrorFactory::create_error, py::const_))
+        .def(
+            "create_error",
+            py::overload_cast<const Everest::error::ErrorType&, const Everest::error::ErrorSubType&, const std::string&,
+                              Everest::error::Severity, const std::optional<Everest::error::TriggerValue>&>(
+                &Everest::error::ErrorFactory::create_error, py::const_));
 
     py::class_<Interface>(m, "Interface")
         .def_readonly("variables", &Interface::variables)

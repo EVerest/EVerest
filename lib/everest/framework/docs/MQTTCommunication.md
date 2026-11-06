@@ -132,12 +132,17 @@ The following structure applies for error topics. Errors are raised by modules a
   "state": "<error_state>",
   "timestamp": "<iso_timestamp>",
   "uuid": "<unique_error_id>",
-  "vendor_id": "<vendor_id>"
+  "vendor_id": "<vendor_id>",
+  "trigger_value": {
+    "text_repr": "<value_as_text>"
+  }
 }
 ```
 
 `origin.mapping` is only present when the originating module/implementation has a Mapping configured; within
 `mapping`, `connector` is itself optional and only present when a connector-level mapping was configured.
+`trigger_value` is only present when the raising module named the value that caused the error; `text_repr` is that
+value as text, as the raising module would print it (e.g. `"85.3 degC"`).
 
 ## 5. Configuration
 

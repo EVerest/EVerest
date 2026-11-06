@@ -47,6 +47,10 @@ std::string serialize(ErrorEnum val) noexcept {
     return utilities::dump_json(val);
 }
 
+std::string serialize(TriggerValue const& val) noexcept {
+    return utilities::dump_json(val);
+}
+
 std::string serialize(Error const& val) noexcept {
     return utilities::dump_json(val);
 }
@@ -57,6 +61,11 @@ std::ostream& operator<<(std::ostream& os, RequestReply const& val) {
 }
 
 std::ostream& operator<<(std::ostream& os, const ErrorEnum& val) {
+    os << serialize(val);
+    return os;
+}
+
+std::ostream& operator<<(std::ostream& os, const TriggerValue& val) {
     os << serialize(val);
     return os;
 }
@@ -96,6 +105,10 @@ template <> RequestReply deserialize(std::string_view val) {
 
 template <> ErrorEnum deserialize(std::string_view val) {
     return utilities::parse_json<ErrorEnum>(val);
+}
+
+template <> TriggerValue deserialize(std::string_view val) {
+    return utilities::parse_json<TriggerValue>(val);
 }
 
 template <> Error deserialize(std::string_view val) {

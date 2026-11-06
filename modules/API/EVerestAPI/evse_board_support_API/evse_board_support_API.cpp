@@ -10,6 +10,7 @@
 #include <everest_api_types/evse_manager/wrapper.hpp>
 #include <everest_api_types/generic/codec.hpp>
 #include <everest_api_types/generic/string.hpp>
+#include <everest_api_types/utilities/ErrorConversions.hpp>
 #include <everest_api_types/utilities/codec.hpp>
 
 #include "utils/error.hpp"
@@ -176,6 +177,7 @@ evse_board_support_API::ErrorHandler evse_board_support_API::make_error_handler(
     ErrorHandler result;
     auto sub_type_str = error.sub_type ? error.sub_type.value() : "";
     auto message_str = error.message ? error.message.value() : "";
+    auto trigger_value = ev_API::to_trigger_value(error.trigger_value);
     std::string error_id;
 
     switch (error.type) {
@@ -208,9 +210,9 @@ evse_board_support_API::ErrorHandler evse_board_support_API::make_error_handler(
     case ErrorEnum::VendorWarning:
     case ErrorEnum::CommunicationFault:
         error_id = "evse_board_support/" + error_str;
-        result.raiser = [this, sub_type_str, message_str, error_id]() {
+        result.raiser = [this, sub_type_str, message_str, error_id, trigger_value]() {
             auto ev_error = p_main->error_factory->create_error(error_id, sub_type_str, message_str,
-                                                                Everest::error::Severity::High);
+                                                                Everest::error::Severity::High, trigger_value);
             p_main->raise_error(ev_error);
         };
         result.clearer = [this, error_id, sub_type_str] { p_main->clear_error(error_id, sub_type_str); };
@@ -222,9 +224,9 @@ evse_board_support_API::ErrorHandler evse_board_support_API::make_error_handler(
     case ErrorEnum::ConnectorLockFailedUnlock:
     case ErrorEnum::MREC1ConnectorLockFailure:
         error_id = "connector_lock/" + error_str;
-        result.raiser = [this, sub_type_str, message_str, error_id]() {
-            auto ev_error = p_connector_lock->error_factory->create_error(error_id, sub_type_str, message_str,
-                                                                          Everest::error::Severity::High);
+        result.raiser = [this, sub_type_str, message_str, error_id, trigger_value]() {
+            auto ev_error = p_connector_lock->error_factory->create_error(
+                error_id, sub_type_str, message_str, Everest::error::Severity::High, trigger_value);
             p_connector_lock->raise_error(ev_error);
         };
         result.clearer = [this, error_id, sub_type_str] { p_connector_lock->clear_error(error_id, sub_type_str); };
@@ -234,9 +236,9 @@ evse_board_support_API::ErrorHandler evse_board_support_API::make_error_handler(
     case ErrorEnum::DC:
     case ErrorEnum::AC:
         error_id = "ac_rcd/" + error_str;
-        result.raiser = [this, sub_type_str, message_str, error_id]() {
-            auto ev_error =
-                p_rcd->error_factory->create_error(error_id, sub_type_str, message_str, Everest::error::Severity::High);
+        result.raiser = [this, sub_type_str, message_str, error_id, trigger_value]() {
+            auto ev_error = p_rcd->error_factory->create_error(error_id, sub_type_str, message_str,
+                                                               Everest::error::Severity::High, trigger_value);
             p_rcd->raise_error(ev_error);
         };
         result.clearer = [this, error_id, sub_type_str] { p_rcd->clear_error(error_id, sub_type_str); };
