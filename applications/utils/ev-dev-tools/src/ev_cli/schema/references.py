@@ -23,7 +23,6 @@ from dataclasses import dataclass
 from enum import Enum
 
 from ..errors import MalformedReference
-from ..ir.types import TypeRef
 
 #: A single JSON pointer segment naming a type.
 _NAME = r'[A-Za-z_][A-Za-z0-9_.-]*'
@@ -40,6 +39,22 @@ _ERROR_REFERENCE = re.compile(
 )
 
 YAML_SUFFIXES = ('.yaml', '.yml')
+
+
+@dataclass(frozen=True, order=True)
+class TypeRef:
+    """A reference to a named type, already resolved to a unit and a name.
+
+    Both reference dialects -- EVerest's historical ``/energy#/Power`` and the
+    OpenAPI conformant ``energy.yaml#/types/Power`` -- parse into this, so
+    nothing downstream can tell which one the source used.
+    """
+
+    unit: str
+    name: str
+
+    def __str__(self) -> str:
+        return f'{self.unit}#/{self.name}'
 
 
 class Dialect(Enum):

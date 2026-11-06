@@ -14,7 +14,9 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import TypeAlias, Union
 
-from .common import NO_CONSTRAINTS, Constraints, SourceRef
+from ..schema.references import TypeRef
+from ..schema.source import SourceRef
+from .common import NO_CONSTRAINTS, Constraints
 
 
 class JsonType(str, Enum):
@@ -32,22 +34,6 @@ class JsonType(str, Enum):
 SCALAR_TYPES = frozenset({
     JsonType.BOOLEAN, JsonType.INTEGER, JsonType.NUMBER, JsonType.STRING, JsonType.NULL,
 })
-
-
-@dataclass(frozen=True, order=True)
-class TypeRef:
-    """A reference to a named type, already resolved to a unit and a name.
-
-    Both reference dialects -- EVerest's historical ``/energy#/Power`` and the
-    OpenAPI conformant ``energy.yaml#/types/Power`` -- parse into this, so
-    nothing downstream can tell which one the source used.
-    """
-
-    unit: str
-    name: str
-
-    def __str__(self) -> str:
-        return f'{self.unit}#/{self.name}'
 
 
 # --------------------------------------------------------------------------

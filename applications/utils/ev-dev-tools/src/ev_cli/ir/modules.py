@@ -13,7 +13,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Mapping
 
-from .common import NO_CONSTRAINTS, Constraints, SourceRef
+from ..schema.source import SourceRef
+from .common import NO_CONSTRAINTS, Constraints
 from .types import JsonType
 
 

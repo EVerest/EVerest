@@ -18,8 +18,8 @@ from typing import Any, Sequence
 import yaml
 
 from ..errors import DefinitionNotFound, EverestDirNotFound, SchemaError, WorkDirNotFound
-from ..ir.common import SourceRef
 from .diagnostics import Category, Diagnostic, Severity, Sink
+from .source import SourceRef
 from .validate import DocumentKind, Validators
 
 TYPES_DIR = 'types'

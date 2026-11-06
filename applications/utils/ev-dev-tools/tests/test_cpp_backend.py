@@ -21,7 +21,8 @@ from ev_cli.backends.cpp.backend import CppBackend
 from ev_cli.backends.cpp.mapping import CppMapping, Flavour
 from ev_cli.backends.cpp.view import InterfaceView, PayloadKind
 from ev_cli.errors import UnsupportedDefinition
-from ev_cli.ir.types import Array, JsonType, LocalEnum, Opaque, Primitive, Ref, TypeRef, Variant
+from ev_cli.ir.types import Array, JsonType, LocalEnum, Opaque, Primitive, Ref, Variant
+from ev_cli.schema.references import TypeRef
 from conftest import GOLDEN_DIR
 
 

@@ -15,8 +15,9 @@ from ..errors import DefinitionNotFound, EvCliError, UnsupportedDefinition
 from ..schema import conformance
 from ..schema.diagnostics import Category, Diagnostic, Severity, Sink
 from ..schema.loader import DefinitionLoader
-from ..schema.references import parse_error_reference, parse_type_reference
-from .common import Constraints, SourceRef
+from ..schema.references import TypeRef, parse_error_reference, parse_type_reference
+from ..schema.source import SourceRef
+from .common import Constraints
 from .interfaces import ArgDef, CmdDef, ErrorDef, InterfaceDef, VarDef
 from .model import Model
 from .modules import (
@@ -41,7 +42,6 @@ from .types import (
     Ref,
     StructDef,
     TypeExpr,
-    TypeRef,
     TypeUnit,
     Variant,
 )

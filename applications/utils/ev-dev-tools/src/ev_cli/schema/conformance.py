@@ -20,10 +20,9 @@ from __future__ import annotations
 
 from typing import Any, Mapping
 
-from ..ir.common import SourceRef
-from ..ir.types import TypeRef
 from .diagnostics import Category, Diagnostic, Severity, Sink
-from .references import ParsedReference, conformant_form
+from .references import ParsedReference, TypeRef, conformant_form
+from .source import SourceRef
 
 #: Keys that carry meaning of their own beside a ``$ref`` and are kept.
 KEPT_BESIDE_REF = frozenset({'$ref', 'description'})

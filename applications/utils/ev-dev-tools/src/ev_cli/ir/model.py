@@ -15,7 +15,8 @@ from typing import Mapping, Union
 from ..errors import DefinitionNotFound
 from .interfaces import InterfaceDef
 from .modules import ModuleDef
-from .types import EnumDef, StructDef, TypeRef, TypeUnit
+from ..schema.references import TypeRef
+from .types import EnumDef, StructDef, TypeUnit
 
 Declaration = Union[StructDef, EnumDef]
 

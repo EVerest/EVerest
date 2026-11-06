@@ -18,11 +18,11 @@ from ev_cli.ir.types import (
     LocalEnum,
     Primitive,
     Ref,
-    SourceRef,
     StructDef,
-    TypeRef,
     Variant,
 )
+from ev_cli.schema.references import TypeRef
+from ev_cli.schema.source import SourceRef
 
 SOURCE = SourceRef(__file__)
 

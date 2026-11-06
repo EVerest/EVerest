@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Iterable, Iterator, Protocol
 
-from ..ir.common import SourceRef
+from .source import SourceRef
 
 
 class Severity(Enum):

@@ -12,9 +12,9 @@ from __future__ import annotations
 import pytest
 
 from ev_cli.errors import MalformedReference
-from ev_cli.ir.types import TypeRef
 from ev_cli.schema.references import (
     Dialect,
+    TypeRef,
     conformant_form,
     parse_error_reference,
     parse_type_reference,

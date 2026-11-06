@@ -21,7 +21,8 @@ from typing import Any, TypeVar
 from . import interfaces as interfaces_ir
 from . import modules as modules_ir
 from . import types as types_ir
-from .common import Constraints, SourceRef
+from ..schema.source import SourceRef
+from .common import Constraints
 from .model import Model
 
 #: Every class the IR can contain, by the tag used in the serialised form.

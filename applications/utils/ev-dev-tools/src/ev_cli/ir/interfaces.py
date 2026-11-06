@@ -13,7 +13,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .common import NO_CONSTRAINTS, Constraints, SourceRef
+from ..schema.source import SourceRef
+from .common import NO_CONSTRAINTS, Constraints
 from .types import TypeExpr
 
 
