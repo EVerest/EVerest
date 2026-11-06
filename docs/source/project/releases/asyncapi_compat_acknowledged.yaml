@@ -1,0 +1,21 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright Pionix GmbH and Contributors to EVerest
+#
+# Commits whose breaking or review findings from applications/utils/scripts/check_asyncapi_compat.py
+# (see breaking-changes.rst) were reviewed and do not affect API clients, e.g. spec fixes that align
+# a specification with an implementation that did not change. Only the findings a commit produces
+# against its parent are acknowledged, and
+# only while the commit lies between the compared base and HEAD. A commit cherry-picked to a
+# stable branch has a different hash and needs its own entry.
+#
+# `commit` is the full hash, `subject` is informational, `reason` says why clients are not
+# affected. `check_asyncapi_compat.py <base> --acknowledge` prints entries to start from.
+
+- file: slac_API.yaml
+  commit: f39275f121d326f22d1fc94a08849275bc1ef884
+  subject: 'fix(slac_API): align AsyncAPI spec with implementation (#2647)'
+  reason: >-
+    The specification described state, dlink_ready and ev_mac_address as wrapper objects, but
+    the slac_API module in 2026.02.0 already deserialized bare JSON values (string enum, boolean,
+    string). Error.type was already required (j.at("type")) and ErrorEnum already rejected values
+    other than the three now listed.

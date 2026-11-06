@@ -130,6 +130,16 @@ Examples
 
 **Non-breaking**: Adding ``"FastCharging"`` to ``SessionEventEnum`` (if clients handle unknown values).
 
+Checking AsyncAPI Changes
+=========================
+
+``applications/utils/scripts/check_asyncapi_compat.py <ref>`` compares the AsyncAPI specifications with a
+git ref, usually the last stable release, classifies each change according to the rules above and suggests a
+version per specification. It reads only the specifications, so a change that looks breaking can still be
+harmless to clients, for example a fix that aligns a specification with an implementation that did not
+change. Once a review confirms this, the commit is recorded with its reason in
+``docs/source/project/releases/asyncapi_compat_acknowledged.yaml``.
+
 .. _exp-breaking-changes-configuration:
 
 ********************************************
