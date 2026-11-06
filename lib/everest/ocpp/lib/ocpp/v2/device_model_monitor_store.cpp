@@ -2,7 +2,9 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 
 #include <algorithm>
+#include <cmath>
 #include <iterator>
+#include <limits>
 
 #include <everest/database/exceptions.hpp>
 #include <everest/logging.hpp>
@@ -10,6 +12,20 @@
 
 namespace ocpp {
 namespace v2 {
+
+namespace {
+
+/// \brief Whether a registered monitor replaces the stored monitor of the same type and severity. A custom monitor
+/// overrides a preconfigured one (N04.FR.15), but not a hardwired one, which the CSMS cannot change (N04.FR.18).
+bool replaces(const VariableMonitoringMeta& registered, const VariableMonitoringMeta& stored) {
+    if (stored.type == VariableMonitorType::CustomMonitor) {
+        return registered.type == VariableMonitorType::HardWiredMonitor;
+    }
+    return registered.type != stored.type or registered.monitor.transaction != stored.monitor.transaction or
+           std::abs(registered.monitor.value - stored.monitor.value) > std::numeric_limits<float>::epsilon();
+}
+
+} // namespace
 
 MonitorStore::MonitorStore(DeviceModelStorageInterface& storage) : storage{storage} {
 }
@@ -129,21 +145,31 @@ void MonitorStore::reconcile(const std::string& owner, const Component& componen
 
     for (const auto& registered_monitor : registered_variable.monitors) {
         const auto& monitor = registered_monitor.monitor;
-        // N04.FR.10: the name key, type and severity identify a monitor
-        const auto existing = ids();
-        const bool matching = std::any_of(existing.begin(), existing.end(), [this, &monitor](const std::int32_t id) {
-            const auto& stored = this->monitors.at(id).monitor.monitor;
-            return stored.type == monitor.type and stored.severity == monitor.severity;
-        });
-        if (matching) {
-            continue;
-        }
         if (registered_monitor.type == VariableMonitorType::CustomMonitor or !is_valid(monitor.type, monitor.value)) {
             EVLOG_warning << "Owner " << owner << " registered an invalid monitor for " << component << "." << variable
                           << ": the monitor is ignored";
             continue;
         }
+        // N04.FR.10: the name key, type and severity identify a monitor
+        const auto existing = ids();
+        const auto matching = std::find_if(existing.begin(), existing.end(), [this, &monitor](const std::int32_t id) {
+            const auto& stored = this->monitors.at(id).monitor.monitor;
+            return stored.type == monitor.type and stored.severity == monitor.severity;
+        });
+        std::optional<VariableMonitoringMeta> replaced;
+        if (matching != existing.end()) {
+            const auto& stored = this->monitors.at(*matching).monitor;
+            if (!replaces(registered_monitor, stored)) {
+                continue;
+            }
+            if (stored.type == VariableMonitorType::CustomMonitor) {
+                EVLOG_warning << "Replacing custom monitor " << stored.monitor.id << " of " << component << "."
+                              << variable << " with the hardwired monitor owner " << owner << " registers";
+            }
+            replaced = stored;
+        }
         SetMonitoringData request;
+        request.id = replaced.has_value() ? std::optional{replaced->monitor.id} : std::nullopt;
         request.component = component;
         request.variable = variable;
         request.type = monitor.type;
@@ -158,7 +184,9 @@ void MonitorStore::reconcile(const std::string& owner, const Component& componen
                 continue;
             }
             if (monitor.type == MonitorEnum::Delta) {
-                const auto reference = actual_value.value_or("");
+                const auto reference = replaced.has_value() and replaced->reference_value.has_value()
+                                           ? replaced->reference_value.value()
+                                           : actual_value.value_or("");
                 if (this->storage.update_monitoring_reference(stored->monitor.id, reference)) {
                     stored->reference_value = reference;
                 } else {

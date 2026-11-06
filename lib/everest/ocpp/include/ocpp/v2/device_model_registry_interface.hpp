@@ -48,8 +48,10 @@ struct RegisteredVariable {
     /// restarts by the owner: it is reported as persistent, but DeviceModel does not store its value.
     std::vector<VariableAttribute> attributes;
     /// \brief Hardwired and preconfigured monitors of the variable. A stored monitor of the same type and severity
-    /// (N04.FR.10), a custom monitor the CSMS set included, is kept with its id and the changes the CSMS made to it;
-    /// the id and the reference value given here are ignored.
+    /// (N04.FR.10) keeps its id and reference value; the id and the reference value given here are ignored. A stored
+    /// hardwired or preconfigured monitor takes the type, value and transaction given here. A stored custom monitor,
+    /// such as a preconfigured monitor the CSMS changed (N04.FR.15), is kept unless the monitor given here is
+    /// hardwired, which replaces it.
     std::vector<VariableMonitoringMeta> monitors;
 };
 

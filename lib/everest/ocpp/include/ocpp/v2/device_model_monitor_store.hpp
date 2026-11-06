@@ -51,7 +51,8 @@ public:
 
     /// \brief Brings the monitors of a variable that \p owner registers in line with the registration: stored
     /// monitors that \p fits rejects are removed (N04), and so are hardwired and preconfigured monitors that the
-    /// registration no longer lists. The monitors the registration lists are added if \p is_valid accepts them.
+    /// registration no longer lists. The monitors the registration lists are added if \p is_valid accepts them, or
+    /// update the stored monitor of the same type and severity as RegisteredVariable::monitors describes.
     void reconcile(const std::string& owner, const Component& component, const RegisteredVariable& registered_variable,
                    const std::optional<std::string>& actual_value, const MonitorValidator& fits,
                    const MonitorValidator& is_valid);

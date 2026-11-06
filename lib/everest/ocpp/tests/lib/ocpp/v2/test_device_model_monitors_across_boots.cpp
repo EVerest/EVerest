@@ -340,7 +340,7 @@ TEST_F(DeviceModelMonitorsAcrossBootsTest, factory_default_removes_custom_monito
     EXPECT_TRUE(monitor_ids(component, level).empty());
 }
 
-TEST_F(DeviceModelMonitorsAcrossBootsTest, preconfigured_monitor_is_matched_by_type_and_severity) {
+TEST_F(DeviceModelMonitorsAcrossBootsTest, preconfigured_monitor_changed_by_the_csms_stays_custom) {
     auto variable = make_registered_variable(level.name);
     variable.monitors.push_back(make_preconfigured_monitor(MonitorEnum::UpperThreshold, 100, 3));
     register_variables({variable});
@@ -350,22 +350,116 @@ TEST_F(DeviceModelMonitorsAcrossBootsTest, preconfigured_monitor_is_matched_by_t
     EXPECT_EQ(dm->get_variable_meta_data(component, level)->monitors.at(id).type,
               VariableMonitorType::PreconfiguredMonitor);
 
-    // The CSMS changes the preconfigured monitor
+    // N04.FR.15: the CSMS changes the preconfigured monitor, which makes it a custom monitor
     auto change = make_request(component, level, 200);
     change.id = id;
-    EXPECT_EQ(dm->set_monitors({change}, VariableMonitorType::PreconfiguredMonitor).at(0).status,
-              SetMonitoringStatusEnum::Accepted);
+    EXPECT_EQ(set_monitor(change), id);
 
     reboot();
     register_variables({variable});
     EXPECT_EQ(monitor_ids(component, level), std::vector<std::int32_t>{id});
-    EXPECT_EQ(dm->get_variable_meta_data(component, level)->monitors.at(id).monitor.value, 200);
+    const auto monitor = dm->get_variable_meta_data(component, level)->monitors.at(id);
+    EXPECT_EQ(monitor.type, VariableMonitorType::CustomMonitor);
+    EXPECT_EQ(monitor.monitor.value, 200);
 
-    // A registration without it removes it
+    // A registration without the preconfigured monitor keeps the custom monitor
+    reboot();
+    register_variables({make_registered_variable(level.name)});
+    EXPECT_EQ(monitor_ids(component, level), std::vector<std::int32_t>{id});
+}
+
+TEST_F(DeviceModelMonitorsAcrossBootsTest, preconfigured_monitor_is_removed_when_the_registration_no_longer_lists_it) {
+    auto variable = make_registered_variable(level.name);
+    variable.monitors.push_back(make_preconfigured_monitor(MonitorEnum::UpperThreshold, 100, 3));
+    register_variables({variable});
+    const auto ids = monitor_ids(component, level);
+    ASSERT_EQ(ids.size(), 1);
+
     reboot();
     register_variables({make_registered_variable(level.name)});
     EXPECT_TRUE(monitor_ids(component, level).empty());
-    EXPECT_FALSE(stored_monitor(id).has_value());
+    EXPECT_FALSE(stored_monitor(ids.at(0)).has_value());
+}
+
+TEST_F(DeviceModelMonitorsAcrossBootsTest, registered_preconfigured_monitor_takes_the_registered_value) {
+    auto variable = make_registered_variable(level.name);
+    variable.monitors.push_back(make_preconfigured_monitor(MonitorEnum::UpperThreshold, 100, 3));
+    register_variables({variable});
+    const auto ids = monitor_ids(component, level);
+    ASSERT_EQ(ids.size(), 1);
+    const auto id = ids.at(0);
+
+    reboot();
+    variable.monitors.at(0).monitor.value = 150;
+    variable.monitors.at(0).monitor.transaction = true;
+    register_variables({variable});
+    EXPECT_EQ(monitor_ids(component, level), std::vector<std::int32_t>{id});
+    const auto monitor = dm->get_variable_meta_data(component, level)->monitors.at(id);
+    EXPECT_EQ(monitor.type, VariableMonitorType::PreconfiguredMonitor);
+    EXPECT_EQ(monitor.monitor.value, 150);
+    EXPECT_TRUE(monitor.monitor.transaction);
+    const auto stored = stored_monitor(id);
+    ASSERT_TRUE(stored.has_value());
+    EXPECT_EQ(stored->monitor.monitor.value, 150);
+    EXPECT_TRUE(stored->monitor.monitor.transaction);
+}
+
+TEST_F(DeviceModelMonitorsAcrossBootsTest, registered_hardwired_monitor_takes_the_registered_value_and_type) {
+    auto variable = make_registered_variable(level.name);
+    variable.monitors.push_back(make_preconfigured_monitor(MonitorEnum::UpperThreshold, 100, 3));
+    register_variables({variable});
+    const auto ids = monitor_ids(component, level);
+    ASSERT_EQ(ids.size(), 1);
+    const auto id = ids.at(0);
+
+    variable.monitors.at(0).type = VariableMonitorType::HardWiredMonitor;
+    register_variables({variable});
+    EXPECT_EQ(dm->get_variable_meta_data(component, level)->monitors.at(id).type,
+              VariableMonitorType::HardWiredMonitor);
+
+    reboot();
+    variable.monitors.at(0).monitor.value = 120;
+    register_variables({variable});
+    EXPECT_EQ(monitor_ids(component, level), std::vector<std::int32_t>{id});
+    const auto stored = stored_monitor(id);
+    ASSERT_TRUE(stored.has_value());
+    EXPECT_EQ(stored->monitor.type, VariableMonitorType::HardWiredMonitor);
+    EXPECT_EQ(stored->monitor.monitor.value, 120);
+}
+
+TEST_F(DeviceModelMonitorsAcrossBootsTest, registered_hardwired_monitor_replaces_a_custom_monitor) {
+    register_variables({make_registered_variable(level.name)});
+    const auto id = set_monitor(make_request(component, level, 200));
+
+    auto variable = make_registered_variable(level.name);
+    auto hardwired = make_preconfigured_monitor(MonitorEnum::UpperThreshold, 100, 3);
+    hardwired.type = VariableMonitorType::HardWiredMonitor;
+    variable.monitors.push_back(hardwired);
+    reboot();
+    register_variables({variable});
+    EXPECT_EQ(monitor_ids(component, level), std::vector<std::int32_t>{id});
+    const auto monitor = dm->get_variable_meta_data(component, level)->monitors.at(id);
+    EXPECT_EQ(monitor.type, VariableMonitorType::HardWiredMonitor);
+    EXPECT_EQ(monitor.monitor.value, 100);
+    EXPECT_EQ(dm->clear_monitors({id}, false).at(0).status, ClearMonitoringStatusEnum::Rejected);
+}
+
+TEST_F(DeviceModelMonitorsAcrossBootsTest, registered_delta_monitor_keeps_its_reference_when_its_value_changes) {
+    auto variable = make_registered_variable(level.name);
+    variable.monitors.push_back(make_preconfigured_monitor(MonitorEnum::Delta, 5, 3));
+    register_variables({variable});
+    const auto ids = monitor_ids(component, level);
+    ASSERT_EQ(ids.size(), 1);
+    const auto id = ids.at(0);
+    ASSERT_TRUE(dm->update_monitor_reference(id, "42"));
+
+    reboot();
+    variable.monitors.at(0).monitor.value = 8;
+    register_variables({variable});
+    const auto monitor = dm->get_variable_meta_data(component, level)->monitors.at(id);
+    EXPECT_EQ(monitor.monitor.value, 8);
+    EXPECT_EQ(monitor.reference_value, std::optional<std::string>{"42"});
+    EXPECT_EQ(stored_monitor(id)->monitor.reference_value, std::optional<std::string>{"42"});
 }
 
 TEST_F(DeviceModelMonitorsAcrossBootsTest, monitor_on_write_only_variable_is_rejected) {
