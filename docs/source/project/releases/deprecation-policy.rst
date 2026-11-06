@@ -86,7 +86,10 @@ this is signalled through all applicable channels:
 
 - **Documentation**: The component is marked as experimental in its reference
   documentation, including a note that it is exempt from the stability
-  guarantees.
+  guarantees. For an EVerest API (AsyncAPI) specification, set
+  ``x-experimental`` in its ``info`` section, or on single operations, to
+  ``true`` or to a mapping with optional ``since`` and ``note``. The generated
+  API reference then shows the warning.
 - **Release notes**: The component is listed as experimental in the release notes
   of the version that introduces it.
 - **Runtime warnings**: Where reasonable, EVerest emits a clearly identifiable

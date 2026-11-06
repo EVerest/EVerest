@@ -15,3 +15,9 @@ sphinxcontrib-mermaid
 
 # Required for processing templates
 PyYAML
+
+# Validates the EVerest API specs rendered into the API reference
+jsonschema
+
+# Renders the EVerest API reference pages
+Jinja2

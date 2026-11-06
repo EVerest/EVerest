@@ -36,6 +36,8 @@ info:
     **Missing records.** get_session replies with the JSON literal null when no
     stored record matches the identifier.
 
+  x-experimental:
+    since: 2026.10.0
   license:
     name: Apache-2.0
     url: https://opensource.org/licenses/Apache-2.0
