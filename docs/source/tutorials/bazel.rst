@@ -57,10 +57,16 @@ Dependency Management
 
 There are a few different ways of managing dependencies in EVerest.
 
-* Dependencies that CMake takes from the system (e.g. boost).
-  These dependencies are configured in the `third_party/bazel/repos.bzl` file.
-* Dependencies that are described in the `./dependencies.yaml` file. These
-  dependencies are pulled automatically by Bazel with help of `edm` tool.
+* C and C++ libraries come from the `Bazel Central Registry <https://registry.bazel.build/>`_
+  as `bazel_dep` entries in `MODULE.bazel`. Libraries the registry does not offer, or
+  not in the version EVerest needs, are fetched as `http_archive` by the module
+  extension in `third-party/bazel/extension.bzl`, with their `BUILD` files next to it.
+* `dependencies.yaml` at the repository root is the source of truth for the versions
+  of these libraries. After changing it, run
+  `applications/utils/scripts/sync_bazel_dependencies.py` to bring `MODULE.bazel` and
+  the extension in line. It prefers a registry module whenever the registry has the
+  exact version, and reports the versions the registry lacks; `--dry-run` only shows
+  what differs.
 * Rust dependencies are managed by cargo, and are described in the `Cargo.toml`
   file. Cargo dependencies are automatically picked up by Bazel.
 

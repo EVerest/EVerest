@@ -6,13 +6,43 @@
 #
 """
 author: kai-uwe.hermann@pionix.de
-Parse snapshot.yaml files and modify corresponding .bb recipes
+Parse snapshot.yaml or dependencies.yaml files and modify corresponding .bb recipes
 """
 import argparse
 import os
 import re
+import subprocess
 import yaml
 from pathlib import Path
+
+
+def get_remote_rev(remote_url: str, git_tag: str) -> str:
+    """Return the commit the git_tag of the remote repo points to, or an empty string."""
+    refs = {}
+    try:
+        result = subprocess.run(["git", "ls-remote", remote_url, f"refs/tags/{git_tag}", f"refs/tags/{git_tag}^{{}}"],
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
+        for entry in result.stdout.decode("utf-8").splitlines():
+            rev, _tab, ref = entry.partition("\t")
+            refs[ref] = rev
+    except subprocess.CalledProcessError:
+        return ""
+
+    return refs.get(f"refs/tags/{git_tag}^{{}}", refs.get(f"refs/tags/{git_tag}", ""))
+
+
+def get_default_branch(remote_url: str) -> str:
+    """Return the default branch of the remote repo, or an empty string."""
+    try:
+        result = subprocess.run(["git", "ls-remote", "--symref", remote_url, "HEAD"],
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
+        for entry in result.stdout.decode("utf-8").splitlines():
+            if entry.startswith("ref: refs/heads/"):
+                return entry.removeprefix("ref: refs/heads/").partition("\t")[0]
+    except subprocess.CalledProcessError:
+        return ""
+
+    return ""
 
 
 def main():
@@ -21,7 +51,7 @@ def main():
 
     parser.add_argument('--input',
                         dest='in_snapshot',
-                        help='Path to the snapshot.yaml file')
+                        help='Path to the snapshot.yaml or dependencies.yaml file')
     parser.add_argument('--out',
                         dest='out_dir',
                         help='Relative path to meta-everest')
@@ -53,28 +83,54 @@ def main():
         return
 
     # TODO: provide this via a file as a command line parameter
-    mapping = {'Josev': 'josev/python3-iso15118',
-               'everest-utils': 'everest-devtools/evcli',
-               'EVerest': 'everest/everest-core',
-               'everest-framework': 'everest/everest-framework',
-               'everest-sqlite': 'everest/everest-sqlite',
-               'libcbv2g': 'everest/libcbv2g',
-               'libevse-security': 'everest/libevse-security',
-               'libfsm': 'everest/libfsm',
-               'libiso15118': 'everest/libiso15118',
-               'liblog': 'everest/liblog',
-               'libnfc-nci': 'everest/libnfc-nci',
-               'libocpp': 'everest/libocpp',
-               'libslac': 'everest/libslac',
-               'libtimer': 'everest/libtimer'}
+    mapping = {'Josev': 'recipes-core/josev/python3-iso15118',
+               'everest-utils': 'recipes-core/everest-devtools/evcli',
+               'EVerest': 'recipes-core/everest/everest-core',
+               'everest-framework': 'recipes-core/everest/everest-framework',
+               'everest-sqlite': 'recipes-core/everest/everest-sqlite',
+               'libcbv2g': 'recipes-core/everest/libcbv2g',
+               'libevse-security': 'recipes-core/everest/libevse-security',
+               'libfsm': 'recipes-core/everest/libfsm',
+               'libiso15118': 'recipes-core/everest/libiso15118',
+               'liblog': 'recipes-core/everest/liblog',
+               'libnfc-nci': 'recipes-core/everest/libnfc-nci',
+               'libocpp': 'recipes-core/everest/libocpp',
+               'libslac': 'recipes-core/everest/libslac',
+               'libtimer': 'recipes-core/everest/libtimer',
+               'date': 'recipes-backports/date/date',
+               'ftxui': 'recipes-backports/ftxui/ftxui',
+               'json-rpc-cxx': 'recipes-devtools/json-rpc-cxx/json-rpc-cxx',
+               'libfmt': 'recipes-backports/fmt/fmt',
+               'libwebsockets': 'recipes-backports/libwebsockets/libwebsockets',
+               'nlohmann_json': 'recipes-backports/nlohmann-json/nlohmann-json',
+               'nlohmann_json_schema_validator': 'recipes-backports/json-schema-validator/json-schema-validator',
+               'ryml': 'recipes-backports/rapidyaml/rapidyaml',
+               'sdbus-cpp': 'recipes-backports/sdbus-c++/sdbus-c++',
+               'sigslot': 'recipes-extended/sigslot/sigslot'}
 
-    branch_re = re.compile(r'branch=([^;|^"|\s]*)')
+    # dependencies.yaml has no branches, add releases here that are not on the default branch of their repo
+    branches = {}
+
+    # a branch derived from a variable like ${SRCBRANCH} follows PV and is left alone
+    branch_re = re.compile(r'\bbranch=(?!\$\{)([^;|^"|\s]*)')
+    pv_re = re.compile(r'PV\s*=\s*"(v?)\d')
+    commit_re = re.compile(r'[0-9a-f]{40}')
 
     for key, entry in snapshot.items():
         print(f"key: {key}")
-        branch = entry['branch']
-        git_rev = entry['git_rev']
+        if key not in mapping:
+            continue
         git_tag = entry['git_tag']
+        branch = entry.get('branch') or branches.get(key) or get_default_branch(entry['git'])
+        git_rev = entry.get('git_rev')
+        if commit_re.fullmatch(git_tag):
+            git_rev = git_tag
+            git_tag = 'git'
+        if not git_rev:
+            git_rev = get_remote_rev(entry['git'], git_tag)
+        if not branch or not git_rev:
+            print(f"could not determine branch or revision of {git_tag}, skipping")
+            continue
         version = git_tag.removeprefix('wip-release-')
         version = version.removeprefix('v')
         version_without_rc, _vsep, _rc = version.partition('-')
@@ -83,7 +139,7 @@ def main():
         print(f"version: {version} without-rc: {version_without_rc}")
         if key in mapping:
             file_glob = f'{mapping[key]}_*.bb'
-            files = list(recipes_core.glob(file_glob))
+            files = list(out_dir.glob(file_glob))
             if len(files) == 1:
                 bb_path = files[0]
                 
@@ -98,7 +154,9 @@ def main():
                             line = branch_re.sub(replace, line)
                         elif line.startswith("SRCREV"):
                             line = f"SRCREV = \"{git_rev}\""
-                        
+                        elif pv_match := pv_re.match(line):
+                            line = f"PV = \"{pv_match.group(1)}{version_without_rc}\""
+
                         bb_content_modified.append(line)
                     # create new filename
                     prefix, sep, postfix = bb_path.name.partition('_')
