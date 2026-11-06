@@ -4,7 +4,6 @@
 #include "v16_connection_config_validator.hpp"
 
 #include <everest/logging.hpp>
-#include <ocpp/common/utils.hpp>
 #include <ocpp/v2/comparators.hpp>
 #include <ocpp/v2/ctrlr_component_variables.hpp>
 #include <ocpp/v2/device_model_helpers.hpp>
@@ -46,15 +45,8 @@ std::optional<std::string> V16ConnectionConfigValidator::validate_network_config
         const auto priority_opt =
             ocpp::v2::get_optional_value<std::string>(m_device_model, CC::NetworkConfigurationPriority);
         if (priority_opt.has_value()) {
-            for (const auto& priority_slot_str : ocpp::split_string(priority_opt.value(), ',')) {
-                int priority_slot = 0;
-                try {
-                    priority_slot = std::stoi(priority_slot_str);
-                } catch (const std::exception& e) {
-                    EVLOG_warning << "NetworkConfigurationPriority contains non-integer token '" << priority_slot_str
-                                  << "': " << e.what();
-                    continue;
-                }
+            const auto priority_slots = NC::parse_priority(priority_opt.value(), true).value();
+            for (const auto priority_slot : priority_slots) {
                 if (priority_slot == slot) {
                     EVLOG_warning << "Cannot set NetworkConfiguration variable for slot " << slot
                                   << " which is a priority network profile";
@@ -74,29 +66,8 @@ std::optional<std::string> V16ConnectionConfigValidator::validate_network_config
                 return "NoSecurityDowngrade";
             }
         }
-
-        // URL-scheme / security-profile consistency of the resulting profile (current state + proposed
-        // change), checked only once the slot holds a complete profile.
-        if (auto profile_opt = NC::read_profile_from_device_model(m_device_model, slot); profile_opt.has_value()) {
-            auto profile = *profile_opt;
-            if (variable.name == "SecurityProfile") {
-                profile.securityProfile = std::stoi(value);
-            } else if (variable.name == "OcppCsmsUrl") {
-                profile.ocppCsmsUrl = ocpp::CiString<2000>(value);
-            }
-            const std::string url = profile.ocppCsmsUrl.get();
-            if (url.find("wss://") == 0 && profile.securityProfile < 2) {
-                EVLOG_warning << "configurationSlot " << slot << ": wss:// URL requires securityProfile >= 2, got "
-                              << profile.securityProfile;
-                return "InvalidNetworkConf";
-            }
-            if (url.find("ws://") == 0 && profile.securityProfile >= 2) {
-                EVLOG_warning << "configurationSlot " << slot
-                              << ": ws:// URL is not allowed with securityProfile >= 2, got "
-                              << profile.securityProfile;
-                return "InvalidNetworkConf";
-            }
-        }
+        // B09.FR.23: a slot outside the priority is stored as written; its content is checked when it is
+        // added to NetworkConfigurationPriority.
     } catch (const std::exception& e) {
         EVLOG_warning << "Error validating NetworkConfiguration: " << e.what();
         return "InvalidNetworkConf";
@@ -106,20 +77,10 @@ std::optional<std::string> V16ConnectionConfigValidator::validate_network_config
 
 std::optional<std::string>
 V16ConnectionConfigValidator::validate_network_configuration_priority_write(const std::string& value) const {
-    namespace NC = ocpp::v2::NetworkConfigurationComponentVariables;
-    try {
-        for (const auto& slot_str : ocpp::split_string(value, ',')) {
-            const int slot = std::stoi(slot_str);
-            if (!NC::read_profile_from_device_model(m_device_model, slot).has_value()) {
-                EVLOG_warning << "Could not find network profile for configurationSlot: " << slot_str;
-                return "InvalidNetworkConf";
-            }
-        }
-    } catch (const std::exception& e) {
-        EVLOG_warning << "NetworkConfigurationPriority contains at least one value which is not an integer: " << value;
-        return "InvalidNetworkConf";
-    }
-    return std::nullopt;
+    // Same rules as the 2.x Provisioning block, without the 2.x-only certificate preconditions (A05.FR.02/03): a
+    // missing certificate surfaces at connect time through slot failover. Without those checks, accepting a write that
+    // only removes slots (as OCPP 2.1 does per B09.FR.20) gives the same result as the OCPP 2.0.1 rule.
+    return ocpp::v2::NetworkConfigurationComponentVariables::validate_priority_write(m_device_model, value, true);
 }
 
 } // namespace ocpp_multi
