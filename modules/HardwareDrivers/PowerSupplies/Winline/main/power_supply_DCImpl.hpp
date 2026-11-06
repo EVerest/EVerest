@@ -60,6 +60,11 @@ private:
     std::atomic<double> importCurrentLimit{0.};
     types::power_supply_DC::Capabilities caps;
 
+    // Output switched off while a current below the minimum is requested, see power_supply_DC guideline 5
+    std::atomic<bool> below_minimum{false};
+    bool output_enabled(types::power_supply_DC::Mode mode) const;
+    void set_below_minimum(bool below);
+
     bool firsttime{true};
     uint8_t last_module_count{0};
 

@@ -300,6 +300,12 @@ EVerest APIs
   such values were forwarded unchecked and read as 1970, as the current time
   or with their offset ignored. For an open end, such as ``timestamp_to`` in an
   error history filter, use the latest accepted value ``2262-04-11T23:46:49.854Z``.
+- ``power_supply_DC_API``: EVerest now sends currents below
+  ``min_export_current_A`` and ``min_import_current_A``, including 0 A, when
+  the EV asks for less than the offered minimum. Earlier releases raised them
+  to the minimum. A client must then deliver no current and must not raise the
+  request to the minimum, see
+  :ref:`everest_modules_handwritten_power_supply_DC_API`.
 
 The deprecated topics keep working until 2027.04.0 at the earliest. See
 :ref:`project-deprecation-index` for the full list, including:

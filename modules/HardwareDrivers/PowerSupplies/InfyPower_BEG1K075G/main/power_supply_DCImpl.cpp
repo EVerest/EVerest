@@ -32,7 +32,7 @@ void power_supply_DCImpl::init() {
     caps.current_regulation_tolerance_A = 1;
     caps.peak_current_ripple_A = 0.2;
 
-    caps.min_export_current_A = 0;
+    caps.min_export_current_A = 1;
     caps.max_export_current_A = 73.3;
     caps.min_export_voltage_V = 200;
     caps.max_export_voltage_V = 1000;
@@ -40,7 +40,7 @@ void power_supply_DCImpl::init() {
     caps.conversion_efficiency_export = 0.95;
 
     caps.max_import_current_A = 73.3;
-    caps.min_import_current_A = 0;
+    caps.min_import_current_A = 1;
     caps.max_import_power_W = 22000;
     caps.min_import_voltage_V = 200;
     caps.max_import_voltage_V = 1000;
@@ -153,7 +153,7 @@ void power_supply_DCImpl::handle_setExportVoltageCurrent(double& voltage, double
     if (current > caps.max_export_current_A)
         current = caps.max_export_current_A;
     else if (current < caps.min_export_current_A)
-        current = caps.min_export_current_A;
+        current = 0.;
 
     std::scoped_lock lock(settings_mutex);
 
@@ -180,7 +180,7 @@ void power_supply_DCImpl::handle_setImportVoltageCurrent(double& voltage, double
         if (current > caps.max_import_current_A.value())
             current = caps.max_import_current_A.value();
         else if (current < caps.min_import_current_A.value())
-            current = caps.min_import_current_A.value();
+            current = 0.;
 
         std::scoped_lock lock(settings_mutex);
         minImportVoltage = voltage;
