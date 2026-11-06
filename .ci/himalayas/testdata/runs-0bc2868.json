@@ -1,0 +1,29 @@
+{
+  "total_count": 3,
+  "workflow_runs": [
+    {
+      "id": 40698254970,
+      "head_sha": "0bc286811e1279adc4711b6c5e6d9d141660277f",
+      "event": "schedule",
+      "run_attempt": 1,
+      "run_started_at": "2026-10-28T13:38:17Z",
+      "created_at": "2026-10-28T13:38:15Z"
+    },
+    {
+      "id": 40690172036,
+      "head_sha": "0bc286811e1279adc4711b6c5e6d9d141660277f",
+      "event": "push",
+      "run_attempt": 1,
+      "run_started_at": "2026-10-28T12:43:30Z",
+      "created_at": "2026-10-28T12:43:28Z"
+    },
+    {
+      "id": 40679629465,
+      "head_sha": "0bc286811e1279adc4711b6c5e6d9d141660277f",
+      "event": "merge_group",
+      "run_attempt": 1,
+      "run_started_at": "2026-10-28T11:23:55Z",
+      "created_at": "2026-10-28T11:23:52Z"
+    }
+  ]
+}
