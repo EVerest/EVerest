@@ -14,7 +14,7 @@ require everest-core-crates.inc
 # name parameter cargo_common leaves the patching below to us; its own would point cargo
 # at the repository root instead of the crate directories.
 SRC_URI += "git://github.com/Everest/zvt.git;protocol=https;branch=main;destsuffix=zvt"
-SRCREV = "c784c20401764978fd6287a55e50bc65d083d68c"
+SRCREV = "b3ba2e491cdadb14cfec6a307167c3da58fc9beb"
 
 EXTRA_OECMAKE += " \
     -DEVEREST_RS_TARGET_TRIPLE=${RUST_HOST_SYS} \
