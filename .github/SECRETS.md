@@ -41,7 +41,7 @@ principles 1, 3, 6 and 7, configured in `.github/zizmor.yml`.
 | `DOCS_DEPLOY_APP_PRIVATE_KEY` | GitHub App private key | organisation | `contents: read` or `contents: write` on `<owner>/everest.github.io`, per run | as above |
 | `COVERAGE_DEPLOY_APP_CLIENT_ID` | GitHub App client ID | organisation | identifies the coverage App | `job_create-coverage-badge.yml` |
 | `COVERAGE_DEPLOY_APP_PRIVATE_KEY` | GitHub App private key | organisation | `contents: write` on `<owner>/everest.github.io` | as above |
-| `PRIVATE_DEPS_SSH_KEY` | SSH private key, optional | organisation or repository | read access to private dependency repositories | `job_build-cmake-gcc.yml`, `job_build-docs.yaml` |
+| `PRIVATE_DEPS_SSH_KEY` | SSH private key, optional | organisation or repository | read access to private dependency repositories | `job_build-cmake-gcc.yml`, `job_build-docs.yaml`, `job_unit-tests.yml` |
 | `BACKPORT_APP_CLIENT_ID` | GitHub App client ID | organisation | identifies the backport App | `on_label.yaml` |
 | `BACKPORT_APP_PRIVATE_KEY` | GitHub App private key | organisation | `contents: write`, `pull-requests: write`, `metadata: read` on this repository | `on_label.yaml` |
 | `HIMALAYAS_ACCESSOR_CLIENT_ID` | GitHub App client ID | organisation | identifies the Himalayas App | `on_schedule_move-pointers.yaml` |
