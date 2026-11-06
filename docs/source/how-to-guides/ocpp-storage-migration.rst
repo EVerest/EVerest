@@ -227,6 +227,69 @@ The referenced component and variable must already exist in the component
 configuration at ``DeviceModelConfigPath``. The mapping file tells the
 migration where to write the value — it does not create the target variable.
 
+.. _howto-ocpp-storage-migration-share-legacy-key:
+
+Share an OCPP 1.6 key with your own OCPP 2.x variable
+-----------------------------------------------------
+
+Built-in OCPP 1.6 keys without a standard OCPP 2.x equivalent, such as
+``LightIntensity`` or ``Language``, are stored in the ``OCPP16LegacyCtrlr``
+component. If your component configuration already has an OCPP 2.x variable for
+the same setting, add an entry for the built-in key to the mapping file. The
+key is then stored in your variable instead, so OCPP 1.6 and OCPP 2.x read and
+write the same value:
+
+.. code-block:: yaml
+
+   mappings:
+     - ocpp16_key: LightIntensity
+       component:
+         name: VendorStation
+       variable:
+         name: LightIntensity
+
+The entry replaces the built-in mapping everywhere: during the one-time
+migration, for ``GetConfiguration`` and ``ChangeConfiguration``, and for the
+canonical address of the key. The module removes the ``OCPP16LegacyCtrlr``
+variable of the key from the device model at every startup, so an OCPP 2.x CSMS
+does not see it in reports and cannot get or set it. Your variable keeps the
+mutability of your component configuration, also for keys that are read-only in
+OCPP 1.6. The module logs every replaced mapping at startup.
+
+The module does not start when the mapping file:
+
+* replaces the mapping of a built-in key that is not stored in
+  ``OCPP16LegacyCtrlr``. Keys with a standard OCPP 2.x or ``InternalCtrlr``
+  variable already share it between protocol versions.
+* replaces the mapping of ``NumberOfConnectors``, ``SupportedFeatureProfiles``,
+  ``MeterPublicKeys`` or ``DefaultPriceText``, which the OCPP 1.6 stack derives
+  or expands itself.
+* maps a built-in key to a variable that is the built-in mapping of another key
+  or the target of another entry in the file. A built-in mapping stays reserved
+  for its key even when the file replaces it: the freed ``OCPP16LegacyCtrlr``
+  variable cannot be used by another entry, and two keys cannot swap variables.
+  An entry may map a key to its own ``OCPP16LegacyCtrlr`` variable, which has no
+  effect.
+* maps a built-in key to a variable whose value the OCPP 1.6 stack computes:
+  the ``SupportedFeatureProfiles`` variable and the variables that hold the
+  limit of a max-length key, for example ``LocalAuthListCtrlr`` ``Entries``.
+* maps a built-in key to a variable that does not exist in the component
+  configuration.
+* maps a built-in key to a variable without an ``Actual`` attribute. The key's
+  value is stored in the ``Actual`` attribute of the variable.
+* maps a built-in key to a variable whose ``dataType`` differs from the key's
+  ``OCPP16LegacyCtrlr`` variable, for example a ``boolean`` variable for the
+  ``integer`` key ``LightIntensity``. The error names the key and both
+  variables.
+
+The value is not carried over when a mapping is replaced after the database was
+migrated: the key then reads the current value of the new variable, and the
+``OCPP16LegacyCtrlr`` variable is removed together with its value. To keep the
+value, read it before you add the entry and set it on the new variable, or
+delete the database to repeat the migration. When you remove the entry again,
+the ``OCPP16LegacyCtrlr`` variable comes back with the value of the component
+configuration, and the value set through the key stays in your variable.
+
 Run the migration
 -----------------
 
