@@ -1,15 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
+#include <initializer_list>
+
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 
 #include "helper.hpp"
 
 #include <iso15118/ev/d20/state/power_delivery.hpp>
+#include <iso15118/ev/d20/state/schedule_exchange.hpp>
 #include <iso15118/ev/params/ac.hpp>
 #include <iso15118/message/ac_charge_loop.hpp>
 #include <iso15118/message/authorization.hpp>
 #include <iso15118/message/power_delivery.hpp>
+#include <iso15118/message/schedule_exchange.hpp>
 #include <iso15118/message/session_stop.hpp>
 #include <iso15118/message/type.hpp>
 
@@ -280,12 +284,17 @@ const auto seed_scheduled_without_tuple = [](FsmStateHelper& helper) {
 // With the tuple ScheduleExchange took from the SECC's offer.
 const auto seed_scheduled = [](FsmStateHelper& helper) {
     seed_scheduled_without_tuple(helper);
-    helper.get_context().set_schedule_tuple_id(std::uint8_t{3});
+    helper.get_context().set_selected_schedule({3, helper.get_context().secc_clock().now() / 1'000'000 + 86401});
 };
 } // namespace
 
 SCENARIO("ISO15118-20 EV PowerDelivery carries the selected ScheduleTupleID on Start in Scheduled mode") {
-    const auto requests = sent_entering(ServiceCategory::DC, seed_scheduled, PowerDelivery::Start{});
+    const auto seed = [](FsmStateHelper& helper) {
+        use_hand_steady_clock(helper);
+        helper.get_context().secc_clock().synchronize(SECC_REFERENCE_US);
+        seed_scheduled(helper);
+    };
+    const auto requests = sent_entering(ServiceCategory::DC, seed, PowerDelivery::Start{});
     const auto request_message = requests.get<message_20::PowerDeliveryRequest>();
     REQUIRE(request_message.has_value());
     REQUIRE(request_message->power_profile.has_value());
@@ -293,6 +302,7 @@ SCENARIO("ISO15118-20 EV PowerDelivery carries the selected ScheduleTupleID on S
     REQUIRE(std::holds_alternative<message_20::datatypes::Scheduled_EVPPTControlMode>(profile.control_mode));
     REQUIRE(std::get<message_20::datatypes::Scheduled_EVPPTControlMode>(profile.control_mode).selected_schedule == 3);
     REQUIRE(profile.entries.size() == 1);
+    REQUIRE(profile.entries[0].duration == 86400);
     REQUIRE(message_20::datatypes::from_RationalNumber(profile.entries[0].power) == 11000.0f);
 }
 
@@ -344,6 +354,7 @@ const auto seed_dynamic = [](FsmStateHelper& helper) {
 
 SCENARIO("ISO15118-20 EV PowerDelivery predicts the maximum power on Start in Dynamic mode") {
     const auto entry = stated_entry(ServiceCategory::DC, seed_dynamic, PowerDelivery::Start{}, ControlMode::Dynamic);
+    REQUIRE(entry.duration == 86400);
     REQUIRE(message_20::datatypes::from_RationalNumber(entry.power) == 11000.0f);
 }
 
@@ -394,7 +405,7 @@ auto seed_scheduled_ac(AcConnector connector) {
         helper.set_ac_params(params);
         helper.get_context().set_selected_control_mode(ControlMode::Scheduled);
         helper.get_context().set_selected_ac_connector(connector);
-        helper.get_context().set_schedule_tuple_id(std::uint8_t{3});
+        helper.get_context().set_selected_schedule({3, helper.get_context().secc_clock().now() / 1'000'000 + 86401});
     };
 }
 } // namespace
@@ -434,7 +445,7 @@ SCENARIO("ISO15118-20 EV PowerDelivery states the AC profile for the connector i
     const auto seed = [mode](FsmStateHelper& helper) {
         seed_scheduled_ac(AcConnector::SinglePhase)(helper);
         helper.get_context().set_selected_control_mode(mode);
-        helper.get_context().set_schedule_tuple_id(std::uint8_t{3});
+        helper.get_context().set_selected_schedule({3, helper.get_context().secc_clock().now() / 1'000'000 + 86401});
     };
 
     const auto start = stated_entry(ServiceCategory::AC, seed, PowerDelivery::Start{}, mode);
@@ -459,7 +470,7 @@ SCENARIO("ISO15118-20 EV PowerDelivery zeroes every line of a split AC profile o
         helper.set_ac_params(params);
         helper.get_context().set_selected_control_mode(ControlMode::Scheduled);
         helper.get_context().set_selected_ac_connector(AcConnector::ThreePhase);
-        helper.get_context().set_schedule_tuple_id(std::uint8_t{3});
+        helper.get_context().set_selected_schedule({3, helper.get_context().secc_clock().now() / 1'000'000 + 86401});
     };
     const auto entry = stated_entry(ServiceCategory::AC, seed, PowerDelivery::Stop{ev::session::StopReason::EvStop},
                                     ControlMode::Scheduled);
@@ -536,4 +547,78 @@ SCENARIO("ISO15118-20 EV PowerDelivery signals an accepted DC-family Stop before
     if (dc_stop) {
         CHECK(primed.take_requests().types() == std::vector{message_20::Type::DC_WeldingDetectionReq});
     }
+}
+
+namespace {
+void select_schedule(FsmStateHelper& helper, std::uint64_t anchor_ms, std::initializer_list<std::uint32_t> durations) {
+    namespace dt = message_20::datatypes;
+    message_20::ScheduleExchangeResponse response{};
+    response.header = SESSION_HEADER;
+    response.response_code = ResponseCode::OK;
+    dt::Scheduled_SEResControlMode mode{};
+    auto& tuple = mode.schedule_tuple.emplace_back();
+    tuple.schedule_tuple_id = 3;
+    tuple.charging_schedule.power_schedule.time_anchor = anchor_ms;
+    for (const auto duration : durations) {
+        tuple.charging_schedule.power_schedule.entries.push_back({duration, dt::from_float(11000), {}, {}});
+    }
+    response.control_mode = mode;
+    successor_of<ev::d20::state::ScheduleExchange>(helper, response);
+    take_all_requests(helper.get_message_exchange());
+}
+} // namespace
+
+SCENARIO("ISO15118-20 EV PowerDelivery ends its profile within the selected schedule") {
+    namespace dt = message_20::datatypes;
+    const auto split_schedule = GENERATE(false, true);
+    const auto seed = [split_schedule](FsmStateHelper& helper) {
+        seed_scheduled_without_tuple(helper);
+        use_hand_steady_clock(helper);
+        auto& ctx = helper.get_context();
+        ctx.secc_clock().synchronize(10'000'000);
+        if (split_schedule) {
+            select_schedule(helper, 10'000, {400, 86000});
+        } else {
+            select_schedule(helper, 10'000, {86400});
+        }
+        hand_steady_time += std::chrono::seconds(6);
+    };
+    const auto request =
+        sent_entering(ServiceCategory::DC, seed, PowerDelivery::Start{}).get<message_20::PowerDeliveryRequest>();
+    REQUIRE(request.has_value());
+    REQUIRE(request->power_profile.has_value());
+    const auto& profile = *request->power_profile;
+    REQUIRE(profile.entries.size() == 1);
+    REQUIRE(profile.time_anchor / 1'000'000 == 16);
+    REQUIRE(profile.entries[0].duration == 86394);
+    REQUIRE(dt::from_RationalNumber(profile.entries[0].power) == 11000.0f);
+}
+
+SCENARIO("ISO15118-20 EV PowerDelivery zeroes power when less than one schedule second remains") {
+    namespace dt = message_20::datatypes;
+    const auto service = GENERATE(ServiceCategory::DC, ServiceCategory::AC);
+    const auto anchor_us = GENERATE(9'500'000ULL, 10'000'000ULL, 10'500'000ULL);
+    const auto seed = [anchor_us](FsmStateHelper& helper) {
+        seed_scheduled(helper);
+        ev::params::AcChargeParams params{};
+        params.phase_count = 1;
+        params.max_charge_power = 7000.0f;
+        helper.set_ac_params(params);
+        use_hand_steady_clock(helper);
+        auto& ctx = helper.get_context();
+        ctx.set_selected_ac_connector(AcConnector::ThreePhase);
+        ctx.secc_clock().synchronize(anchor_us);
+        select_schedule(helper, 0, {10});
+    };
+    LogCapture logs;
+    const auto entry = stated_entry(service, seed, PowerDelivery::Start{}, ControlMode::Scheduled);
+    REQUIRE(entry.duration == 1);
+    REQUIRE(dt::from_RationalNumber(entry.power) == 0.0f);
+    if (service == ServiceCategory::AC) {
+        REQUIRE(entry.power_l2.has_value());
+        REQUIRE(dt::from_RationalNumber(*entry.power_l2) == 0.0f);
+        REQUIRE(entry.power_l3.has_value());
+        REQUIRE(dt::from_RationalNumber(*entry.power_l3) == 0.0f);
+    }
+    REQUIRE(logs.has_warning_containing("schedule has ended"));
 }

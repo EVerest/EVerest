@@ -107,7 +107,13 @@ Result ScheduleExchange::feed(Event ev) {
                 m_ctx.stop_session();
                 return Result::stopping();
             }
-            m_ctx.set_schedule_tuple_id(static_cast<uint8_t>(tuple_id));
+            const auto& schedule = mode->schedule_tuple[0].charging_schedule.power_schedule;
+            // Table 112: PowerSchedule TimeAnchor has millisecond resolution.
+            auto end_s = schedule.time_anchor / 1'000;
+            for (const auto& entry : schedule.entries) {
+                end_s += entry.duration;
+            }
+            m_ctx.set_selected_schedule({static_cast<uint8_t>(tuple_id), end_s});
         }
 
         m_ctx.feedback.ev_power_ready();
