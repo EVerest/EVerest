@@ -70,6 +70,18 @@ config:
     type: integer
     minimum: 1
     default: 1200
+  csms_leaf_key_type:
+    description: >-
+      Key type of the private key generated for a CSMS leaf certificate signing request (OCPP charging station
+      certificate). OCPP uses both RSA and ECDSA certificates; for ECDSA only the prime256v1 (secp256r1) curve is
+      allowed. The SECC leaf keys are fixed by ISO 15118 and are not affected. When the CSR is generated on a TPM,
+      use RSA_2048 for RSA, the only RSA key size every TPM 2.0 supports.
+    type: string
+    enum:
+      - EC_prime256v1
+      - RSA_2048
+      - RSA_3072
+    default: EC_prime256v1
 provides:
   main:
     description: Implementation of the evse_security interface

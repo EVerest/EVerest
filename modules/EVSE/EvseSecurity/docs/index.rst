@@ -120,6 +120,21 @@ If existing certificates and private keys are to be installed, the
 private keys. Please note that only one value can be configured for possibly
 multiple encrypted private keys.
 
+Key Type of CSMS Leaf CSRs
+--------------------------
+
+The ``csms_leaf_key_type`` parameter selects the key type of the private key
+that is generated for a CSMS leaf CSR, i.e. the OCPP charging station
+certificate. OCPP uses both RSA and ECDSA certificates, so a CSMS that only
+issues RSA certificates can be served with ``RSA_2048`` or ``RSA_3072``. For
+ECDSA, OCPP only allows the ``prime256v1`` (secp256r1) curve, which is the
+default ``EC_prime256v1``.
+
+The parameter does not affect SECC leaf CSRs: their key types are fixed by
+ISO 15118 (``prime256v1`` for ISO 15118-2, ``secp521r1`` for ISO 15118-20).
+When the CSR is generated on a TPM, use ``RSA_2048`` for RSA, the only RSA key
+size every TPM 2.0 supports.
+
 More about CSMS, V2G, MO and MF Bundles
 ---------------------------------------
 

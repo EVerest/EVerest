@@ -319,14 +319,16 @@ EvseSecurity::EvseSecurity(const FilePaths& file_paths, const std::optional<std:
                            const std::optional<std::uintmax_t>& max_fs_usage_bytes,
                            const std::optional<std::uintmax_t>& max_fs_certificate_store_entries,
                            const std::optional<std::chrono::seconds>& csr_expiry,
-                           const std::optional<std::chrono::seconds>& garbage_collect_time) :
+                           const std::optional<std::chrono::seconds>& garbage_collect_time,
+                           const std::optional<CryptoKeyType>& csms_leaf_key_type) :
     private_key_password(private_key_password),
     directories(file_paths.directories),
     links(file_paths.links),
     max_fs_usage_bytes(max_fs_usage_bytes.value_or(DEFAULT_MAX_FILESYSTEM_SIZE)),
     max_fs_certificate_store_entries(max_fs_certificate_store_entries.value_or(DEFAULT_MAX_CERTIFICATE_ENTRIES)),
     csr_expiry(csr_expiry.value_or(DEFAULT_CSR_EXPIRY)),
-    garbage_collect_time(garbage_collect_time.value_or(DEFAULT_GARBAGE_COLLECT_TIME)) {
+    garbage_collect_time(garbage_collect_time.value_or(DEFAULT_GARBAGE_COLLECT_TIME)),
+    csms_leaf_key_type(csms_leaf_key_type.value_or(DEFAULT_CSMS_LEAF_KEY_TYPE)) {
     static_assert(sizeof(std::uint8_t) == 1, "uint8_t not equal to 1 byte!");
 
     const std::vector<fs::path> dirs = {
@@ -1383,10 +1385,15 @@ GetCertificateSignRequestResult EvseSecurity::generate_certificate_signing_reque
     info.ip_address = std::nullopt;
 #endif
 
-    // ISO 15118-20 mandates secp521r1 (or Ed448) for the SECC TLS leaf, ISO 15118-2 and the CSMS
-    // client certificate use prime256v1
-    info.key_info.key_type =
-        (certificate_type == LeafCertificateType::V2G20) ? CryptoKeyType::EC_secp521r1 : CryptoKeyType::EC_prime256v1;
+    // ISO 15118-20 mandates secp521r1 (or Ed448) for the SECC TLS leaf and ISO 15118-2 prime256v1. The
+    // CSMS client certificate uses the configured key type, as OCPP uses both RSA and ECDSA certificates.
+    if (certificate_type == LeafCertificateType::V2G20) {
+        info.key_info.key_type = CryptoKeyType::EC_secp521r1;
+    } else if (certificate_type == LeafCertificateType::V2G) {
+        info.key_info.key_type = CryptoKeyType::EC_prime256v1;
+    } else {
+        info.key_info.key_type = this->csms_leaf_key_type;
+    }
     info.key_info.generate_on_custom = use_custom_provider;
     info.key_info.private_key_file = key_path;
 
