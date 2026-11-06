@@ -202,9 +202,9 @@ Result AC_DER_SAE_ChargeParameterDiscovery::feed(Event ev) {
         const auto res = handle_request(*req, m_ctx.session, limits, present_powers,
                                         m_ctx.session_config.der_sae_limits, m_ctx.session_config.der_sae_setup_config);
 
-        m_ctx.respond(res);
+        const auto response_code = m_ctx.respond_and_publish_response_code(res);
 
-        if (res.response_code >= message_20::datatypes::ResponseCode::FAILED) {
+        if (response_code >= message_20::datatypes::ResponseCode::FAILED) {
             m_ctx.session_stopped = true;
             return {};
         }
@@ -228,8 +228,8 @@ Result AC_DER_SAE_ChargeParameterDiscovery::feed(Event ev) {
     if (const auto* const req = variant->get_if<message_20::SessionStopRequest>()) {
         const auto res = handle_request(*req, m_ctx.session);
 
-        m_ctx.respond(res);
-        mark_session_stop_response(m_ctx, *req, res);
+        const auto response_code = m_ctx.respond_and_publish_response_code(res);
+        mark_session_stop_response(m_ctx, *req, response_code);
         m_ctx.session_stopped = true;
 
         return {};

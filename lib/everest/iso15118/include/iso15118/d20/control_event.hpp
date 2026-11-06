@@ -138,13 +138,15 @@ struct CertificateResponse {
 };
 
 // Malfunction / UtilityInterruptEvent become the DC EVSEStatusCode, RCD sets the AC RCD flag,
-// EmergencyShutdown aborts the session and None clears an active error. Contactor is informational.
+// ErrorShutdown and EmergencyShutdown control session termination, and None clears an active error.
+// Contactor is informational.
 enum class EvseErrorCode : uint8_t {
     None,
     Contactor,
     RCD,
     UtilityInterruptEvent,
     Malfunction,
+    ErrorShutdown,
     EmergencyShutdown,
 };
 

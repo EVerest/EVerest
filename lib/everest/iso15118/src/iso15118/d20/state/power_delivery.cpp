@@ -166,8 +166,9 @@ Result PowerDelivery::feed(Event ev) {
                     // The contactor will never close now, and the timeout is what answers the saved
                     // PowerDeliveryReq. Cancel it and answer here, terminating rather than failing.
                     m_ctx.stop_timeout(d20::TimeoutType::CONTACTOR);
-                    m_ctx.respond(handle_request(previous_req.value(), m_ctx.session, /*contactor_error=*/false,
-                                                 /*shutdown_requested=*/true));
+                    const auto res = handle_request(previous_req.value(), m_ctx.session, /*contactor_error=*/false,
+                                                    /*shutdown_requested=*/true);
+                    m_ctx.respond_and_publish_response_code(res);
                     previous_req.reset();
                     m_ctx.session_stopped = true;
                 }
@@ -182,11 +183,10 @@ Result PowerDelivery::feed(Event ev) {
             }
 
             const auto& res = handle_request(previous_req.value(), m_ctx.session, false, false);
-            m_ctx.respond(res);
+            const auto response_code = m_ctx.respond_and_publish_response_code(res);
             previous_req.reset();
-            m_ctx.feedback.response_code(res.response_code);
 
-            if (res.response_code >= dt::ResponseCode::FAILED) {
+            if (response_code >= dt::ResponseCode::FAILED) {
                 m_ctx.session_stopped = true;
                 return {};
             }
@@ -213,10 +213,9 @@ Result PowerDelivery::feed(Event ev) {
             // TODO(SL): Check if value_or is the correct way
             const auto& res =
                 handle_request(previous_req.value_or(message_20::PowerDeliveryRequest{}), m_ctx.session, true, false);
-            m_ctx.respond(res);
+            m_ctx.respond_and_publish_response_code(res);
             previous_req.reset();
             m_ctx.session_stopped = true;
-            m_ctx.feedback.response_code(res.response_code);
         }
         return {};
     }
@@ -242,8 +241,8 @@ Result PowerDelivery::feed(Event ev) {
 
         // Checked before the AC contactor closes for a Start: a rejected request must not energize the outlet.
         const auto res = handle_request(*req, m_ctx.session, false, shutdown_requested);
-        if (res.response_code >= dt::ResponseCode::FAILED) {
-            m_ctx.respond(res);
+        if (res.response_code >= dt::ResponseCode::FAILED or m_ctx.forced_failed_response_requested()) {
+            m_ctx.respond_and_publish_response_code(res);
             m_ctx.session_stopped = true;
             return {};
         }
@@ -273,9 +272,12 @@ Result PowerDelivery::feed(Event ev) {
             }
         }
 
-        m_ctx.respond(res);
-        m_ctx.feedback.response_code(res.response_code);
+        const auto response_code = m_ctx.respond_and_publish_response_code(res);
 
+        if (response_code >= dt::ResponseCode::FAILED) {
+            m_ctx.session_stopped = true;
+            return {};
+        }
         if (shutdown_requested) {
             m_ctx.feedback.signal(session::feedback::Signal::CHARGE_LOOP_FINISHED);
             if (m_ctx.session.is_ac_charger() or m_ctx.session.is_ac_der_iec_charger() or
@@ -311,8 +313,8 @@ Result PowerDelivery::feed(Event ev) {
         // [V2G20-2645]: a SessionStopReq before PowerDeliveryReq(Start) is answered per [V2G20-1632].
         const auto res = handle_request(*req, m_ctx.session);
 
-        m_ctx.respond(res);
-        apply_session_stop_response(m_ctx, *req, res);
+        const auto response_code = m_ctx.respond_and_publish_response_code(res);
+        apply_session_stop_response(m_ctx, *req, response_code);
 
         return {};
     } else {
@@ -322,7 +324,6 @@ Result PowerDelivery::feed(Event ev) {
         const message_20::Type req_type = variant->get_type();
         send_sequence_error(req_type, m_ctx);
 
-        m_ctx.feedback.response_code(dt::ResponseCode::FAILED_SequenceError);
         m_ctx.session_stopped = true;
         return {};
     }

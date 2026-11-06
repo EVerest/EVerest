@@ -178,11 +178,10 @@ Result Authorization::feed(Event ev) {
         return handle_certificate_installation_request(*req, *variant);
     } else if (const auto req = variant->get_if<message_20::SessionStopRequest>()) {
         const auto res = handle_request(*req, m_ctx.session);
-        m_ctx.respond(res);
-        mark_session_stop_response(m_ctx, *req, res);
+        const auto response_code = m_ctx.respond_and_publish_response_code(res);
+        mark_session_stop_response(m_ctx, *req, response_code);
 
         m_ctx.session_stopped = true;
-        m_ctx.feedback.response_code(res.response_code);
 
         return {};
     } else {
@@ -192,7 +191,6 @@ Result Authorization::feed(Event ev) {
         const message_20::Type req_type = variant->get_type();
         send_sequence_error(req_type, m_ctx);
 
-        m_ctx.feedback.response_code(dt::ResponseCode::FAILED_SequenceError);
         m_ctx.session_stopped = true;
         return {};
     }
@@ -224,7 +222,7 @@ Result Authorization::handle_authorization_request(const message_20::Authorizati
     message_20::Header header;
     if (not validate_and_setup_header(header, m_ctx.session, req.header.session_id)) {
         const auto res = handle_request(req, m_ctx.session, authorization_status, false, std::nullopt);
-        m_ctx.respond(res);
+        m_ctx.respond_and_publish_response_code(res);
         m_ctx.session_stopped = true;
         return {};
     }
@@ -242,7 +240,7 @@ Result Authorization::handle_authorization_request(const message_20::Authorizati
         res.header = header;
         res.evse_processing = dt::Processing::Finished;
         set_response_code(res, dt::ResponseCode::FAILED_SignatureError);
-        m_ctx.respond(res);
+        m_ctx.respond_and_publish_response_code(res);
         m_ctx.session_stopped = true;
         return {};
     }
@@ -331,10 +329,9 @@ Result Authorization::handle_authorization_request(const message_20::Authorizati
     }
 
     const auto res = handle_request(req, m_ctx.session, authorization_status, timeout_ongoing_reached, pnc_outcome);
-    m_ctx.respond(res);
-    m_ctx.feedback.response_code(res.response_code);
+    const auto response_code = m_ctx.respond_and_publish_response_code(res);
 
-    if (res.response_code >= dt::ResponseCode::FAILED) {
+    if (response_code >= dt::ResponseCode::FAILED) {
         m_ctx.session_stopped = true;
         return {};
     }
@@ -368,7 +365,7 @@ void Authorization::respond_certificate_installation(const message_20::Certifica
     set_certificate_installation_placeholders(res);
     res.remaining_contract_certificate_chains = 0;
     set_response_code(res, code);
-    m_ctx.respond(res);
+    m_ctx.respond_and_publish_response_code(res);
 }
 
 Result Authorization::handle_certificate_installation_request(const message_20::CertificateInstallationRequest& req,

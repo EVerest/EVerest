@@ -140,6 +140,22 @@ SCENARIO("ISO15118-20 power delivery answers before the contactor closes") {
             REQUIRE(std::count(signals.begin(), signals.end(), session::feedback::Signal::AC_CLOSE_CONTACTOR) == 0);
         }
     }
+
+    GIVEN("An error shutdown is pending before PowerDeliveryReq(Start)") {
+        ctx.request_forced_failed_response();
+        state_helper.handle_request(req);
+        REQUIRE_FALSE(fsm.feed(d20::Event::V2GTP_MESSAGE).transitioned());
+
+        THEN("the failed response is sent without energizing the outlet") {
+            const auto res = ctx.get_response<message_20::PowerDeliveryResponse>();
+            REQUIRE(res.has_value());
+            REQUIRE(res->response_code == dt::ResponseCode::FAILED);
+            REQUIRE(ctx.session_stopped);
+            REQUIRE(std::count(signals.begin(), signals.end(), session::feedback::Signal::SETUP_FINISHED) == 0);
+            REQUIRE(std::count(signals.begin(), signals.end(), session::feedback::Signal::AC_CLOSE_CONTACTOR) == 0);
+            REQUIRE(state_helper.get_timeouts().check().empty());
+        }
+    }
 }
 
 // The EV's TimeAnchor is in microseconds (Table 103): the stored profile must apply its entry now, or a scheduled
