@@ -401,6 +401,27 @@ def test_type_units_are_read_only_from_the_types_directory(tmp_path):
     assert relative_files(tmp_path / 'out') == {'top.hpp'}
 
 
+@pytest.mark.parametrize('content, explanation', [
+    ('', 'has no content'),
+    ('# only a comment\n', 'has no content'),
+    ('- description: x\n', 'holds a list'),
+    ('description\n', 'holds a single value'),
+])
+def test_a_definition_without_key_value_entries_is_explained(tmp_path, content, explanation):
+    (tmp_path / 'types').mkdir()
+    (tmp_path / 'types' / 'odd.yaml').write_text(content)
+    proc = run(
+        'types', 'generate-headers',
+        '--disable-clang-format',
+        '--schemas-dir', str(SCHEMAS_DIR),
+        '--everest-dir', str(tmp_path),
+        '--output-dir', str(tmp_path / 'out'),
+        check=False,
+    )
+    assert proc.returncode != 0
+    assert explanation in proc.stderr
+
+
 def test_everest_dir_without_entries_fails(tmp_path):
     proc = run(
         'interface', 'generate-headers',

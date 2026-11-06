@@ -162,8 +162,14 @@ class DefinitionLoader:
         except yaml.YAMLError as err:
             raise SchemaError(f'could not parse {kind.value} definition {path}: {err}') from err
 
+        if data is None:
+            raise SchemaError(f'{path}: the {kind.value} definition has no content')
         if not isinstance(data, dict):
-            raise SchemaError(f'{path}: expected a mapping at the top level')
+            found = 'a list' if isinstance(data, list) else 'a single value'
+            raise SchemaError(
+                f'{path}: a {kind.value} definition must consist of "key: value" '
+                f'entries such as "description:", but this file holds {found}'
+            )
 
         self.validators.validate(kind, data, path)
 
