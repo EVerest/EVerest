@@ -22,6 +22,8 @@ struct DcChargeParams {
     float target_current{0.0f};
 
     double present_soc{0.0};
+    // Whether present_soc has been reported; ISO 15118-20 sends DisplayParameters only then.
+    bool present_soc_known{false};
     float present_voltage{0.0f};
 };
 
