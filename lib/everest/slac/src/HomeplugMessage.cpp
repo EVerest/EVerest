@@ -85,11 +85,11 @@ void HomeplugMessage::setup_payload(void const* payload, std::size_t len, std::u
 void HomeplugMessage::set_destination(MacAddress const& mac) {
     const auto encoded_ether_type = htons(defs::ETH_P_HOMEPLUG_GREENPHY);
     std::memcpy(&raw_msg.ethernet_header.ether_type, &encoded_ether_type, sizeof(encoded_ether_type));
-    std::memcpy(raw_msg.ethernet_header.ether_dhost, mac.data(), ETH_ALEN);
+    std::memcpy(raw_msg.ethernet_header.ether_dhost, mac.data(), mac.size());
 }
 
 void HomeplugMessage::set_source(MacAddress const& mac) {
-    std::memcpy(raw_msg.ethernet_header.ether_shost, mac.data(), ETH_ALEN);
+    std::memcpy(raw_msg.ethernet_header.ether_shost, mac.data(), mac.size());
 }
 
 std::uint16_t HomeplugMessage::get_mmtype() const {
