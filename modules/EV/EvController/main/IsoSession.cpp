@@ -343,6 +343,7 @@ void IsoSession::set_dc_params(const ::types::iso15118::DcEvParameters& params) 
 
 void IsoSession::update_soc(float soc_pct) {
     dc_params.present_soc = soc_pct;
+    dc_params.present_soc_known = true;
     if (live) {
         live->controller->update_present_soc(soc_pct);
     }

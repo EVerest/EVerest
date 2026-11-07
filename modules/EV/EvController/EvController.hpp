@@ -65,6 +65,7 @@ struct Conf {
     int tick_interval_ms;
     std::string on_battery_full;
     double battery_full_threshold_pct;
+    std::string soc_source;
     int cfg_communication_check_to_s;
     int cfg_heartbeat_interval_ms;
     bool enabled_at_startup;

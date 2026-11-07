@@ -313,6 +313,12 @@ public:
     // Parsed once from cfg.on_battery_full in the ctor; SocIntegrator reads
     // this on every tick instead of re-parsing the config string.
     OnBatteryFull on_battery_full_policy{OnBatteryFull::Clamp};
+    // Parsed once from cfg.soc_source in the ctor.
+    SocSource soc_source{SocSource::Internal};
+
+    // SocSource::External: take the measured SoC and battery capacity as the battery state and
+    // forward the SoC to the ISO 15118 session at once. Unset or non-positive values are ignored.
+    void apply_external_battery_state(std::optional<float> soc_pct, std::optional<float> capacity_wh);
 
     // Latched session spec from the most recent accepted configure_session.
     // Lives on FsmContext (not SimVars) so it survives session teardown

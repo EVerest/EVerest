@@ -205,6 +205,19 @@ Configuration
     Default: ``100`` (physical full). Set lower to simulate strategies like
     "charge to 80%".
 
+``soc_source``
+    Source of the SoC. Default: ``internal``.
+
+    - ``internal``: ``SocIntegrator`` integrates the delivered power from
+      ``soc_initial_pct`` and ``dc_energy_capacity``. A ``soc`` in the board's
+      ``ev_info`` is overwritten on the next ``Charging`` tick.
+    - ``external``: the ``soc`` and ``battery_capacity`` of the board's
+      ``ev_info`` are the measured battery state, in every state. Each ``soc``
+      is forwarded to the ISO 15118 session at once and nothing is integrated
+      (see `External SoC`_). The ``energy_capacity`` sent to the SECC is the
+      reported ``battery_capacity``. A board API client such as a BMS bridge
+      publishes them on ``ev_board_support_API`` ``m2e/ev_info``.
+
 ``cfg_communication_check_to_s``
     Communication check timeout in seconds. Default: ``0`` (check disabled).
     When ``0`` no external heartbeat is required. When ``> 0``, the test driver
@@ -1322,6 +1335,23 @@ After integrating and clamping, SoC is derived from
 ``battery_charge_wh / battery_capacity_wh * 100``. ``e2m/ev_info`` and
 internal ``ev_info`` are published, and ``iso_update_soc(soc_pct)`` is called
 every tick; the call is a no-op unless an ISO 15118 session is running.
+Every ISO 15118 start also passes the current ``soc_pct`` to the session before
+it runs, so ChargeParameterDiscovery, CableCheck and PreCharge carry it.
+On the wire the SoC is the ``EVRESSSOC`` of ``DC_EVStatus`` (ISO 15118-2 and
+DIN 70121 DC) and the ``DisplayParameters`` of every ISO 15118-20 charge loop
+request, AC and DC, which also carry ``BatteryEnergyCapacity`` from the DC
+``energy_capacity``.
+
+External SoC
+~~~~~~~~~~~~
+
+With ``soc_source: external``, each board ``ev_info`` sets ``soc_pct``
+(clamped to 0-100) and, when positive, ``battery_capacity_wh``, re-derives
+``battery_charge_wh`` from them and calls ``iso_update_soc`` at once.
+``soc_step`` then integrates nothing, but still runs the ``on_battery_full``
+edge detection on the reported SoC, publishes ``ev_info`` and reports the
+present values. ``stop_session`` and ``pause_if_iso`` act on the reported
+SoC; ``idle_at_full`` has no charge to trim and behaves like ``clamp``.
 
 ``on_battery_full`` policy
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -1425,6 +1455,12 @@ binary; no MQTT broker is required.
      - Parity with legacy ``EvManager`` formula for AC 1-/3-phase and DC
        ISO-2; capacity clamp; ``iso_update_soc`` routing; ``ev_info``
        publish on both topics.
+   * - ``ExternalSocTest.cpp``
+     - ``[evctl][soc][external]``,
+       ``[evctl][soc][iso]``
+     - ``soc_source`` parsing; external SoC and capacity applied as
+       measured and never integrated; ``on_battery_full`` on an external
+       SoC; SoC and capacity seeded at an ISO 15118 start.
    * - ``StateTransitionsTest.cpp``
      - ``[evctl][helpers]``,
        ``[evctl][group1]``,

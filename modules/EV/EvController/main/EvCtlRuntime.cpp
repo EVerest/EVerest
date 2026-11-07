@@ -452,7 +452,9 @@ void EvCtlRuntime::apply_passthrough_vars(FsmContext& ctx, const Event& ev) {
     switch (kind_of(ev)) {
     case K::EvInfo:
         if (auto* p = std::get_if<EvInfoPayload>(&ev.payload)) {
-            if (p->ev_info.soc) {
+            if (ctx.soc_source == SocSource::External) {
+                ctx.apply_external_battery_state(p->ev_info.soc, p->ev_info.battery_capacity);
+            } else if (p->ev_info.soc) {
                 ctx.vars.soc_pct = *p->ev_info.soc;
             }
             if (p->ev_info.present_current) {

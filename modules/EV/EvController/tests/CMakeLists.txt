@@ -22,6 +22,7 @@ target_sources(${TEST_TARGET} PRIVATE
     StateTransitionsTest.cpp
     AcLimitTest.cpp
     SocIntegratorTest.cpp
+    ExternalSocTest.cpp
     IsoEvCapabilitiesTest.cpp
     BcbTogglingTest.cpp
     PausedResumeGateTest.cpp

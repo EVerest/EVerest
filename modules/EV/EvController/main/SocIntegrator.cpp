@@ -36,6 +36,16 @@ OnBatteryFull parse_on_battery_full(const std::string& s) {
                                 "'; expected one of clamp / idle_at_full / stop_session / pause_if_iso");
 }
 
+SocSource parse_soc_source(const std::string& s) {
+    if (s == "internal") {
+        return SocSource::Internal;
+    }
+    if (s == "external") {
+        return SocSource::External;
+    }
+    throw std::invalid_argument("EvController: unknown soc_source value '" + s + "'; expected internal or external");
+}
+
 namespace {
 
 // Milliseconds to hours, so power [W] * factor [h] is energy in [Wh].
@@ -75,9 +85,9 @@ double instantaneous_power_w(const FsmContext& ctx) {
     return 0.0;
 }
 
-} // namespace
-
-void soc_step(FsmContext& ctx) {
+// Integrates the delivered power into battery_charge_wh and derives soc_pct from it. Returns false
+// when the battery capacity is unusable.
+bool integrate_soc(FsmContext& ctx, double power) {
     // Guard against a misconfigured battery_capacity_wh (sourced from
     // cfg.dc_energy_capacity). A zero or negative capacity divides by zero
     // when deriving SoC below; NaN then compares false to both clamp branches
@@ -88,7 +98,7 @@ void soc_step(FsmContext& ctx) {
             EVLOG_error << "EvController: battery_capacity_wh <= 0 (cfg.dc_energy_capacity); SocIntegrator skipping";
             warned = true;
         }
-        return;
+        return false;
     }
 
     // ms is the configured tick interval; EvCtlRuntime::on_tick() invokes
@@ -97,7 +107,6 @@ void soc_step(FsmContext& ctx) {
     // tick is uniform and equal to cfg.tick_interval_ms, so use that directly.
     const double ms = static_cast<double>(ctx.cfg.tick_interval_ms);
     const double factor = MS_FACTOR * ms;
-    double power = instantaneous_power_w(ctx);
 
     // Policy is parsed and cached once in FsmContext's ctor so a typo in
     // cfg.on_battery_full fails at module init rather than silently downgrading
@@ -138,6 +147,19 @@ void soc_step(FsmContext& ctx) {
         soc = 0.0;
     }
     ctx.vars.soc_pct = static_cast<float>(soc);
+    return true;
+}
+
+} // namespace
+
+void soc_step(FsmContext& ctx) {
+    const double power = instantaneous_power_w(ctx);
+    if (ctx.soc_source == SocSource::Internal and not integrate_soc(ctx, power)) {
+        return;
+    }
+
+    const auto policy = ctx.on_battery_full_policy;
+    const double threshold = ctx.cfg.battery_full_threshold_pct;
 
     // Edge detection for stop_session / pause_if_iso. Rising edge fires the
     // FSM event exactly once; was_full latches and clears when SoC drops

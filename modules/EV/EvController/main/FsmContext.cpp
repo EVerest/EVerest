@@ -137,6 +137,7 @@ FsmContext::FsmContext(PeerActions actions, Publisher pub, TimerArm timer_arm, T
     // config (e.g. "stopsesion") is caught loudly instead of silently
     // downgrading to Clamp on every SocIntegrator tick.
     on_battery_full_policy = parse_on_battery_full(cfg.on_battery_full);
+    soc_source = parse_soc_source(cfg.soc_source);
 
     // Seed SimVars from Conf.
     vars.battery_capacity_wh = static_cast<float>(cfg.dc_energy_capacity);
@@ -301,9 +302,11 @@ bool FsmContext::iso_start_charging(API_types::ev_controller::ChargeMode mode,
         dc_params.max_power_limit = static_cast<float>(cfg.dc_max_power_limit);
         dc_params.max_voltage_limit = static_cast<float>(cfg.dc_max_voltage_limit);
         dc_params.min_voltage_limit = static_cast<float>(cfg.dc_min_voltage_limit);
-        dc_params.energy_capacity = static_cast<float>(cfg.dc_energy_capacity);
+        dc_params.energy_capacity = vars.battery_capacity_wh;
         peer_actions.iso.set_dc_params(dc_params);
     }
+    // The SoC reaches the session from its first request on, not only from the first Charging tick.
+    peer_actions.iso.update_soc(vars.soc_pct);
 
     IsoStart start;
     start.mode = mode;
@@ -370,6 +373,19 @@ void FsmContext::iso_pause_charging() {
 
 void FsmContext::iso_update_soc(float pct) {
     peer_actions.iso.update_soc(pct);
+}
+
+void FsmContext::apply_external_battery_state(std::optional<float> soc_pct, std::optional<float> capacity_wh) {
+    if (capacity_wh and *capacity_wh > 0.0F) {
+        vars.battery_capacity_wh = *capacity_wh;
+    }
+    if (soc_pct) {
+        vars.soc_pct = std::clamp(*soc_pct, 0.0F, 100.0F);
+    }
+    vars.battery_charge_wh = vars.battery_capacity_wh * (vars.soc_pct / 100.0F);
+    if (soc_pct) {
+        iso_update_soc(vars.soc_pct);
+    }
 }
 
 // ---- SLAC shortcut -----------------------------------------------------
