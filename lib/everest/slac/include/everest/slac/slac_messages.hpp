@@ -28,7 +28,7 @@ struct __attribute__((packed)) cm_slac_parm_cnf {
     std::uint8_t num_sounds;                         // number of expected m-sounds
     std::uint8_t timeout;                            // corresponds to TT_EVSE_match_MNBC, in units of 100ms
     std::uint8_t resp_type;                          // fixed to 0x01, indicating 'other gp station'
-    std::uint8_t forwarding_sta[ETH_ALEN];           // ev host mac address
+    std::uint8_t forwarding_sta[defs::MAC_LEN];      // ev host mac address
     std::uint8_t application_type;                   // fixed to 0x00, indicating 'pev-evse matching'
     std::uint8_t security_type;                      // fixed to 0x00, indicating 'no security'
     std::uint8_t run_id[defs::RUN_ID_LEN];           // matching run identifier, corresponding to the request
@@ -36,23 +36,23 @@ struct __attribute__((packed)) cm_slac_parm_cnf {
 };
 
 struct __attribute__((packed)) cm_start_atten_char_ind {
-    std::uint8_t application_type;         // fixed to 0x00, indicating 'pev-evse matching'
-    std::uint8_t security_type;            // fixed to 0x00, indicating 'no security'
-    std::uint8_t num_sounds;               // number of expected m-sounds
-    std::uint8_t timeout;                  // corresponds to TT_EVSE_match_MNBC
-    std::uint8_t resp_type;                // fixed to 0x01, indicating 'other gp station'
-    std::uint8_t forwarding_sta[ETH_ALEN]; // ev host mac address
-    std::uint8_t run_id[defs::RUN_ID_LEN]; // indentifier for a matching run
+    std::uint8_t application_type;              // fixed to 0x00, indicating 'pev-evse matching'
+    std::uint8_t security_type;                 // fixed to 0x00, indicating 'no security'
+    std::uint8_t num_sounds;                    // number of expected m-sounds
+    std::uint8_t timeout;                       // corresponds to TT_EVSE_match_MNBC
+    std::uint8_t resp_type;                     // fixed to 0x01, indicating 'other gp station'
+    std::uint8_t forwarding_sta[defs::MAC_LEN]; // ev host mac address
+    std::uint8_t run_id[defs::RUN_ID_LEN];      // indentifier for a matching run
 };
 
 struct __attribute__((packed)) cm_atten_char_ind {
-    std::uint8_t application_type;         // fixed to 0x00, indicating 'pev-evse matching'
-    std::uint8_t security_type;            // fixed to 0x00, indicating 'no security'
-    std::uint8_t source_address[ETH_ALEN]; // mac address of EV host, which initiates matching
-    std::uint8_t run_id[defs::RUN_ID_LEN]; // indentifier for a matching run
-    std::uint8_t source_id[SOURCE_ID_LEN]; // unique id of the station, that sent the m-sounds
-    std::uint8_t resp_id[RESP_ID_LEN];     // unique id of the station, that is sending this message
-    std::uint8_t num_sounds;               // number of sounds used for attenuation profile
+    std::uint8_t application_type;              // fixed to 0x00, indicating 'pev-evse matching'
+    std::uint8_t security_type;                 // fixed to 0x00, indicating 'no security'
+    std::uint8_t source_address[defs::MAC_LEN]; // mac address of EV host, which initiates matching
+    std::uint8_t run_id[defs::RUN_ID_LEN];      // indentifier for a matching run
+    std::uint8_t source_id[SOURCE_ID_LEN];      // unique id of the station, that sent the m-sounds
+    std::uint8_t resp_id[RESP_ID_LEN];          // unique id of the station, that is sending this message
+    std::uint8_t num_sounds;                    // number of sounds used for attenuation profile
     struct {
         std::uint8_t num_groups;              // number of OFDM carrier groups
         std::uint8_t aag[defs::AAG_LIST_LEN]; // AAG_1 .. AAG_N
@@ -60,13 +60,13 @@ struct __attribute__((packed)) cm_atten_char_ind {
 };
 
 struct __attribute__((packed)) cm_atten_char_rsp {
-    std::uint8_t application_type;         // fixed to 0x00, indicating 'pev-evse matching'
-    std::uint8_t security_type;            // fixed to 0x00, indicating 'no security'
-    std::uint8_t source_address[ETH_ALEN]; // mac address of EV host, which initiates matching
-    std::uint8_t run_id[defs::RUN_ID_LEN]; // indentifier for a matching run
-    std::uint8_t source_id[SOURCE_ID_LEN]; // unique id of the station, that sent the m-sounds
-    std::uint8_t resp_id[RESP_ID_LEN];     // unique id of the station, that is sending this message
-    std::uint8_t result;                   // fixed to 0x00, indicates successful SLAC process
+    std::uint8_t application_type;              // fixed to 0x00, indicating 'pev-evse matching'
+    std::uint8_t security_type;                 // fixed to 0x00, indicating 'no security'
+    std::uint8_t source_address[defs::MAC_LEN]; // mac address of EV host, which initiates matching
+    std::uint8_t run_id[defs::RUN_ID_LEN];      // indentifier for a matching run
+    std::uint8_t source_id[SOURCE_ID_LEN];      // unique id of the station, that sent the m-sounds
+    std::uint8_t resp_id[RESP_ID_LEN];          // unique id of the station, that is sending this message
+    std::uint8_t result;                        // fixed to 0x00, indicates successful SLAC process
 };
 
 struct __attribute__((packed)) cm_mnbc_sound_ind {
@@ -81,8 +81,8 @@ struct __attribute__((packed)) cm_mnbc_sound_ind {
 
 // note: this message doesn't seem to part of hpgp, it is defined in ISO15118-3
 struct __attribute__((packed)) cm_atten_profile_ind {
-    std::uint8_t pev_mac[ETH_ALEN]; // mac address of the EV host
-    std::uint8_t num_groups;        // number of OFDM carrier groups
+    std::uint8_t pev_mac[defs::MAC_LEN]; // mac address of the EV host
+    std::uint8_t num_groups;             // number of OFDM carrier groups
     std::uint8_t _reserved;
     std::uint8_t aag[defs::AAG_LIST_LEN]; // list of average attenuation for each group
 };
@@ -92,9 +92,9 @@ struct __attribute__((packed)) cm_slac_match_req {
     std::uint8_t security_type;            // fixed to 0x00, indicating 'no security'
     std::uint16_t mvf_length;              // fixed to 0x3e = 62 bytes following
     std::uint8_t pev_id[PEV_ID_LEN];       // vin code of PEV
-    std::uint8_t pev_mac[ETH_ALEN];        // mac address of the EV host
+    std::uint8_t pev_mac[defs::MAC_LEN];   // mac address of the EV host
     std::uint8_t evse_id[EVSE_ID_LEN];     // EVSE id
-    std::uint8_t evse_mac[ETH_ALEN];       // mac address of the EVSE
+    std::uint8_t evse_mac[defs::MAC_LEN];  // mac address of the EVSE
     std::uint8_t run_id[defs::RUN_ID_LEN]; // indentifier for a matching run
     std::uint8_t _reserved[8]; // note: this is to pad the run_id, which is defined to be 16 bytes for this message
 };
@@ -104,9 +104,9 @@ struct __attribute__((packed)) cm_slac_match_cnf {
     std::uint8_t security_type;            // fixed to 0x00, indicating 'no security'
     std::uint16_t mvf_length;              // fixed to 0x56 = 86 bytes following
     std::uint8_t pev_id[PEV_ID_LEN];       // vin code of PEV
-    std::uint8_t pev_mac[ETH_ALEN];        // mac address of the EV host
+    std::uint8_t pev_mac[defs::MAC_LEN];   // mac address of the EV host
     std::uint8_t evse_id[EVSE_ID_LEN];     // EVSE id
-    std::uint8_t evse_mac[ETH_ALEN];       // mac address of the EVSE
+    std::uint8_t evse_mac[defs::MAC_LEN];  // mac address of the EVSE
     std::uint8_t run_id[defs::RUN_ID_LEN]; // indentifier for a matching run
     std::uint8_t _rerserved[8]; // note: this is to pad the run_id, which is defined to be 16 bytes for this message
     std::uint8_t nid[defs::NID_LEN]; // network id derived from the nmk
