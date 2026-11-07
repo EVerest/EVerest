@@ -17,6 +17,10 @@
 #include <system_error>
 #include <unistd.h>
 
+// libslac's frame layout (slac_defs.hpp) matches the Linux packet socket's.
+static_assert(everest::lib::slac::defs::MAC_LEN == ETH_ALEN);
+static_assert(everest::lib::slac::defs::ETHERNET_FRAME_MAX_LEN == ETH_FRAME_LEN);
+
 namespace {
 using namespace everest::lib::io;
 
