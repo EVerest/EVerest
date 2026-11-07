@@ -5,7 +5,7 @@
 #include "fsm/msm_traverse.hpp"
 
 #include <everest/slac/slac_fsm.hpp>
-#include <everest_api_types/telemetry/codec.hpp>
+#include <everest/slac/telemetry.hpp>
 
 #include <boost/core/demangle.hpp>
 
@@ -20,7 +20,6 @@
 namespace everest::lib::slac {
 
 namespace {
-namespace api_telemetry = everest::lib::API::V1_0::types::telemetry;
 
 std::string simplify_state_name(std::string name) {
     auto sm_prefix = std::string("boost::msm::back::state_machine<");
@@ -70,7 +69,7 @@ struct PrintVisitor {
 };
 
 struct FsmStateVisitor {
-    std::vector<api_telemetry::SlacFsmState> stack;
+    std::vector<SlacFsmState> stack;
     std::string last_visited_state;
 
     FsmStateVisitor() {
@@ -106,7 +105,7 @@ struct FsmStateVisitor {
         stack.back().sessions.push_back(std::move(child));
     }
 
-    api_telemetry::SlacFsmState const& get_result() const {
+    SlacFsmState const& get_result() const {
         return stack.front();
     }
 };
@@ -143,9 +142,7 @@ void slac_fsm::event_post_processing() {
             if (telemetry) {
                 FsmStateVisitor fsm_state_visitor;
                 msm::traverse_fsm(msm, 0, fsm_state_visitor);
-                ctx.telemetry("FSM", "state", api_telemetry::serialize(fsm_state_visitor.get_result()));
-
-                ctx.telemetry("generic", "status", serialize(ctx.status));
+                ctx.telemetry(fsm_state_visitor.get_result());
             }
             last_signature = std::move(current_signature);
         }
