@@ -403,6 +403,7 @@ void Controller::set_cp_state(bool c_or_d) {
 void Controller::update_present_soc(double present_soc) {
     auto h = dc_params.handle();
     (*h).present_soc = present_soc;
+    (*h).present_soc_known = true;
 }
 
 void Controller::update_present_voltage(float present_voltage) {
@@ -432,9 +433,11 @@ void Controller::update_der_alarm_status(std::uint32_t der_alarm_status) {
 void Controller::update_dc_params(const params::DcChargeParams& params) {
     auto h = dc_params.handle();
     const auto soc = (*h).present_soc;
+    const auto soc_known = (*h).present_soc_known;
     const auto voltage = (*h).present_voltage;
     *h = params;
     (*h).present_soc = soc;
+    (*h).present_soc_known = soc_known;
     (*h).present_voltage = voltage;
 }
 
