@@ -239,10 +239,10 @@ ocpp::v2::Authorization::validate_token(const IdToken id_token, const std::optio
                 // C07.FR.08: CS shall try to validate the contract locally
                 if (contract_validation_offline) {
                     EVLOG_info << "Offline: contract " << local_verify_result;
-                    switch (local_verify_result) {
+                    const auto status_result = map_certificate_validation_to_status(local_verify_result);
                     // C07.FR.09: CS shall lookup the eMAID in Local Auth List or Auth Cache when
                     // local validation succeeded
-                    case CertificateValidationResult::Valid:
+                    if (status_result.check_local_auth_list) {
                         // In C07.FR.09 LocalAuthorizeOffline is mentioned, this seems to be a generic config item
                         // that applies to Local Auth List and Auth Cache, but since there are no requirements about
                         // it, lets check it here
@@ -251,26 +251,12 @@ ocpp::v2::Authorization::validate_token(const IdToken id_token, const std::optio
                         } else {
                             // No requirement states what to do when ContractValidationOffline is true
                             // and LocalAuthorizeOffline is false
-                            response.idTokenInfo.status = AuthorizationStatusEnum::Unknown;
-                            response.certificateStatus = AuthorizeCertificateStatusEnum::Accepted;
+                            response.idTokenInfo.status = status_result.authorization_status;
+                            response.certificateStatus = status_result.certificate_status;
                         }
-                        break;
-                    case CertificateValidationResult::Expired:
-                        response.idTokenInfo.status = AuthorizationStatusEnum::Expired;
-                        response.certificateStatus = AuthorizeCertificateStatusEnum::CertificateExpired;
-                        break;
-                    case CertificateValidationResult::InvalidSignature:
-                    case CertificateValidationResult::InvalidLeafSignature:
-                        response.idTokenInfo.status = AuthorizationStatusEnum::Invalid;
-                        response.certificateStatus = AuthorizeCertificateStatusEnum::SignatureError;
-                        break;
-                    case CertificateValidationResult::IssuerNotFound:
-                    case CertificateValidationResult::InvalidChain:
-                    case CertificateValidationResult::Unknown:
-                        // C07.FR.17: unverifiable / invalid chain → CertChainError and Invalid
-                        response.idTokenInfo.status = AuthorizationStatusEnum::Invalid;
-                        response.certificateStatus = AuthorizeCertificateStatusEnum::CertChainError;
-                        break;
+                    } else {
+                        response.idTokenInfo.status = status_result.authorization_status;
+                        response.certificateStatus = status_result.certificate_status;
                     }
                 } else {
                     // C07.FR.07: CS shall not allow charging
