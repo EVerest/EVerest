@@ -42,11 +42,11 @@ enum class PowermeterRegisterIndex : int {
     NUM_PM_REGISTERS
 };
 
-/// Map a configured register to the top-level Measurement it feeds.
-std::optional<types::powermeter::Measurement> measurement_for_register(int register_index);
+/// Map a configured register to the top-level Measurand it feeds.
+std::optional<types::powermeter::Measurand> measurand_for_register(int register_index);
 
-/// Unique, stable-ordered list of measurements implied by the given register indices.
-std::vector<types::powermeter::Measurement> unique_supported_measurements(const std::vector<int>& register_indices);
+/// Unique, stable-ordered list of measurands implied by the given register indices.
+std::vector<types::powermeter::Measurand> unique_supported_measurands(const std::vector<int>& register_indices);
 
 } // namespace generic_powermeter
 } // namespace module

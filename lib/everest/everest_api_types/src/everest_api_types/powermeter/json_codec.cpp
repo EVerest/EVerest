@@ -422,65 +422,64 @@ void to_json(json& j, const TransactionStatus& k) noexcept {
     j = "INVALID_VALUE__everest::lib::API::V1_0::types::powermeter::TransactionStatus";
 }
 
-void from_json(const json& j, Measurement& k) {
+void from_json(const json& j, Measurand& k) {
     std::string s = j;
     if (s == "EnergyImport") {
-        k = Measurement::EnergyImport;
+        k = Measurand::EnergyImport;
         return;
     }
     if (s == "EnergyExport") {
-        k = Measurement::EnergyExport;
+        k = Measurand::EnergyExport;
         return;
     }
     if (s == "Power") {
-        k = Measurement::Power;
+        k = Measurand::Power;
         return;
     }
     if (s == "Voltage") {
-        k = Measurement::Voltage;
+        k = Measurand::Voltage;
         return;
     }
     if (s == "ReactivePower") {
-        k = Measurement::ReactivePower;
+        k = Measurand::ReactivePower;
         return;
     }
     if (s == "Current") {
-        k = Measurement::Current;
+        k = Measurand::Current;
         return;
     }
     if (s == "Frequency") {
-        k = Measurement::Frequency;
+        k = Measurand::Frequency;
         return;
     }
 
-    throw std::out_of_range("Provided string " + s +
-                            " could not be converted to enum of type Measurement_API_1_0");
+    throw std::out_of_range("Provided string " + s + " could not be converted to enum of type Measurand_API_1_0");
 }
-void to_json(json& j, const Measurement& k) noexcept {
+void to_json(json& j, const Measurand& k) noexcept {
     switch (k) {
-    case Measurement::EnergyImport:
+    case Measurand::EnergyImport:
         j = "EnergyImport";
         return;
-    case Measurement::EnergyExport:
+    case Measurand::EnergyExport:
         j = "EnergyExport";
         return;
-    case Measurement::Power:
+    case Measurand::Power:
         j = "Power";
         return;
-    case Measurement::Voltage:
+    case Measurand::Voltage:
         j = "Voltage";
         return;
-    case Measurement::ReactivePower:
+    case Measurand::ReactivePower:
         j = "ReactivePower";
         return;
-    case Measurement::Current:
+    case Measurand::Current:
         j = "Current";
         return;
-    case Measurement::Frequency:
+    case Measurand::Frequency:
         j = "Frequency";
         return;
     }
-    j = "INVALID_VALUE__everest::lib::API::V1_0::types::powermeter::Measurement";
+    j = "INVALID_VALUE__everest::lib::API::V1_0::types::powermeter::Measurand";
 }
 
 void from_json(const json& j, Current& k) {
@@ -1119,9 +1118,9 @@ void from_json(const json& j, Capabilities& k) {
     if (j.contains("min_import_current_A")) {
         k.min_import_current_A.emplace(j.at("min_import_current_A"));
     }
-    if (j.contains("supported_measurements")) {
-        auto& tmp = k.supported_measurements.emplace();
-        for (auto const& elem : j.at("supported_measurements")) {
+    if (j.contains("supported_measurands")) {
+        auto& tmp = k.supported_measurands.emplace();
+        for (auto const& elem : j.at("supported_measurands")) {
             tmp.push_back(elem);
         }
     }
@@ -1135,10 +1134,10 @@ void to_json(json& j, const Capabilities& k) noexcept {
     if (k.min_import_current_A) {
         j["min_import_current_A"] = k.min_import_current_A.value();
     }
-    if (k.supported_measurements) {
-        j["supported_measurements"] = json::array();
-        for (auto const& item : k.supported_measurements.value()) {
-            j["supported_measurements"].push_back(item);
+    if (k.supported_measurands) {
+        j["supported_measurands"] = json::array();
+        for (auto const& item : k.supported_measurands.value()) {
+            j["supported_measurands"].push_back(item);
         }
     }
 }

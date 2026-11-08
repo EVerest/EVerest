@@ -2,7 +2,7 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 
 #include "powermeterImpl.hpp"
-#include "../supported_measurements.hpp"
+#include "../supported_measurands.hpp"
 #include <fmt/core.h>
 #include <functional>
 #include <optional>
@@ -41,7 +41,7 @@ void powermeterImpl::init() {
 }
 
 void powermeterImpl::ready() {
-    this->publish_supported_measurements();
+    this->publish_supported_measurands();
 
     std::thread([this] {
         while (true) {
@@ -53,20 +53,20 @@ void powermeterImpl::ready() {
     }).detach();
 }
 
-void powermeterImpl::publish_supported_measurements() {
+void powermeterImpl::publish_supported_measurands() {
     std::vector<int> register_indices;
     register_indices.reserve(this->pm_configuration.size());
     for (const auto& register_data : this->pm_configuration) {
         register_indices.push_back(static_cast<int>(register_data.type));
     }
 
-    const auto measurements = generic_powermeter::unique_supported_measurements(register_indices);
-    if (measurements.empty()) {
+    const auto measurands = generic_powermeter::unique_supported_measurands(register_indices);
+    if (measurands.empty()) {
         return;
     }
 
     types::powermeter::Capabilities capabilities;
-    capabilities.supported_measurements = measurements;
+    capabilities.supported_measurands = measurands;
     this->publish_capabilities(capabilities);
 }
 
@@ -323,8 +323,8 @@ void powermeterImpl::assign_register_sublevel_data(const json& registers, const 
                                                    const std::string& sublevel_selector, const uint8_t offset) {
 
     RegisterData sublevel_data = {};
-    sublevel_data.type = static_cast<PowermeterRegisters>(
-        (static_cast<int>(register_type) + offset) % static_cast<int>(NUM_PM_REGISTERS));
+    sublevel_data.type = static_cast<PowermeterRegisters>((static_cast<int>(register_type) + offset) %
+                                                          static_cast<int>(NUM_PM_REGISTERS));
     sublevel_data.start_register = registers.at(register_selector).at(sublevel_selector).at("start_register");
     sublevel_data.start_register_function = this->select_modbus_function(
         (const uint8_t)registers.at(register_selector).at(sublevel_selector).at("function_code_start_reg"));

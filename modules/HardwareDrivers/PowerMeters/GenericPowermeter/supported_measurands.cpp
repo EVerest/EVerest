@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
 
-#include "supported_measurements.hpp"
+#include "supported_measurands.hpp"
 
 #include <set>
 
 namespace module {
 namespace generic_powermeter {
 
-std::optional<types::powermeter::Measurement> measurement_for_register(int register_index) {
+std::optional<types::powermeter::Measurand> measurand_for_register(int register_index) {
     using R = PowermeterRegisterIndex;
-    using M = types::powermeter::Measurement;
+    using M = types::powermeter::Measurand;
 
     if (register_index < 0 or register_index >= static_cast<int>(R::NUM_PM_REGISTERS)) {
         return std::nullopt;
@@ -37,27 +37,27 @@ std::optional<types::powermeter::Measurement> measurement_for_register(int regis
     return M::Frequency;
 }
 
-std::vector<types::powermeter::Measurement> unique_supported_measurements(const std::vector<int>& register_indices) {
-    // Keep declaration order of Measurement enum for a stable, readable list.
-    static constexpr types::powermeter::Measurement k_order[] = {
-        types::powermeter::Measurement::EnergyImport, types::powermeter::Measurement::EnergyExport,
-        types::powermeter::Measurement::Power,        types::powermeter::Measurement::Voltage,
-        types::powermeter::Measurement::ReactivePower, types::powermeter::Measurement::Current,
-        types::powermeter::Measurement::Frequency,
+std::vector<types::powermeter::Measurand> unique_supported_measurands(const std::vector<int>& register_indices) {
+    // Keep declaration order of Measurand enum for a stable, readable list.
+    static constexpr types::powermeter::Measurand k_order[] = {
+        types::powermeter::Measurand::EnergyImport,  types::powermeter::Measurand::EnergyExport,
+        types::powermeter::Measurand::Power,         types::powermeter::Measurand::Voltage,
+        types::powermeter::Measurand::ReactivePower, types::powermeter::Measurand::Current,
+        types::powermeter::Measurand::Frequency,
     };
 
-    std::set<types::powermeter::Measurement> present;
+    std::set<types::powermeter::Measurand> present;
     for (const int index : register_indices) {
-        if (const auto measurement = measurement_for_register(index)) {
-            present.insert(*measurement);
+        if (const auto measurand = measurand_for_register(index)) {
+            present.insert(*measurand);
         }
     }
 
-    std::vector<types::powermeter::Measurement> result;
+    std::vector<types::powermeter::Measurand> result;
     result.reserve(present.size());
-    for (const auto measurement : k_order) {
-        if (present.count(measurement) != 0) {
-            result.push_back(measurement);
+    for (const auto measurand : k_order) {
+        if (present.count(measurand) != 0) {
+            result.push_back(measurand);
         }
     }
     return result;

@@ -88,7 +88,7 @@ This dataset will be periodically published by the module.
 capabilities
 ------------
 
-On start-up the module publishes ``capabilities.supported_measurements`` once, derived
+On start-up the module publishes ``capabilities.supported_measurands`` once, derived
 from the configured register model (only categories that have at least one register
 with ``num_registers > 0``). Consumers such as OCPP can use this list to synchronize
 supported measurands without waiting for the first sample.

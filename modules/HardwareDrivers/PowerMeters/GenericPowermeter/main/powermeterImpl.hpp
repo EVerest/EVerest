@@ -14,7 +14,7 @@
 
 // ev@75ac1216-19eb-4182-a85c-820f1fc2c091:v1
 // insert your custom include headers here
-#include "../supported_measurements.hpp"
+#include "../supported_measurands.hpp"
 #include <optional>
 #include <string>
 #include <vector>
@@ -121,7 +121,7 @@ private:
                                        const std::string& register_selector, const std::string& sublevel_selector,
                                        const uint8_t offset);
     powermeterImpl::ModbusFunctionType select_modbus_function(const uint8_t function_code);
-    void publish_supported_measurements();
+    void publish_supported_measurands();
     void read_powermeter_values();
     bool read_register(const RegisterData& register_config);
     bool process_response(

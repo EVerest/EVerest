@@ -7,8 +7,8 @@ IMPLS = [
 cc_everest_module(
     name = "GenericPowermeter",
     srcs = [
-        "supported_measurements.cpp",
-        "supported_measurements.hpp",
+        "supported_measurands.cpp",
+        "supported_measurands.hpp",
     ],
     data = glob(["models/**"]),
     deps = [],

@@ -93,7 +93,7 @@ std::string serialize(TransactionStatus val) noexcept {
     return utilities::dump_json(val);
 }
 
-std::string serialize(Measurement val) noexcept {
+std::string serialize(Measurand val) noexcept {
     return utilities::dump_json(val);
 }
 
@@ -193,8 +193,8 @@ template <> TransactionStatus deserialize(std::string_view val) {
     return utilities::parse_json<TransactionStatus>(val);
 }
 
-template <> Measurement deserialize(std::string_view val) {
-    return utilities::parse_json<Measurement>(val);
+template <> Measurand deserialize(std::string_view val) {
+    return utilities::parse_json<Measurand>(val);
 }
 
 template <> ReplyStartTransaction deserialize(std::string_view val) {
@@ -313,7 +313,7 @@ std::ostream& operator<<(std::ostream& os, TransactionStatus const& val) {
     return os;
 }
 
-std::ostream& operator<<(std::ostream& os, Measurement const& val) {
+std::ostream& operator<<(std::ostream& os, Measurand const& val) {
     os << serialize(val);
     return os;
 }

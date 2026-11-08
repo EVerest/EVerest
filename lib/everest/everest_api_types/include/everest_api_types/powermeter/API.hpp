@@ -73,7 +73,7 @@ enum class TransactionStatus {
     UNEXPECTED_ERROR,
 };
 
-enum class Measurement {
+enum class Measurand {
     EnergyImport,
     EnergyExport,
     Power,
@@ -232,7 +232,7 @@ struct RequestStartTransaction {
 struct Capabilities {
     std::optional<float> min_import_current_A; ///< Minimum current (charging) measurable within accuracy class
     std::optional<float> min_export_current_A; ///< Minimum current (discharging) measurable within accuracy class
-    std::optional<std::vector<Measurement>> supported_measurements; ///< Top-level measurements this meter can report
+    std::optional<std::vector<Measurand>> supported_measurands; ///< Top-level measurands this meter can report
 };
 
 } // namespace everest::lib::API::V1_0::types::powermeter
