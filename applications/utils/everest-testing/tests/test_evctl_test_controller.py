@@ -215,7 +215,7 @@ def test_plug_in_publishes_configure_session_then_plug_ac_iec(world_controller):
     )
 
 
-def test_plug_in_ac_iso_uses_AcIso2_mode_and_optional_payment(world_controller):
+def test_plug_in_ac_iso_uses_AcIso2_mode_and_payment(world_controller):
     controller = world_controller
     controller.plug_in_ac_iso(payment_type="contract")
     publishes = _all_publishes(controller)
@@ -235,12 +235,12 @@ def test_plug_in_ac_iso_uses_AcIso2_mode_and_optional_payment(world_controller):
     assert publishes[1][1] is None
 
 
-def test_plug_in_ac_iso_omits_payment_when_none(world_controller):
-    controller = world_controller
-    controller.plug_in_ac_iso()
-    publishes = _all_publishes(controller)
-    assert "payment" not in publishes[0][1]["params"]
-    assert publishes[0][1]["mode"] == "AcIso2"
+@pytest.mark.parametrize("helper", ["plug_in_ac_iso", "plug_in_dc_iso"])
+@pytest.mark.parametrize("kwargs", [{}, {"payment_type": ""}])
+def test_iso_plug_requires_payment_type(world_controller, helper, kwargs):
+    with pytest.raises(ValueError, match="expected one of.*Contract.*ExternalPayment"):
+        getattr(world_controller, helper)(**kwargs)
+    assert _all_publishes(world_controller) == []
 
 
 def test_plug_in_dc_iso_uses_DcIso2_mode(world_controller):
@@ -754,7 +754,7 @@ def test_plug_uses_world_driver_and_keeps_intent_on_car(world_controller, helper
     callbacks = {c.args[0]: c.args[1] for c in ctrl._fake_client.message_callback_add.call_args_list}
     topic = f"{ctrl.base_e2m}/state"
     callbacks[topic](None, None, _make_msg(topic, "Charging"))
-    getattr(ctrl, helper)()
+    getattr(ctrl, helper)(**({"payment_type": "eim"} if helper in ("plug_in_ac_iso", "plug_in_dc_iso") else {}))
     publishes = _all_publishes(ctrl)
     if mode:
         assert publishes[0][0] == "ext/everest_api/1/ev_controller/ev_manager/m2e/configure_session"
@@ -989,7 +989,7 @@ def two_car_controller(monkeypatch, mock_everest_core):
 
 def test_connector_id_selects_the_car(two_car_controller):
     ctrl = two_car_controller
-    ctrl.plug_in_dc_iso(connector_id=2)
+    ctrl.plug_in_dc_iso(connector_id=2, payment_type="eim")
     ctrl.pause_session(connector_id=2)
     ctrl.inject_fault("DiodeFail", connector_id=2)
     ctrl.plug_out(connector_id=2)

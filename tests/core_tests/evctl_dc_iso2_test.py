@@ -76,7 +76,7 @@ _TIMEOUT_FINISH = 30.0
 def test_iso15118_dc_session(everest_core, evctl_test_controller):
     """Full DC ISO 15118-2 session end to end, terminated by the EV."""
     evctl_test_controller.start()
-    evctl_test_controller.plug_in_dc_iso()
+    evctl_test_controller.plug_in_dc_iso(payment_type="eim")
 
     assert evctl_test_controller.state_collector.wait_for_state(
         "Charging", timeout=_TIMEOUT_CHARGING
@@ -107,7 +107,7 @@ def test_iso15118_dc_session(everest_core, evctl_test_controller):
 def test_iso15118_dc_session_stop_by_evse(everest_core, evctl_test_controller):
     """A driver-injected diode fault makes the EV leave Charging."""
     evctl_test_controller.start()
-    evctl_test_controller.plug_in_dc_iso()
+    evctl_test_controller.plug_in_dc_iso(payment_type="eim")
 
     assert evctl_test_controller.state_collector.wait_for_state(
         "Charging", timeout=_TIMEOUT_CHARGING
@@ -156,7 +156,7 @@ async def test_iso15118_dc_session_paused_by_ev(everest_core, evctl_test_control
     probe_module.start()
     await probe_module.wait_to_be_ready()
 
-    evctl_test_controller.plug_in_dc_iso()
+    evctl_test_controller.plug_in_dc_iso(payment_type="eim")
 
     assert evctl_test_controller.state_collector.wait_for_state(
         "Charging", timeout=_TIMEOUT_CHARGING
@@ -207,7 +207,7 @@ def test_iso15118_dc_fault_then_clear_recovers(
 ):
     """Clear the driver's world fault and disconnect the car through the pilot."""
     evctl_test_controller.start()
-    evctl_test_controller.plug_in_dc_iso()
+    evctl_test_controller.plug_in_dc_iso(payment_type="eim")
 
     assert evctl_test_controller.state_collector.wait_for_state(
         "Charging", timeout=_TIMEOUT_CHARGING
@@ -245,7 +245,7 @@ def test_iso15118_dc_fault_then_clear_recovers(
 def test_iso15118_dc_unplug_from_fault(everest_core, evctl_test_controller):
     """Unplug while a world fault remains active; the car must reach Unplugged."""
     evctl_test_controller.start()
-    evctl_test_controller.plug_in_dc_iso()
+    evctl_test_controller.plug_in_dc_iso(payment_type="eim")
 
     assert evctl_test_controller.state_collector.wait_for_state(
         "Charging", timeout=_TIMEOUT_CHARGING

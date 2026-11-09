@@ -136,7 +136,7 @@ async def test_q01(
             # Q01.FR.32, we just check that it is not empty
             assert result['attribute_value']
 
-    test_controller.plug_in_dc_iso()
+    test_controller.plug_in_dc_iso(payment_type="eim")
     assert await wait_for_and_validate(
         test_utility,
         charge_point_v21,
@@ -314,7 +314,7 @@ async def test_rejected_q01(
             # Q01.FR.32, we just check that it is not empty
             assert result['attribute_value']
 
-    test_controller.plug_in_dc_iso()
+    test_controller.plug_in_dc_iso(payment_type="eim")
     assert await wait_for_and_validate(
         test_utility,
         charge_point_v21,
@@ -462,7 +462,7 @@ async def test_q02_no_service_renegotiation(
         ),
         validate_status_notification_201,
     )
-    test_controller.plug_in_dc_iso()
+    test_controller.plug_in_dc_iso(payment_type="eim")
 
     # Make sure we don't start BPT
     @on(Action.authorize)
