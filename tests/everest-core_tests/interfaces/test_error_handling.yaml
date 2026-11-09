@@ -44,6 +44,34 @@ cmds:
           - Low
           - Medium
           - High
+  raise_error_with_trigger_value:
+    description: This command raises an error with a trigger value
+    arguments:
+      type:
+        description: This argument allows to specify the type
+          raised
+        type: string
+        enum:
+          - test_errors/TestErrorA
+          - test_errors/TestErrorB
+          - test_errors/TestErrorC
+          - test_errors/TestErrorD
+      sub_type:
+        description: This argument allows to specify the sub type
+        type: string
+      message:
+        description: This argument allows to specify the message
+        type: string
+      severity:
+        description: This argument allows to specify the severity
+        type: string
+        enum:
+          - Low
+          - Medium
+          - High
+      trigger_value:
+        description: This argument allows to specify the text representation of the trigger value
+        type: string
 vars:
   errors_subscribe_TestErrorA:
     description: >-

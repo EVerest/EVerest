@@ -2,6 +2,8 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 
 #pragma once
+#include <everest_api_types/generic/API.hpp>
+
 #include <optional>
 #include <string>
 #include <vector>
@@ -56,6 +58,7 @@ struct ErrorObject {
     State state;
     std::optional<std::string> sub_type;
     std::optional<std::string> vendor_id;
+    std::optional<generic::TriggerValue> trigger_value;
 };
 
 struct ErrorList {

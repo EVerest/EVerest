@@ -4,6 +4,7 @@
 #include "error_history//json_codec.hpp"
 #include "error_history/API.hpp"
 #include "error_history/codec.hpp"
+#include "generic/json_codec.hpp"
 #include "nlohmann/json.hpp"
 #include "utilities/date_time.hpp"
 
@@ -192,6 +193,9 @@ void to_json(json& j, ErrorObject const& k) noexcept {
     if (k.vendor_id) {
         j["vendor_id"] = k.vendor_id.value();
     }
+    if (k.trigger_value) {
+        j["trigger_value"] = k.trigger_value.value();
+    }
 }
 
 void from_json(const json& j, ErrorObject& k) {
@@ -209,6 +213,9 @@ void from_json(const json& j, ErrorObject& k) {
     }
     if (j.contains("vendor_id")) {
         k.vendor_id.emplace(j.at("vendor_id"));
+    }
+    if (j.contains("trigger_value")) {
+        k.trigger_value.emplace(j.at("trigger_value").get<generic::TriggerValue>());
     }
 }
 

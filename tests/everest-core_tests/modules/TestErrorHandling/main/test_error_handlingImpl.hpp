@@ -38,6 +38,8 @@ protected:
     virtual void handle_clear_all_errors() override;
     virtual void handle_raise_error(std::string& type, std::string& sub_type, std::string& message,
                                     std::string& severity) override;
+    virtual void handle_raise_error_with_trigger_value(std::string& type, std::string& sub_type, std::string& message,
+                                                       std::string& severity, std::string& trigger_value) override;
 
     // ev@d2d1847a-7b88-41dd-ad07-92785f06f5c4:v1
     // insert your protected definitions here

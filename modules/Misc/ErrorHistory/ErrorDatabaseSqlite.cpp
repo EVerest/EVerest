@@ -17,7 +17,9 @@
 #include <set>
 #include <stdexcept>
 #include <string_view>
+#include <utility>
 #include <variant>
+#include <vector>
 
 namespace module {
 
@@ -36,6 +38,9 @@ struct IncompatibleSchema : public std::runtime_error {
 const std::set<std::string> required_columns = {
     "uuid",      "type",     "description", "message",  "origin_module", "origin_implementation",
     "timestamp", "severity", "state",       "sub_type", "vendor_id"};
+
+/// nullable columns that are added in place to databases created without them
+const std::vector<std::pair<std::string, std::string>> added_columns = {{"trigger_value_text_repr", "TEXT"}};
 
 std::set<std::string> get_column_names(everest::db::sqlite::ConnectionInterface& db) {
     auto stmt = db.new_statement("PRAGMA table_info(errors);");
@@ -90,7 +95,7 @@ ErrorDatabaseSqlite::ErrorDatabaseSqlite(const fs::path& db_path_, const bool re
             EVLOG_info << "Resetting database";
             this->reset_database();
         } catch (const std::exception& e) {
-            EVLOG_error << "Error checking database, keeping it as it is: " << e.what();
+            EVLOG_error << "Error checking or migrating database, keeping it as it is: " << e.what();
         }
     }
 }
@@ -145,11 +150,30 @@ void ErrorDatabaseSqlite::check_database() {
             throw IncompatibleSchema("Errors table contains the unknown column " + column + " that needs a value");
         }
     }
+    std::set<std::string> known_columns = required_columns;
+    std::vector<std::pair<std::string, std::string>> missing_columns;
+    for (const auto& column : added_columns) {
+        known_columns.insert(column.first);
+        if (columns.count(column.first) == 0) {
+            missing_columns.push_back(column);
+        }
+    }
     for (const auto& column : columns) {
-        if (required_columns.count(column) == 0) {
+        if (known_columns.count(column) == 0) {
             EVLOG_warning << "Ignoring unknown column " << column << " in errors table";
         }
     }
+    if (missing_columns.empty()) {
+        return;
+    }
+    auto transaction = db->begin_transaction();
+    for (const auto& [name, type] : missing_columns) {
+        EVLOG_info << "Adding column " << name << " to errors table";
+        if (!db->execute_statement("ALTER TABLE errors ADD COLUMN " + name + " " + type + ";")) {
+            throw everest::db::QueryExecutionException(db->get_error_message());
+        }
+    }
+    transaction->commit();
 }
 
 void ErrorDatabaseSqlite::reset_database() {
@@ -178,7 +202,11 @@ void ErrorDatabaseSqlite::reset_database() {
                           "severity               TEXT    NOT NULL,"
                           "state                  TEXT    NOT NULL,"
                           "sub_type               TEXT    NOT NULL,"
-                          "vendor_id              TEXT    NOT NULL);";
+                          "vendor_id              TEXT    NOT NULL";
+        for (const auto& [name, type] : added_columns) {
+            sql += ", " + name + " " + type;
+        }
+        sql += ");";
 
         if (!db.execute_statement(sql)) {
             EVLOG_error << "Error creating database during reset";
@@ -202,9 +230,18 @@ void ErrorDatabaseSqlite::add_error_without_mutex(Everest::error::ErrorPtr error
             EVLOG_error << "Error opening database";
             throw everest::db::ConnectionException(db.get_error_message());
         }
+        // only added columns the table has, so errors are still stored while a migration is pending
+        const auto columns = get_column_names(db);
         std::string sql = "INSERT INTO errors(uuid, type, description, message, origin_module, origin_implementation, "
-                          "timestamp, severity, state, sub_type, vendor_id) VALUES(";
-        sql += "?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11);";
+                          "timestamp, severity, state, sub_type, vendor_id";
+        std::string values = "?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11";
+        for (const auto& column : added_columns) {
+            if (columns.count(column.first) == 1) {
+                sql += ", " + column.first;
+                values += ", :" + column.first;
+            }
+        }
+        sql += ") VALUES(" + values + ");";
         auto stmt = db.new_statement(sql);
         stmt->bind_text(1, error->uuid.to_string(), everest::db::sqlite::SQLiteString::Transient);
         stmt->bind_text(2, error->type);
@@ -218,6 +255,10 @@ void ErrorDatabaseSqlite::add_error_without_mutex(Everest::error::ErrorPtr error
         stmt->bind_text(9, Everest::error::state_to_string(error->state), everest::db::sqlite::SQLiteString::Transient);
         stmt->bind_text(10, error->sub_type);
         stmt->bind_text(11, error->vendor_id);
+        // unbound parameters are NULL
+        if (error->trigger_value.has_value() and columns.count("trigger_value_text_repr") == 1) {
+            stmt->bind_text(":trigger_value_text_repr", error->trigger_value.value().text_repr);
+        }
         if (stmt->step() != SQLITE_DONE) {
             throw everest::db::QueryExecutionException(db.get_error_message());
         }
@@ -339,6 +380,10 @@ ErrorDatabaseSqlite::get_errors(const std::optional<SqlCondition>& condition) co
             Everest::error::ErrorPtr error = std::make_shared<Everest::error::Error>(
                 err_type, err_sub_type, err_msg, err_description, err_origin, err_vendor_id, err_severity,
                 err_timestamp, err_handle, err_state);
+            const auto trigger_value_text_repr = stmt->column_variant("trigger_value_text_repr");
+            if (const auto* text_repr = std::get_if<std::string>(&trigger_value_text_repr)) {
+                error->trigger_value = Everest::error::TriggerValue{*text_repr};
+            }
             result.push_back(error);
         }
         if (status != SQLITE_DONE) {
