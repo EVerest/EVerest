@@ -11,7 +11,7 @@ from .context import Context
 def generate_headers(args) -> int:
     context = Context.from_args(args)
     backend = registry.create(args.backend, args)
-    output_dir = context.output_dir(
+    output_dir = context.resolve_output_dir(
         args.output_dir, default=backend.interface_output_dir, backend=backend.name)
 
     requested = context.requested_interfaces(args.interfaces)

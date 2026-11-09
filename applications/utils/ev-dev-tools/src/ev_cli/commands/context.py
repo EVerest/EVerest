@@ -96,8 +96,13 @@ class Context:
         interfaces = build.build_interfaces(self.loader, needed)
         return Model(types=self.model().types, interfaces=interfaces, modules=modules)
 
-    def output_dir(self, given: str | None, *, default: str | None, backend: str) -> Path:
-        """``--output-dir`` if given, otherwise the backend's default beneath the work directory."""
+    def resolve_output_dir(self, given: str | None, *, default: str | None, backend: str) -> Path:
+        """Where a generating command writes.
+
+        An explicit ``--output-dir`` resolves against the current directory, like
+        any path on a command line; otherwise the backend's default resolves
+        against the work directory.  A backend without a default needs one given.
+        """
         if given:
             return Path(given).resolve()
         if default is None:
