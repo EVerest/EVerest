@@ -40,8 +40,8 @@ std::optional<dt::PowerProfile> make_power_profile(const Context& ctx, float pow
         dt::Scheduled_EVPPTControlMode mode{};
         mode.selected_schedule = schedule->tuple_id;
         profile.control_mode = mode;
-        const auto end_us = schedule->end_s * 1'000'000;
-        const auto remaining_s = end_us > profile.time_anchor ? (end_us - profile.time_anchor) / 1'000'000 : 0;
+        const auto anchor_s_ceil = profile.time_anchor / 1'000'000 + (profile.time_anchor % 1'000'000 != 0);
+        const auto remaining_s = schedule->end_s > anchor_s_ceil ? schedule->end_s - anchor_s_ceil : 0;
         if (remaining_s < 1) {
             entry.duration = 1;
             power = 0.0f;

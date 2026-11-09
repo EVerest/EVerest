@@ -108,10 +108,18 @@ Result ScheduleExchange::feed(Event ev) {
                 return Result::stopping();
             }
             const auto& schedule = mode->schedule_tuple[0].charging_schedule.power_schedule;
-            // Table 112: PowerSchedule TimeAnchor has millisecond resolution.
-            auto end_s = schedule.time_anchor / 1'000;
+            std::uint64_t duration_s = 0;
             for (const auto& entry : schedule.entries) {
-                end_s += entry.duration;
+                duration_s += entry.duration;
+            }
+            // Table 112: PowerSchedule TimeAnchor has millisecond resolution.
+            auto end_s = schedule.time_anchor / 1'000 + duration_s;
+            const auto now_us = m_ctx.secc_clock().now();
+            // An offered schedule is live at receipt; a past end means its TimeAnchor is unusable.
+            if (end_s < now_us / 1'000'000) {
+                end_s = now_us / 1'000'000 + duration_s;
+                logf_warning("PowerSchedule TimeAnchor %llu is unusable; schedule anchored at receipt",
+                             static_cast<unsigned long long>(schedule.time_anchor));
             }
             m_ctx.set_selected_schedule({static_cast<uint8_t>(tuple_id), end_s});
         }

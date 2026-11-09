@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
 #include <initializer_list>
+#include <limits>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
@@ -607,8 +608,9 @@ SCENARIO("ISO15118-20 EV PowerDelivery zeroes power when less than one schedule 
         use_hand_steady_clock(helper);
         auto& ctx = helper.get_context();
         ctx.set_selected_ac_connector(AcConnector::ThreePhase);
-        ctx.secc_clock().synchronize(anchor_us);
+        ctx.secc_clock().synchronize(9'000'000);
         select_schedule(helper, 0, {10});
+        hand_steady_time += std::chrono::microseconds(anchor_us - 9'000'000);
     };
     LogCapture logs;
     const auto entry = stated_entry(service, seed, PowerDelivery::Start{}, ControlMode::Scheduled);
@@ -621,4 +623,81 @@ SCENARIO("ISO15118-20 EV PowerDelivery zeroes power when less than one schedule 
         REQUIRE(dt::from_RationalNumber(*entry.power_l3) == 0.0f);
     }
     REQUIRE(logs.has_warning_containing("schedule has ended"));
+}
+
+SCENARIO("ISO15118-20 EV PowerDelivery re-anchors a schedule received with a seconds TimeAnchor") {
+    namespace dt = message_20::datatypes;
+    constexpr std::uint64_t receipt_s = 1'780'000'000;
+    const auto seed = [](FsmStateHelper& helper) {
+        seed_scheduled_without_tuple(helper);
+        use_hand_steady_clock(helper);
+        helper.get_context().secc_clock().synchronize(receipt_s * 1'000'000);
+        select_schedule(helper, receipt_s, {86400});
+        hand_steady_time += std::chrono::seconds(6);
+    };
+    LogCapture logs;
+    const auto request =
+        sent_entering(ServiceCategory::DC, seed, PowerDelivery::Start{}).get<message_20::PowerDeliveryRequest>();
+    REQUIRE(request.has_value());
+    REQUIRE(request->power_profile.has_value());
+    const auto& profile = *request->power_profile;
+    REQUIRE(profile.entries.size() == 1);
+    CHECK(dt::from_RationalNumber(profile.entries[0].power) == 11000.0f);
+    CHECK(profile.entries[0].duration == 86394);
+    CHECK(profile.time_anchor / 1'000'000 + profile.entries[0].duration <= receipt_s + 86400);
+    CHECK(logs.has_warning_containing("1780000000"));
+    CHECK(logs.has_warning_containing("anchored at receipt"));
+}
+
+SCENARIO("ISO15118-20 EV PowerDelivery keeps a full profile for a microseconds TimeAnchor") {
+    namespace dt = message_20::datatypes;
+    const auto seed = [](FsmStateHelper& helper) {
+        seed_scheduled_without_tuple(helper);
+        use_hand_steady_clock(helper);
+        helper.get_context().secc_clock().synchronize(1'780'000'000'000'000);
+        select_schedule(helper, 1'780'000'000'000'000, {86400});
+        hand_steady_time += std::chrono::seconds(6);
+    };
+    const auto entry = stated_entry(ServiceCategory::DC, seed, PowerDelivery::Start{}, ControlMode::Scheduled);
+    REQUIRE(entry.duration == 86400);
+    REQUIRE(dt::from_RationalNumber(entry.power) == 11000.0f);
+}
+
+SCENARIO("ISO15118-20 EV PowerDelivery keeps full power for a far-future schedule end") {
+    namespace dt = message_20::datatypes;
+    const auto seed = [](FsmStateHelper& helper) {
+        seed_scheduled(helper);
+        use_hand_steady_clock(helper);
+        auto& ctx = helper.get_context();
+        ctx.secc_clock().synchronize(1'780'000'000'000'000);
+        ctx.set_selected_schedule({3, std::numeric_limits<std::uint64_t>::max() / 1'000'000 + 86401});
+    };
+    const auto entry = stated_entry(ServiceCategory::DC, seed, PowerDelivery::Start{}, ControlMode::Scheduled);
+    REQUIRE(entry.duration == 86400);
+    REQUIRE(dt::from_RationalNumber(entry.power) == 11000.0f);
+}
+
+SCENARIO("ISO15118-20 EV PowerDelivery keeps a schedule ending at the whole-second receipt time") {
+    const auto seed = [](FsmStateHelper& helper) {
+        seed_scheduled_without_tuple(helper);
+        use_hand_steady_clock(helper);
+        helper.get_context().secc_clock().synchronize(9'500'000);
+        select_schedule(helper, 0, {4, 5});
+    };
+    const auto entry = stated_entry(ServiceCategory::DC, seed, PowerDelivery::Start{}, ControlMode::Scheduled);
+    REQUIRE(entry.duration == 1);
+    REQUIRE(message_20::datatypes::from_RationalNumber(entry.power) == 0.0f);
+}
+
+SCENARIO("ISO15118-20 EV PowerDelivery re-anchors a schedule ending before the whole-second receipt time") {
+    const auto seed = [](FsmStateHelper& helper) {
+        seed_scheduled_without_tuple(helper);
+        use_hand_steady_clock(helper);
+        helper.get_context().secc_clock().synchronize(9'500'000);
+        select_schedule(helper, 0, {3, 5});
+    };
+    const auto entry = stated_entry(ServiceCategory::DC, seed, PowerDelivery::Start{}, ControlMode::Scheduled);
+    // Receipt floor 9 s + duration 8 s - profile anchor ceiling 10 s = 7 s.
+    REQUIRE(entry.duration == 7);
+    REQUIRE(message_20::datatypes::from_RationalNumber(entry.power) == 11000.0f);
 }
