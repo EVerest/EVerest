@@ -27,7 +27,7 @@ from __future__ import annotations
 from collections import Counter
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Mapping, Sequence
+from typing import Any, Iterator, Mapping, Sequence
 
 from .loader import DefinitionLoader, Document
 from .references import ParsedReference, TypeRef, format_type_reference, parse_type_reference
@@ -129,106 +129,101 @@ def collect_findings(loader: DefinitionLoader) -> list[Finding]:
     tree = loader.tree
     findings: list[Finding] = []
     for unit in tree.type_units():
-        _check_document(loader, loader.type_document(unit), from_unit=unit, findings=findings)
+        findings.extend(_find_in_document(loader, loader.type_document(unit), from_unit=unit))
     for name in tree.interface_names():
-        _check_document(loader, loader.interface_document(name), from_unit=None, findings=findings)
+        findings.extend(_find_in_document(loader, loader.interface_document(name), from_unit=None))
     for namespace in tree.error_namespaces():
-        _check_document(loader, loader.error_document(namespace), from_unit=None, findings=findings)
+        findings.extend(_find_in_document(loader, loader.error_document(namespace), from_unit=None))
     for module in tree.module_names():
-        _check_document(loader, loader.module_document(module), from_unit=None, findings=findings)
+        findings.extend(_find_in_document(loader, loader.module_document(module), from_unit=None))
     return findings
 
 
-def _check_document(
-    loader: DefinitionLoader, document: Document, *, from_unit: str | None, findings: list[Finding]
-) -> None:
+def _find_in_document(
+    loader: DefinitionLoader, document: Document, *, from_unit: str | None
+) -> Iterator[Finding]:
     if '$schema' not in document.data:
-        findings.append(Finding(
+        yield Finding(
             category=Category.UNDECLARED_DIALECT,
             source=document.source,
             message='no $schema; the dialect is implied by the framework meta-schema rather than declared',
             conformant_form='$schema: https://json-schema.org/draft/2020-12/schema',
-        ))
-    _check_references(loader, document.data, document.source, from_unit=from_unit, findings=findings)
+        )
+    yield from _find_in_node(loader, document.data, document.source, from_unit=from_unit)
 
 
-def _check_references(
-    loader: DefinitionLoader, node: Any, source: SourceRef, *, from_unit: str | None, findings: list[Finding]
-) -> None:
-    """Report every ``$ref`` at or below ``node``, wherever in the document it sits."""
+def _find_in_node(
+    loader: DefinitionLoader, node: Any, source: SourceRef, *, from_unit: str | None
+) -> Iterator[Finding]:
+    """Every finding about a ``$ref`` at or below ``node``, wherever in the document it sits."""
     if isinstance(node, Mapping):
         if isinstance(node.get('$ref'), str):
             reference = parse_type_reference(node['$ref'], from_unit=from_unit)
-            _report_reference(
+            yield from _find_in_reference(
                 node,
                 reference=reference,
                 source=source,
                 from_unit=from_unit,
                 target_json_type=loader.type_declaration(reference.target, source).get('type'),
-                findings=findings,
             )
         for key, value in node.items():
-            _check_references(loader, value, source.child(key), from_unit=from_unit, findings=findings)
+            yield from _find_in_node(loader, value, source.child(key), from_unit=from_unit)
     elif isinstance(node, list):
         for index, value in enumerate(node):
-            _check_references(loader, value, source.child(index), from_unit=from_unit, findings=findings)
+            yield from _find_in_node(loader, value, source.child(index), from_unit=from_unit)
 
 
-def _report_reference(
+def _find_in_reference(
     schema: Mapping[str, Any],
     *,
     reference: ParsedReference,
     source: SourceRef,
     from_unit: str | None,
     target_json_type: str | None,
-    findings: list[Finding],
-) -> None:
-    """Report everything non-conformant about one reference node.
+) -> Iterator[Finding]:
+    """Everything non-conformant about one reference node.
 
     ``target_json_type`` is the ``type`` the referenced definition declares, or
     ``None`` when it could not be determined; it is what makes a redundant
     ``type`` distinguishable from a contradictory one.
     """
     if reference.is_legacy:
-        findings.append(Finding(
+        yield Finding(
             category=Category.LEGACY_REF,
             source=source,
             message=f'reference {reference.raw!r} uses the legacy EVerest form',
             conformant_form=format_type_reference(reference.target, from_unit=from_unit),
-        ))
+        )
 
     siblings = ref_siblings(schema)
     declared_type = siblings.pop('type', None)
 
     if declared_type is not None:
-        _report_declared_type(
+        yield _classify_declared_type(
             declared_type,
             target_json_type=target_json_type,
             target=reference.target,
             source=source,
-            findings=findings,
         )
 
     for keyword, value in siblings.items():
-        _report_constraint(
+        yield _classify_constraint(
             keyword, value,
             target_json_type=target_json_type,
             target=reference.target,
             source=source,
-            findings=findings,
         )
 
 
-def _report_declared_type(
+def _classify_declared_type(
     declared_type: Any,
     *,
     target_json_type: str | None,
     target: TypeRef,
     source: SourceRef,
-    findings: list[Finding],
-) -> None:
+) -> Finding:
     if target_json_type is not None and declared_type != target_json_type:
-        findings.append(Finding(
+        return Finding(
             category=Category.REF_SIBLING_CONTRADICTS,
             source=source,
             message=(
@@ -238,10 +233,9 @@ def _report_declared_type(
                 f'the two intersect and no value can satisfy the result.'
             ),
             conformant_form='remove the "type" key',
-        ))
-        return
+        )
 
-    findings.append(Finding(
+    return Finding(
         category=Category.REF_SIBLING_TYPE,
         source=source,
         message=(
@@ -249,18 +243,17 @@ def _report_declared_type(
             f'redundant; the referenced definition already declares it'
         ),
         conformant_form='remove the "type" key',
-    ))
+    )
 
 
-def _report_constraint(
+def _classify_constraint(
     keyword: str,
     value: Any,
     *,
     target_json_type: str | None,
     target: TypeRef,
     source: SourceRef,
-    findings: list[Finding],
-) -> None:
+) -> Finding:
     # additionalProperties does not see through a $ref under 2020-12, so
     # `additionalProperties: false` beside a reference to an object would
     # reject every property that object declares.
@@ -282,11 +275,11 @@ def _report_constraint(
             f'would take effect when read with OpenAPI semantics'
         )
 
-    findings.append(Finding(
+    return Finding(
         category=Category.REF_SIBLING_CONSTRAINT,
         source=source,
         message=message,
         conformant_form=(
             f'move "{keyword}" into the referenced definition, or drop it'
         ),
-    ))
+    )
