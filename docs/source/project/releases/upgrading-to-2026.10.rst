@@ -12,10 +12,6 @@ the same changes together with new features and fixes.
 Work through the sections that apply to your deployment. Then validate the
 configuration with ``manager --check --config <yaml>`` before the first start.
 
-.. contents:: On this page
-   :local:
-   :depth: 1
-
 .. _project-upgrading-to-2026-10-manager-settings:
 
 Manager settings and the configuration database
