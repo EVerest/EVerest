@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
+#include <algorithm>
 #include <optional>
 #include <variant>
 
@@ -24,25 +25,33 @@ namespace {
 namespace dt = message_20::datatypes;
 
 // [V2G20-1546]: every Start, Stop and Standby states an EVPowerProfile, in Scheduled mode under the
-// ScheduleTupleID ScheduleExchange picked. One entry at `power` spanning the schedule, split across the selected
-// connector for the AC family.
+// ScheduleTupleID ScheduleExchange picked. [V2G20-1559], [V2G20-1811]: power must respect the
+// selected schedule, whose limit is zero after its last entry. AC power is split across the connector.
 std::optional<dt::PowerProfile> make_power_profile(const Context& ctx, float power) {
     dt::PowerProfile profile{};
+    profile.time_anchor = ctx.secc_clock().now();
+    dt::PowerScheduleEntry entry{dt::SCHEDULED_POWER_DURATION_S, {}, std::nullopt, std::nullopt};
     if (ctx.selected_control_mode() == dt::ControlMode::Scheduled) {
-        const auto tuple_id = ctx.schedule_tuple_id();
-        if (not tuple_id.has_value()) {
+        const auto schedule = ctx.selected_schedule();
+        if (not schedule.has_value()) {
             logf_warning("Scheduled PowerDelivery has no ScheduleTupleID to reference; omitting the power profile");
             return std::nullopt;
         }
         dt::Scheduled_EVPPTControlMode mode{};
-        mode.selected_schedule = *tuple_id;
+        mode.selected_schedule = schedule->tuple_id;
         profile.control_mode = mode;
+        const auto anchor_s_ceil = profile.time_anchor / 1'000'000 + (profile.time_anchor % 1'000'000 != 0);
+        const auto remaining_s = schedule->end_s > anchor_s_ceil ? schedule->end_s - anchor_s_ceil : 0;
+        if (remaining_s < 1) {
+            entry.duration = 1;
+            power = 0.0f;
+            logf_warning("Selected charging schedule has ended; sending a zero-power profile");
+        } else {
+            entry.duration = std::min<std::uint64_t>(remaining_s, dt::SCHEDULED_POWER_DURATION_S);
+        }
     } else {
         profile.control_mode = dt::Dynamic_EVPPTControlMode{};
     }
-
-    profile.time_anchor = ctx.secc_clock().now();
-    dt::PowerScheduleEntry entry{dt::SCHEDULED_POWER_DURATION_S, {}, std::nullopt, std::nullopt};
     if (ctx.is_ac_family()) {
         emit_ac_limit(power, ctx.get_ac_params().phase_count, ctx.ac_connector(), entry.power, entry.power_l2,
                       entry.power_l3);
