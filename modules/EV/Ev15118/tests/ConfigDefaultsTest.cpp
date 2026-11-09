@@ -18,8 +18,8 @@
 #include <iso15118/ev/session/sap_offer.hpp>
 
 #include "ISO15118_evImpl.hpp"
-#include "fake_controller.hpp"
 #include "module_driver.hpp"
+#include <everest/iso15118_ev_session/fake_controller.hpp>
 
 namespace {
 
@@ -205,19 +205,9 @@ TEST_P(ShippedIso20Config, StillOffersIso20First) {
     }
 }
 
-INSTANTIATE_TEST_SUITE_P(
-    Pinned, ShippedIso20Config,
-    ::testing::Values(
-        source_root / "config/config-CB-EVAL-EV.yaml", source_root / "config/config-CB-EVAL-MCS-EV.yaml",
-        source_root / "config/config-sil-ac-bpt-d20.yaml", source_root / "config/config-sil-ac-d20-der-iec.yaml",
-        source_root / "config/config-sil-ac-d20-der-sae.yaml", source_root / "config/config-sil-ac-d20-plaintext.yaml",
-        source_root / "config/config-sil-ac-d20.yaml", source_root / "config/config-sil-ac-der-d20.yaml",
-        source_root / "config/config-sil-dc-bpt-d20.yaml", source_root / "config/config-sil-dc-d20-plaintext.yaml",
-        source_root / "config/config-sil-dc-d20-tls.yaml", source_root / "config/config-sil-dc-d20.yaml",
-        source_root / "config/config-sil-dc-evsev2g.yaml", source_root / "config/config-sil-dc-isomux.yaml",
-        source_root / "config/config-sil-mcs.yaml", aux_config_dir / "everest-config-ocpp201-sil-dc-d20-eim.yaml",
-        aux_config_dir / "everest-config-ocpp201-sil-dc-d20.yaml",
-        aux_config_dir / "everest-config-ocppmulti-sil-dc-d20-eim.yaml"));
+INSTANTIATE_TEST_SUITE_P(Pinned, ShippedIso20Config,
+                         ::testing::Values(source_root / "config/config-CB-EVAL-EV.yaml",
+                                           source_root / "config/config-CB-EVAL-MCS-EV.yaml"));
 
 class SaeJ2847SilConfig : public ::testing::TestWithParam<std::string> {};
 

@@ -20,7 +20,7 @@ Specify the following options to create your desired docker image of EVerest:
 
 * repo: Git repository (e.g. https://github.com/EVerest/EVerest.git) - Optional, defaults to: https://github.com/EVerest/EVerest.git
 * branch: Git branch or tag name (e.g main or 2024.6.0) - Optional, defaults to: main
-* conf: Path to EVerest config file (e.g. /home/$(whoami)/checkout/everest-workspace/EVerest/config/ config-sil.yaml) - Required.
+* conf: Path to EVerest config file (e.g. /home/$(whoami)/checkout/everest-workspace/EVerest/config/config-sil-two-evse.yaml) - Required.
 * ocpp-conf: Path to EVerest OCPP config file (e.g. /home/$(whoami)/checkout/everest-workspace/libocpp/aux/config-docker.json) - Optional, defaults to: ocpp-config.json
 * name: Name of the docker image (e.g everest) - Optional, defaults to: everest
 * build-date: Build date of the docker image, is reflected in its name and can have an effect on caching - Optional, defaults to the current datetime
@@ -31,6 +31,10 @@ Specify the following options to create your desired docker image of EVerest:
 Remember to provide an ocpp configuration file if you use an EVerest config that loads the OCPP module. Be aware that the provided OCPP config file will always be named `ocpp-config.json` inside the docker container. Consider this when configuring the OCPP module within the EVerest config and to set the ChargePointConfigPath accordingly.
 
 Images will be created in a .tar.gz format in this folder.
+
+The shipped dashboard expects the instance ids `ev_manager_1`/`ev_manager_2` and
+`ev_manager_1_driver`/`ev_manager_2_driver` from `config-sil-two-evse.yaml`.
+Each configuration's own flow is in `config/nodered/`.
 
 ## Run EVerest in docker
 

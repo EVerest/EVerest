@@ -77,8 +77,8 @@ OCPP_EXTERNAL_LIMITS_SOURCE = "ocpp/OCPP_set_external_limits"
 OCPP_SETPOINT_SOURCE = "OCPP"
 SUPPORTED_OPERATION_MODES = "ChargingOnly,Idle,CentralSetpoint,ExternalSetpoint"
 OBSERVATION_TIMEOUT_S = 30.0
-# Ev15118 takes the energy service from start_charging, which EvManager's
-# iso_start_v2g_session names. The DCSupplySimulator is bidirectional by
+# EvController takes the energy service from the session start, which
+# plug_in_dc_iso's energy_mode names. The DCSupplySimulator is bidirectional by
 # default, so EvseManager offers DC_BPT.
 DC_BPT_ENERGY_MODE = "dc_bpt"
 
@@ -236,7 +236,7 @@ async def start_dc_bpt_session(
     setattr(charge_point_v21, "on_authorize", on_authorize)
     central_system_v21.chargepoint.route_map = create_route_map(central_system_v21.chargepoint)
 
-    test_controller.plug_in_dc_iso(energy_mode=DC_BPT_ENERGY_MODE)
+    test_controller.plug_in_dc_iso(energy_mode=DC_BPT_ENERGY_MODE, payment_type="eim")
     test_controller.swipe("8BADF00D")
 
     started = call21.TransactionEvent(

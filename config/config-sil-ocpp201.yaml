@@ -9,11 +9,6 @@ active_modules:
       security:
         - module_id: evse_security
           implementation_id: main
-  iso15118_car:
-    module: Ev15118
-    config_module:
-      device: auto
-      supported_protocols: ISO15118_2
   evse_manager_1:
     module: EvseManager
     mapping:
@@ -93,38 +88,47 @@ active_modules:
   slac:
     module: SlacSimulator
   ev_manager_1:
-    module: EvManager
+    module: EvController
     config_module:
+      hlc_device: auto
+      supported_protocols: ISO15118_2
       connector_id: 1
-      auto_enable: true
-      auto_exec: false
-      auto_exec_commands: sleep 1;iec_wait_pwr_ready;sleep 1;draw_power_regulated 16,3;sleep 30;unplug
+    connections:
+      ev_board_support:
+        - module_id: ev_manager_1_driver
+          implementation_id: board_support
+      slac:
+        - module_id: slac
+          implementation_id: ev
+  ev_manager_1_driver:
+    module: EvDriverSim
+    config_module:
+      ev_controller_module_id: ev_manager_1
     connections:
       ev_board_support:
         - module_id: yeti_driver_1
           implementation_id: ev_board_support
-      ev:
-        - module_id: iso15118_car
-          implementation_id: ev
+  ev_manager_2:
+    module: EvController
+    config_module:
+      hlc_device: auto
+      supported_protocols: ISO15118_2
+      connector_id: 2
+    connections:
+      ev_board_support:
+        - module_id: ev_manager_2_driver
+          implementation_id: board_support
       slac:
         - module_id: slac
           implementation_id: ev
-  ev_manager_2:
-    module: EvManager
+  ev_manager_2_driver:
+    module: EvDriverSim
     config_module:
-      connector_id: 2
-      auto_enable: true
-      auto_exec: false
+      ev_controller_module_id: ev_manager_2
     connections:
       ev_board_support:
         - module_id: yeti_driver_2
           implementation_id: ev_board_support
-      ev:
-        - module_id: iso15118_car
-          implementation_id: ev
-      slac:
-        - module_id: slac
-          implementation_id: ev
   ocpp:
     module: OCPP201
     connections:
@@ -327,18 +331,6 @@ x-module-layout:
         - id: security
           interface: evse_security
           type: requirement
-  iso15118_car:
-    position:
-      x: -42
-      'y': 1
-    terminals:
-      top: []
-      right:
-        - id: ev
-          interface: ISO15118_ev
-          type: provide
-      bottom: []
-      left: []
   evse_manager_1:
     position:
       x: 2
@@ -517,22 +509,34 @@ x-module-layout:
     terminals:
       top: []
       right:
-        - id: main
-          interface: car_simulator
+        - id: ev_manager
+          interface: ev_manager
           type: provide
       bottom: []
       left:
         - id: slac
           interface: ev_slac
           type: requirement
-        - id: ev
-          interface: ISO15118_ev
-          type: requirement
         - id: ev_board_support
           interface: ev_board_support
           type: requirement
-        - id: powermeter
-          interface: powermeter
+        - id: kvs
+          interface: kvs
+          type: requirement
+  ev_manager_1_driver:
+    position:
+      x: -20
+      y: 2
+    terminals:
+      top: []
+      right:
+        - id: board_support
+          interface: ev_board_support
+          type: provide
+      bottom: []
+      left:
+        - id: ev_board_support
+          interface: ev_board_support
           type: requirement
   ev_manager_2:
     position:
@@ -541,8 +545,8 @@ x-module-layout:
     terminals:
       top: []
       right:
-        - id: main
-          interface: car_simulator
+        - id: ev_manager
+          interface: ev_manager
           type: provide
       bottom: []
       left:
@@ -552,11 +556,23 @@ x-module-layout:
         - id: slac
           interface: ev_slac
           type: requirement
-        - id: powermeter
-          interface: powermeter
+        - id: kvs
+          interface: kvs
           type: requirement
-        - id: ev
-          interface: ISO15118_ev
+  ev_manager_2_driver:
+    position:
+      x: -20
+      y: -7
+    terminals:
+      top: []
+      right:
+        - id: board_support
+          interface: ev_board_support
+          type: provide
+      bottom: []
+      left:
+        - id: ev_board_support
+          interface: ev_board_support
           type: requirement
   ocpp:
     position:

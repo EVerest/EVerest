@@ -78,4 +78,13 @@ TEST_F(EvBoardSupportTest, LatestEvStateDuringForcedFIsRemembered) {
     EXPECT_DOUBLE_EQ(simulator.module_state->simdata_setting.cp_voltage, ev_bsp::CP_VOLTAGE_B);
 }
 
+TEST_F(EvBoardSupportTest, RestoringEvStateClearsErrorE) {
+    for (const auto state : {EvCpState::A, EvCpState::B, EvCpState::C, EvCpState::D}) {
+        set_cp_state(EvCpState::E);
+        ASSERT_TRUE(simulator.module_state->simdata_setting.error_e);
+        set_cp_state(state);
+        EXPECT_FALSE(simulator.module_state->simdata_setting.error_e);
+    }
+}
+
 } // namespace

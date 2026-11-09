@@ -209,7 +209,7 @@ async def test_change_availability_scheduled_in_transaction(
 
     assert r.status == AvailabilityStatus.scheduled
 
-    test_controller.plug_out()
+    test_controller.plug_out(abrupt=True)
 
     assert await wait_for_and_validate(
         test_utility, charge_point_v16, "StopTransaction", {
