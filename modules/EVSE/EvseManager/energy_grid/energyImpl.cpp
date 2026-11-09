@@ -6,6 +6,7 @@
 #include "random_delay/random_delay_duration.hpp"
 
 #include <everest/helpers/phase_rotation.hpp>
+#include <everest/util/math/comparison.hpp>
 #include <everest/util/misc/container.hpp>
 
 #include <chrono>
@@ -20,6 +21,8 @@
 
 namespace module {
 namespace energy_grid {
+
+using everest::lib::util::almost_eq;
 
 // helper to find out if voltage changed (more then noise)
 static bool voltage_changed(float a, float b) {
@@ -357,37 +360,23 @@ void energyImpl::request_energy_from_energy_manager(bool priority_request) {
     // EVLOG_info << "Outgoing request " << energy_flow_request;
 }
 
-static bool almost_eq(float a, float b) {
-    return a > b - 0.1 and a < b + 0.1;
-}
-
-static bool almost_eq(std::optional<float> const& a, std::optional<float> const& b) {
-    if (a.has_value() and b.has_value()) {
-        return almost_eq(a.value(), b.value());
-    }
-    if (not a.has_value() and not b.has_value()) {
-        return true;
-    }
-    return false;
-}
-
 static bool almost_eq(types::power_supply_DC::Capabilities const& lhs,
                       types::power_supply_DC::Capabilities const& rhs) {
     bool result = lhs.bidirectional == rhs.bidirectional and
-                  almost_eq(lhs.current_regulation_tolerance_A, rhs.current_regulation_tolerance_A) and
-                  almost_eq(lhs.peak_current_ripple_A, rhs.peak_current_ripple_A) and
-                  almost_eq(lhs.max_export_voltage_V, rhs.max_export_voltage_V) and
-                  almost_eq(lhs.min_export_voltage_V, rhs.min_export_voltage_V) and
-                  almost_eq(lhs.max_export_current_A, rhs.max_export_current_A) and
-                  almost_eq(lhs.min_export_current_A, rhs.min_export_current_A) and
-                  almost_eq(lhs.max_export_power_W, rhs.max_export_power_W) and
-                  almost_eq(lhs.max_import_voltage_V, rhs.max_import_voltage_V) and
-                  almost_eq(lhs.min_import_voltage_V, rhs.min_import_voltage_V) and
-                  almost_eq(lhs.max_import_current_A, rhs.max_import_current_A) and
-                  almost_eq(lhs.min_import_current_A, rhs.min_import_current_A) and
-                  almost_eq(lhs.max_import_power_W, rhs.max_import_power_W) and
-                  almost_eq(lhs.conversion_efficiency_import, rhs.conversion_efficiency_import) and
-                  almost_eq(lhs.conversion_efficiency_export, rhs.conversion_efficiency_export);
+                  almost_eq<1>(lhs.current_regulation_tolerance_A, rhs.current_regulation_tolerance_A) and
+                  almost_eq<1>(lhs.peak_current_ripple_A, rhs.peak_current_ripple_A) and
+                  almost_eq<1>(lhs.max_export_voltage_V, rhs.max_export_voltage_V) and
+                  almost_eq<1>(lhs.min_export_voltage_V, rhs.min_export_voltage_V) and
+                  almost_eq<1>(lhs.max_export_current_A, rhs.max_export_current_A) and
+                  almost_eq<1>(lhs.min_export_current_A, rhs.min_export_current_A) and
+                  almost_eq<1>(lhs.max_export_power_W, rhs.max_export_power_W) and
+                  almost_eq<1>(lhs.max_import_voltage_V, rhs.max_import_voltage_V) and
+                  almost_eq<1>(lhs.min_import_voltage_V, rhs.min_import_voltage_V) and
+                  almost_eq<1>(lhs.max_import_current_A, rhs.max_import_current_A) and
+                  almost_eq<1>(lhs.min_import_current_A, rhs.min_import_current_A) and
+                  almost_eq<1>(lhs.max_import_power_W, rhs.max_import_power_W) and
+                  almost_eq<1>(lhs.conversion_efficiency_import, rhs.conversion_efficiency_import) and
+                  almost_eq<1>(lhs.conversion_efficiency_export, rhs.conversion_efficiency_export);
     return result;
 }
 
@@ -395,13 +384,13 @@ static bool almost_eq(types::power_supply_DC::Capabilities const& lhs,
 bool energyImpl::random_delay_needed(float last_limit, float limit) {
 
     if (mod->config.uk_smartcharging_random_delay_at_any_change) {
-        if (not almost_eq(last_limit, limit)) {
+        if (not almost_eq<1>(last_limit, limit)) {
             return true;
         }
     } else {
-        if (almost_eq(last_limit, 0.) and limit > 0.1) {
+        if (almost_eq<1>(last_limit, 0.0f) and limit > 0.1) {
             return true;
-        } else if (last_limit > 0.1 and almost_eq(limit, 0.)) {
+        } else if (last_limit > 0.1 and almost_eq<1>(limit, 0.0f)) {
             return true;
         }
     }
@@ -585,9 +574,9 @@ void energyImpl::handle_enforce_limits(types::energy::EnforcedLimits& value) {
                 auto powersupply_capabilities = mod->get_powersupply_capabilities_for_hlc();
 
                 // did the values change since the last call?
-                if (almost_eq(last_enforced_limits_watt, watt_leave_side) and
-                    almost_eq(last_enforced_limits_ampere, ampere_root_side) and
-                    almost_eq(target_voltage, last_target_voltage) and
+                if (almost_eq<1>(last_enforced_limits_watt, watt_leave_side) and
+                    almost_eq<1>(last_enforced_limits_ampere, ampere_root_side) and
+                    almost_eq<1>(target_voltage, last_target_voltage) and
                     not voltage_changed(actual_voltage, last_actual_voltage) and
                     almost_eq(powersupply_capabilities, last_powersupply_capabilities)) {
                     values_changed = false;

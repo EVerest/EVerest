@@ -44,6 +44,49 @@ TEST_F(ComparisonTest, AlmostEqOptional) {
     EXPECT_FALSE(almost_eq<3>(a, empty));
 }
 
+TEST_F(ComparisonTest, AlmostEqFloatExcludesEnergyLimitThreshold) {
+    constexpr float threshold = 0.1f;
+    const float below = std::nextafter(threshold, 0.0f);
+    const float above = std::nextafter(threshold, std::numeric_limits<float>::infinity());
+
+    for (const float sign : {-1.0f, 1.0f}) {
+        EXPECT_TRUE(almost_eq<1>(sign * below, 0.0f));
+        EXPECT_TRUE(almost_eq<1>(0.0f, sign * below));
+        EXPECT_FALSE(almost_eq<1>(sign * threshold, 0.0f));
+        EXPECT_FALSE(almost_eq<1>(0.0f, sign * threshold));
+        EXPECT_FALSE(almost_eq<1>(sign * above, 0.0f));
+    }
+}
+
+TEST_F(ComparisonTest, AlmostEqOptionalFloatUsesEnergyLimitThreshold) {
+    const std::optional<float> zero = 0.0f;
+    const std::optional<float> below = std::nextafter(0.1f, 0.0f);
+    const std::optional<float> boundary = 0.1f;
+    const std::optional<float> above = std::nextafter(0.1f, std::numeric_limits<float>::infinity());
+    const std::optional<float> empty;
+
+    EXPECT_TRUE(almost_eq<1>(zero, below));
+    EXPECT_TRUE(almost_eq<1>(below, zero));
+    EXPECT_FALSE(almost_eq<1>(zero, boundary));
+    EXPECT_FALSE(almost_eq<1>(zero, above));
+    EXPECT_TRUE(almost_eq<1>(empty, empty));
+    EXPECT_FALSE(almost_eq<1>(zero, empty));
+    EXPECT_FALSE(almost_eq<1>(empty, zero));
+}
+
+TEST_F(ComparisonTest, AlmostEqFloatRejectsNonFiniteValues) {
+    const float nan = std::numeric_limits<float>::quiet_NaN();
+    const float infinity = std::numeric_limits<float>::infinity();
+
+    EXPECT_FALSE(almost_eq<1>(nan, 0.0f));
+    EXPECT_FALSE(almost_eq<1>(0.0f, nan));
+    EXPECT_FALSE(almost_eq<1>(infinity, infinity));
+    EXPECT_FALSE(almost_eq<1>(infinity, -infinity));
+    EXPECT_FALSE(almost_eq<1>(infinity, 0.0f));
+    EXPECT_FALSE(almost_eq<1>(std::optional<float>{nan}, std::optional<float>{0.0f}));
+    EXPECT_FALSE(almost_eq<1>(std::optional<float>{infinity}, std::optional<float>{infinity}));
+}
+
 // --- Min/Max Optional Tests ---
 
 TEST_F(ComparisonTest, MinOptional) {
