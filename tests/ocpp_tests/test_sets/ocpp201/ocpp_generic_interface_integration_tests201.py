@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright Pionix GmbH and Contributors to EVerest
 
+
 """Integration tests for the generic `ocpp` interface with OCPP2.x.
 
 OCPP2.x analog of the OCPP1.6 ocpp_generic_interface_integration_tests. Currently only covers the `connection_status` var.
@@ -50,6 +51,38 @@ async def _wait_for_status(subscription_mock, connected, timeout=20):
 
     await asyncio.wait_for(_await_status(), timeout=timeout)
     return _status()
+
+
+async def _wait_for_command_state(command_mock, state, timeout=10):
+    async def _await_state():
+        while not any(
+            entry.args and entry.args[0]["cmd_source"]["enable_state"] == state
+            for entry in command_mock.mock_calls
+        ):
+            await asyncio.sleep(0.1)
+
+    await asyncio.wait_for(_await_state(), timeout=timeout)
+
+
+async def _wait_for_call_count(command_mock, count, timeout=10):
+    async def _await_calls():
+        while command_mock.call_count < count:
+            await asyncio.sleep(0.1)
+
+    await asyncio.wait_for(_await_calls(), timeout=timeout)
+
+
+def _publish_firmware_status(
+    probe_module, status, request_id, disable_connectors=None
+):
+    update = {"firmware_update_status": status, "request_id": request_id}
+    if disable_connectors is not None:
+        update["firmware_update_metadata"] = {
+            "disable_connectors_during_install": disable_connectors
+        }
+    probe_module.publish_variable(
+        "ProbeModuleSystem", "firmware_update_status", update
+    )
 
 
 def _assert_connection_details(status):
@@ -107,3 +140,72 @@ class TestConnectionStatus201:
         assert await probe_module.call_command("ocpp", "restart", None)
         reconnected = await _wait_for_status(subscription_mock, connected=True)
         _assert_connection_details(reconnected)
+
+
+@pytest.mark.asyncio
+@pytest.mark.ocpp_version("ocpp2.0.1")
+@pytest.mark.everest_core_config("everest-config-ocpp201-probe-module.yaml")
+@pytest.mark.probe_module(connections={"ocpp": [Requirement("ocpp", "ocpp_generic")]})
+@pytest.mark.parametrize(
+    "skip_implementation",
+    [
+        {
+            "ProbeModuleConnectorA": ["enable_disable"],
+            "ProbeModuleConnectorB": ["enable_disable"],
+            "ProbeModuleSystem": ["allow_firmware_installation"],
+        }
+    ],
+)
+class TestFirmwareAvailability201:
+
+    async def test_explicit_true_and_signed_default_phases(
+        self, probe_module, central_system: CentralSystem
+    ):
+        availability_mocks = {
+            implementation: Mock(return_value=True)
+            for implementation in (
+                "ProbeModuleConnectorA",
+                "ProbeModuleConnectorB",
+            )
+        }
+        for implementation, command_mock in availability_mocks.items():
+            probe_module.implement_command(
+                implementation, "enable_disable", command_mock
+            )
+        installation_mock = Mock(return_value=None)
+        probe_module.implement_command(
+            "ProbeModuleSystem",
+            "allow_firmware_installation",
+            installation_mock,
+        )
+
+        await _connect(probe_module)
+        assert await central_system.wait_for_chargepoint() is not None
+        for command_mock in availability_mocks.values():
+            command_mock.reset_mock()
+        installation_mock.reset_mock()
+
+        _publish_firmware_status(
+            probe_module,
+            "InstallScheduled",
+            request_id=81,
+            disable_connectors=True,
+        )
+        for command_mock in availability_mocks.values():
+            await _wait_for_command_state(command_mock, "Disable")
+        await _wait_for_call_count(installation_mock, 1)
+
+        _publish_firmware_status(probe_module, "Installed", request_id=81)
+        for command_mock in availability_mocks.values():
+            await _wait_for_command_state(command_mock, "Enable")
+            command_mock.reset_mock()
+        installation_mock.reset_mock()
+
+        _publish_firmware_status(probe_module, "Downloaded", request_id=82)
+
+        _publish_firmware_status(probe_module, "SignatureVerified", request_id=82)
+        for command_mock in availability_mocks.values():
+            await _wait_for_command_state(command_mock, "Disable")
+            assert command_mock.call_count == 1
+        await _wait_for_call_count(installation_mock, 1)
+        assert installation_mock.call_count == 1
