@@ -24,6 +24,9 @@ types::error_history::ImplementationIdentifier framework_to_internal_api(Impleme
     types::error_history::ImplementationIdentifier result;
     result.implementation_id = val.implementation_id;
     result.module_id = val.module_id;
+    if (val.mapping.has_value()) {
+        result.mapping = types::error_history::Mapping{val.mapping.value().evse, val.mapping.value().connector};
+    }
     return result;
 }
 

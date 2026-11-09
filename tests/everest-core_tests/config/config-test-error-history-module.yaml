@@ -3,6 +3,10 @@ active_modules:
     module: ErrorHistory
   test_error_handling:
     module: TestErrorHandling
+    mapping:
+      module:
+        evse: 1
+        connector: 2
     connections:
       error_raiser:
         - module_id: probe

@@ -7,8 +7,13 @@
 #include "generic/json_codec.hpp"
 #include "nlohmann/json.hpp"
 #include "utilities/date_time.hpp"
+#include "utilities/json_codec_helpers.hpp"
+
+#include <cstdint>
 
 namespace everest::lib::API::V1_0::types::error_history {
+
+using utilities::json_number;
 
 void to_json(json& j, State const& k) noexcept {
     switch (k) {
@@ -115,16 +120,38 @@ void from_json(const json& j, Severity& k) {
         " could not be converted to enum of type everest::lib::API::V1_0::types::error_history::Severity");
 }
 
+void to_json(json& j, Mapping const& k) noexcept {
+    j = json{
+        {"evse", k.evse},
+    };
+    if (k.connector) {
+        j["connector"] = k.connector.value();
+    }
+}
+
+void from_json(const json& j, Mapping& k) {
+    k.evse = json_number<int32_t>(j.at("evse"));
+    if (j.contains("connector")) {
+        k.connector.emplace(json_number<int32_t>(j.at("connector")));
+    }
+}
+
 void to_json(json& j, ImplementationIdentifier const& k) noexcept {
     j = json{
         {"module_id", k.module_id},
         {"implementation_id", k.implementation_id},
     };
+    if (k.mapping) {
+        j["mapping"] = k.mapping.value();
+    }
 }
 
 void from_json(const json& j, ImplementationIdentifier& k) {
     k.module_id = j.at("module_id");
     k.implementation_id = j.at("implementation_id");
+    if (j.contains("mapping")) {
+        k.mapping.emplace(j.at("mapping").get<Mapping>());
+    }
 }
 
 void to_json(json& j, TimeperiodFilter const& k) noexcept {
