@@ -48,7 +48,7 @@ def native_targets(jobs_json: dict, toolchain: str) -> list[dict]:
     return [{"target": NATIVE_TARGET, "status": _step_status(job, "Compile"), "toolchain": toolchain}]
 
 
-def cross_targets(jobs_json: dict, toolchain: str) -> list[dict]:
+def cross_targets(jobs_json: dict, toolchains: dict[str, str]) -> list[dict]:
     targets = []
     for job in _jobs(jobs_json):
         match = CROSS_JOB.match(job["name"])
@@ -57,9 +57,18 @@ def cross_targets(jobs_json: dict, toolchain: str) -> list[dict]:
         platform = match.group(1)
         if not PLATFORM_PATTERN.fullmatch(platform):
             raise ValueError(f"cross job platform is not an <arch>-<os>-<abi> triple: {platform!r}")
+        if platform not in toolchains:
+            raise ValueError(f"no toolchain given for cross platform {platform!r}")
         status = CROSS_STATUSES.get(job["conclusion"], "failed")
-        targets.append({"target": platform, "status": status, "toolchain": toolchain})
+        targets.append({"target": platform, "status": status, "toolchain": toolchains[platform]})
     return targets
+
+
+def _platform_toolchain(value: str) -> tuple[str, str]:
+    platform, _, toolchain = value.partition("=")
+    if not platform or not toolchain:
+        raise argparse.ArgumentTypeError(f"expected PLATFORM=TOOLCHAIN, got {value!r}")
+    return platform, toolchain
 
 
 def main() -> int:
@@ -70,8 +79,18 @@ def main() -> int:
     pick.add_argument("--event", required=True)
     commands.add_parser("build-outcome", help="print passed or failed")
     targets = commands.add_parser("targets", help="print the build targets as a JSON list")
-    targets.add_argument("--toolchain", required=True, help='compiler and version, such as "gcc 13.2.0"')
+    targets.add_argument(
+        "--toolchain", required=True, help='compiler and version of the native build, such as "gcc 13.2.0"'
+    )
     targets.add_argument("--cross-jobs", metavar="FILE", help="jobs JSON of the run holding the cross builds")
+    targets.add_argument(
+        "--cross-toolchain",
+        metavar="PLATFORM=TOOLCHAIN",
+        type=_platform_toolchain,
+        action="append",
+        default=[],
+        help='compiler and version of one cross platform, such as "armv7-linux-gnueabihf=gcc 11.3.0"',
+    )
     args = parser.parse_args()
 
     data = json.load(sys.stdin)
@@ -87,7 +106,7 @@ def main() -> int:
         result = native_targets(data, args.toolchain)
         if args.cross_jobs:
             with open(args.cross_jobs, encoding="utf-8") as f:
-                result += cross_targets(json.load(f), args.toolchain)
+                result += cross_targets(json.load(f), dict(args.cross_toolchain))
         print(json.dumps(result))
     return 0
 
