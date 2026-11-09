@@ -2453,7 +2453,7 @@ void Charger::request_error_sequence_internal() {
         shared_context.current_state == EvseState::PrepareCharging) {
         const bool limit_retries =
             config_context.ac_limit_slac_init_retries and config_context.charge_mode == ChargeMode::AC;
-        if (limit_retries and not hlc_use_5percent_current_session) {
+        if (limit_retries and not hlc_use_5percent_current_session and not shared_context.dlink_established) {
             // [V2G3-A09-13]: without 5 percent (nominal PWM or X1), no SLAC will be performed. Keep the PWM as it is.
             // This also holds after the last 5 percent retry ended in X1.
             session_log.evse(false, "No SLAC retry without 5 percent PWM");
