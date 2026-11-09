@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 #include <limits>
 #include <string>
@@ -353,4 +354,37 @@ SCENARIO("ISO15118-2 EV ChargeParameterDiscovery warns once per session when it 
     REQUIRE(primed.feed(ev::d2::Event::V2GTP_MESSAGE).output == ev::d2::Disposition::Awaiting);
     REQUIRE(primed.take_requests().get<message_2::ChargeParameterDiscoveryRequest>().has_value());
     REQUIRE(warnings.count == 1);
+}
+
+SCENARIO("ISO15118-2 EV ChargeParameterDiscovery honors charger StopCharging before another request") {
+    const auto processing = GENERATE(dt::EVSEProcessing::Ongoing, dt::EVSEProcessing::Finished);
+    const auto dc = GENERATE(false, true);
+    const auto ev_stop = GENERATE(false, true);
+    const auto ev_pause = GENERATE(false, true);
+    int stops = 0;
+    bool power_ready = false;
+    ev::feedback::Callbacks callbacks{};
+    callbacks.stop_from_charger = [&stops]() { ++stops; };
+    callbacks.ev_power_ready = [&power_ready]() { power_ready = true; };
+    PrimedState<ev::d2::state::ChargeParameterDiscovery> primed{
+        callbacks, dc ? ev::params::EvSessionParams{} : ac_params(), false, d2_no_seed};
+    primed.ctx.set_stop_charging_requested(ev_stop);
+    primed.ctx.set_pause_charging_requested(ev_pause);
+    auto res = make_response(d2_header(), dt::ResponseCode::OK, processing, true, dc);
+    if (dc) {
+        res.dc_evse_charge_parameter->dc_evse_status.notification = dt::EVSENotification::StopCharging;
+    } else {
+        res.ac_evse_charge_parameter->ac_evse_status.notification = dt::EVSENotification::StopCharging;
+    }
+
+    primed.handle_response(res);
+    const auto result = primed.feed(ev::d2::Event::V2GTP_MESSAGE);
+
+    CHECK(result.output == ev::d2::Disposition::Transitioning);
+    CHECK(primed.fsm.get_current_state_id() == ev::d2::StateID::SessionStop);
+    CHECK(stops == 1);
+    CHECK_FALSE(power_ready);
+    const auto request = primed.take_requests().get<message_2::SessionStopRequest>();
+    REQUIRE(request.has_value());
+    CHECK(request->charging_session == dt::ChargingSession::Terminate);
 }

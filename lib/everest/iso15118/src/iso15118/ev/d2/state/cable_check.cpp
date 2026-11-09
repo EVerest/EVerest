@@ -96,6 +96,10 @@ Result CableCheck::feed(Event ev) {
         return Result::stopping();
     }
 
+    if (auto stop = charger_stop_before_start(m_ctx, res->dc_evse_status.notification)) {
+        return std::move(*stop);
+    }
+
     const auto result = cable_check::handle_response(*res);
 
     if (not result.finished) {
