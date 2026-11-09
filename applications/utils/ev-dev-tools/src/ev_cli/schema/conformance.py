@@ -27,7 +27,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Mapping, Sequence
 
-from .references import ParsedReference, TypeRef, conformant_form
+from .references import ParsedReference, TypeRef, format_type_reference
 from .source import SourceRef
 
 #: Keys that carry meaning of their own beside a ``$ref`` and are kept.
@@ -141,7 +141,7 @@ def report_reference(
             category=Category.LEGACY_REF,
             source=source,
             message=f'reference {reference.raw!r} uses the legacy EVerest form',
-            conformant_form=conformant_form(reference.target, from_unit=from_unit),
+            conformant_form=format_type_reference(reference.target, from_unit=from_unit),
         ))
 
     siblings = ref_siblings(schema)

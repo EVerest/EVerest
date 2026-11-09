@@ -171,11 +171,11 @@ def _flat_unit(unit: str, raw: str) -> str:
     return unit
 
 
-def conformant_form(target: TypeRef, *, from_unit: str | None) -> str:
-    """How ``target`` should be written from ``from_unit`` once migrated.
+def format_type_reference(target: TypeRef, *, from_unit: str | None) -> str:
+    """How ``target`` is written conformantly from ``from_unit``.
 
-    This is what the conformance report suggests, so that the eventual cleanup
-    is a mechanical rewrite rather than a judgement call at 512 sites.
+    The inverse of :func:`parse_type_reference`, and what the conformance report
+    suggests in place of each legacy reference.
     """
     if target.unit == from_unit:
         return f'#/types/{target.name}'

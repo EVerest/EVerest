@@ -15,7 +15,7 @@ from ev_cli.errors import MalformedReference
 from ev_cli.schema.references import (
     Dialect,
     TypeRef,
-    conformant_form,
+    format_type_reference,
     parse_error_reference,
     parse_type_reference,
 )
@@ -112,7 +112,7 @@ class TestBothDialectsAgree:
         )
 
 
-class TestConformantForm:
+class TestFormatTypeReference:
     """What the conformance report tells you to write instead."""
 
     @pytest.mark.parametrize('target, from_unit, expected', [
@@ -121,13 +121,13 @@ class TestConformantForm:
         (TypeRef('units', 'Power'), None, 'units.yaml#/types/Power'),
     ])
     def test_suggestion(self, target, from_unit, expected):
-        assert conformant_form(target, from_unit=from_unit) == expected
+        assert format_type_reference(target, from_unit=from_unit) == expected
 
     @pytest.mark.parametrize('from_unit', ['energy', None])
     def test_suggestion_round_trips(self, from_unit):
         """The advice has to be advice that works."""
         target = TypeRef('units', 'Power')
-        suggested = conformant_form(target, from_unit=from_unit)
+        suggested = format_type_reference(target, from_unit=from_unit)
         assert parse_type_reference(suggested, from_unit=from_unit).target == target
 
 
