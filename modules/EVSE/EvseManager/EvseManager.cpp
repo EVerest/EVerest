@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <everest/util/math/comparison.hpp>
 #include <fmt/color.h>
 #include <fmt/format.h>
 
@@ -48,11 +49,6 @@ types::authorization::ProvidedIdToken create_autocharge_token(std::string token,
     autocharge_token.id_token = {"VID:" + token, types::authorization::IdTokenType::MacAddress};
     autocharge_token.connectors.emplace({connector_id});
     return autocharge_token;
-}
-
-bool almost_eq(double a, double b) {
-    constexpr auto eps = 1e-6;
-    return std::fabs(a - b) <= eps;
 }
 
 bool provided_limit_changed(std::optional<float> const& current_value, std::optional<float> const& received_value) {
@@ -3043,7 +3039,7 @@ void EvseManager::process_dc_ev_target_voltage_current(const types::iso15118::Dc
     // EVs sending a current of zero has not yet been seen, so we don't care
     // about this particular case here at the moment.
     bool car_sent_zero_voltage{false};
-    if (almost_eq(clamped_voltage, 0.0) and ev_info.target_voltage.value_or(0.f) > 0.f) {
+    if (everest::lib::util::in_noise_range(clamped_voltage, 0.0, 1e-6) and ev_info.target_voltage.value_or(0.f) > 0.f) {
         clamped_voltage = ev_info.target_voltage.value();
         car_sent_zero_voltage = true;
     }

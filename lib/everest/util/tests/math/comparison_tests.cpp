@@ -1,5 +1,7 @@
+#include <cmath>
 #include <everest/util/math/comparison.hpp>
 #include <gtest/gtest.h>
+#include <limits>
 
 namespace everest::lib::util {
 
@@ -100,6 +102,29 @@ TEST_F(ComparisonTest, InNoiseRange) {
     EXPECT_FALSE(in_noise_range(10.0, 10.11, 0.1));
     // Exact boundary
     EXPECT_TRUE(in_noise_range(10.0, 10.1, 0.1));
+}
+
+TEST_F(ComparisonTest, InNoiseRangeIncludesVoltageThreshold) {
+    constexpr double threshold = 1e-6;
+    const double below = std::nextafter(threshold, 0.0);
+    const double above = std::nextafter(threshold, std::numeric_limits<double>::infinity());
+
+    for (const double sign : {-1.0, 1.0}) {
+        EXPECT_TRUE(in_noise_range(sign * below, 0.0, threshold));
+        EXPECT_TRUE(in_noise_range(sign * threshold, 0.0, threshold));
+        EXPECT_FALSE(in_noise_range(sign * above, 0.0, threshold));
+    }
+}
+
+TEST_F(ComparisonTest, InNoiseRangeRejectsNonFiniteValues) {
+    const double nan = std::numeric_limits<double>::quiet_NaN();
+    const double infinity = std::numeric_limits<double>::infinity();
+
+    EXPECT_FALSE(in_noise_range(nan, 0.0, 1e-6));
+    EXPECT_FALSE(in_noise_range(0.0, nan, 1e-6));
+    EXPECT_FALSE(in_noise_range(infinity, infinity, 1e-6));
+    EXPECT_FALSE(in_noise_range(infinity, -infinity, 1e-6));
+    EXPECT_FALSE(in_noise_range(infinity, 0.0, 1e-6));
 }
 
 } // namespace everest::lib::util
