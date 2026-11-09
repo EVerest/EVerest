@@ -14,6 +14,12 @@ TESTDATA = os.path.join(HERE, "testdata")
 SHA = "0bc286811e1279adc4711b6c5e6d9d141660277f"
 RERUN_SHA = "bddf6860ff5e2aa1817fb546c00f59948ae66add"
 TOOLCHAIN = "gcc 13.2.0"
+CROSS_TOOLCHAINS = {
+    "aarch64-linux-gnu": "gcc 13.2.0",
+    "aarch64-linux-musl": "gcc 13.2.0",
+    "armv7-linux-gnueabihf": "gcc 11.3.0",
+    "armv7-linux-musleabihf": "gcc 12.3.0",
+}
 
 
 def load(name):
@@ -174,28 +180,33 @@ class NativeTargetsTest(unittest.TestCase):
 class CrossTargetsTest(unittest.TestCase):
     def test_on_pr_cross_jobs(self):
         self.assertEqual(
-            cross_targets(load("jobs-on-pr.json"), TOOLCHAIN),
+            cross_targets(load("jobs-on-pr.json"), CROSS_TOOLCHAINS),
             [
-                {"target": "armv7-linux-gnueabihf", "status": "passed", "toolchain": TOOLCHAIN},
-                {"target": "aarch64-linux-musl", "status": "passed", "toolchain": TOOLCHAIN},
-                {"target": "armv7-linux-musleabihf", "status": "passed", "toolchain": TOOLCHAIN},
-                {"target": "aarch64-linux-gnu", "status": "passed", "toolchain": TOOLCHAIN},
+                {"target": "armv7-linux-gnueabihf", "status": "passed", "toolchain": "gcc 11.3.0"},
+                {"target": "aarch64-linux-musl", "status": "passed", "toolchain": "gcc 13.2.0"},
+                {"target": "armv7-linux-musleabihf", "status": "passed", "toolchain": "gcc 12.3.0"},
+                {"target": "aarch64-linux-gnu", "status": "passed", "toolchain": "gcc 13.2.0"},
             ],
         )
+
+    def test_platform_without_toolchain_raises(self):
+        toolchains = {k: v for k, v in CROSS_TOOLCHAINS.items() if k != "armv7-linux-musleabihf"}
+        with self.assertRaisesRegex(ValueError, "armv7-linux-musleabihf"):
+            cross_targets(load("jobs-on-pr.json"), toolchains)
 
     def test_unsuccessful_conclusion_is_failed(self):
         conclusions = ("failure", "cancelled", None, "neutral", "timed_out")
         jobs_json = cross_jobs(
             *({"name": "Bazel Cross (aarch64-linux-gnu) / build", "conclusion": c, "steps": []} for c in conclusions)
         )
-        self.assertEqual([t["status"] for t in cross_targets(jobs_json, TOOLCHAIN)], ["failed"] * len(conclusions))
+        self.assertEqual([t["status"] for t in cross_targets(jobs_json, CROSS_TOOLCHAINS)], ["failed"] * len(conclusions))
 
     def test_skipped_job_is_skipped(self):
         jobs_json = cross_jobs(
             {"name": "Bazel Cross (aarch64-linux-gnu) / build", "conclusion": "skipped", "steps": []}
         )
         self.assertEqual(
-            cross_targets(jobs_json, TOOLCHAIN),
+            cross_targets(jobs_json, CROSS_TOOLCHAINS),
             [{"target": "aarch64-linux-gnu", "status": "skipped", "toolchain": TOOLCHAIN}],
         )
 
@@ -204,10 +215,10 @@ class CrossTargetsTest(unittest.TestCase):
         for platform in bad:
             job = {"name": f"Bazel Cross ({platform}) / build", "conclusion": "success", "steps": []}
             with self.subTest(platform=platform), self.assertRaises(ValueError):
-                cross_targets(cross_jobs(job), TOOLCHAIN)
+                cross_targets(cross_jobs(job), {platform: TOOLCHAIN})
 
     def test_no_cross_jobs(self):
-        self.assertEqual(cross_targets(load("jobs-main-push.json"), TOOLCHAIN), [])
+        self.assertEqual(cross_targets(load("jobs-main-push.json"), {}), [])
 
 
 class TruncatedJobsTest(unittest.TestCase):
@@ -218,7 +229,7 @@ class TruncatedJobsTest(unittest.TestCase):
             calls = {
                 "build_outcome": lambda: build_outcome(jobs_json),
                 "native_targets": lambda: native_targets(jobs_json, TOOLCHAIN),
-                "cross_targets": lambda: cross_targets(jobs_json, TOOLCHAIN),
+                "cross_targets": lambda: cross_targets(jobs_json, CROSS_TOOLCHAINS),
             }
             for function, call in calls.items():
                 with self.subTest(name=name, function=function), self.assertRaises(ValueError):
@@ -264,13 +275,24 @@ class CliTest(unittest.TestCase):
             TOOLCHAIN,
             "--cross-jobs",
             os.path.join(TESTDATA, "jobs-on-pr.json"),
+            *(arg for item in CROSS_TOOLCHAINS.items() for arg in ("--cross-toolchain", "=".join(item))),
             stdin_name="jobs-main-push.json",
         )
         self.assertEqual(result.returncode, 0)
         self.assertEqual(
             json.loads(result.stdout),
-            native_targets(load("jobs-main-push.json"), TOOLCHAIN) + cross_targets(load("jobs-on-pr.json"), TOOLCHAIN),
+            native_targets(load("jobs-main-push.json"), TOOLCHAIN)
+            + cross_targets(load("jobs-on-pr.json"), CROSS_TOOLCHAINS),
         )
+
+    def test_targets_cross_toolchain_needs_platform_and_toolchain(self):
+        for value in ("gcc 13.2.0", "=gcc 13.2.0", "aarch64-linux-gnu="):
+            with self.subTest(value=value):
+                result = self.run_cli(
+                    "targets", "--toolchain", TOOLCHAIN, "--cross-toolchain", value, stdin_name="jobs-main-push.json"
+                )
+                self.assertEqual((result.returncode, result.stdout), (2, ""))
+                self.assertIn("--cross-toolchain", result.stderr)
 
     def test_targets_needs_toolchain(self):
         result = self.run_cli("targets", stdin_name="jobs-main-push.json")
