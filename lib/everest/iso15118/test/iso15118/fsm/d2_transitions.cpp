@@ -789,6 +789,31 @@ SCENARIO("ISO 15118-2 SECC EV setpoint forwarding") {
         }
     }
 
+    GIVEN("A machine in CurrentDemand that has forwarded a target and renegotiates") {
+        Secc secc;
+        to_current_demand(secc);
+        secc.drive(current_demand_req());
+        secc.drive(power_delivery_req(dt::ChargeProgress::Renegotiate));
+        secc.drive(charge_parameter_req(dt::EnergyTransferMode::DC_extended));
+        secc.fsm.context().set_cp_state(d20::CpState::B);
+        secc.fsm.context().set_cp_state(d20::CpState::C);
+        secc.drive(message_2::CableCheckRequest{});
+        secc.fsm.control(d20::CableCheckFinished{true});
+        secc.drive(message_2::CableCheckRequest{});
+        secc.drive(pre_charge_req());
+        secc.drive(power_delivery_req(dt::ChargeProgress::Start));
+        REQUIRE(secc.fsm.state() == StateID::DcChargeLoop);
+        secc.setpoints_forwarded = 0;
+
+        WHEN("The first CurrentDemandReq of the new charge loop repeats the target from before") {
+            secc.drive(current_demand_req());
+
+            THEN("It is forwarded, so the module sees a current demand target") {
+                REQUIRE(secc.setpoints_forwarded == 1);
+            }
+        }
+    }
+
     GIVEN("A machine in PreCharge") {
         Secc secc;
         to_pre_charge(secc);
