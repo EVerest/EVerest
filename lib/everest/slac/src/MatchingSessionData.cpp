@@ -4,6 +4,7 @@
 #include "everest/slac/slac_messages.hpp"
 #include "everest/slac/slac_utils.hpp"
 #include <algorithm>
+#include <endian.h>
 #include <everest/slac/MatchingSessionData.hpp>
 
 namespace everest::lib::slac::fsm::evse {

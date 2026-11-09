@@ -4,6 +4,7 @@
 
 #include <arpa/inet.h>
 #include <cstring>
+#include <endian.h>
 #include <stdexcept>
 
 namespace everest::lib::slac::messages {
