@@ -89,6 +89,7 @@ target_sources(${TEST_TARGET_NAME} PRIVATE
   manual_tests/serialization/date_time.cpp
   manual_tests/serialization/dc_external_derate.cpp
   manual_tests/serialization/energy.cpp
+  manual_tests/serialization/error_history.cpp
   manual_tests/serialization/evse_board_support.cpp
   manual_tests/serialization/evse_manager.cpp
   manual_tests/serialization/evse_manager_enable_disable.cpp

@@ -104,6 +104,8 @@ void check_expected_errors_in_list(const std::vector<Everest::error::ErrorPtr>& 
         REQUIRE((*result)->severity == exp_err->severity);
         REQUIRE(Everest::Date::to_rfc3339((*result)->timestamp) == Everest::Date::to_rfc3339(exp_err->timestamp));
         REQUIRE((*result)->state == exp_err->state);
+        REQUIRE((*result)->sub_type == exp_err->sub_type);
+        REQUIRE((*result)->vendor_id == exp_err->vendor_id);
     }
 }
 

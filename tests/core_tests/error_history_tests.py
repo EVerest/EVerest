@@ -20,6 +20,8 @@ def assert_error(expected_error, error):
     assert expected_error['description'] == error['description']
     assert expected_error['origin']['module_id'] == error['origin']['module_id']
     assert expected_error['origin']['implementation_id'] == error['origin']['implementation_id']
+    # TestErrorHandling raises with the framework's default vendor id
+    assert error['vendor_id'] == 'everest'
 
 def assert_errors(expected_errors, errors):
     assert len(expected_errors) == len(errors)
