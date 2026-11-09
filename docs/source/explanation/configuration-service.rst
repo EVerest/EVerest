@@ -426,6 +426,11 @@ The final status — ``Accepted``, ``RebootRequired`` or ``Rejected`` — is
 returned to the calling module, with an explanation carrying the reason, for
 example the module's runtime veto.
 
+A module may call the configuration service client from several threads at
+once; every call receives the reply to its own request. The manager
+handles the requests one after the other, so the runtime-change handlers of one
+target module never run concurrently with each other.
+
 .. mermaid:: images/config_service_write_module.mmd
 
 .. _exp-configuration-service-change-notifications:

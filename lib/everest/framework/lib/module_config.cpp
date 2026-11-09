@@ -83,10 +83,7 @@ json get_module_config(std::shared_ptr<MQTTAbstraction> mqtt, const std::string&
     request.origin = module_id;
     request.type = config::Type::Get;
 
-    MQTTRequest mqtt_request;
-    mqtt_request.response_topic = fmt::format("{}modules/{}/response", everest_prefix, module_id);
-    mqtt_request.request_topic = fmt::format("{}config/request", everest_prefix);
-    mqtt_request.request_data = json(request).dump();
+    const auto mqtt_request = config::make_config_service_request(everest_prefix, request);
 
     json result;
 

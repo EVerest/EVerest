@@ -1211,6 +1211,86 @@ TEST_CASE("MessageHandler keeps a newer handler when unregistering a replaced on
     CHECK(new_tracker.count() == 1);
 }
 
+namespace {
+
+std::shared_ptr<TypedHandler> make_tracking_config_response_handler(const std::string& id, ExecutionTracker& tracker) {
+    auto handler_func = std::make_shared<Handler>(
+        [&tracker](const std::string& topic, const json& data) { tracker.record(topic, data.value("sequence", 0)); });
+    return std::make_shared<TypedHandler>("a/response", id, HandlerType::ConfigurationResponse, handler_func);
+}
+
+} // namespace
+
+TEST_CASE("MessageHandler delivers ConfigurationResponse to the handler of its request id",
+          "[message_handler][config_response]") {
+    MessageHandlerFixture handler;
+    ExecutionTracker first;
+    ExecutionTracker second;
+    ExecutionTracker sentinel;
+
+    handler->register_handler("a/response", make_tracking_config_response_handler("id-1", first));
+    handler->register_handler("a/response", make_tracking_config_response_handler("id-2", second));
+
+    handler->add(create_message("a/response", "ConfigurationResponse", {{"id", "id-2"}, {"sequence", 2}}));
+    handler->add(create_message("a/response", "ConfigurationResponse", {{"id", "id-1"}, {"sequence", 1}}));
+    wait_for_config_responses(handler, sentinel);
+
+    REQUIRE(first.count() == 1);
+    CHECK(first.get_events()[0].sequence == 1);
+    REQUIRE(second.count() == 1);
+    CHECK(second.get_events()[0].sequence == 2);
+}
+
+TEST_CASE("MessageHandler drops a ConfigurationResponse whose request id is not pending",
+          "[message_handler][config_response]") {
+    MessageHandlerFixture handler;
+    ExecutionTracker tracker;
+    ExecutionTracker sentinel;
+
+    handler->register_handler("a/response", make_tracking_config_response_handler("id-2", tracker));
+
+    // A late response to an earlier request that already timed out
+    handler->add(create_message("a/response", "ConfigurationResponse", {{"id", "id-1"}, {"sequence", 1}}));
+    handler->add(create_message("a/response", "ConfigurationResponse", {{"id", "id-2"}, {"sequence", 2}}));
+    wait_for_config_responses(handler, sentinel);
+
+    REQUIRE(tracker.count() == 1);
+    CHECK(tracker.get_events()[0].sequence == 2);
+}
+
+TEST_CASE("MessageHandler delivers a message with an id member to the reader of its topic",
+          "[message_handler][config_response]") {
+    MessageHandlerFixture handler;
+    ExecutionTracker tracker;
+    ExecutionTracker sentinel;
+
+    handler->register_handler("a/names", make_tracking_handler(HandlerType::ConfigurationResponse, tracker));
+
+    // A topic read without request carries arbitrary data, such as the module names with a module called "id"
+    handler->add(create_message("a/names", "ConfigurationResponse", {{"id", "SomeModule"}, {"sequence", 1}}));
+    wait_for_config_responses(handler, sentinel);
+
+    REQUIRE(tracker.count() == 1);
+    CHECK(tracker.get_events()[0].sequence == 1);
+}
+
+TEST_CASE("MessageHandler does not call an unregistered ConfigurationResponse handler with id",
+          "[message_handler][config_response][unregister]") {
+    MessageHandlerFixture handler;
+    ExecutionTracker tracker;
+    ExecutionTracker sentinel;
+
+    const auto config_handler = make_tracking_config_response_handler("id-1", tracker);
+    handler->register_handler("a/response", config_handler);
+    handler->unregister_handler("a/response", config_handler);
+
+    handler->add(create_message("a/response", "ConfigurationResponse", {{"id", "id-1"}, {"sequence", 1}}));
+    handler->add(create_message("a/response", "ConfigurationResponse", {{"sequence", 2}}));
+    wait_for_config_responses(handler, sentinel);
+
+    CHECK(tracker.count() == 0);
+}
+
 TEST_CASE("MessageHandler removes only the unregistered handler from a shared topic", "[message_handler][unregister]") {
     MessageHandlerFixture handler;
     ExecutionTracker removed_tracker;
