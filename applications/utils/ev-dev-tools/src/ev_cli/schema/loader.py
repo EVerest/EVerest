@@ -18,7 +18,7 @@ from typing import Any, Sequence
 import yaml
 
 from ..errors import DefinitionNotFound, EverestDirNotFound, SchemaError, WorkDirNotFound
-from .conformance import Category, Finding
+from .references import TypeRef
 from .source import SourceRef
 from .validate import DocumentKind, Validators
 
@@ -119,6 +119,16 @@ class SourceTree:
     def interface_names(self) -> tuple[str, ...]:
         return self._discover(INTERFACES_DIR)
 
+    def error_namespaces(self) -> tuple[str, ...]:
+        return self._discover(ERRORS_DIR)
+
+    def module_names(self) -> tuple[str, ...]:
+        """Every module under the work directory, as a path relative to ``modules``."""
+        modules = self.work_dir / MODULES_DIR
+        return tuple(sorted(
+            path.parent.relative_to(modules).as_posix() for path in modules.rglob('manifest.yaml')
+        ))
+
     def _discover(self, subdir: str) -> tuple[str, ...]:
         seen: dict[str, Path] = {}
         for root in self.everest_dirs:
@@ -140,14 +150,27 @@ class DefinitionLoader:
     def __init__(self, tree: SourceTree, validators: Validators) -> None:
         self.tree = tree
         self.validators = validators
-        #: What reading the definitions turned up about their conformance.
-        self.findings: list[Finding] = []
         self._cache: dict[Path, Document] = {}
 
     # -- typed accessors ----------------------------------------------------
 
     def type_document(self, unit: str) -> Document:
         return self._load(self.tree.type_file(unit), DocumentKind.TYPE)
+
+    def type_declaration(self, target: TypeRef, source: SourceRef) -> dict[str, Any]:
+        """The definition ``target`` names, for a reference made at ``source``."""
+        try:
+            document = self.type_document(target.unit)
+        except DefinitionNotFound as err:
+            raise DefinitionNotFound(f'{source}: {err}') from err
+
+        declared = (document.data.get('types') or {}).get(target.name)
+        if declared is None:
+            raise DefinitionNotFound(
+                f'{source}: reference to {target} names a type that unit '
+                f'"{target.unit}" does not declare'
+            )
+        return declared
 
     def interface_document(self, name: str) -> Document:
         return self._load(self.tree.interface_file(name), DocumentKind.INTERFACE)
@@ -184,17 +207,6 @@ class DefinitionLoader:
             )
 
         self.validators.validate(kind, data, path)
-
-        if '$schema' not in data:
-            self.findings.append(Finding(
-                category=Category.UNDECLARED_DIALECT,
-                source=SourceRef(path),
-                message=(
-                    'no $schema; the dialect is implied by the framework '
-                    'meta-schema rather than declared'
-                ),
-                conformant_form='$schema: https://json-schema.org/draft/2020-12/schema',
-            ))
 
         document = Document(path=path, data=data)
         self._cache[path] = document

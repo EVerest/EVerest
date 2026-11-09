@@ -18,7 +18,7 @@ import yaml
 
 from ev_cli.ir import build
 from ev_cli.ir.common import CONSTRAINT_KEYWORDS
-from ev_cli.schema.conformance import Category
+from ev_cli.schema.conformance import Category, collect_findings
 from conftest import EVEREST_DIR, needs_everest
 
 pytestmark = needs_everest
@@ -26,13 +26,13 @@ pytestmark = needs_everest
 
 @pytest.fixture
 def everest_findings(everest_loader):
-    """Build every type unit and interface, and return what was found.
+    return collect_findings(everest_loader)
 
-    Nothing is skipped, so an interface that does not build fails this fixture.
-    """
+
+def test_every_type_unit_and_interface_builds(everest_loader):
+    """Generating everything stops at the first definition that does not build."""
     build.build_type_units(everest_loader)
     build.build_interfaces(everest_loader, everest_loader.tree.interface_names())
-    return everest_loader.findings
 
 
 def of(findings, category):
@@ -55,6 +55,13 @@ class TestFindings:
         dangerous = of(everest_findings, Category.REF_SIBLING_CONTRADICTS)
         assert dangerous
         assert all('no value can satisfy' in finding.message for finding in dangerous)
+
+    def test_every_kind_of_document_is_covered(self, everest_findings):
+        undeclared = {finding.source.file.parent.name
+                      for finding in of(everest_findings, Category.UNDECLARED_DIALECT)}
+        assert {'types', 'interfaces', 'errors'} <= undeclared
+        assert any(finding.source.file.name == 'manifest.yaml'
+                   for finding in of(everest_findings, Category.UNDECLARED_DIALECT))
 
     def test_every_finding_says_what_to_write_instead(self, everest_findings):
         for finding in everest_findings:

@@ -497,6 +497,35 @@ def test_inline_payload_properties_are_warned_about(tmp_path):
     assert 'the properties have no effect' in proc.stderr
 
 
+def test_conformance_report_sees_every_reference_and_document(tmp_path):
+    """Including a $ref the IR passes through untouched, and module manifests."""
+    (tmp_path / 'types').mkdir()
+    (tmp_path / 'types' / 'units.yaml').write_text(
+        'description: Units\ntypes:\n'
+        '  Power:\n    description: Power\n    type: object\n    properties:\n'
+        '      watts:\n        description: Watts\n        type: number\n')
+    (tmp_path / 'interfaces').mkdir()
+    (tmp_path / 'interfaces' / 'hidden.yaml').write_text(
+        'description: An interface\nvars:\n'
+        '  reading:\n    description: Passed through as raw JSON\n    type: object\n'
+        '    properties:\n      power:\n        description: Nested inside it\n'
+        '        type: object\n        $ref: /units#/Power\n')
+    (tmp_path / 'modules' / 'Sample').mkdir(parents=True)
+    (tmp_path / 'modules' / 'Sample' / 'manifest.yaml').write_text(
+        'description: A module\nmetadata:\n  license: https://opensource.org/licenses/Apache-2.0\n'
+        '  authors:\n    - ev-cli tests\n')
+    proc = run(
+        'types', 'conformance-report', '--verbose',
+        '--schemas-dir', str(SCHEMAS_DIR),
+        '--everest-dir', str(tmp_path),
+        '--work-dir', str(tmp_path),
+    )
+    assert 'legacy-ref: 1' in proc.stdout
+    assert 'ref-sibling-type: 1' in proc.stdout
+    assert 'hidden.yaml#/vars/reading/properties/power' in proc.stdout
+    assert 'modules/Sample/manifest.yaml' in proc.stdout
+
+
 def test_generation_does_not_summarise_conformance(tmp_path):
     """The legacy dialect is the conformance report's business, not every build's."""
     proc = run('interface', 'generate-headers', *common_args(), '--output-dir', str(tmp_path))

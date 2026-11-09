@@ -17,7 +17,9 @@ genuinely dangerous shapes are visible rather than latent.
 
 Findings are kept apart from the IR: whether a definition was written in
 EVerest's historical dialect is a fact about the source text, and no backend
-should be able to reach it.
+should be able to reach it.  They come from a pass of their own over every
+definition document -- type units, interfaces, error lists and module manifests
+-- so they do not depend on what a generator makes of the definitions.
 """
 
 from __future__ import annotations
@@ -27,7 +29,8 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Mapping, Sequence
 
-from .references import ParsedReference, TypeRef, format_type_reference
+from .loader import DefinitionLoader, Document
+from .references import ParsedReference, TypeRef, format_type_reference, parse_type_reference
 from .source import SourceRef
 
 #: Keys that carry meaning of their own beside a ``$ref`` and are kept.
@@ -121,12 +124,62 @@ def ref_siblings(schema: Mapping[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in schema.items() if key not in KEPT_BESIDE_REF}
 
 
-def report_reference(
+def collect_findings(loader: DefinitionLoader) -> list[Finding]:
+    """Every place where the definitions rely on EVerest's own reading of JSON Schema."""
+    tree = loader.tree
+    findings: list[Finding] = []
+    for unit in tree.type_units():
+        _check_document(loader, loader.type_document(unit), from_unit=unit, findings=findings)
+    for name in tree.interface_names():
+        _check_document(loader, loader.interface_document(name), from_unit=None, findings=findings)
+    for namespace in tree.error_namespaces():
+        _check_document(loader, loader.error_document(namespace), from_unit=None, findings=findings)
+    for module in tree.module_names():
+        _check_document(loader, loader.module_document(module), from_unit=None, findings=findings)
+    return findings
+
+
+def _check_document(
+    loader: DefinitionLoader, document: Document, *, from_unit: str | None, findings: list[Finding]
+) -> None:
+    if '$schema' not in document.data:
+        findings.append(Finding(
+            category=Category.UNDECLARED_DIALECT,
+            source=document.source,
+            message='no $schema; the dialect is implied by the framework meta-schema rather than declared',
+            conformant_form='$schema: https://json-schema.org/draft/2020-12/schema',
+        ))
+    _check_references(loader, document.data, document.source, from_unit=from_unit, findings=findings)
+
+
+def _check_references(
+    loader: DefinitionLoader, node: Any, source: SourceRef, *, from_unit: str | None, findings: list[Finding]
+) -> None:
+    """Report every ``$ref`` at or below ``node``, wherever in the document it sits."""
+    if isinstance(node, Mapping):
+        if isinstance(node.get('$ref'), str):
+            reference = parse_type_reference(node['$ref'], from_unit=from_unit)
+            _report_reference(
+                node,
+                reference=reference,
+                source=source,
+                from_unit=from_unit,
+                target_json_type=loader.type_declaration(reference.target, source).get('type'),
+                findings=findings,
+            )
+        for key, value in node.items():
+            _check_references(loader, value, source.child(key), from_unit=from_unit, findings=findings)
+    elif isinstance(node, list):
+        for index, value in enumerate(node):
+            _check_references(loader, value, source.child(index), from_unit=from_unit, findings=findings)
+
+
+def _report_reference(
     schema: Mapping[str, Any],
     *,
     reference: ParsedReference,
     source: SourceRef,
-    from_unit: str,
+    from_unit: str | None,
     target_json_type: str | None,
     findings: list[Finding],
 ) -> None:

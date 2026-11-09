@@ -7,7 +7,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from ..backends.base import registry
-from ..schema.conformance import format_report, format_summary
+from ..schema.conformance import collect_findings, format_report, format_summary
 from .context import Context
 
 DEFAULT_OUTPUT = 'build/generated/generated/types'
@@ -47,11 +47,7 @@ def conformance_report(args) -> int:
     is a place where the source relies on a reading of JSON Schema that only
     EVerest's own tooling provides.  The counts should only ever fall.
     """
-    context = Context.from_args(args)
-    # Interfaces reference types in the same dialect, so they belong in the count.
-    context.interface_model(context.tree.interface_names())
-
-    findings = context.loader.findings
+    findings = collect_findings(Context.from_args(args).loader)
     print(format_report(findings) if args.verbose else format_summary(findings))
 
     if args.strict and findings:

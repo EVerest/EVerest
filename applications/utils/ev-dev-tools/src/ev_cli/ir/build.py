@@ -11,9 +11,8 @@ from __future__ import annotations
 from typing import Any, Iterable, Mapping, Sequence
 
 from ..errors import DefinitionNotFound, UnsupportedDefinition, warn
-from ..schema import conformance
 from ..schema.loader import DefinitionLoader
-from ..schema.references import TypeRef, parse_error_reference, parse_type_reference
+from ..schema.references import parse_error_reference, parse_type_reference
 from ..schema.source import SourceRef
 from .common import Constraints
 from .interfaces import ArgDef, CmdDef, ErrorDef, InterfaceDef, VarDef
@@ -63,28 +62,6 @@ def json_type_of(declared: Any, source: SourceRef) -> JsonType:
         ) from None
 
 
-def target_json_type(
-    loader: DefinitionLoader, target: TypeRef, source: SourceRef
-) -> str | None:
-    """What the referenced definition declares.
-
-    Looked up for two reasons: it proves the reference resolves, and it is what
-    makes a redundant sibling ``type`` distinguishable from a contradictory one.
-    """
-    try:
-        document = loader.type_document(target.unit)
-    except DefinitionNotFound as err:
-        raise DefinitionNotFound(f'{source}: {err}') from err
-
-    declared = (document.data.get('types') or {}).get(target.name)
-    if declared is None:
-        raise DefinitionNotFound(
-            f'{source}: reference to {target} names a type that unit '
-            f'"{target.unit}" does not declare'
-        )
-    return declared.get('type')
-
-
 def resolve_reference(
     loader: DefinitionLoader,
     schema: Mapping[str, Any],
@@ -92,20 +69,13 @@ def resolve_reference(
     *,
     from_unit: str | None,
 ) -> Ref:
-    """Parse, validate and report one ``$ref`` node.
+    """Parse one ``$ref`` node and check that it resolves.
 
-    Shared by every builder so that both reference dialects are accepted, and
-    the legacy one reported, in exactly one place.
+    Shared by every builder so that both reference dialects are accepted in
+    exactly one place.
     """
     reference = parse_type_reference(schema['$ref'], from_unit=from_unit)
-    conformance.report_reference(
-        schema,
-        reference=reference,
-        source=source,
-        from_unit=from_unit,
-        target_json_type=target_json_type(loader, reference.target, source),
-        findings=loader.findings,
-    )
+    loader.type_declaration(reference.target, source)
     return Ref(reference.target)
 
 
