@@ -7,6 +7,16 @@ The utilities are seperated into
 - core_utils: Providing classes and fixtures to get a running and properly configured EVerest instance
 - ocpp_utils (under development): Providing class and fixtures to test against an OCPP1.6J or OCPP2.0.1J central system
 
+## Breaking changes in 0.9.0
+
+- `EverestTestController` needs `EvController` and `EvDriverSim`. Helpers that
+  require a missing simulator raise `NoSimulatorError`.
+- `plug_out()` ends an active session cleanly before unplugging.
+  Use `plug_out(abrupt=True)` for the previous mid-session unplug behavior.
+- `plug_in_ac_iso` and `plug_in_dc_iso` require a nonempty `payment_type`.
+  Use `payment_type="eim"` for external payment or `payment_type="contract"`
+  for Plug and Charge. Missing or empty values raise `ValueError`.
+
 ## Core Utils
 
 ### everest_core

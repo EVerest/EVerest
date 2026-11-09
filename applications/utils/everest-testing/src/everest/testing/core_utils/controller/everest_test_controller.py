@@ -161,21 +161,27 @@ class EverestTestController(TestController):
         world.plug()
 
     def plug_in_ac_iso(self, connector_id=1, payment_type=""):
+        """Plug in using AC ISO15118.
+
+        Raises ValueError if payment_type is missing, empty, or unsupported.
+        """
         drv = self._ev_drv(connector_id)
         world = self._world_drv(connector_id)
         params: dict = {"charging_current_a": 16.0, "three_phases": True,
                         "departure_time_s": 86400, "e_amount_wh": 0}
-        if payment_type:
-            params["payment"] = _normalize_payment_option(payment_type)
+        params["payment"] = _normalize_payment_option(payment_type)
         drv.configure_session("AcIsoD20" if drv.prefers_iso15118_20 else "AcIso2", params)
         world.plug()
 
     def plug_in_dc_iso(self, connector_id=1, payment_type="", energy_mode="DC"):
+        """Plug in using DC ISO15118.
+
+        Raises ValueError if payment_type is missing, empty, or unsupported.
+        """
         drv = self._ev_drv(connector_id)
         world = self._world_drv(connector_id)
         params: dict = {"departure_time_s": 86400, "e_amount_wh": 0}
-        if payment_type:
-            params["payment"] = _normalize_payment_option(payment_type)
+        params["payment"] = _normalize_payment_option(payment_type)
         drv.configure_session(*_dc_session_for_energy_mode(energy_mode, params, drv.prefers_iso15118_20))
         world.plug()
 

@@ -236,7 +236,7 @@ async def start_dc_bpt_session(
     setattr(charge_point_v21, "on_authorize", on_authorize)
     central_system_v21.chargepoint.route_map = create_route_map(central_system_v21.chargepoint)
 
-    test_controller.plug_in_dc_iso(energy_mode=DC_BPT_ENERGY_MODE)
+    test_controller.plug_in_dc_iso(energy_mode=DC_BPT_ENERGY_MODE, payment_type="eim")
     test_controller.swipe("8BADF00D")
 
     started = call21.TransactionEvent(

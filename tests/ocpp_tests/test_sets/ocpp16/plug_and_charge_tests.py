@@ -400,7 +400,7 @@ class TestPlugAndCharge:
         test_controller.swipe(test_config.authorization_info.valid_id_tag_1)
 
         # plug in second
-        test_controller.plug_in_ac_iso()
+        test_controller.plug_in_ac_iso(payment_type="eim")
 
         # expect StartTransaction.req
         assert await wait_for_and_validate(
@@ -457,7 +457,7 @@ class TestPlugAndCharge:
         """
 
         # plug in
-        test_controller.plug_in_ac_iso()
+        test_controller.plug_in_ac_iso(payment_type="eim")
 
         # expect StartTransaction.req
         assert await wait_for_and_validate(

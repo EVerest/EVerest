@@ -29,15 +29,17 @@ class TestController():
         """
         raise NotImplementedError()
 
-    def plug_in_ac_iso(self, payment_type, connector_id):
+    def plug_in_ac_iso(self, connector_id=1, payment_type=""):
         """
         Plug in of an electric vehicle to the chargepoint using AC ISO15118.
+        payment_type must be nonempty and accepted by the controller; otherwise raises ValueError.
         """
         raise NotImplementedError()
 
-    def plug_in_dc_iso(self, payment_type, connector_id, energy_mode):
+    def plug_in_dc_iso(self, connector_id=1, payment_type="", energy_mode="DC"):
         """
         Plug in of an electric vehicle to the chargepoint using DC ISO15118.
+        payment_type must be nonempty and accepted by the controller; otherwise raises ValueError.
         energy_mode is the EvManager iso_start_v2g_session energy mode, e.g. DC or dc_bpt.
         """
         raise NotImplementedError()

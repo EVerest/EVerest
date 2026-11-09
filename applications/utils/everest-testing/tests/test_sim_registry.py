@@ -169,6 +169,10 @@ def test_plug_in_fails_when_no_ev_instance_for_that_connector(controller_ev_only
 # ---------------------------------------------------------------------------
 
 
+def _plug_helper_kwargs(helper):
+    return {"payment_type": "eim"} if helper in ("plug_in_ac_iso", "plug_in_dc_iso") else {}
+
+
 def _configure_session_payloads(ctrl):
     out = []
     for call_args in ctrl._fake_client.publish.call_args_list:
@@ -184,8 +188,8 @@ def _configure_session_payloads(ctrl):
         ("plug_in", "AcIec", {"charging_current_a": 32.0, "three_phases": False}),
         ("plug_in_ac_iso", "AcIso2",
          {"charging_current_a": 16.0, "three_phases": True,
-          "departure_time_s": 86400, "e_amount_wh": 0}),
-        ("plug_in_dc_iso", "DcIso2", {"departure_time_s": 86400, "e_amount_wh": 0}),
+          "departure_time_s": 86400, "e_amount_wh": 0, "payment": "ExternalPayment"}),
+        ("plug_in_dc_iso", "DcIso2", {"departure_time_s": 86400, "e_amount_wh": 0, "payment": "ExternalPayment"}),
         ("diode_fail", "AcIec", {"charging_current_a": 32.0, "three_phases": True}),
     ],
 )
@@ -197,7 +201,7 @@ def test_plug_helpers_configure_the_session_before_plugging(
     # has been satisfied.
     ctrl._registry._ready = True
 
-    getattr(ctrl, helper)(connector_id=7)
+    getattr(ctrl, helper)(connector_id=7, **_plug_helper_kwargs(helper))
 
     payloads = [json.loads(p) for t, p in ctrl._fake_client.published if t.endswith("/configure_session")]
     assert len(payloads) == 1, f"{helper} published {len(payloads)} configure_session messages"
@@ -232,7 +236,7 @@ def test_plug_in_dc_iso_maps_the_energy_mode(controller_with_driver, energy_mode
     ctrl = controller_with_driver
     ctrl._registry._ready = True
 
-    ctrl.plug_in_dc_iso(connector_id=7, energy_mode=energy_mode)
+    ctrl.plug_in_dc_iso(connector_id=7, energy_mode=energy_mode, payment_type="eim")
 
     payloads = [json.loads(p) for t, p in ctrl._fake_client.published if t.endswith("/configure_session")]
     assert [p["mode"] for p in payloads] == [expected_mode]
@@ -267,7 +271,7 @@ def test_iso_plug_helpers_follow_the_evs_first_protocol(
     fake_client.auto_configure_ack = True
     fake_client.published.clear()
     try:
-        getattr(ctrl, helper)(connector_id=7)
+        getattr(ctrl, helper)(connector_id=7, **_plug_helper_kwargs(helper))
         payloads = [json.loads(p) for t, p in fake_client.published if t.endswith("/configure_session")]
         assert [p["mode"] for p in payloads] == [expected_mode]
     finally:
@@ -279,7 +283,7 @@ def test_plug_in_dc_iso_rejects_an_unknown_energy_mode(controller_with_driver):
     ctrl._registry._ready = True
 
     with pytest.raises(ValueError, match="energy_mode"):
-        ctrl.plug_in_dc_iso(connector_id=7, energy_mode="ac")
+        ctrl.plug_in_dc_iso(connector_id=7, energy_mode="ac", payment_type="eim")
 
 
 def test_driving_before_start_fails(tmp_path):
@@ -741,13 +745,13 @@ def test_controller_plug_routes_world_and_intent(
     fake_client.published.clear()
     if not with_driver:
         with pytest.raises(NoSimulatorError, match="EvDriverSim"):
-            getattr(ctrl, helper)(connector_id=1)
+            getattr(ctrl, helper)(connector_id=1, **_plug_helper_kwargs(helper))
         assert fake_client.published == []
         ctrl.stop()
         return
     fake_client.auto_configure_ack = True
     try:
-        getattr(ctrl, helper)(connector_id=7)
+        getattr(ctrl, helper)(connector_id=7, **_plug_helper_kwargs(helper))
         published = [(t, json.loads(p)) for t, p in fake_client.published]
         assert len(published) == 2
         assert published[0][0] == "pfx/everest_api/1/ev_controller/car/m2e/configure_session"
@@ -903,7 +907,7 @@ def test_world_plug_waits_for_car_configuration(monkeypatch, driver_config, fake
 
     def plug():
         try:
-            getattr(ctrl, helper)(connector_id=7)
+            getattr(ctrl, helper)(connector_id=7, **_plug_helper_kwargs(helper))
         except AssertionError as exc:
             errors.append(str(exc))
         finally:
@@ -935,7 +939,7 @@ def test_world_plug_is_not_sent_when_configuration_times_out(monkeypatch, driver
     ctrl = _started(monkeypatch, driver_config, fake_client)
     fake_client.deliver_heartbeats()
     with pytest.raises(AssertionError, match="timeout.*command_ack"):
-        ctrl.plug_in_dc_iso(connector_id=7)
+        ctrl.plug_in_dc_iso(connector_id=7, payment_type="eim")
     assert not any(t.endswith("/m2e/plug") for t, _ in fake_client.published)
 
 
