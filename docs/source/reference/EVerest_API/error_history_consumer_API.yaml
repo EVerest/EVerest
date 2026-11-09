@@ -464,6 +464,22 @@ components:
         implementation_id:
           type: string
           minLength: 2
+        mapping:
+          description: >-
+            EVSE and connector the implementation is mapped to. Absent when it is
+            not mapped. Ignored in origin_filter.
+          $ref: '#/components/schemas/Mapping'
+    Mapping:
+      description: EVSE and optional connector an implementation is mapped to
+      type: object
+      additionalProperties: true
+      required:
+        - evse
+      properties:
+        evse:
+          type: integer
+        connector:
+          type: integer
     Severity:
       description: >-
         Severity of an error.

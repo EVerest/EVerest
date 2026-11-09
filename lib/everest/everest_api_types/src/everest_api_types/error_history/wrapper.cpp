@@ -149,10 +149,25 @@ Severity_External to_external_api(Severity_Internal const& val) {
     throw std::out_of_range("Unexpected value for everest::lib::API::V1_0::types::error_history::Severity_Internal");
 }
 
+Mapping_Internal to_internal_api(Mapping_External const& val) {
+    Mapping_Internal result;
+    result.evse = val.evse;
+    result.connector = val.connector;
+    return result;
+}
+
+Mapping_External to_external_api(Mapping_Internal const& val) {
+    Mapping_External result;
+    result.evse = val.evse;
+    result.connector = val.connector;
+    return result;
+}
+
 ImplementationIdentifier_Internal to_internal_api(ImplementationIdentifier_External const& val) {
     ImplementationIdentifier_Internal result;
     result.module_id = val.module_id;
     result.implementation_id = val.implementation_id;
+    result.mapping = optToInternal(val.mapping);
     return result;
 }
 
@@ -160,6 +175,7 @@ ImplementationIdentifier_External to_external_api(ImplementationIdentifier_Inter
     ImplementationIdentifier_External result;
     result.module_id = val.module_id;
     result.implementation_id = val.implementation_id;
+    result.mapping = optToExternal(val.mapping);
     return result;
 }
 

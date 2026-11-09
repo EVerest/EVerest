@@ -148,6 +148,8 @@ SCENARIO("Opening an existing ErrorDatabaseSqlite database", "[!throws]") {
         TestDatabase db(db_path);
         THEN("The added columns are created and the error is kept") {
             CHECK(has_column(db_path, "trigger_value_text_repr"));
+            CHECK(has_column(db_path, "origin_mapping_evse"));
+            CHECK(has_column(db_path, "origin_mapping_connector"));
             check_expected_errors_in_list({stored_error}, db.get_errors({}));
         }
         WHEN("Adding an error with a trigger value and opening the database again") {
@@ -158,6 +160,18 @@ SCENARIO("Opening an existing ErrorDatabaseSqlite database", "[!throws]") {
                 check_expected_errors_in_list({stored_error, test_errors.at(0)},
                                               reopened.get_errors(std::list<Everest::error::ErrorFilter>()));
             }
+        }
+    }
+
+    GIVEN("A database with the base columns and some of the added ones") {
+        const auto db_path = create_database(base_schema + ", trigger_value_text_repr TEXT);");
+        const auto stored_error = base_error(get_test_errors().at(1));
+        insert_base_row(db_path, *stored_error);
+        TestDatabase db(db_path);
+        THEN("The remaining columns are added and the error is kept") {
+            CHECK(has_column(db_path, "origin_mapping_evse"));
+            CHECK(has_column(db_path, "origin_mapping_connector"));
+            check_expected_errors_in_list({stored_error}, db.get_errors({}));
         }
     }
 
@@ -184,6 +198,8 @@ SCENARIO("Opening an existing ErrorDatabaseSqlite database", "[!throws]") {
 
             module::ErrorDatabaseSqlite reopened(db_path);
             CHECK(has_column(db_path, "trigger_value_text_repr"));
+            CHECK(has_column(db_path, "origin_mapping_evse"));
+            CHECK(has_column(db_path, "origin_mapping_connector"));
             check_expected_errors_in_list({stored_error, added_error},
                                           reopened.get_errors(std::list<Everest::error::ErrorFilter>()));
         }

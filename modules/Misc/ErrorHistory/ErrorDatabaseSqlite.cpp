@@ -40,7 +40,8 @@ const std::set<std::string> required_columns = {
     "timestamp", "severity", "state",       "sub_type", "vendor_id"};
 
 /// nullable columns that are added in place to databases created without them
-const std::vector<std::pair<std::string, std::string>> added_columns = {{"trigger_value_text_repr", "TEXT"}};
+const std::vector<std::pair<std::string, std::string>> added_columns = {
+    {"trigger_value_text_repr", "TEXT"}, {"origin_mapping_evse", "INTEGER"}, {"origin_mapping_connector", "INTEGER"}};
 
 std::set<std::string> get_column_names(everest::db::sqlite::ConnectionInterface& db) {
     auto stmt = db.new_statement("PRAGMA table_info(errors);");
@@ -259,6 +260,14 @@ void ErrorDatabaseSqlite::add_error_without_mutex(Everest::error::ErrorPtr error
         if (error->trigger_value.has_value() and columns.count("trigger_value_text_repr") == 1) {
             stmt->bind_text(":trigger_value_text_repr", error->trigger_value.value().text_repr);
         }
+        const auto& mapping = error->origin.mapping;
+        if (mapping.has_value() and columns.count("origin_mapping_evse") == 1) {
+            stmt->bind_int(":origin_mapping_evse", mapping.value().evse);
+        }
+        if (mapping.has_value() and mapping.value().connector.has_value() and
+            columns.count("origin_mapping_connector") == 1) {
+            stmt->bind_int(":origin_mapping_connector", mapping.value().connector.value());
+        }
         if (stmt->step() != SQLITE_DONE) {
             throw everest::db::QueryExecutionException(db.get_error_message());
         }
@@ -366,7 +375,16 @@ ErrorDatabaseSqlite::get_errors(const std::optional<SqlCondition>& condition) co
             const std::string err_msg = std::get<std::string>(stmt->column_variant("message"));
             const std::string err_origin_module_id = std::get<std::string>(stmt->column_variant("origin_module"));
             const std::string err_origin_impl_id = std::get<std::string>(stmt->column_variant("origin_implementation"));
-            const ImplementationIdentifier err_origin(err_origin_module_id, err_origin_impl_id);
+            std::optional<Mapping> err_origin_mapping;
+            const auto origin_mapping_evse = stmt->column_variant("origin_mapping_evse");
+            if (const auto* evse = std::get_if<int64_t>(&origin_mapping_evse)) {
+                err_origin_mapping.emplace(static_cast<int>(*evse));
+                const auto origin_mapping_connector = stmt->column_variant("origin_mapping_connector");
+                if (const auto* connector = std::get_if<int64_t>(&origin_mapping_connector)) {
+                    err_origin_mapping.value().connector = static_cast<int>(*connector);
+                }
+            }
+            const ImplementationIdentifier err_origin(err_origin_module_id, err_origin_impl_id, err_origin_mapping);
             const Everest::error::Error::time_point err_timestamp =
                 Everest::Date::from_rfc3339(std::get<std::string>(stmt->column_variant("timestamp")));
             const Everest::error::Severity err_severity =

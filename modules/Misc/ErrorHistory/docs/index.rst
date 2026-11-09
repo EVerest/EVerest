@@ -10,7 +10,8 @@ interface. An error is stored when it is raised and updated when it is cleared; 
 still active at startup are marked ``ClearedByReboot``.
 
 Each error is returned with the vendor id of its raiser, which is left out when empty,
-and with its trigger value, if the raiser named one.
+with its trigger value, if the raiser named one, and with the EVSE and connector its
+origin is mapped to, if any. The mapping is not used by ``origin_filter``.
 
 Database schema
 ===============
@@ -20,8 +21,9 @@ The module checks the schema of an existing database at startup:
 - A file that is not an SQLite database, a database without an ``errors`` table, or one
   whose ``errors`` table lacks one of the columns the module needs, is reset. Its stored
   errors are lost.
-- The nullable column ``trigger_value_text_repr`` is added in place when it is missing.
-  Errors stored without it keep all their data and are NULL in it.
+- The nullable columns ``trigger_value_text_repr``, ``origin_mapping_evse`` and
+  ``origin_mapping_connector`` are added in place when they are missing. Errors stored
+  without them keep all their data and are NULL in them.
 - Additional columns, for example written by another version of the module, are ignored
   and kept, unless they are ``NOT NULL`` without a default. The module could not store
   errors in such a database, so it is reset as well. Columns are only ever added as
