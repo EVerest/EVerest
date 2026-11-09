@@ -39,6 +39,9 @@ The runtime is built and the peer and ``m2e`` subscriptions are registered in
 on the queue until the loop starts. With ``enabled_at_startup`` the enable is
 queued ahead of it.
 
+If the loop thread aborts, the heartbeat stops and ``generic/CommunicationFault``
+is raised on ``ev_manager`` with the reason in its message.
+
 High level
 ----------
 
@@ -458,7 +461,7 @@ Outbound suffixes (``e2m/*``):
   ``reason``; never silently dropped. Accepted commands also publish
   ``status: "Accepted"`` where applicable.
 - ``heartbeat``: monotonic counter published every
-  ``cfg_heartbeat_interval_ms``
+  ``cfg_heartbeat_interval_ms`` while the loop thread runs
 - ``bsp_measurement``: only when ``publish_bsp_measurements: true``
 
 State machine

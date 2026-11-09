@@ -521,6 +521,27 @@ TEST_CASE("EvController keeps a pilot event published before its ready()", "[evc
     CHECK(f.adapter.observed.handle()->board.records == std::vector<std::string>{"set_ac_max_current(current=16)"});
 }
 
+TEST_CASE("EvController loop abort stops the heartbeat and raises a fault", "[evctl][heartbeat]") {
+    ModuleFixture f;
+    f.fx.cfg.cfg_heartbeat_interval_ms = 5;
+    f.init();
+    f.ready();
+    const std::string topic = "everest_api/1/ev_controller/test_car/e2m/heartbeat";
+    {
+        auto out = f.adapter.observed.handle();
+        REQUIRE(out.wait_for([&] { return out->publications.count(topic) == 1; }, std::chrono::seconds(2)));
+    }
+    f.mod->on_loop_abort("injected");
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    const auto after_abort = f.adapter.observed.handle()->publications.at(topic);
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    auto out = f.adapter.observed.handle();
+    CHECK(out->publications.at(topic) == after_abort);
+    REQUIRE(out->errors.size() == 1);
+    CHECK(out->errors.front().type == "generic/CommunicationFault");
+    CHECK(out->errors.front().message.find("injected") != std::string::npos);
+}
+
 TEST_CASE("EvController DER pilot start selects the requested annex", "[evctl][der]") {
     const auto sae = GENERATE(false, true);
     TestFixture fx;

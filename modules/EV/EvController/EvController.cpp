@@ -73,18 +73,25 @@ void EvController::ready() {
     // down (the framework dispatches ready() in a thread with no catch, so
     // moving register_or_throw into ready() would terminate identically).
     // Contain any throw here so a failed fd registration / FSM construction
-    // degrades to an inert loop instead of a process crash; loop_online is
-    // cleared so the teardown/join path observes shutdown.
+    // degrades to an inert loop instead of a process crash, reported by a
+    // stopped heartbeat and a CommunicationFault.
     loop_thread = std::thread([this] {
         try {
             runtime->run(loop_online);
         } catch (const std::exception& e) {
-            EVLOG_error << "EvController: loop thread aborting: " << e.what();
+            on_loop_abort(e.what());
         } catch (...) {
-            EVLOG_error << "EvController: loop thread aborting: unknown exception";
+            on_loop_abort("unknown exception");
         }
         loop_online = false;
     });
+}
+
+void EvController::on_loop_abort(const std::string& reason) {
+    EVLOG_error << "EvController: loop thread aborting: " << reason;
+    loop_online = false;
+    p_ev_manager->raise_error(p_ev_manager->error_factory->create_error(
+        "generic/CommunicationFault", "loop_thread", "loop thread aborted: " + reason, Everest::error::Severity::High));
 }
 
 void EvController::shutdown() {
@@ -117,6 +124,9 @@ void EvController::setup_heartbeat_generator() {
     // of publish/serialize: report it as a failed heartbeat instead of
     // unconditionally claiming success.
     auto action = [this, topic]() {
+        if (!loop_online) {
+            return false;
+        }
         try {
             mqtt.publish(topic, API_generic::serialize(hb_id++));
         } catch (const std::exception& e) {

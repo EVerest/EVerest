@@ -123,6 +123,13 @@ private:
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
     // insert your private definitions here
     void setup_heartbeat_generator();
+#ifdef BUILD_TESTING_MODULE_EV_CONTROLLER
+public:
+#endif
+    void on_loop_abort(const std::string& reason);
+#ifdef BUILD_TESTING_MODULE_EV_CONTROLLER
+private:
+#endif
     std::string m_default_session_error;
 
     ev_API::Topics topics;
