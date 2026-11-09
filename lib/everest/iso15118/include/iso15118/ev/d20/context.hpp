@@ -92,6 +92,11 @@ struct SessionOptions {
     params::EnergyRequest energy_request{};
 };
 
+struct SelectedSchedule {
+    std::uint8_t tuple_id;
+    std::uint64_t end_s; // End of the selected charging schedule, in SECC seconds.
+};
+
 class Context {
 public:
     Context(feedback::Callbacks feedback_callbacks, MessageExchange& message_exchange_,
@@ -185,13 +190,13 @@ public:
         selected_control_mode_ = mode;
     }
 
-    // [V2G20-1546]: the ScheduleTupleID ScheduleExchange picked, which every PowerDelivery names.
-    std::optional<std::uint8_t> schedule_tuple_id() const {
-        return schedule_tuple_id_;
+    // [V2G20-1546], [V2G20-1559]: the tuple ScheduleExchange picked and its end; every PowerDelivery stays within it.
+    std::optional<SelectedSchedule> selected_schedule() const {
+        return selected_schedule_;
     }
 
-    void set_schedule_tuple_id(std::uint8_t tuple_id) {
-        schedule_tuple_id_ = tuple_id;
+    void set_selected_schedule(SelectedSchedule schedule) {
+        selected_schedule_ = schedule;
     }
 
     bool has_cp_state_feedback() const {
@@ -367,7 +372,7 @@ private:
 
     SessionOptions session_options;
     std::optional<message_20::datatypes::ControlMode> selected_control_mode_{std::nullopt};
-    std::optional<std::uint8_t> schedule_tuple_id_{std::nullopt};
+    std::optional<SelectedSchedule> selected_schedule_{std::nullopt};
     std::optional<ProtocolId> negotiated_protocol_{std::nullopt};
 };
 
