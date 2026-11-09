@@ -1,11 +1,11 @@
 # ftxui powers the interactive terminal status UI and is mandatory for this application. It is
 # provided either by the dependency manager (EVEREST_DEPENDENCY_ENABLED_FTXUI) or, for system
-# dependency builds, by find_package(ftxui 6 QUIET) in the top level CMakeLists.txt. If it is not
+# dependency builds, by find_package(ftxui 7 QUIET) in the top level CMakeLists.txt. If it is not
 # available, skip only this application instead of failing the whole project configuration.
 if(NOT TARGET ftxui::component)
     message(WARNING "Not building pionix_chargebridge because dependency ftxui is not available. "
             "Remove ftxui from EVEREST_EXCLUDE_DEPENDENCIES, set EVEREST_DEPENDENCY_ENABLED_FTXUI=ON "
-            "or install ftxui 6 for system dependency builds.")
+            "or install ftxui 7 for system dependency builds.")
     return()
 endif()
 
