@@ -52,10 +52,10 @@ class PickRunTest(unittest.TestCase):
         self.assertIsNone(pick_run(runs, SHA, "pull_request"))
         self.assertIsNone(pick_run({"workflow_runs": []}, SHA, "push"))
 
-    def test_newer_first_attempt_beats_older_rerun(self):
+    def test_run_started_last_wins(self):
         self.assertEqual(pick_run(load("runs-rerun.json"), RERUN_SHA, "pull_request")["id"], 40500000001)
 
-    def test_latest_started_beats_later_created(self):
+    def test_rerun_started_last_beats_run_created_later(self):
         runs = {
             "workflow_runs": [
                 {
