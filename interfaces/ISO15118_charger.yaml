@@ -84,10 +84,13 @@ cmds:
         description: Certificate status information
         type: string
         $ref: /authorization#/CertificateStatus
-  ac_contactor_closed:
+  contactor_closed:
     description: >-
-      This message is an async response to a previously published ac_close_contactor
-      or ac_open_contactor.
+      This message is an async response to a previously published ac_close_contactor,
+      ac_open_contactor or dc_open_contactor. It reports the contactor state the board
+      support measured. On a DC stop the HLC stack holds back the PowerDeliveryRes until
+      the contactor is reported open, so that side B is disabled before the response
+      [IEC 61851-23:2023 Table CC.9 t103, t104].
     arguments:
       status:
         description: Set to true when contactor is closed, false when contactor is open
@@ -256,7 +259,11 @@ cmds:
         type: string
         $ref: /iso15118#/IsolationStatus
   update_dc_present_values:
-    description: Update the present values from the DC powersupply
+    description: >-
+      Update the present values from the DC powersupply. Call it for every new measurement,
+      also when the values did not change: during welding detection the HLC stack holds each
+      WeldingDetectionRes until two values marked welding_detection arrived after the request,
+      so that the reported voltage was measured after it [IEC 61851-23:2023 CC.6.3].
     arguments:
       present_voltage_current:
         description: Present voltage and current
@@ -330,6 +337,13 @@ vars:
   current_demand_finished:
     description: The charging process was finished
     type: "null"
+  welding_detection:
+    description: >-
+      DC only. Started is published when the EV switches the power path off (PowerDelivery Stop),
+      Finished when the welding detection phase ends (SessionStop, renegotiation or session teardown).
+      Started is published even if the EV performs no welding detection; Finished always follows.
+    type: string
+    $ref: /iso15118#/WeldingDetectionPhase
   sae_bidi_mode_active:
       description: The SAE J2847 bidi mode is active
       type: "null"

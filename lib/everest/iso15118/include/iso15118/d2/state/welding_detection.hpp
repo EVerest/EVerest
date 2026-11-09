@@ -29,10 +29,12 @@ private:
     // Both apply the [V2G2-920] gate, which names WeldingDetectionReq and SessionStopReq alike.
     Result accept_welding_detection(const message_2::WeldingDetectionRequest& req);
     Result accept_session_stop(const message_2::SessionStopRequest& req);
+    Result answer_pending_weld();
 
     // At most one is ever set. Answered when B arrives, or FAILED when the performance time expires.
     std::optional<message_2::WeldingDetectionRequest> pending_weld{};
     std::optional<message_2::SessionStopRequest> pending_stop{};
+    bool welding_voltage_wait_expired{false};
 };
 
 // [V2G2-597] narrows the node: restarting the parameter exchange is no longer in sequence once
@@ -44,6 +46,19 @@ struct WeldingDetection : public StateBase {
     void enter() final;
     Result on_event(Event) final;
     Result on_request(const message_2::Variant& received) final;
+    void leave() final;
+
+private:
+    void answer_pending_weld();
+
+    // Parked until values of the welding detection voltage source measured after it arrived.
+    std::optional<message_2::WeldingDetectionRequest> pending_weld{};
+    bool welding_voltage_wait_expired{false};
 };
+
+// Parks a WeldingDetectionReq until marked values received after it arrived, or waiting for them expired.
+void park_welding_detection(Context& ctx, bool& wait_expired);
+bool welding_voltage_ready(const Context& ctx, bool wait_expired);
+void log_welding_voltage_timeout(const Context& ctx);
 
 } // namespace iso15118::d2::state
