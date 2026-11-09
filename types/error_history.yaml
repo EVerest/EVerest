@@ -65,6 +65,19 @@ types:
       - High
       - Medium
       - Low
+  TriggerValue:
+    description: Value that caused a specific occurrence of an error, e.g. the measurement that crossed a limit
+    type: object
+    required:
+      - text_repr
+    properties:
+      text_repr:
+        description: >-
+          Text representation of the value as the raising entity would print it, including a unit where one
+          applies, e.g. `85.3 degC`. Truncated to 2500 characters when raised.
+        type: string
+        maxLength: 2500
+    additionalProperties: false
   ErrorObject:
     description: Represents an error
     type: object
@@ -105,5 +118,8 @@ types:
       vendor_id:
         description: Vendor of the error type as given by the raiser of the error; absent when empty
         type: string
+      trigger_value:
+        description: Value that caused this occurrence of the error; absent when the raising entity named none
+        $ref: /error_history#/TriggerValue
     additionalProperties: false
   
