@@ -45,11 +45,7 @@ def make_record(**overrides):
 
 class ModulesFromDistTest(unittest.TestCase):
     def test_lists_module_directories_sorted(self):
-        with tempfile.TemporaryDirectory() as dist:
-            modules = os.path.join(dist, "libexec", "everest", "modules")
-            os.makedirs(os.path.join(modules, "RsExample"))
-            os.makedirs(os.path.join(modules, "EvseManager"))
-            self.assertEqual(modules_from_dist(dist), ["EvseManager", "RsExample"])
+        self.assertEqual(modules_from_dist(os.path.join(TESTDATA, "dist")), ["EvseManager", "RsExample"])
 
     def test_ignores_files(self):
         with tempfile.TemporaryDirectory() as dist:
