@@ -6,12 +6,16 @@
 #include <everest/database/exceptions.hpp>
 #include <everest/database/sqlite/connection.hpp>
 #include <everest/database/sqlite/statement.hpp>
-#include <everest/exceptions.hpp>
 #include <everest/logging.hpp>
 
 #include <utils/date.hpp>
 
+#include <algorithm>
+#include <array>
+#include <fstream>
 #include <set>
+#include <stdexcept>
+#include <string_view>
 
 namespace module {
 
@@ -20,6 +24,28 @@ void bind_values(everest::db::sqlite::StatementInterface& stmt, const std::vecto
     for (std::size_t i = 0; i < values.size(); i++) {
         stmt.bind_text(static_cast<int>(i + 1), values[i], everest::db::sqlite::SQLiteString::Transient);
     }
+}
+
+/// thrown when the database can not be used with this schema and has to be reset
+struct IncompatibleSchema : public std::runtime_error {
+    using std::runtime_error::runtime_error;
+};
+
+const std::set<std::string> required_columns = {
+    "uuid",      "type",     "description", "message",  "origin_module", "origin_implementation",
+    "timestamp", "severity", "state",       "sub_type", "vendor_id"};
+
+std::set<std::string> get_column_names(everest::db::sqlite::ConnectionInterface& db) {
+    auto stmt = db.new_statement("PRAGMA table_info(errors);");
+    std::set<std::string> columns;
+    int status;
+    while ((status = stmt->step()) == SQLITE_ROW) {
+        columns.insert(std::get<std::string>(stmt->column_variant("name")));
+    }
+    if (status != SQLITE_DONE) {
+        throw everest::db::QueryExecutionException(db.get_error_message());
+    }
+    return columns;
 }
 } // namespace
 
@@ -36,10 +62,12 @@ ErrorDatabaseSqlite::ErrorDatabaseSqlite(const fs::path& db_path_, const bool re
         EVLOG_info << "Using database at " << this->db_path;
         try {
             this->check_database();
-        } catch (const std::exception& e) {
-            EVLOG_error << "Error checking database: " << e.what();
+        } catch (const IncompatibleSchema& e) {
+            EVLOG_error << "Incompatible database schema: " << e.what();
             EVLOG_info << "Resetting database";
             this->reset_database();
+        } catch (const std::exception& e) {
+            EVLOG_error << "Error checking database, keeping it as it is: " << e.what();
         }
     }
 }
@@ -47,67 +75,65 @@ ErrorDatabaseSqlite::ErrorDatabaseSqlite(const fs::path& db_path_, const bool re
 void ErrorDatabaseSqlite::check_database() {
     BOOST_LOG_FUNCTION();
     EVLOG_info << "Checking database";
-    try {
-        auto db = std::make_shared<everest::db::sqlite::Connection>(this->db_path);
-        if (!db->open_connection()) {
-            EVLOG_error << "Error opening database";
-            throw everest::db::ConnectionException(db->get_error_message());
+    if (fs::is_regular_file(this->db_path) and fs::file_size(this->db_path) > 0) {
+        constexpr std::string_view sqlite_header("SQLite format 3\0", 16);
+        std::array<char, sqlite_header.size()> header{};
+        std::ifstream file(this->db_path, std::ios::binary);
+        file.read(header.data(), header.size());
+        if (!file.is_open() or file.bad()) {
+            throw std::runtime_error("Could not read database file");
         }
-        std::string sql = "SELECT name";
-        sql += " FROM sqlite_schema";
-        sql += " WHERE type = 'table' AND name NOT LIKE 'sqlite_%';";
-        auto stmt = db->new_statement(sql);
-        bool has_errors_table = false;
-        int status;
-        while ((status = stmt->step()) == SQLITE_ROW) {
-            std::string table_name = stmt->column_text(0);
-            if (table_name == "errors") {
-                if (has_errors_table) {
-                    throw Everest::EverestConfigError("Database contains multiple errors tables");
-                }
-                has_errors_table = true;
-                EVLOG_debug << "Found errors table";
-            } else {
-                EVLOG_warning << "Found unknown table: " << table_name;
-            }
+        if (std::string_view(header.data(), file.gcount()) != sqlite_header) {
+            throw IncompatibleSchema("File is not an SQLite database");
         }
-        if (status != SQLITE_DONE) {
-            throw Everest::EverestConfigError(db->get_error_message());
+    }
+    auto db = std::make_shared<everest::db::sqlite::Connection>(this->db_path);
+    if (!db->open_connection()) {
+        EVLOG_error << "Error opening database";
+        throw everest::db::ConnectionException(db->get_error_message());
+    }
+    std::string sql = "SELECT name";
+    sql += " FROM sqlite_schema";
+    sql += " WHERE type = 'table' AND name NOT LIKE 'sqlite_%';";
+    auto stmt = db->new_statement(sql);
+    bool has_errors_table = false;
+    int status;
+    while ((status = stmt->step()) == SQLITE_ROW) {
+        std::string table_name = stmt->column_text(0);
+        if (table_name == "errors") {
+            has_errors_table = true;
+            EVLOG_debug << "Found errors table";
+        } else {
+            EVLOG_warning << "Found unknown table: " << table_name;
         }
-        if (!has_errors_table) {
-            throw Everest::EverestConfigError("Database does not contain errors table");
+    }
+    if (status != SQLITE_DONE) {
+        throw everest::db::QueryExecutionException(db->get_error_message());
+    }
+    if (!has_errors_table) {
+        throw IncompatibleSchema("Database does not contain errors table");
+    }
+    const auto columns = get_column_names(*db);
+    if (!std::includes(columns.begin(), columns.end(), required_columns.begin(), required_columns.end())) {
+        throw IncompatibleSchema("Errors table does not contain all required columns");
+    }
+    for (const auto& column : columns) {
+        if (required_columns.count(column) == 0) {
+            EVLOG_warning << "Ignoring unknown column " << column << " in errors table";
         }
-        sql = "PRAGMA table_info(errors);";
-        auto stmt2 = db->new_statement(sql);
-        std::set<std::string> columns;
-        while ((status = stmt2->step()) == SQLITE_ROW) {
-            auto variant = stmt2->column_variant("name");
-            columns.insert(std::get<std::string>(variant));
-        }
-        std::set<std::string> required_columns = {
-            "uuid",      "type",     "description", "message",  "origin_module", "origin_implementation",
-            "timestamp", "severity", "state",       "sub_type", "vendor_id"};
-        if (status != SQLITE_DONE) {
-            throw Everest::EverestConfigError(db->get_error_message());
-        }
-        if (columns != required_columns) {
-            throw Everest::EverestConfigError("Errors table does not contain all required columns");
-        }
-    } catch (const std::exception& e) {
-        EVLOG_error << "Error checking database: " << e.what();
     }
 }
 
 void ErrorDatabaseSqlite::reset_database() {
     BOOST_LOG_FUNCTION();
-    fs::path database_directory = this->db_path.parent_path();
-    if (!fs::exists(database_directory)) {
-        fs::create_directories(database_directory);
-    }
-    if (fs::exists(this->db_path)) {
-        fs::remove(this->db_path);
-    }
     try {
+        fs::path database_directory = this->db_path.parent_path();
+        if (!fs::exists(database_directory)) {
+            fs::create_directories(database_directory);
+        }
+        for (const auto* suffix : {"", "-wal", "-shm", "-journal"}) {
+            fs::remove(this->db_path.string() + suffix);
+        }
         everest::db::sqlite::Connection db(this->db_path);
         if (!db.open_connection()) {
             EVLOG_error << "Error opening database during reset";

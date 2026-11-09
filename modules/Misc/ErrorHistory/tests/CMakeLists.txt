@@ -3,6 +3,7 @@ add_executable(${TARGET_NAME})
 
 target_sources(${TARGET_NAME}
     PRIVATE
+        error_database_schema_tests.cpp
         error_database_sqlite_tests.cpp
         ../ErrorDatabaseSqlite.cpp
         helpers.cpp
