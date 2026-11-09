@@ -1781,6 +1781,16 @@
                 "type": "str"
             },
             {
+                "label": "AC ISO15118-20",
+                "value": "{\"mode\":\"AcIsoD20\",\"params\":{\"charging_current_a\":16,\"three_phases\":true}}",
+                "type": "str"
+            },
+            {
+                "label": "AC ISO15118-20 BPT",
+                "value": "{\"mode\":\"AcIsoD20\",\"params\":{\"charging_current_a\":16,\"three_phases\":true,\"bpt\":{\"discharge_max_current_limit\":50,\"discharge_max_power_limit\":11000,\"discharge_target_current\":30,\"discharge_minimal_soc\":20}}}",
+                "type": "str"
+            },
+            {
                 "label": "DC ISO15118-2",
                 "value": "{\"mode\":\"DcIso2\",\"params\":{}}",
                 "type": "str"
@@ -1802,17 +1812,20 @@
         "type": "function",
         "z": "ed603c51db9dcbb9",
         "name": "Configure session then plug",
-        "func": "if (msg.topic === 'session_mode') {\n  context.set('session', msg.payload);\n  return null;\n}\nif (msg.topic === 'everest_api/1/ev_controller/ev_manager_1/e2m/command_ack') {\n  const ack = msg.payload;\n  if (ack.command !== 'configure_session' || !context.get('pending_start')) return null;\n  const elapsed = Date.now() - context.get('pending_start');\n  context.set('pending_start', 0);\n  if (ack.status !== 'Accepted' || elapsed > 10000) {\n    node.warn(ack.reason || 'Session configuration was rejected or timed out');\n    return null;\n  }\n  return {topic: 'everest_api/1/ev_driver_sim/ev_manager_1_driver/m2e/plug', payload: '{}', retain: false};\n}\nif (msg.topic === 'everest_api/1/ev_controller/ev_manager_1/m2e/configure_session') {\n  if (context.get('pending_start') && Date.now() - context.get('pending_start') < 10000) return null;\n  context.set('pending_start', Date.now());\n  return {topic: msg.topic, payload: context.get('session') || '{\"mode\":\"AcIec\",\"params\":{\"charging_current_a\":16,\"three_phases\":true}}', retain: false};\n}\ncontext.set('pending_start', 0);\nreturn msg;\n",
-        "outputs": 1,
+        "func": "if (msg.topic === 'session_mode') {\n  context.set('session', msg.payload);\n  return null;\n}\nif (msg.topic === 'everest_api/1/ev_controller/ev_manager_1/e2m/command_ack') {\n  const ack = msg.payload;\n  if (ack.command !== 'configure_session' || !context.get('pending_start')) return null;\n  context.set('pending_start', 0);\n  clearTimeout(context.get('configure_timer'));\n  if (ack.status !== 'Accepted') {\n    const reason = ack.reason || 'Session configuration was rejected or timed out';\n    node.warn(reason);\n    return [null, {payload: reason}];\n  }\n  return [{topic: 'everest_api/1/ev_driver_sim/ev_manager_1_driver/m2e/plug', payload: '{}', retain: false}, null];\n}\nif (msg.topic === 'everest_api/1/ev_controller/ev_manager_1/m2e/configure_session') {\n  if (context.get('pending_start') && Date.now() - context.get('pending_start') < 10000) return null;\n  context.set('pending_start', Date.now());\n  clearTimeout(context.get('configure_timer'));\n  context.set('configure_timer', setTimeout(() => {\n    context.set('pending_start', 0);\n    const reason = 'Session configuration timed out';\n    node.warn(reason);\n    node.send([null, {payload: reason}]);\n  }, 10000));\n  return [{topic: msg.topic, payload: context.get('session') || '{\"mode\":\"AcIec\",\"params\":{\"charging_current_a\":16,\"three_phases\":true}}', retain: false}, null];\n}\ncontext.set('pending_start', 0);\nclearTimeout(context.get('configure_timer'));\nreturn [msg, null];\n",
+        "outputs": 2,
         "noerr": 0,
         "initialize": "context.set('pending_start', 0);",
-        "finalize": "",
+        "finalize": "clearTimeout(context.get('configure_timer'));",
         "libs": [],
         "x": 440,
         "y": 960,
         "wires": [
             [
                 "f96ccb60614f9f18"
+            ],
+            [
+                "8d3feba46c850104"
             ]
         ]
     },
@@ -2649,6 +2662,16 @@
                 "label": "AC 1ph 32A",
                 "value": "{\"mode\":\"AcIec\",\"params\":{\"charging_current_a\":32,\"three_phases\":false}}",
                 "type": "str"
+            },
+            {
+                "label": "AC ISO15118-20",
+                "value": "{\"mode\":\"AcIsoD20\",\"params\":{\"charging_current_a\":16,\"three_phases\":true}}",
+                "type": "str"
+            },
+            {
+                "label": "AC ISO15118-20 BPT",
+                "value": "{\"mode\":\"AcIsoD20\",\"params\":{\"charging_current_a\":16,\"three_phases\":true,\"bpt\":{\"discharge_max_current_limit\":50,\"discharge_max_power_limit\":11000,\"discharge_target_current\":30,\"discharge_minimal_soc\":20}}}",
+                "type": "str"
             }
         ],
         "payload": "",
@@ -2668,17 +2691,20 @@
         "type": "function",
         "z": "aa273dc8b2748caa",
         "name": "Configure session then plug",
-        "func": "if (msg.topic === 'session_mode') {\n  context.set('session', msg.payload);\n  return null;\n}\nif (msg.topic === 'everest_api/1/ev_controller/ev_manager_2/e2m/command_ack') {\n  const ack = msg.payload;\n  if (ack.command !== 'configure_session' || !context.get('pending_start')) return null;\n  const elapsed = Date.now() - context.get('pending_start');\n  context.set('pending_start', 0);\n  if (ack.status !== 'Accepted' || elapsed > 10000) {\n    node.warn(ack.reason || 'Session configuration was rejected or timed out');\n    return null;\n  }\n  return {topic: 'everest_api/1/ev_driver_sim/ev_manager_2_driver/m2e/plug', payload: '{}', retain: false};\n}\nif (msg.topic === 'everest_api/1/ev_controller/ev_manager_2/m2e/configure_session') {\n  if (context.get('pending_start') && Date.now() - context.get('pending_start') < 10000) return null;\n  context.set('pending_start', Date.now());\n  return {topic: msg.topic, payload: context.get('session') || '{\"mode\":\"AcIec\",\"params\":{\"charging_current_a\":16,\"three_phases\":true}}', retain: false};\n}\ncontext.set('pending_start', 0);\nreturn msg;\n",
-        "outputs": 1,
+        "func": "if (msg.topic === 'session_mode') {\n  context.set('session', msg.payload);\n  return null;\n}\nif (msg.topic === 'everest_api/1/ev_controller/ev_manager_2/e2m/command_ack') {\n  const ack = msg.payload;\n  if (ack.command !== 'configure_session' || !context.get('pending_start')) return null;\n  context.set('pending_start', 0);\n  clearTimeout(context.get('configure_timer'));\n  if (ack.status !== 'Accepted') {\n    const reason = ack.reason || 'Session configuration was rejected or timed out';\n    node.warn(reason);\n    return [null, {payload: reason}];\n  }\n  return [{topic: 'everest_api/1/ev_driver_sim/ev_manager_2_driver/m2e/plug', payload: '{}', retain: false}, null];\n}\nif (msg.topic === 'everest_api/1/ev_controller/ev_manager_2/m2e/configure_session') {\n  if (context.get('pending_start') && Date.now() - context.get('pending_start') < 10000) return null;\n  context.set('pending_start', Date.now());\n  clearTimeout(context.get('configure_timer'));\n  context.set('configure_timer', setTimeout(() => {\n    context.set('pending_start', 0);\n    const reason = 'Session configuration timed out';\n    node.warn(reason);\n    node.send([null, {payload: reason}]);\n  }, 10000));\n  return [{topic: msg.topic, payload: context.get('session') || '{\"mode\":\"AcIec\",\"params\":{\"charging_current_a\":16,\"three_phases\":true}}', retain: false}, null];\n}\ncontext.set('pending_start', 0);\nclearTimeout(context.get('configure_timer'));\nreturn [msg, null];\n",
+        "outputs": 2,
         "noerr": 0,
         "initialize": "context.set('pending_start', 0);",
-        "finalize": "",
+        "finalize": "clearTimeout(context.get('configure_timer'));",
         "libs": [],
         "x": 400,
         "y": 940,
         "wires": [
             [
                 "defa678bb0daca7f"
+            ],
+            [
+                "8d3feba46c850105"
             ]
         ]
     },
@@ -3342,5 +3368,43 @@
                 "a7aeb9fff1b29736"
             ]
         ]
+    },
+    {
+        "id": "8d3feba46c850104",
+        "type": "ui_toast",
+        "z": "ed603c51db9dcbb9",
+        "position": "top right",
+        "displayTime": "10",
+        "highlight": "",
+        "sendall": true,
+        "outputs": 0,
+        "ok": "OK",
+        "cancel": "",
+        "raw": false,
+        "className": "",
+        "topic": "Session configuration",
+        "name": "Session configuration failed",
+        "x": 730,
+        "y": 1020,
+        "wires": []
+    },
+    {
+        "id": "8d3feba46c850105",
+        "type": "ui_toast",
+        "z": "aa273dc8b2748caa",
+        "position": "top right",
+        "displayTime": "10",
+        "highlight": "",
+        "sendall": true,
+        "outputs": 0,
+        "ok": "OK",
+        "cancel": "",
+        "raw": false,
+        "className": "",
+        "topic": "Session configuration",
+        "name": "Session configuration failed",
+        "x": 730,
+        "y": 1020,
+        "wires": []
     }
 ]
