@@ -21,7 +21,7 @@ How it is put together
               schema/           ir/       backends/
                   │
                   ▼
-              diagnostics ──▶ types conformance-report
+              conformance ──▶ types conformance-report
 
 The definitions are read and validated once, turned into an explicit
 intermediate representation, and handed to a backend.  The IR describes what a
@@ -146,9 +146,10 @@ and pins what EVerest's CMake and Bazel builds rely on: the shape of
 command produces.  It reads ``EV_CLI`` to choose which build to test, so it can
 be pointed at another one for comparison.
 
-``tests/test_conformance.py`` asserts the diagnostic counts over the real
-definitions.  They are a ratchet: lowering them is progress, raising them means
-the legacy dialect was reintroduced.
+``tests/test_conformance.py`` builds every real definition and checks what is
+found: that the legacy dialect is reported rather than rejected, that every
+finding names the conformant spelling, and that the IR drops nothing the
+definitions contain.
 
 ``tests/test_cpp_backend.py`` compares generated output against the golden files
 in ``tests/fixtures/golden``.  Set ``EV_CLI_UPDATE_GOLDEN=1`` to rewrite them

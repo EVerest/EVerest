@@ -8,7 +8,6 @@ depends on the order in which commands run.
 
 from __future__ import annotations
 
-import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -16,7 +15,6 @@ from ..errors import DefinitionNotFound, EvCliError
 from ..files import FileWriter, Strategy
 from ..ir import build
 from ..ir.model import Model
-from ..schema.diagnostics import CollectingSink, PrintingSink, Severity, TeeSink
 from ..schema.loader import DefinitionLoader, SourceTree
 from ..schema.validate import Validators
 
@@ -31,8 +29,6 @@ class Context:
     everest_dirs: tuple[Path, ...]
     schemas_dir: Path
     licenses_dir: Path
-    #: Collects what the loader has to say, so a command can report on it.
-    diagnostics: CollectingSink = field(default_factory=CollectingSink)
 
     _tree: SourceTree | None = field(default=None, init=False, repr=False)
     _loader: DefinitionLoader | None = field(default=None, init=False, repr=False)
@@ -62,31 +58,8 @@ class Context:
     @property
     def loader(self) -> DefinitionLoader:
         if self._loader is None:
-            # Only errors are printed as they happen.  The legacy dialect is
-            # expected and pervasive, so reporting each of its 500-odd sites on
-            # every build would bury anything genuinely new; the summary below
-            # points at the report instead.
-            sink = TeeSink(
-                self.diagnostics,
-                PrintingSink(sys.stderr, minimum=Severity.ERROR),
-            )
-            self._loader = DefinitionLoader(
-                self.tree, Validators.load(self.schemas_dir), sink
-            )
+            self._loader = DefinitionLoader(self.tree, Validators.load(self.schemas_dir))
         return self._loader
-
-    def report_diagnostics_summary(self, stream=None) -> None:
-        """One line, if anything read would change meaning under OpenAPI rules."""
-        stream = stream if stream is not None else sys.stderr
-        notable = [d for d in self.diagnostics if d.severity is not Severity.INFO]
-        if not notable:
-            return
-        print(
-            f'ev-cli: note: {len(notable)} definition site(s) would change meaning '
-            f'if read as JSON Schema 2020-12 or OpenAPI 3.1. Run '
-            f'"ev-cli types conformance-report --verbose" for details.',
-            file=stream,
-        )
 
     def model(self) -> Model:
         """Every type unit the source tree offers.
@@ -96,14 +69,12 @@ class Context:
         points at a struct or an enum.
         """
         if self._model is None:
-            self._model = build.build_model(self.loader, self.loader.sink)
+            self._model = build.build_model(self.loader)
         return self._model
 
-    def interface_model(self, names, *, skip_unparsable: bool) -> Model:
+    def interface_model(self, names) -> Model:
         """The types, plus the named interfaces."""
-        return self.model().with_interfaces(build.build_interfaces(
-            self.loader, self.loader.sink, names, skip_unparsable=skip_unparsable,
-        ))
+        return self.model().with_interfaces(build.build_interfaces(self.loader, names))
 
     def module_model(self, names, *, with_interfaces: bool = False) -> Model:
         """The named modules, and optionally the interfaces they implement.
@@ -114,7 +85,7 @@ class Context:
         whole type tree each time would be pure overhead, so it is not done
         unless something asks for it.
         """
-        modules = build.build_modules(self.loader, self.loader.sink, names)
+        modules = build.build_modules(self.loader, names)
         if not with_interfaces:
             return Model(modules=modules)
 
@@ -122,8 +93,7 @@ class Context:
             provided.interface
             for module in modules.values() for provided in module.provides
         })
-        interfaces = build.build_interfaces(
-            self.loader, self.loader.sink, needed, skip_unparsable=False)
+        interfaces = build.build_interfaces(self.loader, needed)
         return Model(types=self.model().types, interfaces=interfaces, modules=modules)
 
     def writer(self, *, diff_only: bool = False) -> FileWriter:
@@ -166,17 +136,11 @@ class Context:
             parts = parts[last + 1:]
         return '/'.join(parts)
 
-    def requested_interfaces(self, values) -> tuple[list[str], bool]:
-        """Interfaces named on the command line, and whether that was "all".
-
-        The distinction matters: asked for everything, an unparsable interface
-        is skipped with a diagnostic, because one broken definition elsewhere
-        in the tree should not stop a build.  Asked for by name, it is an
-        error, because the caller wanted that one.
-        """
+    def requested_interfaces(self, values) -> list[str]:
+        """Interfaces named on the command line, or every one the tree offers."""
         if not values:
-            return list(self.tree.interface_names()), True
-        return [Path(str(v)).stem for v in values], False
+            return list(self.tree.interface_names())
+        return [Path(str(v)).stem for v in values]
 
 
 def resolve_schemas_dir(schemas_dir: Path) -> Path:

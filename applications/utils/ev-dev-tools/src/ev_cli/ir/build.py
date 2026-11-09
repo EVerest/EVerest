@@ -8,12 +8,10 @@ survives between units and the order units are built in cannot matter.
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
 
-from ..errors import DefinitionNotFound, EvCliError, UnsupportedDefinition
+from ..errors import DefinitionNotFound, UnsupportedDefinition, warn
 from ..schema import conformance
-from ..schema.diagnostics import Category, Diagnostic, Severity, Sink
 from ..schema.loader import DefinitionLoader
 from ..schema.references import TypeRef, parse_error_reference, parse_type_reference
 from ..schema.source import SourceRef
@@ -89,7 +87,6 @@ def target_json_type(
 
 def resolve_reference(
     loader: DefinitionLoader,
-    sink: Sink,
     schema: Mapping[str, Any],
     source: SourceRef,
     *,
@@ -107,7 +104,7 @@ def resolve_reference(
         source=source,
         from_unit=from_unit,
         target_json_type=target_json_type(loader, reference.target, source),
-        sink=sink,
+        findings=loader.findings,
     )
     return Ref(reference.target)
 
@@ -115,24 +112,22 @@ def resolve_reference(
 class TypeUnitBuilder:
     """Builds :class:`TypeUnit` values from the loader's documents."""
 
-    def __init__(self, loader: DefinitionLoader, sink: Sink) -> None:
+    def __init__(self, loader: DefinitionLoader) -> None:
         self._loader = loader
-        self._sink = sink
 
     def build(self, unit: str) -> TypeUnit:
         document = self._loader.type_document(unit)
-        return _UnitBuild(unit, document.data, document.source, self._loader, self._sink).run()
+        return _UnitBuild(unit, document.data, document.source, self._loader).run()
 
 
 class _UnitBuild:
     """The build of a single type unit."""
 
-    def __init__(self, unit, data, source, loader: DefinitionLoader, sink: Sink) -> None:
+    def __init__(self, unit, data, source, loader: DefinitionLoader) -> None:
         self.unit = unit
         self.data = data
         self.source = source
         self.loader = loader
-        self.sink = sink
         # Declared enums keep their source order and come first; enums written
         # inline are promoted and appended after them, in discovery order.
         self._declared_enums: list[EnumDef] = []
@@ -288,7 +283,7 @@ class _UnitBuild:
 
     def _build_reference(self, schema: Mapping[str, Any], source: SourceRef) -> Ref:
         reference = resolve_reference(
-            self.loader, self.sink, schema, source, from_unit=self.unit
+            self.loader, schema, source, from_unit=self.unit
         )
         self._referenced_units.add(reference.target.unit)
         return reference
@@ -339,15 +334,12 @@ class _UnitBuild:
 class InterfaceBuilder:
     """Builds :class:`InterfaceDef` values from the loader's documents."""
 
-    def __init__(self, loader: DefinitionLoader, sink: Sink) -> None:
+    def __init__(self, loader: DefinitionLoader) -> None:
         self._loader = loader
-        self._sink = sink
 
     def build(self, name: str) -> InterfaceDef:
         document = self._loader.interface_document(name)
-        return _InterfaceBuild(
-            name, document.data, document.source, self._loader, self._sink
-        ).run()
+        return _InterfaceBuild(name, document.data, document.source, self._loader).run()
 
 
 class _InterfaceBuild:
@@ -356,15 +348,14 @@ class _InterfaceBuild:
     Payload types differ from struct fields in one respect: an interface has
     nowhere to *declare* a type, so anything written inline cannot be promoted.
     An inline enum keeps its values as a constraint and travels as a string; an
-    inline object travels as raw JSON, with a diagnostic saying so.
+    inline object travels as raw JSON, with a warning saying so.
     """
 
-    def __init__(self, name, data, source, loader: DefinitionLoader, sink: Sink) -> None:
+    def __init__(self, name, data, source, loader: DefinitionLoader) -> None:
         self.name = name
         self.data = data
         self.source = source
         self.loader = loader
-        self.sink = sink
         self._referenced_units: set[str] = set()
 
     def run(self) -> InterfaceDef:
@@ -437,7 +428,7 @@ class _InterfaceBuild:
     def _build_payload(self, schema: Mapping[str, Any], source: SourceRef) -> TypeExpr:
         if '$ref' in schema:
             reference = resolve_reference(
-                self.loader, self.sink, schema, source, from_unit=None
+                self.loader, schema, source, from_unit=None
             )
             self._referenced_units.add(reference.target.unit)
             return reference
@@ -461,20 +452,13 @@ class _InterfaceBuild:
 
         if json_type is JsonType.OBJECT:
             if 'properties' in schema:
-                self.sink.emit(Diagnostic(
-                    category=Category.SCHEMA_WARNING,
-                    severity=Severity.WARNING,
-                    source=source,
-                    message=(
-                        'an interface payload declares properties inline. There '
-                        'is nowhere in a generated interface header to declare '
-                        'the resulting type, so the payload is passed through as '
-                        'raw JSON and the properties have no effect.'
-                    ),
-                    conformant_form=(
-                        'declare the object in types/ and reference it with $ref'
-                    ),
-                ))
+                warn(
+                    f'{source}: an interface payload declares properties inline. '
+                    f'There is nowhere in a generated interface header to declare '
+                    f'the resulting type, so the payload is passed through as raw '
+                    f'JSON and the properties have no effect. Declare the object '
+                    f'in types/ and reference it with $ref.'
+                )
             return Opaque(JsonType.OBJECT)
 
         if json_type is JsonType.STRING and 'enum' in schema:
@@ -555,9 +539,8 @@ class _InterfaceBuild:
 class ModuleBuilder:
     """Builds :class:`ModuleDef` values from module manifests."""
 
-    def __init__(self, loader: DefinitionLoader, sink: Sink) -> None:
+    def __init__(self, loader: DefinitionLoader) -> None:
         self._loader = loader
-        self._sink = sink
 
     def build(self, relative_module_dir: str) -> ModuleDef:
         document = self._loader.module_document(relative_module_dir)
@@ -663,12 +646,8 @@ class ModuleBuilder:
         )
 
 
-def build_modules(
-    loader: DefinitionLoader,
-    sink: Sink,
-    names: Iterable[str],
-) -> dict[str, ModuleDef]:
-    builder = ModuleBuilder(loader, sink)
+def build_modules(loader: DefinitionLoader, names: Iterable[str]) -> dict[str, ModuleDef]:
+    builder = ModuleBuilder(loader)
     return {name: builder.build(name) for name in names}
 
 
@@ -677,7 +656,7 @@ def build_modules(
 # --------------------------------------------------------------------------
 
 def build_type_units(
-    loader: DefinitionLoader, sink: Sink, units: Iterable[str] | None = None
+    loader: DefinitionLoader, units: Iterable[str] | None = None
 ) -> dict[str, TypeUnit]:
     """Build the named units, or every unit the source tree offers.
 
@@ -686,58 +665,23 @@ def build_type_units(
     whether it points at a struct or an enum.
     """
     wanted = tuple(units) if units is not None else loader.tree.type_units()
-    builder = TypeUnitBuilder(loader, sink)
+    builder = TypeUnitBuilder(loader)
     return {unit: builder.build(unit) for unit in wanted}
 
 
-def build_interfaces(
-    loader: DefinitionLoader,
-    sink: Sink,
-    names: Iterable[str],
-    *,
-    skip_unparsable: bool = False,
-) -> dict[str, InterfaceDef]:
-    """Build the named interfaces.
-
-    ``skip_unparsable`` is what makes "generate everything" tolerant: asked for
-    the whole tree, one unreadable definition should not stop a build, and it is
-    reported instead.  Asked for a specific interface, the caller wanted that
-    one and gets the error.
-    """
-    builder = InterfaceBuilder(loader, sink)
-    built: dict[str, InterfaceDef] = {}
-
-    for name in names:
-        try:
-            built[name] = builder.build(name)
-        except EvCliError as err:
-            if not skip_unparsable:
-                raise
-            sink.emit(Diagnostic(
-                category=Category.INTERFACE_SKIPPED,
-                severity=Severity.WARNING,
-                source=SourceRef(Path(f'interfaces/{name}.yaml')),
-                message=f'skipping interface "{name}": {err}',
-            ))
-    return built
+def build_interfaces(loader: DefinitionLoader, names: Iterable[str]) -> dict[str, InterfaceDef]:
+    builder = InterfaceBuilder(loader)
+    return {name: builder.build(name) for name in names}
 
 
 def build_model(
     loader: DefinitionLoader,
-    sink: Sink,
     *,
     units: Iterable[str] | None = None,
     interfaces: Iterable[str] | None = None,
-    skip_unparsable_interfaces: bool = False,
 ) -> Model:
     """Load the definitions once, so that everything else can query them."""
     return Model(
-        types=build_type_units(loader, sink, units),
-        interfaces=(
-            build_interfaces(
-                loader, sink, interfaces,
-                skip_unparsable=skip_unparsable_interfaces,
-            )
-            if interfaces is not None else {}
-        ),
+        types=build_type_units(loader, units),
+        interfaces=build_interfaces(loader, interfaces) if interfaces is not None else {},
     )

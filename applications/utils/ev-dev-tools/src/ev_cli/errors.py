@@ -1,13 +1,20 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright Pionix GmbH and Contributors to EVerest
-"""The exceptions ev-cli reports to its caller.
+"""What ev-cli reports to its caller.
 
 Everything the tool raises deliberately derives from :class:`EvCliError`, which
 ``cli.main`` turns into a message on stderr and a non-zero exit code.  Anything
-else reaching the top level is a bug and keeps its traceback.
+else reaching the top level is a bug and keeps its traceback.  A problem that
+does not stop the run is reported with :func:`warn`.
 """
 
 from __future__ import annotations
+
+import sys
+
+
+def warn(message: str) -> None:
+    print(f'ev-cli: warning: {message}', file=sys.stderr)
 
 
 class EvCliError(Exception):

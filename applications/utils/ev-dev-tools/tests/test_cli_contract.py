@@ -461,6 +461,48 @@ def test_an_interface_payload_must_be_a_valid_schema(tmp_path, payload, pointer)
     assert f'odd.yaml{pointer}: not a valid schema' in proc.stderr
 
 
+def test_generating_every_interface_fails_on_a_broken_one(tmp_path):
+    """No interface is skipped: one that does not load fails the run, with why."""
+    (tmp_path / 'interfaces').mkdir()
+    (tmp_path / 'interfaces' / 'good.yaml').write_text(
+        'description: A fine interface\nvars:\n  ok:\n    description: A var\n    type: integer\n')
+    (tmp_path / 'interfaces' / 'broken.yaml').write_text('description: A broken interface\nvars:\n')
+    proc = run(
+        'interface', 'generate-headers',
+        '--disable-clang-format',
+        '--schemas-dir', str(SCHEMAS_DIR),
+        '--everest-dir', str(tmp_path),
+        '--output-dir', str(tmp_path / 'out'),
+        check=False,
+    )
+    assert proc.returncode != 0
+    assert "broken.yaml#/vars: None is not of type 'object'" in proc.stderr
+
+
+def test_inline_payload_properties_are_warned_about(tmp_path):
+    (tmp_path / 'interfaces').mkdir()
+    (tmp_path / 'interfaces' / 'inline.yaml').write_text(
+        'description: An interface\nvars:\n  reading:\n    description: An object\n'
+        '    type: object\n    properties:\n      value:\n        description: A member\n'
+        '        type: integer\n')
+    proc = run(
+        'interface', 'generate-headers', 'inline',
+        '--disable-clang-format',
+        '--schemas-dir', str(SCHEMAS_DIR),
+        '--everest-dir', str(tmp_path),
+        '--output-dir', str(tmp_path / 'out'),
+    )
+    assert 'ev-cli: warning: ' in proc.stderr
+    assert 'inline.yaml#/vars/reading' in proc.stderr
+    assert 'the properties have no effect' in proc.stderr
+
+
+def test_generation_does_not_summarise_conformance(tmp_path):
+    """The legacy dialect is the conformance report's business, not every build's."""
+    proc = run('interface', 'generate-headers', *common_args(), '--output-dir', str(tmp_path))
+    assert 'note:' not in proc.stderr
+
+
 def test_everest_dir_without_entries_fails(tmp_path):
     proc = run(
         'interface', 'generate-headers',

@@ -41,44 +41,37 @@ needs_everest = pytest.mark.skipif(
 )
 
 
-def make_loader(tree_dir: Path, sink):
+def make_loader(tree_dir: Path):
     from ev_cli.schema.loader import DefinitionLoader, SourceTree
     from ev_cli.schema.validate import Validators
 
-    return DefinitionLoader(SourceTree([tree_dir], tree_dir), Validators.load(SCHEMAS_DIR), sink)
+    return DefinitionLoader(SourceTree([tree_dir], tree_dir), Validators.load(SCHEMAS_DIR))
 
 
 @pytest.fixture
-def sink():
-    from ev_cli.schema.diagnostics import CollectingSink
-    return CollectingSink()
-
-
-@pytest.fixture
-def fixture_loader(sink):
+def fixture_loader():
     """A loader over the small checked-in tree."""
     if not SCHEMAS_DIR.is_dir():
         pytest.skip(f'no framework schemas at {SCHEMAS_DIR}')
-    return make_loader(FIXTURE_TREE, sink)
+    return make_loader(FIXTURE_TREE)
 
 
 @pytest.fixture
-def fixture_model(fixture_loader, sink):
+def fixture_model(fixture_loader):
     """The whole fixture tree as a model: types, interfaces and the module."""
     from ev_cli.ir import build
 
-    types = build.build_type_units(fixture_loader, sink)
-    interfaces = build.build_interfaces(
-        fixture_loader, sink, fixture_loader.tree.interface_names())
-    modules = build.build_modules(fixture_loader, sink, ['Sample'])
+    types = build.build_type_units(fixture_loader)
+    interfaces = build.build_interfaces(fixture_loader, fixture_loader.tree.interface_names())
+    modules = build.build_modules(fixture_loader, ['Sample'])
 
     from ev_cli.ir.model import Model
     return Model(types=types, interfaces=interfaces, modules=modules)
 
 
 @pytest.fixture
-def everest_loader(sink):
+def everest_loader():
     """A loader over the real everest-core definitions."""
     if not SCHEMAS_DIR.is_dir():
         pytest.skip(f'no everest-core checkout at {EVEREST_DIR}')
-    return make_loader(EVEREST_DIR, sink)
+    return make_loader(EVEREST_DIR)

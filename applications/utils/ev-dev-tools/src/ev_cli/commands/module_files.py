@@ -60,7 +60,6 @@ def write_module_files(args, *, updating: bool) -> int:
     else:
         _create(generated, writer, force=args.force)
 
-    context.report_diagnostics_summary()
     return 0
 
 

@@ -7,7 +7,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from ..backends.base import registry
-from ..schema.diagnostics import format_report, format_summary
+from ..schema.conformance import format_report, format_summary
 from .context import Context
 
 DEFAULT_OUTPUT = 'build/generated/generated/types'
@@ -31,7 +31,6 @@ def generate_headers(args) -> int:
         for generated in files:
             writer.write_checking_templates(generated, strategy)
 
-    context.report_diagnostics_summary()
     return 0
 
 
@@ -49,16 +48,12 @@ def conformance_report(args) -> int:
     EVerest's own tooling provides.  The counts should only ever fall.
     """
     context = Context.from_args(args)
-    # Interfaces reference types in the same dialect, so they belong in the
-    # count; anything unreadable is reported rather than fatal.
-    context.interface_model(context.tree.interface_names(), skip_unparsable=True)
+    # Interfaces reference types in the same dialect, so they belong in the count.
+    context.interface_model(context.tree.interface_names())
 
-    report = (
-        format_report(context.diagnostics) if args.verbose
-        else format_summary(context.diagnostics)
-    )
-    print(report)
+    findings = context.loader.findings
+    print(format_report(findings) if args.verbose else format_summary(findings))
 
-    if args.strict and len(context.diagnostics):
+    if args.strict and findings:
         return 1
     return 0

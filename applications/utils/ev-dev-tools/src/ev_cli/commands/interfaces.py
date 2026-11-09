@@ -19,25 +19,19 @@ def generate_headers(args) -> int:
         else context.work_dir / DEFAULT_OUTPUT
     )
 
-    requested, everything = context.requested_interfaces(args.interfaces)
-    # Asked for the whole tree, one unreadable interface is reported and
-    # skipped rather than failing the build; asked for specific ones, the
-    # caller wanted them and gets the error.
-    model = context.interface_model(requested, skip_unparsable=everything)
+    requested = context.requested_interfaces(args.interfaces)
+    model = context.interface_model(requested)
 
     backend = registry.create(args.backend, args)
     writer = context.writer(diff_only=args.diff)
     strategy = context.strategy(args.force)
 
     for interface in requested:
-        if interface not in model.interfaces:
-            continue
         files = backend.emit_interface(model, interface, output_dir)
         backend.postprocess(files)
         for generated in files:
             writer.write_checking_templates(generated, strategy)
 
-    context.report_diagnostics_summary()
     return 0
 
 

@@ -14,18 +14,106 @@ not carry them: a reference there is a reference plus a description, and
 nothing else.  Each sibling is reported here, as is a reference written in the
 legacy form, so that the sources can be cleaned up and so that the two
 genuinely dangerous shapes are visible rather than latent.
+
+Findings are kept apart from the IR: whether a definition was written in
+EVerest's historical dialect is a fact about the source text, and no backend
+should be able to reach it.
 """
 
 from __future__ import annotations
 
-from typing import Any, Mapping
+from collections import Counter
+from dataclasses import dataclass
+from enum import Enum
+from typing import Any, Mapping, Sequence
 
-from .diagnostics import Category, Diagnostic, Severity, Sink
 from .references import ParsedReference, TypeRef, conformant_form
 from .source import SourceRef
 
 #: Keys that carry meaning of their own beside a ``$ref`` and are kept.
 KEPT_BESIDE_REF = frozenset({'$ref', 'description'})
+
+
+class Category(Enum):
+    """What kind of non-conformance a finding is."""
+
+    LEGACY_REF = (
+        'legacy-ref',
+        'reference written as /<unit>#/<Type>, which resolves only through '
+        'EVerest\'s own loader',
+    )
+    REF_SIBLING_TYPE = (
+        'ref-sibling-type',
+        'redundant "type" beside a "$ref"; ignored under draft-07, and must be '
+        'kept in step with the referenced type by hand',
+    )
+    REF_SIBLING_CONTRADICTS = (
+        'ref-sibling-contradicts',
+        '"type" beside a "$ref" contradicts the referenced type; ignored today, '
+        'but an unsatisfiable schema under OpenAPI semantics',
+    )
+    REF_SIBLING_CONSTRAINT = (
+        'ref-sibling-constraint',
+        'validation keyword beside a "$ref"; ignored today, but effective under '
+        'OpenAPI semantics',
+    )
+    UNDECLARED_DIALECT = (
+        'undeclared-dialect',
+        'document declares no $schema, so its dialect is implied by the '
+        'framework meta-schema',
+    )
+
+    def __init__(self, slug: str, explanation: str) -> None:
+        self.slug = slug
+        self.explanation = explanation
+
+
+@dataclass(frozen=True)
+class Finding:
+    """One place where a definition relies on EVerest's own reading of JSON Schema."""
+
+    category: Category
+    source: SourceRef
+    message: str
+    #: How to write the same thing conformantly.
+    conformant_form: str
+
+
+def format_report(findings: Sequence[Finding]) -> str:
+    """Every finding, grouped by category."""
+    if not findings:
+        return 'Every definition read is already conformant.'
+
+    counts = Counter(finding.category for finding in findings)
+    lines = ['Conformance report', '==================', '']
+    for category in Category:
+        if category not in counts:
+            continue
+        lines.append(f'{category.slug}: {counts[category]}')
+        lines.append(f'    {category.explanation}')
+        for finding in findings:
+            if finding.category is category:
+                lines.append(f'      {finding.source}: {finding.message}')
+                lines.append(f'          -> {finding.conformant_form}')
+        lines.append('')
+
+    lines.append(f'total: {len(findings)}')
+    return '\n'.join(lines)
+
+
+def format_summary(findings: Sequence[Finding]) -> str:
+    """One line per category, without the individual sites."""
+    if not findings:
+        return 'Every definition read is already conformant.'
+
+    counts = Counter(finding.category for finding in findings)
+    width = max(len(category.slug) for category in counts)
+    lines = [
+        f'{category.slug:<{width}}  {counts[category]:>5}'
+        for category in Category if category in counts
+    ]
+    lines.append(f'{"total":<{width}}  {len(findings):>5}')
+    return '\n'.join(lines)
 
 
 def ref_siblings(schema: Mapping[str, Any]) -> dict[str, Any]:
@@ -40,7 +128,7 @@ def report_reference(
     source: SourceRef,
     from_unit: str,
     target_json_type: str | None,
-    sink: Sink,
+    findings: list[Finding],
 ) -> None:
     """Report everything non-conformant about one reference node.
 
@@ -49,9 +137,8 @@ def report_reference(
     ``type`` distinguishable from a contradictory one.
     """
     if reference.is_legacy:
-        sink.emit(Diagnostic(
+        findings.append(Finding(
             category=Category.LEGACY_REF,
-            severity=Severity.INFO,
             source=source,
             message=f'reference {reference.raw!r} uses the legacy EVerest form',
             conformant_form=conformant_form(reference.target, from_unit=from_unit),
@@ -66,7 +153,7 @@ def report_reference(
             target_json_type=target_json_type,
             target=reference.target,
             source=source,
-            sink=sink,
+            findings=findings,
         )
 
     for keyword, value in siblings.items():
@@ -75,7 +162,7 @@ def report_reference(
             target_json_type=target_json_type,
             target=reference.target,
             source=source,
-            sink=sink,
+            findings=findings,
         )
 
 
@@ -85,12 +172,11 @@ def _report_declared_type(
     target_json_type: str | None,
     target: TypeRef,
     source: SourceRef,
-    sink: Sink,
+    findings: list[Finding],
 ) -> None:
     if target_json_type is not None and declared_type != target_json_type:
-        sink.emit(Diagnostic(
+        findings.append(Finding(
             category=Category.REF_SIBLING_CONTRADICTS,
-            severity=Severity.WARNING,
             source=source,
             message=(
                 f'"type: {declared_type}" sits beside a reference to {target}, '
@@ -102,9 +188,8 @@ def _report_declared_type(
         ))
         return
 
-    sink.emit(Diagnostic(
+    findings.append(Finding(
         category=Category.REF_SIBLING_TYPE,
-        severity=Severity.INFO,
         source=source,
         message=(
             f'"type: {declared_type}" beside a reference to {target} is '
@@ -121,7 +206,7 @@ def _report_constraint(
     target_json_type: str | None,
     target: TypeRef,
     source: SourceRef,
-    sink: Sink,
+    findings: list[Finding],
 ) -> None:
     # additionalProperties does not see through a $ref under 2020-12, so
     # `additionalProperties: false` beside a reference to an object would
@@ -138,17 +223,14 @@ def _report_constraint(
             f'through the reference and would reject every property the '
             f'referenced type declares.'
         )
-        severity = Severity.WARNING
     else:
         message = (
             f'"{keyword}" beside a reference to {target} is ignored today, but '
             f'would take effect when read with OpenAPI semantics'
         )
-        severity = Severity.INFO
 
-    sink.emit(Diagnostic(
+    findings.append(Finding(
         category=Category.REF_SIBLING_CONSTRAINT,
-        severity=severity,
         source=source,
         message=message,
         conformant_form=(

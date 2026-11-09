@@ -1,13 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright Pionix GmbH and Contributors to EVerest
-"""What the loader reports about everest-core's definitions as they stand.
+"""What is found in everest-core's definitions as they stand.
 
-The checks here say what the reports are, not how many: that every definition
-parses, that nothing in the legacy dialect is fatal, and that each report names
+The checks here say what the findings are, not how many: that every definition
+builds, that nothing in the legacy dialect is fatal, and that each finding names
 the conformant spelling to write instead.  The losslessness check says the IR
-does not quietly drop anything the definitions contain, which is what stops a
-second backend from having to go back to the YAML the way EVerest's
-documentation generation had to.
+does not quietly drop anything the definitions contain, which is what spares a
+second backend from going back to the YAML.
 """
 
 from __future__ import annotations
@@ -19,23 +18,28 @@ import yaml
 
 from ev_cli.ir import build
 from ev_cli.ir.common import CONSTRAINT_KEYWORDS
-from ev_cli.schema.diagnostics import Category, Severity
+from ev_cli.schema.conformance import Category
 from conftest import EVEREST_DIR, needs_everest
 
 pytestmark = needs_everest
 
 
 @pytest.fixture
-def everest_diagnostics(everest_loader, sink):
-    """Load every type unit and interface, collecting what is reported."""
-    build.build_type_units(everest_loader, sink)
-    build.build_interfaces(
-        everest_loader, sink, everest_loader.tree.interface_names(),
-        skip_unparsable=False)
-    return sink
+def everest_findings(everest_loader):
+    """Build every type unit and interface, and return what was found.
+
+    Nothing is skipped, so an interface that does not build fails this fixture.
+    """
+    build.build_type_units(everest_loader)
+    build.build_interfaces(everest_loader, everest_loader.tree.interface_names())
+    return everest_loader.findings
 
 
-class TestDiagnostics:
+def of(findings, category):
+    return [finding for finding in findings if finding.category is category]
+
+
+class TestFindings:
     """How the legacy dialect is reported, whatever is left of it.
 
     ``legacy-ref`` reports one per reference; the sibling categories report one
@@ -43,29 +47,18 @@ class TestDiagnostics:
     is reported twice.
     """
 
-    def test_nothing_is_an_error(self, everest_diagnostics):
-        """The legacy dialect is tolerated, not rejected."""
-        assert not [
-            d for d in everest_diagnostics if d.severity is Severity.ERROR]
+    def test_the_legacy_dialect_is_reported_not_rejected(self, everest_findings):
+        assert of(everest_findings, Category.LEGACY_REF)
 
-    def test_every_interface_parses(self, everest_diagnostics):
-        assert not everest_diagnostics.of(Category.INTERFACE_SKIPPED)
-
-    def test_the_dangerous_ones_are_warnings(self, everest_diagnostics):
-        """A sibling that would change meaning must not be filed as chatter."""
-        dangerous = everest_diagnostics.of(Category.REF_SIBLING_CONTRADICTS)
+    def test_a_contradicting_sibling_says_it_would_be_unsatisfiable(self, everest_findings):
+        """A sibling that would change meaning must not read like a redundant one."""
+        dangerous = of(everest_findings, Category.REF_SIBLING_CONTRADICTS)
         assert dangerous
-        assert all(d.severity is Severity.WARNING for d in dangerous)
+        assert all('no value can satisfy' in finding.message for finding in dangerous)
 
-    def test_a_redundant_sibling_is_only_informational(self, everest_diagnostics):
-        redundant = everest_diagnostics.of(Category.REF_SIBLING_TYPE)
-        assert all(d.severity is Severity.INFO for d in redundant)
-
-    def test_every_report_says_what_to_write_instead(self, everest_diagnostics):
-        for diagnostic in everest_diagnostics:
-            if diagnostic.category is Category.INTERFACE_SKIPPED:
-                continue
-            assert diagnostic.conformant_form, diagnostic
+    def test_every_finding_says_what_to_write_instead(self, everest_findings):
+        for finding in everest_findings:
+            assert finding.conformant_form, finding
 
 
 class TestLosslessness:

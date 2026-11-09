@@ -20,8 +20,8 @@ class SourceRef:
     This is provenance, not judgement.  It records which file and which
     position within it produced a node so that a backend can raise a useful
     error, and says nothing about whether that position was written well.
-    Opinions about the source text are diagnostics and live in
-    :mod:`ev_cli.schema.diagnostics` instead, so that nothing a backend can
+    Opinions about the source text are conformance findings and live in
+    :mod:`ev_cli.schema.conformance` instead, so that nothing a backend can
     reach depends on how the source happened to be spelled.
     """
 

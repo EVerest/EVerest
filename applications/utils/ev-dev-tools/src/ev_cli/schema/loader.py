@@ -18,7 +18,7 @@ from typing import Any, Sequence
 import yaml
 
 from ..errors import DefinitionNotFound, EverestDirNotFound, SchemaError, WorkDirNotFound
-from .diagnostics import Category, Diagnostic, Severity, Sink
+from .conformance import Category, Finding
 from .source import SourceRef
 from .validate import DocumentKind, Validators
 
@@ -137,10 +137,11 @@ class DefinitionLoader:
     it.
     """
 
-    def __init__(self, tree: SourceTree, validators: Validators, sink: Sink) -> None:
+    def __init__(self, tree: SourceTree, validators: Validators) -> None:
         self.tree = tree
         self.validators = validators
-        self.sink = sink
+        #: What reading the definitions turned up about their conformance.
+        self.findings: list[Finding] = []
         self._cache: dict[Path, Document] = {}
 
     # -- typed accessors ----------------------------------------------------
@@ -185,9 +186,8 @@ class DefinitionLoader:
         self.validators.validate(kind, data, path)
 
         if '$schema' not in data:
-            self.sink.emit(Diagnostic(
+            self.findings.append(Finding(
                 category=Category.UNDECLARED_DIALECT,
-                severity=Severity.INFO,
                 source=SourceRef(path),
                 message=(
                     'no $schema; the dialect is implied by the framework '

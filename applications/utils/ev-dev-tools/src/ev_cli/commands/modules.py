@@ -29,7 +29,6 @@ def generate_loader(args) -> int:
     for generated in files:
         writer.write_checking_templates(generated, strategy)
 
-    context.report_diagnostics_summary()
     return 0
 
 
