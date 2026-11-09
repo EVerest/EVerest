@@ -1,5 +1,5 @@
-ev_add_module(Ev15118)
+ev_add_module(Ev15118 DEPENDENCIES EVEREST_DEPENDENCY_ENABLED_ISO15118_EV_SIDE)
 ev_add_module(EvManager)
-ev_add_module(EvController)
+ev_add_module(EvController DEPENDENCIES EVEREST_DEPENDENCY_ENABLED_ISO15118_EV_SIDE)
 ev_add_module(EvSlac)
 ev_add_module(McsEvDataLink)
