@@ -199,7 +199,8 @@ class CrossTargetsTest(unittest.TestCase):
         jobs_json = cross_jobs(
             *({"name": "Bazel Cross (aarch64-linux-gnu) / build", "conclusion": c, "steps": []} for c in conclusions)
         )
-        self.assertEqual([t["status"] for t in cross_targets(jobs_json, CROSS_TOOLCHAINS)], ["failed"] * len(conclusions))
+        statuses = [t["status"] for t in cross_targets(jobs_json, CROSS_TOOLCHAINS)]
+        self.assertEqual(statuses, ["failed"] * len(conclusions))
 
     def test_skipped_job_is_skipped(self):
         jobs_json = cross_jobs(
