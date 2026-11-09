@@ -95,7 +95,7 @@ std::vector<Everest::error::ErrorPtr> get_base_test_errors() {
 std::vector<Everest::error::ErrorPtr> get_test_errors() {
     auto errors = get_base_test_errors();
     errors.at(0)->trigger_value = Everest::error::TriggerValue{"85.3 degC"};
-    errors.at(3)->trigger_value = Everest::error::TriggerValue{"85,3 °C – Grenzwert überschritten"};
+    errors.at(3)->trigger_value = Everest::error::TriggerValue{"85,3 °C – threshold exceeded"};
     errors.at(4)->trigger_value = Everest::error::TriggerValue{""};
     return errors;
 }
