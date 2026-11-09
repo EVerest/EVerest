@@ -71,6 +71,9 @@ on:
       build_tree_artifact_name:
         description: 'The name of the build tree artifact uploaded'
         value: ${{ jobs.build-cmake-gcc.outputs.build_tree_artifact_name }}
+      build_tree_uploaded:
+        description: "'true' when the build tree artifact was uploaded, also when Create dist or Create wheels failed"
+        value: ${{ jobs.build-cmake-gcc.outputs.build_tree_uploaded }}
 
 jobs:
   build-cmake-gcc:
@@ -92,6 +95,7 @@ jobs:
       dist_artifact_name: ${{ env.DIST_ARTIFACT_NAME }}
       wheels_artifact_name: ${{ env.WHEELS_ARTIFACT_NAME }}
       build_tree_artifact_name: ${{ env.BUILD_TREE_ARTIFACT_NAME }}
+      build_tree_uploaded: ${{ steps.upload_build_tree.outcome == 'success' }}
     steps:
       - name: Checkout local github actions
         uses: actions/checkout@v7
@@ -139,6 +143,7 @@ jobs:
           docker load -i build-kit.tar
           docker image tag "$BUILD_KIT_IMAGE" build-kit
       - name: Compile
+        id: compile
         run: |
           docker run \
           --mount "type=bind,source=$SSH_AUTH_SOCK,target=/ssh-agent" \
@@ -208,10 +213,13 @@ jobs:
           compression-level: 0
       - name: Tar build tree
         id: tar_build_tree
+        if: ${{ !cancelled() && steps.compile.outcome == 'success' }}
         run: |
           sudo tar -I 'zstd -T0 -3' --exclude='*.o' --exclude='*.a.tmp' -cf build-tree.tar.zst build
           sudo chown "$(id -u):$(id -g)" build-tree.tar.zst
       - name: Upload build tree
+        id: upload_build_tree
+        if: ${{ !cancelled() && steps.tar_build_tree.outcome == 'success' }}
         uses: actions/upload-artifact@v7.0.1
         with:
           if-no-files-found: error
