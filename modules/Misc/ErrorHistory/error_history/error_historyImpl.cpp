@@ -98,6 +98,9 @@ error_historyImpl::handle_get_errors(types::error_history::FilterArguments& filt
         error_object.origin.implementation_id = error->origin.implementation_id;
         error_object.message = error->message;
         error_object.description = error->description;
+        if (not error->vendor_id.empty()) {
+            error_object.vendor_id = error->vendor_id;
+        }
         return error_object;
     });
     return result;

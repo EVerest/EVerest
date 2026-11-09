@@ -55,6 +55,7 @@ struct ErrorObject {
     std::string uuid;
     State state;
     std::optional<std::string> sub_type;
+    std::optional<std::string> vendor_id;
 };
 
 struct ErrorList {

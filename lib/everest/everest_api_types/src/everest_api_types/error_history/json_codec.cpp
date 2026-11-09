@@ -189,6 +189,9 @@ void to_json(json& j, ErrorObject const& k) noexcept {
     if (k.sub_type) {
         j["sub_type"] = k.sub_type.value();
     }
+    if (k.vendor_id) {
+        j["vendor_id"] = k.vendor_id.value();
+    }
 }
 
 void from_json(const json& j, ErrorObject& k) {
@@ -203,6 +206,9 @@ void from_json(const json& j, ErrorObject& k) {
 
     if (j.contains("sub_type")) {
         k.sub_type.emplace(j.at("sub_type"));
+    }
+    if (j.contains("vendor_id")) {
+        k.vendor_id.emplace(j.at("vendor_id"));
     }
 }
 

@@ -102,5 +102,8 @@ types:
         minLength: 2
       state:
         $ref: /error_history#/State
+      vendor_id:
+        description: Vendor of the error type as given by the raiser of the error; absent when empty
+        type: string
     additionalProperties: false
   

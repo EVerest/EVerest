@@ -408,6 +408,9 @@ components:
           minLength: 2
         state:
           $ref: '#/components/schemas/State'
+        vendor_id:
+          description: Vendor of the error type as given by the raiser of the error. Absent when empty.
+          type: string
     FilterArguments:
       description: Arguments for the get_errors command
       type: object
