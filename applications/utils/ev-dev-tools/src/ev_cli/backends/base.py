@@ -71,6 +71,11 @@ class Backend(Protocol):
     """The interface every target implements."""
 
     name: str
+    #: Where each kind of output goes when ``--output-dir`` is not given,
+    #: relative to the work directory; ``None`` makes ``--output-dir`` required.
+    type_output_dir: str | None
+    interface_output_dir: str | None
+    loader_output_dir: str | None
 
     @staticmethod
     def options() -> argparse.ArgumentParser:

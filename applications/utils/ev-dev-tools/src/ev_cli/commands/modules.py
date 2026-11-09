@@ -4,23 +4,17 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from ..backends.base import registry
 from .context import Context
-
-DEFAULT_LOADER_OUTPUT = 'build/generated/generated/modules'
 
 
 def generate_loader(args) -> int:
     context = Context.from_args(args)
-    output_dir = (
-        Path(args.output_dir).resolve() if args.output_dir
-        else context.work_dir / DEFAULT_LOADER_OUTPUT
-    )
+    backend = registry.create(args.backend, args)
+    output_dir = context.output_dir(
+        args.output_dir, default=backend.loader_output_dir, backend=backend.name)
 
     model = context.module_model([args.module])
-    backend = registry.create(args.backend, args)
     writer = context.writer()
     strategy = context.strategy(args.force)
 

@@ -57,6 +57,9 @@ class CppBackend:
     """Generates the C++ headers everest-core's modules compile against."""
 
     name = 'cpp'
+    type_output_dir = 'build/generated/generated/types'
+    interface_output_dir = 'build/generated/include/generated/interfaces'
+    loader_output_dir = 'build/generated/generated/modules'
 
     @staticmethod
     def options() -> argparse.ArgumentParser:

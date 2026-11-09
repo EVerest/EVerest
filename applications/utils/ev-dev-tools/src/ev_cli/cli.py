@@ -90,6 +90,23 @@ def emitting() -> list[argparse.ArgumentParser]:
     return [_common_options(), _backend_choice(), *registry.options()]
 
 
+def _output_dir_help(what: str, attribute: str) -> str:
+    """Help for ``--output-dir``, naming the default each backend declares."""
+    defaults, required = [], []
+    for name in registry.names():
+        default = getattr(registry.backend_class(name), attribute)
+        if default is None:
+            required.append(name)
+        else:
+            defaults.append(f'{{work-dir}}/{default} for {name}')
+    notes = []
+    if defaults:
+        notes.append('default: ' + ', '.join(defaults))
+    if required:
+        notes.append('required for ' + ', '.join(required))
+    return f'output directory for {what} ({"; ".join(notes)})'
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog='ev-cli', description='EVerest command line tool')
@@ -153,8 +170,7 @@ def _add_module_command(commands) -> None:
                         help='name of the module to generate the loader for')
     loader.add_argument('-f', '--force', action='store_true', help='force overwriting')
     loader.add_argument('-o', '--output-dir', type=str,
-                        help='output directory for the generated loader files '
-                             '(default: {work-dir}/build/generated/generated/modules)')
+                        help=_output_dir_help('the generated loader files', 'loader_output_dir'))
     loader.set_defaults(handler=module_commands.generate_loader)
 
     _add_get_templates(actions, module_commands.get_templates)
@@ -171,8 +187,7 @@ def _add_interface_command(commands) -> None:
                                  help='generate interface headers')
     headers.add_argument('-f', '--force', action='store_true', help='force overwriting')
     headers.add_argument('-o', '--output-dir', type=str,
-                         help='output directory for the generated interface headers '
-                              '(default: {work-dir}/build/generated/include/generated/interfaces)')
+                         help=_output_dir_help('the generated interface headers', 'interface_output_dir'))
     headers.add_argument('-d', '--diff', '--dry-run', action='store_true',
                          help='show the resulting diff instead of writing')
     headers.add_argument('interfaces', nargs='*',
@@ -193,8 +208,7 @@ def _add_types_command(commands) -> None:
                                  help='generate type headers')
     headers.add_argument('-f', '--force', action='store_true', help='force overwriting')
     headers.add_argument('-o', '--output-dir', type=str,
-                         help='output directory for the generated type headers '
-                              '(default: {work-dir}/build/generated/generated/types)')
+                         help=_output_dir_help('the generated type headers', 'type_output_dir'))
     headers.add_argument('-d', '--diff', '--dry-run', action='store_true',
                          help='show the resulting diff instead of writing')
     headers.add_argument('types', nargs='*',

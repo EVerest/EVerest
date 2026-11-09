@@ -24,6 +24,9 @@ class IrDumpBackend:
     """Serialises each definition's IR instead of generating code."""
 
     name = 'ir-dump'
+    type_output_dir = None
+    interface_output_dir = None
+    loader_output_dir = None
 
     @staticmethod
     def options() -> argparse.ArgumentParser:

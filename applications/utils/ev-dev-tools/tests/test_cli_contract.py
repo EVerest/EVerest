@@ -532,6 +532,19 @@ def test_generation_does_not_summarise_conformance(tmp_path):
     assert 'note:' not in proc.stderr
 
 
+def test_cpp_output_defaults_beneath_the_work_directory(tmp_path):
+    run('types', 'generate-headers', *common_args(tmp_path))
+    assert (tmp_path / 'build' / 'generated' / 'generated' / 'types' / 'units.hpp').is_file()
+
+
+def test_a_backend_without_a_default_output_needs_one_given(tmp_path):
+    """The IR dump does not belong in the C++ build's generated tree."""
+    proc = run('types', 'generate-headers', *common_args(tmp_path), '--backend', 'ir-dump', check=False)
+    assert proc.returncode != 0
+    assert 'pass --output-dir' in proc.stderr
+    assert not (tmp_path / 'build').exists()
+
+
 def test_everest_dir_without_entries_fails(tmp_path):
     proc = run(
         'interface', 'generate-headers',

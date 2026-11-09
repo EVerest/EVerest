@@ -96,6 +96,14 @@ class Context:
         interfaces = build.build_interfaces(self.loader, needed)
         return Model(types=self.model().types, interfaces=interfaces, modules=modules)
 
+    def output_dir(self, given: str | None, *, default: str | None, backend: str) -> Path:
+        """``--output-dir`` if given, otherwise the backend's default beneath the work directory."""
+        if given:
+            return Path(given).resolve()
+        if default is None:
+            raise EvCliError(f'the {backend} backend has no default output directory; pass --output-dir')
+        return self.work_dir / default
+
     def writer(self, *, diff_only: bool = False) -> FileWriter:
         return FileWriter(diff_only=diff_only)
 
