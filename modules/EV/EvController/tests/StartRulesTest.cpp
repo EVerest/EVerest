@@ -510,6 +510,17 @@ TEST_CASE("EvController subscribes only to car commands", "[evctl][world-command
     }
 }
 
+TEST_CASE("EvController keeps a pilot event published before its ready()", "[evctl][start-rules]") {
+    ModuleFixture f;
+    f.fx.cfg.enabled_at_startup = true;
+    f.init();
+    f.adapter.peers.at("bsp_event")(nlohmann::json{{"event", "A"}});
+    f.ready();
+    REQUIRE(f.wait_for_current());
+    f.mod.reset();
+    CHECK(f.adapter.observed.handle()->board.records == std::vector<std::string>{"set_ac_max_current(current=16)"});
+}
+
 TEST_CASE("EvController DER pilot start selects the requested annex", "[evctl][der]") {
     const auto sae = GENERATE(false, true);
     TestFixture fx;

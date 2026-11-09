@@ -35,12 +35,22 @@ void EvController::init() {
     invoke_init(*p_ev_manager);
 
     topics.setup(info.id, "ev_controller", 1);
+
+    // Peers publish from their own ready(), possibly before this module's, and publications are
+    // not retained. The queue holds what arrives until run() drains it: enqueue() increments the
+    // wake_fd eventfd, which run() then sees readable at once. The enable goes first so that a
+    // startup pilot event reaches Unplugged rather than Disabled.
+    runtime.reset(new EvCtlRuntime(*this));
+    if (config.enabled_at_startup) {
+        runtime->enqueue(Event{EnableCmd{}});
+    }
+    runtime->register_m2e_subscriptions();
+    runtime->register_peer_subscriptions();
 }
 
 void EvController::ready() {
     invoke_ready(*p_ev_manager);
 
-    runtime.reset(new EvCtlRuntime(*this));
     auto& default_session = runtime->ctx_ptr()->default_session;
     if (default_session && !runtime->ctx_ptr()->validate_session_config(*default_session, m_default_session_error)) {
         default_session.reset();
@@ -51,20 +61,9 @@ void EvController::ready() {
             Everest::error::Severity::High));
     }
 
-    // Registered on the main thread, before loop_thread runs run(). A callback firing in
-    // that window is not lost: enqueue() increments the wake_fd eventfd, and that counter is
-    // durable kernel state independent of any epoll handler, so run() sees it readable at
-    // once and on_wake drains the queue. kvs_load() seeds `persisted` and so must run before
-    // the first flush, which is why it is here rather than on the loop thread.
-    runtime->register_m2e_subscriptions();
-    runtime->register_peer_subscriptions();
+    // kvs_load() seeds `persisted` and so must run before the first flush, which is why it is
+    // here rather than on the loop thread.
     runtime->ctx_ptr()->kvs_load();
-
-    // Auto-enable at startup when configured. Disabled by default in unit
-    // tests so they observe the initial Disabled state before driving enable.
-    if (config.enabled_at_startup) {
-        runtime->enqueue(Event{EnableCmd{}});
-    }
 
     comm_check->start(config.cfg_communication_check_to_s);
     setup_heartbeat_generator();

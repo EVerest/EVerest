@@ -34,6 +34,11 @@ the FSM and the only mutable state. Four ``fd``\ s drive that loop:
 - ``curve_timer_fd``: one-shot used by ``CurvePlayer`` to advance
   through the session charging curve.
 
+The runtime is built and the peer and ``m2e`` subscriptions are registered in
+``init()``, so a peer event published before this module's ``ready()`` waits
+on the queue until the loop starts. With ``enabled_at_startup`` the enable is
+queued ahead of it.
+
 High level
 ----------
 
