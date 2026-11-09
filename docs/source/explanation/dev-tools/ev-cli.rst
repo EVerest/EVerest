@@ -251,8 +251,8 @@ all of this and can report it:
 
 .. code-block:: bash
 
-    ev-cli types conformance-report
-    ev-cli types conformance-report --verbose   # every site, with a suggestion
+    ev-cli conformance-report
+    ev-cli conformance-report --verbose         # every site, with a suggestion
 
 Each entry says how the same thing would be written conformantly.  Two
 categories deserve attention rather than only a count: a sibling ``type`` that

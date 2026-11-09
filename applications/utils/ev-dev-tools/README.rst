@@ -21,7 +21,7 @@ How it is put together
               schema/           ir/       backends/
                   │
                   ▼
-              conformance ──▶ types conformance-report
+              conformance ──▶ conformance-report
 
 The definitions are read and validated once, turned into an explicit
 intermediate representation, and handed to a backend.  The IR describes what a
@@ -60,7 +60,7 @@ have short aliases; ``ev-cli --help`` lists them.
     ``<Module>.hpp``/``.cpp``, one ``<Interface>Impl.hpp``/``.cpp`` per provided
     interface, and a documentation placeholder.  See `Creating a module`_.
 
-``ev-cli types conformance-report``
+``ev-cli conformance-report``
     Reports where the definitions rely on EVerest's own reading of JSON Schema.
     See `The definition dialect`_.
 
@@ -119,7 +119,7 @@ applies.
 
 ``ev-cli`` accepts all of that and reports it::
 
-    ev-cli types conformance-report --verbose
+    ev-cli conformance-report --verbose
 
 Each entry says what to write instead.  Two categories are worth attention
 rather than only counting: a sibling ``type`` that *contradicts* the referenced

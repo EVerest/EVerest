@@ -515,7 +515,7 @@ def test_conformance_report_sees_every_reference_and_document(tmp_path):
         'description: A module\nmetadata:\n  license: https://opensource.org/licenses/Apache-2.0\n'
         '  authors:\n    - ev-cli tests\n')
     proc = run(
-        'types', 'conformance-report', '--verbose',
+        'conformance-report', '--verbose',
         '--schemas-dir', str(SCHEMAS_DIR),
         '--everest-dir', str(tmp_path),
         '--work-dir', str(tmp_path),
@@ -550,6 +550,7 @@ def test_everest_dir_without_entries_fails(tmp_path):
     ('mod', 'create', '--help'),
     ('if', 'generate-headers', '--help'),
     ('ty', 'gh', '--help'),
+    ('conformance-report', '--help'),
     ('hlp', '--help'),
 ])
 def test_help_is_available_at_every_level(argv):

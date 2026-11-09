@@ -14,9 +14,10 @@ subparser does not inherit its command parser's options, and putting them
 there would move them ahead of the action name on the command line, which the
 build does not do.
 
-Every command but ``helpers`` takes the same set -- see :func:`emitting` --
+Every generating command takes the same set -- see :func:`emitting` --
 including each backend's own options.  An option belonging to a backend that
 was not selected is simply inert, as is true of ``--disable-clang-format``.
+``conformance-report`` generates nothing and takes only the definition sources.
 """
 
 from __future__ import annotations
@@ -27,6 +28,7 @@ from pathlib import Path
 
 from . import __version__
 from .backends.base import DEFAULT_BACKEND, registry
+from .commands import conformance as conformance_commands
 from .commands import helpers as helpers_commands
 from .commands import interfaces as interface_commands
 from .commands import modules as module_commands
@@ -78,7 +80,7 @@ def _backend_choice() -> argparse.ArgumentParser:
 
 
 def emitting() -> list[argparse.ArgumentParser]:
-    """Everything a command other than ``helpers`` accepts.
+    """Everything a generating command accepts.
 
     Built on demand rather than threaded through, which costs about 2 ms per
     run in total and keeps the working-directory-derived defaults out of import
@@ -101,6 +103,7 @@ def build_parser() -> argparse.ArgumentParser:
     _add_module_command(commands)
     _add_interface_command(commands)
     _add_types_command(commands)
+    _add_conformance_command(commands)
     _add_helpers_command(commands)
 
     return parser
@@ -199,17 +202,19 @@ def _add_types_command(commands) -> None:
                               'are processed.')
     headers.set_defaults(handler=type_commands.generate_headers)
 
-    report = actions.add_parser(
-        'conformance-report', parents=emitting(),
+    _add_get_templates(actions, type_commands.get_templates)
+
+
+def _add_conformance_command(commands) -> None:
+    report = commands.add_parser(
+        'conformance-report', parents=[_common_options()],
         help='report where the definitions rely on EVerest\'s own dialect '
              'rather than on standard JSON Schema')
     report.add_argument('--strict', action='store_true',
                         help='exit non-zero if anything is reported')
     report.add_argument('-v', '--verbose', action='store_true',
                         help='list every site rather than counts per category')
-    report.set_defaults(handler=type_commands.conformance_report)
-
-    _add_get_templates(actions, type_commands.get_templates)
+    report.set_defaults(handler=conformance_commands.report)
 
 
 def _add_helpers_command(commands) -> None:
