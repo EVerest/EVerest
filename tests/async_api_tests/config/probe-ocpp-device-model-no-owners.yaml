@@ -1,0 +1,12 @@
+active_modules:
+  device_model_api:
+    module: ocpp_device_model_API
+    config_module:
+      cfg_communication_check_to_s: 0
+      cfg_registration_timeout_s: 1
+  probe:
+    module: ProbeModule
+    connections:
+      device_model:
+        - module_id: device_model_api
+          implementation_id: main

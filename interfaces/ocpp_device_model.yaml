@@ -1,0 +1,70 @@
+description: >-
+  Implemented by a module that adds components and variables to the device model of an OCPP service at runtime, next
+  to those of the component config. The OCPP module requires this interface, with any number of connections. Each
+  variable has one owner, which keeps its value current, receives the writes to it and keeps its persistent
+  attributes across restarts. An owner is named by the module id of the providing module, unless the module names the
+  owners it acts on behalf of itself. A registration is held in memory only and is repeated at every start of the OCPP
+  service.
+cmds:
+  get_registrations:
+    description: >-
+      Called once by the OCPP module at startup, before the OCPP service starts; the OCPP service starts only after
+      every connected module answered. The module answers from data it holds, without waiting for the OCPP module.
+      It returns a registration for every owner it acts for, also for owners whose devices are not available yet:
+      the first start of the OCPP service removes the monitors of the variables that nobody registered, so only the
+      owners registered here keep those of earlier boots.
+    result:
+      description: The registrations of all owners the module acts for
+      type: object
+      $ref: /ocpp_device_model#/Registrations
+  set_registration_result:
+    description: >-
+      Called by the OCPP module once for every registration, from get_registrations or the registration var, with the
+      variables that the device model rejected. An owner name belongs to the module that registered it first, until
+      that module releases it with an empty registration; a registration of another module for it is rejected with
+      OwnerInUse.
+    arguments:
+      result:
+        description: The outcome of the registration of one owner
+        type: object
+        $ref: /ocpp_device_model#/RegistrationResult
+  set_value:
+    description: >-
+      Applies a write to an attribute of a registered variable, from the CSMS, a SetVariables.req for example, or from
+      the OCPP service itself. The OCPP module waits for the answer without a deadline, so the module answers
+      promptly, well within the message timeout of the CSMS, and rejects a write it cannot complete by then. Calls may
+      overlap, also for one variable, and the interface defines no order between them.
+      Accepted means that the owner applied exactly the written value: the OCPP service then stores it, so the owner
+      does not report it with value_changed. RebootRequired means that the owner kept exactly the written value, and
+      that it takes effect at the next start: the OCPP service does not store it and keeps the current value, and the
+      owner registers the new value at the next start. An owner that would apply or keep another value, a clamped one
+      for example, rejects the write.
+    arguments:
+      request:
+        description: The write to apply
+        type: object
+        $ref: /ocpp_device_model#/WriteRequest
+    result:
+      description: >-
+        Accepted, RebootRequired or Rejected. UnknownComponent, UnknownVariable and NotSupportedAttributeType are
+        returned to the CSMS as they are.
+      type: string
+      $ref: /ocpp#/SetVariableStatusEnumType
+vars:
+  registration:
+    description: >-
+      Published to replace the registration of one owner at runtime, or to add an owner; the registrations of the
+      other owners of the module stay. An empty components list removes everything the owner registered and releases
+      the owner name. The monitors of a variable survive a registration that registers it again. An owner added after
+      startup starts without the monitors of earlier boots, which the first start of the OCPP service removed. At startup get_registrations is authoritative: a registration published before the
+      OCPP module subscribed is lost.
+    type: object
+    $ref: /ocpp_device_model#/Registration
+  value_changed:
+    description: >-
+      Published when the owner changed a value of a registered variable itself. Every change is reported: the OCPP
+      service holds the values in memory and serves reads from there. A report is applied as it arrives, so a write in
+      progress may overwrite it. A report of a value that does not fit the variable, or for an owner that the module
+      did not register, is ignored and logged by the OCPP module.
+    type: object
+    $ref: /ocpp_device_model#/ValueChange
