@@ -30,7 +30,7 @@ from ..types import (
     TypeUnit,
     Variant,
 )
-from .common import json_type_of, resolve_reference
+from .common import read_declared_type, resolve_reference
 
 
 def build_type_units(loader: DefinitionLoader) -> dict[str, TypeUnit]:
@@ -176,16 +176,9 @@ class _UnitBuild:
         if '$ref' in schema:
             return self._build_reference(schema, source)
 
-        declared = schema.get('type')
-        if declared is None:
-            raise UnsupportedDefinition(
-                f'{source}: neither a "type" nor a "$ref"'
-            )
-
-        if isinstance(declared, list):
-            return Variant(tuple(json_type_of(entry, source) for entry in declared))
-
-        json_type = json_type_of(declared, source)
+        json_type = read_declared_type(schema, source)
+        if isinstance(json_type, Variant):
+            return json_type
 
         if json_type is JsonType.STRING and 'enum' in schema:
             return self._promote_enum(enclosing_name, schema, source)
@@ -204,14 +197,12 @@ class _UnitBuild:
                 enclosing_name=enclosing_name, depends_on=depends_on,
             ))
 
-        if json_type is JsonType.OBJECT:
-            if 'properties' in schema:
-                return self._promote_struct(enclosing_name, schema, source, depends_on)
-            # An object with nothing said about its contents travels as raw
-            # JSON; the framework passes it through untouched.
-            return Opaque(JsonType.OBJECT)
-
-        raise UnsupportedDefinition(f'{source}: cannot express type {declared!r}')
+        # What remains is an object.
+        if 'properties' in schema:
+            return self._promote_struct(enclosing_name, schema, source, depends_on)
+        # An object with nothing said about its contents travels as raw JSON;
+        # the framework passes it through untouched.
+        return Opaque(JsonType.OBJECT)
 
     def _build_reference(self, schema: Mapping[str, Any], source: SourceRef) -> Ref:
         reference = resolve_reference(

@@ -10,7 +10,7 @@ from ...errors import DefinitionNotFound, UnsupportedDefinition, warn
 from ...schema.loader import DefinitionLoader
 from ...schema.references import parse_error_reference
 from ...schema.source import SourceRef
-from ..common import Constraints
+from ..common import NO_CONSTRAINTS, Constraints
 from ..interfaces import ArgDef, CmdDef, ErrorDef, InterfaceDef, VarDef
 from ..types import (
     SCALAR_TYPES,
@@ -21,7 +21,7 @@ from ..types import (
     TypeExpr,
     Variant,
 )
-from .common import json_type_of, resolve_reference
+from .common import read_declared_type, resolve_reference
 
 
 def build_interfaces(loader: DefinitionLoader, names: Iterable[str]) -> dict[str, InterfaceDef]:
@@ -101,7 +101,7 @@ class _InterfaceBuild:
                 result_schema.get('description') if result_schema else None),
             result_constraints=(
                 Constraints.from_schema(result_schema) if result_schema
-                else Constraints()
+                else NO_CONSTRAINTS
             ),
         )
 
@@ -124,14 +124,14 @@ class _InterfaceBuild:
             self._referenced_type_units.add(reference.target.unit)
             return reference
 
-        declared = schema.get('type')
-        if declared is None:
-            raise UnsupportedDefinition(f'{source}: no "type" and no "$ref"')
+        json_type = read_declared_type(schema, source)
+        if isinstance(json_type, Variant):
+            return json_type
 
-        if isinstance(declared, list):
-            return Variant(tuple(json_type_of(entry, source) for entry in declared))
-
-        json_type = json_type_of(declared, source)
+        if json_type in SCALAR_TYPES:
+            # A string with an enum is a string too: its permitted values
+            # survive on the constraints, because there is no enum to name.
+            return Primitive(json_type)
 
         if json_type is JsonType.ARRAY:
             items = schema.get('items')
@@ -141,26 +141,16 @@ class _InterfaceBuild:
                 return Opaque(JsonType.ARRAY)
             return Array(self._build_payload(items, source.child('items')))
 
-        if json_type is JsonType.OBJECT:
-            if 'properties' in schema:
-                warn(
-                    f'{source}: an interface payload declares properties inline. '
-                    f'There is nowhere in a generated interface header to declare '
-                    f'the resulting type, so the payload is passed through as raw '
-                    f'JSON and the properties have no effect. Declare the object '
-                    f'in types/ and reference it with $ref.'
-                )
-            return Opaque(JsonType.OBJECT)
-
-        if json_type is JsonType.STRING and 'enum' in schema:
-            # The permitted values survive on the constraints; the payload
-            # itself is a string, because there is no enum to name.
-            return Primitive(JsonType.STRING)
-
-        if json_type in SCALAR_TYPES:
-            return Primitive(json_type)
-
-        raise UnsupportedDefinition(f'{source}: cannot express payload type {declared!r}')
+        # What remains is an object.
+        if 'properties' in schema:
+            warn(
+                f'{source}: an interface payload declares properties inline. '
+                f'There is nowhere in a generated interface header to declare '
+                f'the resulting type, so the payload is passed through as raw '
+                f'JSON and the properties have no effect. Declare the object '
+                f'in types/ and reference it with $ref.'
+            )
+        return Opaque(JsonType.OBJECT)
 
     # -- errors -------------------------------------------------------------
 
@@ -173,7 +163,6 @@ class _InterfaceBuild:
         """
         root = self.source.child('errors')
         resolved: dict[tuple[str, str], ErrorDef] = {}
-        ordered: list[ErrorDef] = []
 
         for index, entry in enumerate(entries):
             source = root.child(index)
@@ -186,9 +175,8 @@ class _InterfaceBuild:
                         f'referenced by this interface'
                     )
                 resolved[key] = error
-                ordered.append(error)
 
-        return tuple(ordered)
+        return tuple(resolved.values())
 
     def _resolve_namespace_errors(self, reference, source: SourceRef) -> list[ErrorDef]:
         try:
@@ -196,26 +184,21 @@ class _InterfaceBuild:
         except DefinitionNotFound as err:
             raise DefinitionNotFound(f'{source}: {err}') from err
 
-        declared = document.data.get('errors') or []
+        errors = [
+            ErrorDef(
+                namespace=reference.namespace,
+                name=entry['name'],
+                description=entry['description'],
+                source=document.source.child('errors', index),
+            )
+            for index, entry in enumerate(document.data.get('errors') or [])
+        ]
         if reference.is_whole_namespace:
-            return [
-                ErrorDef(
-                    namespace=reference.namespace,
-                    name=entry['name'],
-                    description=entry['description'],
-                    source=document.source.child('errors', index),
-                )
-                for index, entry in enumerate(declared)
-            ]
+            return errors
 
-        for index, entry in enumerate(declared):
-            if entry['name'] == reference.name:
-                return [ErrorDef(
-                    namespace=reference.namespace,
-                    name=entry['name'],
-                    description=entry['description'],
-                    source=document.source.child('errors', index),
-                )]
+        for error in errors:
+            if error.name == reference.name:
+                return [error]
 
         raise DefinitionNotFound(
             f'{source}: error namespace "{reference.namespace}" declares no '

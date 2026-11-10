@@ -10,7 +10,7 @@ from ...errors import UnsupportedDefinition
 from ...schema.loader import DefinitionLoader
 from ...schema.references import parse_type_reference
 from ...schema.source import SourceRef
-from ..types import JsonType, Ref
+from ..types import JsonType, Ref, Variant
 
 
 def json_type_of(declared: Any, source: SourceRef) -> JsonType:
@@ -20,6 +20,16 @@ def json_type_of(declared: Any, source: SourceRef) -> JsonType:
         raise UnsupportedDefinition(
             f'{source}: unknown json type {declared!r}'
         ) from None
+
+
+def read_declared_type(schema: Mapping[str, Any], source: SourceRef) -> JsonType | Variant:
+    """The ``type`` a schema without a ``$ref`` declares: one json type, or a list of them."""
+    declared = schema.get('type')
+    if declared is None:
+        raise UnsupportedDefinition(f'{source}: neither a "type" nor a "$ref"')
+    if isinstance(declared, list):
+        return Variant(tuple(json_type_of(entry, source) for entry in declared))
+    return json_type_of(declared, source)
 
 
 def resolve_reference(
