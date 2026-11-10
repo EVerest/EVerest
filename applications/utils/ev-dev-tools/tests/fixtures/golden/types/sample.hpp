@@ -5,7 +5,7 @@
 
 //
 // AUTO GENERATED - DO NOT EDIT!
-// template version 6
+// template version 7
 //
 
 #include <optional>
@@ -168,7 +168,7 @@ struct Reading {
         // the required parts of the type
         j = json{
             {"taken_at", k.taken_at},
-            {"mood", types::sample::mood_to_string_view(k.mood)},
+            {"mood", k.mood},
         };
 
         // the optional parts of the type
@@ -182,7 +182,7 @@ struct Reading {
             j.emplace("label", *k.label);
         }
         if (k.kind) {
-            j.emplace("kind", kind_to_string_view(*k.kind));
+            j.emplace("kind", *k.kind);
         }
     }
 
@@ -190,7 +190,7 @@ struct Reading {
     friend void from_json(const json& j, Reading& k) {
         // the required parts of the type
         k.taken_at = j.at("taken_at");
-        k.mood = types::sample::string_to_mood(j.at("mood"));
+        k.mood = j.at("mood");
 
         // the optional parts of the type
         auto it = j.find("power");
@@ -207,7 +207,7 @@ struct Reading {
         }
         it = j.find("kind");
         if (it != j.end()) {
-            k.kind = string_to_kind(it->get<std::string>());
+            k.kind = it->get<Kind>();
         }
     }
 

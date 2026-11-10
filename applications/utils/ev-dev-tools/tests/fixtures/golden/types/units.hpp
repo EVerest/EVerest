@@ -5,7 +5,7 @@
 
 //
 // AUTO GENERATED - DO NOT EDIT!
-// template version 6
+// template version 7
 //
 
 #include <optional>

@@ -24,14 +24,11 @@ class PayloadKind(Enum):
     conditionals.
     """
 
-    #: A reference to a declared struct: handed to nlohmann as it is.
-    OBJECT = 'object'
-    #: A reference to a declared enum: converted through the string helpers.
-    ENUM = 'enum'
-    #: A vector of referenced structs: handed to nlohmann as it is.
+    #: A reference to a declared struct or enum: converted by nlohmann through
+    #: the type's own to_json and from_json.
+    REF = 'ref'
+    #: A vector of referenced types, converted the same way.
     ARRAY = 'array'
-    #: A vector of referenced enums: converted element by element.
-    ENUM_ARRAY = 'enum-array'
     #: Several possible json types.
     VARIANT = 'variant'
     #: No payload at all; the publish and subscribe signatures lose their
@@ -49,7 +46,7 @@ class InterfaceView:
     model: Model
 
     def __post_init__(self) -> None:
-        self._mapping = CppMapping(self.model, Flavour.PAYLOAD)
+        self._mapping = CppMapping(Flavour.PAYLOAD)
 
     # -- header level -------------------------------------------------------
 
@@ -105,19 +102,11 @@ class InterfaceView:
         if isinstance(payload, Primitive) and payload.json_type is JsonType.NULL:
             return PayloadKind.NULL
         if isinstance(payload, Ref):
-            return (
-                PayloadKind.ENUM if is_enum(self.model.resolve_type(payload.target))
-                else PayloadKind.OBJECT
-            )
+            return PayloadKind.REF
         if isinstance(payload, Array):
             # Only an array of referenced types becomes a typed vector; an
             # array of scalars travels as raw JSON and so needs no conversion.
-            if not isinstance(payload.items, Ref):
-                return PayloadKind.PLAIN
-            return (
-                PayloadKind.ENUM_ARRAY if is_enum(self.model.resolve_type(payload.items.target))
-                else PayloadKind.ARRAY
-            )
+            return PayloadKind.ARRAY if isinstance(payload.items, Ref) else PayloadKind.PLAIN
         return PayloadKind.PLAIN
 
     def is_null(self, payload: TypeExpr | None) -> bool:
@@ -131,19 +120,14 @@ class InterfaceView:
     def raw_spell(self, payload: TypeExpr) -> str:
         """The C++ type the framework hands over, before any conversion.
 
-        An enum arrives as a string and a scalar as itself, so this is what the
-        value is cast to on the way in.
+        A scalar arrives as itself, so this is what the value is cast to on the
+        way in.
         """
         json_types = self.json_type_names(payload)
         if len(json_types) != 1:
             raise UnsupportedDefinition(
                 f'no single raw type for a payload of {json_types}')
         return PAYLOAD_SCALARS[JsonType(json_types[0])]
-
-    def element(self, payload: TypeExpr) -> str:
-        """The element type of a typed vector payload."""
-        assert isinstance(payload, Array)
-        return self._mapping.spell(payload.items).text
 
     def result_type(self, cmd: CmdDef) -> str:
         """``void`` only when the interface declares no result at all.
@@ -201,21 +185,6 @@ class InterfaceView:
         return f'{{{names}}}'
 
     # -- conversion helpers -------------------------------------------------
-
-    def to_string(self, payload: TypeExpr) -> str:
-        return naming.enum_to_string(self.spell(payload))
-
-    def to_string_view(self, payload: TypeExpr) -> str:
-        return naming.enum_to_string_view(self.spell(payload))
-
-    def from_string(self, payload: TypeExpr) -> str:
-        return naming.string_to_enum(self.spell(payload))
-
-    def element_to_string(self, payload: TypeExpr) -> str:
-        return naming.enum_to_string(self.element(payload))
-
-    def element_from_string(self, payload: TypeExpr) -> str:
-        return naming.string_to_enum(self.element(payload))
 
     def variant_alternatives(self, payload: TypeExpr) -> str:
         """The template arguments of the payload's ``std::variant``."""

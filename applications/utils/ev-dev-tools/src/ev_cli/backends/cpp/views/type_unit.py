@@ -22,7 +22,7 @@ class TypeUnitView:
     model: Model
 
     def __post_init__(self) -> None:
-        self._mapping = CppMapping(self.model, Flavour.FIELD)
+        self._mapping = CppMapping(Flavour.FIELD)
 
     # -- header level -------------------------------------------------------
 
@@ -91,9 +91,6 @@ class TypeUnitView:
         """The member's declared type, wrapped when the property is optional."""
         return self._mapping.field_type(field)
 
-    def is_enum(self, field: Field) -> bool:
-        return self._mapping.spell(field.type).is_enum
-
     def is_vector(self, field: Field) -> bool:
         return self._mapping.spell(field.type).is_vector
 
@@ -102,22 +99,14 @@ class TypeUnitView:
 
     # -- conversions --------------------------------------------------------
     #
-    # A vector is handed to nlohmann whole, even when its elements are enums:
-    # the element type's own to_json/from_json is found by ADL.  Only a scalar
-    # enum needs the string helpers named explicitly.
-
-    def to_json_value(self, field: Field, expression: str) -> str:
-        if self.is_vector(field) or not self.is_enum(field):
-            return expression
-        return f'{naming.enum_to_string_view(self.type_of(field))}({expression})'
+    # Every member goes through nlohmann; a generated enum's own to_json and
+    # from_json are found by ADL.
 
     def from_json_required(self, field: Field) -> str:
         target = f'k.{field.name}'
         access = f'j.at("{field.name}")'
         if self.is_vector(field):
             return f'{target} = std::move({access}.get<{self.type_of(field)}>());'
-        if self.is_enum(field):
-            return f'{target} = {naming.string_to_enum(self.type_of(field))}({access});'
         return f'{target} = {access};'
 
     def from_json_optional(self, field: Field) -> str:
@@ -125,10 +114,5 @@ class TypeUnitView:
         if self.is_vector(field):
             return (
                 f'{target} = j.at("{field.name}").get<{self.type_of(field)}>();'
-            )
-        if self.is_enum(field):
-            return (
-                f'{target} = '
-                f'{naming.string_to_enum(self.type_of(field))}(it->get<std::string>());'
             )
         return f'{target} = it->get<{self.type_of(field)}>();'

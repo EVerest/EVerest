@@ -55,17 +55,7 @@ public:
                 EVLOG_error << "Callback for variable '{{ var.name }}' in interface '{{ u.name }}' has wrong type!";
             }
             func();
-{% elif kind == PayloadKind.OBJECT %}
-            func(value);
-{% elif kind == PayloadKind.ENUM %}
-            func({{ u.from_string(var.type) }}(static_cast<{{ u.raw_spell(var.type) }}>(value)));
-{% elif kind == PayloadKind.ENUM_ARRAY %}
-            std::vector<{{ u.element(var.type) }}> typed_value;
-            for (auto& entry : value) {
-                typed_value.push_back({{ u.element_from_string(var.type) }}(entry));
-            }
-            func(typed_value);
-{% elif kind == PayloadKind.ARRAY %}
+{% elif kind in (PayloadKind.REF, PayloadKind.ARRAY) %}
             func(value);
 {% elif kind == PayloadKind.VARIANT %}
             func(Everest::json_to_variant<{{ u.variant_alternatives(var.type) }}>(value));
@@ -101,22 +91,9 @@ public:
     // commands available to call
 {% for cmd in u.cmds %}
     {{ u.result_type(cmd) }} call_{{ cmd.name }}({% for argument in cmd.arguments %}{{ u.call_declaration(argument) }}{{ ', ' if not loop.last }}{% endfor %}) {
-{% for argument in cmd.arguments %}
-{% if u.kind(argument.type) == PayloadKind.ENUM_ARRAY %}
-        Array {{ argument.name }}_array;
-        for (const auto& {{ argument.name }}_entry : {{ argument.name }}) {
-            {{ argument.name }}_array.push_back({{ u.element_to_string(argument.type) }}({{ argument.name }}_entry));
-        }
-{% endif %}
-{% endfor %}
         {% if cmd.result is not none %}Result result = {% endif %}_adapter->call(_req, "{{ cmd.name }}", Parameters{
 {% for argument in cmd.arguments %}
-{% set kind = u.kind(argument.type) %}
-{% if kind == PayloadKind.ENUM %}
-            {"{{ argument.name }}", {{ u.to_string(argument.type) }}({{ argument.name }})}{{ ',' if not loop.last }}
-{% elif kind == PayloadKind.ENUM_ARRAY %}
-            {"{{ argument.name }}", {{ argument.name }}_array}{{ ',' if not loop.last }}
-{% elif kind == PayloadKind.VARIANT %}
+{% if u.kind(argument.type) == PayloadKind.VARIANT %}
             {"{{ argument.name }}", Everest::variant_to_json({{ argument.name }})}{{ ',' if not loop.last }}
 {% else %}
             {"{{ argument.name }}", {{ argument.name }}}{{ ',' if not loop.last }}
@@ -125,12 +102,10 @@ public:
         });
 {% if cmd.result is not none %}
 {% set kind = u.kind(cmd.result) %}
-{% if kind == PayloadKind.ENUM %}
-        auto retval = {{ u.from_string(cmd.result) }}(static_cast<{{ u.raw_spell(cmd.result) }}>(result.value()));
-{% elif kind == PayloadKind.OBJECT %}
+{% if kind == PayloadKind.REF %}
         json retval_json = result.value();
         {{ u.result_type(cmd) }} retval = retval_json;
-{% elif kind in (PayloadKind.ARRAY, PayloadKind.ENUM_ARRAY) %}
+{% elif kind == PayloadKind.ARRAY %}
         {{ u.result_type(cmd) }} retval (result.value().begin(), result.value().end());
 {% elif kind == PayloadKind.VARIANT %}
         auto retval = Everest::json_to_variant<{{ u.variant_alternatives(cmd.result) }}>(result.value());

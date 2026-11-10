@@ -5,7 +5,7 @@
 
 //
 // AUTO GENERATED - DO NOT EDIT!
-// template version 6
+// template version 7
 //
 
 #include <framework/ModuleAdapter.hpp>
@@ -60,11 +60,7 @@ public:
 
     void subscribe_moods_seen(const std::function<void(const std::vector<types::sample::Mood>&)>& listener) {
         _adapter->subscribe(_req, "moods_seen", [func = std::move(listener)](const Value& value) {
-            std::vector<types::sample::Mood> typed_value;
-            for (auto& entry : value) {
-                typed_value.push_back(types::sample::string_to_mood(entry));
-            }
-            func(typed_value);
+            func(value);
         });
     }
 
@@ -91,15 +87,11 @@ public:
 
     // commands available to call
     types::sample::Reading call_configure(const types::sample::Mood& mood, const double& interval, const bool& enabled, const std::vector<types::sample::Mood>& allowed) {
-        Array allowed_array;
-        for (const auto& allowed_entry : allowed) {
-            allowed_array.push_back(types::sample::mood_to_string(allowed_entry));
-        }
 Result result = _adapter->call(_req, "configure", Parameters{
-            {"mood", types::sample::mood_to_string(mood)},
+            {"mood", mood},
             {"interval", interval},
             {"enabled", enabled},
-            {"allowed", allowed_array}
+            {"allowed", allowed}
         });
         json retval_json = result.value();
         types::sample::Reading retval = retval_json;

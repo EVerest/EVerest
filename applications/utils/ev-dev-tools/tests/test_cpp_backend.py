@@ -170,17 +170,6 @@ class TestGuardsAndNames:
     def test_qualified_type(self):
         assert naming.qualified_type('energy', 'Power') == 'types::energy::Power'
 
-    @pytest.mark.parametrize('spelling, to_string, from_string', [
-        ('EvseState', 'evse_state_to_string', 'string_to_evse_state'),
-        ('types::energy::EvseState',
-         'types::energy::evse_state_to_string',
-         'types::energy::string_to_evse_state'),
-    ])
-    def test_enum_helper_names(self, spelling, to_string, from_string):
-        assert naming.enum_to_string(spelling) == to_string
-        assert naming.enum_to_string_view(spelling) == f'{to_string}_view'
-        assert naming.string_to_enum(spelling) == from_string
-
     def test_rejects_a_cpp_keyword_as_an_identifier(self):
         """The previous implementation checked Python's keywords here."""
         with pytest.raises(UnsupportedDefinition):
@@ -192,12 +181,12 @@ class TestTypeMapping:
     """The generated ABI.  A change here relinks every module."""
 
     @pytest.fixture
-    def field_mapping(self, fixture_model):
-        return CppMapping(fixture_model, Flavour.FIELD)
+    def field_mapping(self):
+        return CppMapping(Flavour.FIELD)
 
     @pytest.fixture
-    def payload_mapping(self, fixture_model):
-        return CppMapping(fixture_model, Flavour.PAYLOAD)
+    def payload_mapping(self):
+        return CppMapping(Flavour.PAYLOAD)
 
     @pytest.mark.parametrize('json_type, expected', [
         (JsonType.BOOLEAN, 'bool'),
@@ -239,21 +228,15 @@ class TestTypeMapping:
         reading = fixture_model.types['sample'].struct('Reading')
         taken_at = next(f for f in reading.fields if f.name == 'taken_at')
         assert taken_at.constraints.format == 'date-time'
-        assert CppMapping(fixture_model, Flavour.FIELD).spell(
+        assert CppMapping(Flavour.FIELD).spell(
             taken_at.type).text == 'std::string'
 
     def test_references(self, field_mapping):
-        enum = field_mapping.spell(Ref(TypeRef('sample', 'Mood')))
-        assert enum.text == 'types::sample::Mood'
-        assert enum.is_enum
-
-        struct = field_mapping.spell(Ref(TypeRef('units', 'Power')))
-        assert struct.text == 'types::units::Power'
-        assert not struct.is_enum
+        assert field_mapping.spell(Ref(TypeRef('sample', 'Mood'))).text == 'types::sample::Mood'
+        assert field_mapping.spell(Ref(TypeRef('units', 'Power'))).text == 'types::units::Power'
 
     def test_local_enum(self, field_mapping):
-        spelling = field_mapping.spell(LocalEnum('Kind'))
-        assert (spelling.text, spelling.is_enum) == ('Kind', True)
+        assert field_mapping.spell(LocalEnum('Kind')).text == 'Kind'
 
     def test_struct_member_arrays_are_always_typed(self, field_mapping):
         spelling = field_mapping.spell(Array(Primitive(JsonType.STRING)))
@@ -300,16 +283,16 @@ class TestPayloadKinds:
         )
 
     @pytest.mark.parametrize('var_name, kind', [
-        ('latest', PayloadKind.OBJECT),
+        ('latest', PayloadKind.REF),
         ('nothing_happened', PayloadKind.NULL),
-        ('moods_seen', PayloadKind.ENUM_ARRAY),
+        ('moods_seen', PayloadKind.ARRAY),
         ('count', PayloadKind.PLAIN),
     ])
     def test_variables(self, view, var_name, kind):
         assert view.kind(view.interface.var(var_name).type) is kind
 
     @pytest.mark.parametrize('payload, kind', [
-        (Array(Ref(TypeRef('sample', 'Mood'))), PayloadKind.ENUM_ARRAY),
+        (Array(Ref(TypeRef('sample', 'Mood'))), PayloadKind.ARRAY),
         (Array(Ref(TypeRef('units', 'Power'))), PayloadKind.ARRAY),
         (Array(Primitive(JsonType.STRING)), PayloadKind.PLAIN),
     ])
@@ -318,7 +301,7 @@ class TestPayloadKinds:
 
     def test_an_enum_argument(self, view):
         configure = view.interface.cmd('configure')
-        assert view.kind(configure.arguments[0].type) is PayloadKind.ENUM
+        assert view.kind(configure.arguments[0].type) is PayloadKind.REF
 
     def test_json_types_come_from_the_target_not_the_sibling(self, view):
         """``mood`` writes ``type: object`` beside a reference to a string enum."""

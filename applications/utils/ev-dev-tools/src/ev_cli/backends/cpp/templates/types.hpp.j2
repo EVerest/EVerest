@@ -113,7 +113,7 @@ struct {{ struct.name }} {
 {% if u.required(struct) %}
         j = json{
 {% for field in u.required(struct) %}
-            {"{{ field.name }}", {{ u.to_json_value(field, 'k.' ~ field.name) }}},
+            {"{{ field.name }}", k.{{ field.name }}},
 {% endfor %}
         };
 {% else %}
@@ -124,7 +124,7 @@ struct {{ struct.name }} {
         // the optional parts of the type
 {% for field in u.optional(struct) %}
         if (k.{{ field.name }}) {
-            j.emplace("{{ field.name }}", {{ u.to_json_value(field, '*k.' ~ field.name) }});
+            j.emplace("{{ field.name }}", *k.{{ field.name }});
         }
 {% endfor %}
 {% endif %}

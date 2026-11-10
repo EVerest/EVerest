@@ -112,21 +112,3 @@ def module_header_guard(module: str) -> str:
 
 def type_header_include(unit: str) -> str:
     return f'generated/types/{unit}.hpp'
-
-
-def enum_to_string(spelling: str) -> str:
-    """``types::energy::EvseState`` -> ``types::energy::evse_state_to_string``."""
-    namespace, _, name = spelling.rpartition('::')
-    helper = f'{snake_case(name)}_to_string'
-    return f'{namespace}::{helper}' if namespace else helper
-
-
-def enum_to_string_view(spelling: str) -> str:
-    return f'{enum_to_string(spelling)}_view'
-
-
-def string_to_enum(spelling: str) -> str:
-    """``types::energy::EvseState`` -> ``types::energy::string_to_evse_state``."""
-    namespace, _, name = spelling.rpartition('::')
-    helper = f'string_to_{snake_case(name)}'
-    return f'{namespace}::{helper}' if namespace else helper

@@ -5,7 +5,7 @@
 
 //
 // AUTO GENERATED - DO NOT EDIT!
-// template version 6
+// template version 7
 //
 
 #include <framework/ModuleAdapter.hpp>
@@ -54,12 +54,7 @@ public:
         _ev->publish(_name, "nothing_happened", value);
     }
     void publish_moods_seen(const std::vector<types::sample::Mood>& value) {
-        std::vector<std::string> string_array;
-        string_array.reserve(value.size());
-        for (const auto& entry : value) {
-            string_array.push_back(types::sample::mood_to_string(entry));
-        }
-        _ev->publish(_name, "moods_seen", string_array);
+        _ev->publish(_name, "moods_seen", value);
     }
     void publish_count(const int& value) {
         _ev->publish(_name, "count", value);
@@ -117,14 +112,10 @@ private:
             {"allowed", {"array"}}
         };
         configure_cmd.cmd = [this](const Parameters& args) -> Result {
-            auto mood = types::sample::string_to_mood(args.at("mood").get<std::string>());
+            auto mood = args.at("mood").get<types::sample::Mood>();
             auto interval = static_cast<double>(args.at("interval"));
             auto enabled = static_cast<bool>(args.at("enabled"));
-            json allowed_json_array = args.at("allowed");
-            std::vector<types::sample::Mood> allowed;
-            for (auto entry : allowed_json_array) {
-                allowed.push_back(types::sample::string_to_mood(entry));
-            }
+            auto allowed = args.at("allowed").get<std::vector<types::sample::Mood>>();
 
             auto result = this->handle_configure(mood, interval, enabled, allowed);
             return result;

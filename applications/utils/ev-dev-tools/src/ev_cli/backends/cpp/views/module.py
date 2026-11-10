@@ -22,7 +22,7 @@ class ProvidedView:
     model: Model
 
     def __post_init__(self) -> None:
-        self._mapping = CppMapping(self.model, Flavour.PAYLOAD)
+        self._mapping = CppMapping(Flavour.PAYLOAD)
 
     @property
     def id(self) -> str:
@@ -111,7 +111,7 @@ class ModuleView:
     license_header: str = ''
 
     def __post_init__(self) -> None:
-        self._mapping = CppMapping(self.model, Flavour.PAYLOAD)
+        self._mapping = CppMapping(Flavour.PAYLOAD)
 
     # -- names --------------------------------------------------------------
 

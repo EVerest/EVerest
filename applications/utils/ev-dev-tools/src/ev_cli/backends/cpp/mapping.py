@@ -27,7 +27,6 @@ from ...ir.types import (
     Ref,
     TypeExpr,
     Variant,
-    is_enum,
 )
 from .naming import qualified_type
 
@@ -81,7 +80,6 @@ class Spelling:
     """A C++ type, plus what a backend needs to know to convert it."""
 
     text: str
-    is_enum: bool = False
     is_vector: bool = False
     #: Whether this is one of the framework's raw-JSON aliases rather than a
     #: type generated from a definition.
@@ -94,16 +92,12 @@ class Spelling:
 class CppMapping:
     """Turns :data:`~ev_cli.ir.types.TypeExpr` values into C++ spellings."""
 
-    def __init__(self, model, flavour: Flavour = Flavour.FIELD) -> None:
-        self._model = model
+    def __init__(self, flavour: Flavour = Flavour.FIELD) -> None:
         self._flavour = flavour
 
     @property
     def scalars(self) -> dict[JsonType, str]:
         return FIELD_SCALARS if self._flavour is Flavour.FIELD else PAYLOAD_SCALARS
-
-    def for_flavour(self, flavour: Flavour) -> CppMapping:
-        return CppMapping(self._model, flavour)
 
     # -- the mapping --------------------------------------------------------
 
@@ -112,13 +106,9 @@ class CppMapping:
             return Spelling(self._scalar(expr.json_type))
 
         if isinstance(expr, Ref):
-            text = qualified_type(expr.target.unit, expr.target.name)
-            return Spelling(text, is_enum=is_enum(self._model.resolve_type(expr.target)))
+            return Spelling(qualified_type(expr.target.unit, expr.target.name))
 
-        if isinstance(expr, LocalEnum):
-            return Spelling(expr.name, is_enum=True)
-
-        if isinstance(expr, LocalStruct):
+        if isinstance(expr, (LocalEnum, LocalStruct)):
             return Spelling(expr.name)
 
         if isinstance(expr, Array):

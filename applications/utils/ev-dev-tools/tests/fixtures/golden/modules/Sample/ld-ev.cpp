@@ -2,7 +2,7 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 //
 // AUTO GENERATED - DO NOT EDIT!
-// template version 6
+// template version 7
 //
 
 #include "ld-ev.hpp"

@@ -1,6 +1,6 @@
 #
 # AUTO GENERATED - MARKED REGIONS WILL BE KEPT
-# template version 6
+# template version 7
 #
 
 # module setup:
