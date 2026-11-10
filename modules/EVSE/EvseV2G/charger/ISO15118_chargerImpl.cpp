@@ -326,6 +326,11 @@ void ISO15118_chargerImpl::handle_receipt_is_required(bool& receipt_required) {
 void ISO15118_chargerImpl::handle_stop_charging(bool& stop) {
     // FIXME we need to use locks on v2g-ctx in all commands as they are running in different threads
 
+    // The EV has ended the energy transfer itself and is already terminating: no EVSE-initiated stop.
+    if (stop and v2g_ctx->session.welding_detection_active) {
+        return;
+    }
+
     if (stop) {
         // spawn new thread to not block command handler
         std::thread([stop] {
@@ -612,7 +617,7 @@ void ISO15118_chargerImpl::handle_reset_error() {
         iso2_DC_EVSEStatusCodeType_EVSE_IsolationMonitoringActive;
     v2g_ctx->evse_v2g_data.evse_status_code[PHASE_PRECHARGE] = iso2_DC_EVSEStatusCodeType_EVSE_Ready;
     v2g_ctx->evse_v2g_data.evse_status_code[PHASE_CHARGE] = iso2_DC_EVSEStatusCodeType_EVSE_Ready;
-    v2g_ctx->evse_v2g_data.evse_status_code[PHASE_WELDING] = iso2_DC_EVSEStatusCodeType_EVSE_NotReady;
+    v2g_ctx->evse_v2g_data.evse_status_code[PHASE_WELDING] = iso2_DC_EVSEStatusCodeType_EVSE_Ready;
     v2g_ctx->evse_v2g_data.evse_status_code[PHASE_STOP] = iso2_DC_EVSEStatusCodeType_EVSE_NotReady;
 
     // Todo(sl): check if emergency should be cleared here?
