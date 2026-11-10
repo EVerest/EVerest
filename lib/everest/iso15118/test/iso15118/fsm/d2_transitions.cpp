@@ -648,10 +648,24 @@ SCENARIO("ISO 15118-2 SECC confirms an EV-initiated DC stop with EVSE_Shutdown")
                 secc.fsm.context().set_cp_state(d20::CpState::B);
                 weld_detect(secc);
 
-                THEN("WeldingDetectionRes carries EVSE_Shutdown as well") {
+                THEN("WeldingDetectionRes carries EVSE_Ready [V2G2-880]") {
                     const auto res = secc.fsm.response<message_2::WeldingDetectionResponse>();
                     REQUIRE(res.has_value());
-                    REQUIRE(res->dc_evse_status.status_code == dt::DC_EVSEStatusCode::EVSE_Shutdown);
+                    REQUIRE(res->dc_evse_status.status_code == dt::DC_EVSEStatusCode::EVSE_Ready);
+                    REQUIRE(res->dc_evse_status.notification == dt::EVSENotification::None);
+                }
+            }
+
+            AND_WHEN("The module requests a stop after the EV's own stop request") {
+                const bool applied = secc.fsm.context().set_charger_stop_requested(true);
+                secc.fsm.context().set_cp_state(d20::CpState::B);
+                weld_detect(secc);
+
+                THEN("The request is dropped and WeldingDetectionRes stays EVSE_Ready") {
+                    REQUIRE_FALSE(applied);
+                    const auto res = secc.fsm.response<message_2::WeldingDetectionResponse>();
+                    REQUIRE(res.has_value());
+                    REQUIRE(res->dc_evse_status.status_code == dt::DC_EVSEStatusCode::EVSE_Ready);
                     REQUIRE(res->dc_evse_status.notification == dt::EVSENotification::None);
                 }
             }

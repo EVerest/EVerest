@@ -33,9 +33,10 @@ message_2::WeldingDetectionResponse handle_request([[maybe_unused]] const messag
     res.dc_evse_status.notification = charger_stop ? dt::EVSENotification::StopCharging : dt::EVSENotification::None;
     res.dc_evse_status.notification_max_delay = 0;
     res.dc_evse_status.isolation_status = dt::IsolationLevel::Valid;
-    // Welding detection follows PowerDelivery(Stop), so side B is disabled: EVSE_Shutdown (IEC 61851-23:2023
-    // Table CC.9 t104, CC.7.6.17 step 3), and a module fault overrides it.
-    res.dc_evse_status.status_code = error_status_code.value_or(dt::DC_EVSEStatusCode::EVSE_Shutdown);
+    // [V2G2-880] NOTE 1: EVSE_Ready, unless the EVSE itself stops the session or a module fault overrides
+    // both. IEC 61851-23:2023 Table CC.9 asks for EVSE_Shutdown in PowerDeliveryRes only.
+    res.dc_evse_status.status_code = error_status_code.value_or(charger_stop ? dt::DC_EVSEStatusCode::EVSE_Shutdown
+                                                                             : dt::DC_EVSEStatusCode::EVSE_Ready);
 
     res.evse_present_voltage = dt::to_physical_value(present_voltage, dt::Unit::V);
     return res;

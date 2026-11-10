@@ -15,14 +15,16 @@ namespace iso15118::din::state {
 
 message_din::WeldingDetectionResponse handle_request([[maybe_unused]] const message_din::WeldingDetectionRequest& req,
                                                      float present_voltage, const dt::SessionId& session_id,
-                                                     std::optional<dt::DcEvseStatusCode> error_status_code) {
+                                                     std::optional<dt::DcEvseStatusCode> error_status_code,
+                                                     bool charger_stop) {
     message_din::WeldingDetectionResponse res;
     setup_header(res.header, session_id);
 
     // Mandatory in WeldingDetectionRes even on a FAILED_UnknownSession response, so populate them first.
-    // Welding detection follows PowerDelivery(ReadyToChargeState false), so side B is disabled: EVSE_Shutdown
-    // (IEC 61851-23:2023 Table CC.9 t104, CC.7.6.17 step 3), and a module fault overrides it.
-    res.dc_evse_status.evse_status_code = error_status_code.value_or(dt::DcEvseStatusCode::EVSE_Shutdown);
+    // [V2G-DC-638]: EVSE_Ready, unless the EVSE itself stops the session [V2G-DC-663] or a module fault
+    // overrides both. IEC 61851-23:2023 Table CC.9 asks for EVSE_Shutdown in PowerDeliveryRes only.
+    res.dc_evse_status.evse_status_code = error_status_code.value_or(charger_stop ? dt::DcEvseStatusCode::EVSE_Shutdown
+                                                                                  : dt::DcEvseStatusCode::EVSE_Ready);
     res.dc_evse_status.evse_isolation_status = dt::IsolationLevel::Valid;
     res.evse_present_voltage = present_voltage;
     return response_with_code(res, dt::ResponseCode::OK);
@@ -33,7 +35,8 @@ void WeldingDetection::enter() {
 }
 
 void WeldingDetection::process_request([[maybe_unused]] const message_din::WeldingDetectionRequest& req) {
-    auto res = handle_request(req, m_ctx.evse().present_voltage, m_ctx.get_session_id(), m_ctx.error_status_code());
+    auto res = handle_request(req, m_ctx.evse().present_voltage, m_ctx.get_session_id(), m_ctx.error_status_code(),
+                              m_ctx.evse().charger_stop_requested);
     apply_isolation_status(m_ctx, res.dc_evse_status);
     m_ctx.respond(res);
 
@@ -130,8 +133,9 @@ Result WeldingDetection::on_event(Event ev) {
             m_ctx.clear_welding_voltage_timeout();
             message_din::WeldingDetectionResponse res;
             setup_header(res.header, m_ctx.get_session_id());
-            res.dc_evse_status.evse_status_code =
-                m_ctx.error_status_code().value_or(dt::DcEvseStatusCode::EVSE_Shutdown);
+            res.dc_evse_status.evse_status_code = m_ctx.error_status_code().value_or(
+                m_ctx.evse().charger_stop_requested ? dt::DcEvseStatusCode::EVSE_Shutdown
+                                                    : dt::DcEvseStatusCode::EVSE_Ready);
             res.dc_evse_status.evse_isolation_status = dt::IsolationLevel::Valid;
             apply_isolation_status(m_ctx, res.dc_evse_status);
             res.evse_present_voltage = m_ctx.evse().present_voltage;

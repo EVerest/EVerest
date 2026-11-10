@@ -724,20 +724,20 @@ protected:
 };
 
 TEST_F(DinServerPowerDeliveryTest, power_delivery_stop_sets_shutdown_status_code) {
-    // [IEC 61851-23:2023 CC.7.5.19] After the EV requested to stop the charging session
-    // (ReadyToChargeState = false), the PowerDeliveryRes and the subsequent WeldingDetectionRes
-    // shall report EVSE_Shutdown (or EVSE_UtilityInterruptEvent) instead of EVSE_Ready
+    // [IEC 61851-23:2023 CC.7.6.19] After the EV requested to stop the charging session
+    // (ReadyToChargeState = false), the PowerDeliveryRes shall report EVSE_Shutdown (or
+    // EVSE_UtilityInterruptEvent) instead of EVSE_Ready. The welding phase is left alone [V2G-DC-638].
     set_power_delivery_req(false);
 
     ctx->evse_v2g_data.evse_status_code[PHASE_CHARGE] = din_DC_EVSEStatusCodeType_EVSE_Ready;
-    ctx->evse_v2g_data.evse_status_code[PHASE_WELDING] = din_DC_EVSEStatusCodeType_EVSE_NotReady;
+    ctx->evse_v2g_data.evse_status_code[PHASE_WELDING] = din_DC_EVSEStatusCodeType_EVSE_Ready;
 
     EXPECT_EQ(states::handle_din_power_delivery(conn.get()), V2G_EVENT_NO_EVENT);
 
     auto& res = exi_out->V2G_Message.Body.PowerDeliveryRes;
     EXPECT_EQ(res.ResponseCode, din_responseCodeType_OK);
     EXPECT_EQ(res.DC_EVSEStatus.EVSEStatusCode, din_DC_EVSEStatusCodeType_EVSE_Shutdown);
-    EXPECT_EQ(ctx->evse_v2g_data.evse_status_code[PHASE_WELDING], din_DC_EVSEStatusCodeType_EVSE_Shutdown);
+    EXPECT_EQ(ctx->evse_v2g_data.evse_status_code[PHASE_WELDING], din_DC_EVSEStatusCodeType_EVSE_Ready);
     EXPECT_EQ(ctx->state, WAIT_FOR_WELDINGDETECTION_SESSIONSTOP);
     EXPECT_EQ(ctx->session.is_charging, false);
     EXPECT_TRUE(ctx->session.welding_detection_active);
@@ -759,13 +759,13 @@ TEST_F(DinServerPowerDeliveryTest, power_delivery_stop_preserves_more_specific_s
     EXPECT_EQ(ctx->evse_v2g_data.evse_status_code[PHASE_WELDING], din_DC_EVSEStatusCodeType_EVSE_UtilityInterruptEvent);
 }
 
-TEST_F(DinServerPowerDeliveryTest, welding_detection_after_stop_reports_shutdown_status_code) {
-    // [IEC 61851-23:2023 CC.7.5.19] After the EV requested to stop the charging session,
-    // the WeldingDetectionRes shall report EVSE_Shutdown instead of EVSE_Ready
+TEST_F(DinServerPowerDeliveryTest, welding_detection_after_stop_reports_ready_status_code) {
+    // [V2G-DC-638] After the EV requested to stop the charging session, the WeldingDetectionRes
+    // reports EVSE_Ready; IEC 61851-23:2023 Table CC.9 asks for EVSE_Shutdown in PowerDeliveryRes only
     set_power_delivery_req(false);
 
     ctx->evse_v2g_data.evse_status_code[PHASE_CHARGE] = din_DC_EVSEStatusCodeType_EVSE_Ready;
-    ctx->evse_v2g_data.evse_status_code[PHASE_WELDING] = din_DC_EVSEStatusCodeType_EVSE_NotReady;
+    ctx->evse_v2g_data.evse_status_code[PHASE_WELDING] = din_DC_EVSEStatusCodeType_EVSE_Ready;
 
     EXPECT_EQ(states::handle_din_power_delivery(conn.get()), V2G_EVENT_NO_EVENT);
 
@@ -788,7 +788,7 @@ TEST_F(DinServerPowerDeliveryTest, welding_detection_after_stop_reports_shutdown
 
     auto& res = exi_out->V2G_Message.Body.WeldingDetectionRes;
     EXPECT_EQ(res.ResponseCode, din_responseCodeType_OK);
-    EXPECT_EQ(res.DC_EVSEStatus.EVSEStatusCode, din_DC_EVSEStatusCodeType_EVSE_Shutdown);
+    EXPECT_EQ(res.DC_EVSEStatus.EVSEStatusCode, din_DC_EVSEStatusCodeType_EVSE_Ready);
     EXPECT_EQ(ctx->state, WAIT_FOR_WELDINGDETECTION_SESSIONSTOP);
     EXPECT_EQ(module::stub::get_logs(dloglevel_t::DLOG_LEVEL_ERROR).size(), 0);
 }
@@ -800,14 +800,14 @@ TEST_F(DinServerPowerDeliveryTest, power_delivery_start_keeps_ready_status_code)
     ctx->last_v2g_msg = V2G_PRE_CHARGE_MSG;
     ctx->state = WAIT_FOR_PRECHARGE_POWERDELIVERY;
     ctx->evse_v2g_data.evse_status_code[PHASE_CHARGE] = din_DC_EVSEStatusCodeType_EVSE_Ready;
-    ctx->evse_v2g_data.evse_status_code[PHASE_WELDING] = din_DC_EVSEStatusCodeType_EVSE_NotReady;
+    ctx->evse_v2g_data.evse_status_code[PHASE_WELDING] = din_DC_EVSEStatusCodeType_EVSE_Ready;
 
     EXPECT_EQ(states::handle_din_power_delivery(conn.get()), V2G_EVENT_NO_EVENT);
 
     auto& res = exi_out->V2G_Message.Body.PowerDeliveryRes;
     EXPECT_EQ(res.ResponseCode, din_responseCodeType_OK);
     EXPECT_EQ(res.DC_EVSEStatus.EVSEStatusCode, din_DC_EVSEStatusCodeType_EVSE_Ready);
-    EXPECT_EQ(ctx->evse_v2g_data.evse_status_code[PHASE_WELDING], din_DC_EVSEStatusCodeType_EVSE_NotReady);
+    EXPECT_EQ(ctx->evse_v2g_data.evse_status_code[PHASE_WELDING], din_DC_EVSEStatusCodeType_EVSE_Ready);
     EXPECT_EQ(ctx->state, WAIT_FOR_CURRENTDEMAND);
     EXPECT_FALSE(ctx->session.welding_detection_active);
 }

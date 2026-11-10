@@ -247,6 +247,9 @@ void D2SeccEngine::on_control_event(const d20::ControlEvent& event) {
     // status-carrying response tells the EV to stop; the guard fails the session if the EV ignores it.
     if (const auto* stop = std::get_if<d20::StopCharging>(&event)) {
         const bool requested = static_cast<bool>(*stop);
+        if (not ctx.set_charger_stop_requested(requested)) {
+            return;
+        }
         if (requested and not stop_charging_guard_armed) {
             ctx.start_timeout(d20::TimeoutType::STOP_CHARGING, d20::TIMEOUT_STOP_CHARGING_GUARD);
             stop_charging_guard_armed = true;
@@ -254,7 +257,6 @@ void D2SeccEngine::on_control_event(const d20::ControlEvent& event) {
             ctx.stop_timeout(d20::TimeoutType::STOP_CHARGING);
             stop_charging_guard_armed = false;
         }
-        ctx.set_charger_stop_requested(requested);
         if (not requested) {
             ctx.charger_stop_ignored = false;
         }

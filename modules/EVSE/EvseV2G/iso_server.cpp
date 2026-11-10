@@ -294,19 +294,17 @@ static telemetry_types::ChargeProgress to_telemetry_charge_progress(iso2_chargeP
 }
 
 /*!
- * \brief set_dc_shutdown_status_code This function marks the remaining DC phases as shut down after the EV requested
- * to stop the charging session, so that PowerDeliveryRes and WeldingDetectionRes report EVSE_Shutdown
- * [IEC 61851-23:2023 CC.7.6.19]. More specific status codes like EVSE_UtilityInterruptEvent or EVSE_Malfunction are
- * preserved.
+ * \brief set_dc_shutdown_status_code This function marks the charge phase as shut down after the EV requested to
+ * stop the charging session, so that PowerDeliveryRes reports EVSE_Shutdown [IEC 61851-23:2023 Table CC.9 t104,
+ * CC.7.6.19]. More specific status codes like EVSE_UtilityInterruptEvent or EVSE_Malfunction are preserved.
+ * WeldingDetectionRes keeps its own status code [V2G2-880].
  * \param ctx points to the V2G context.
  */
 static void set_dc_shutdown_status_code(struct v2g_context* ctx) {
-    for (const auto phase : {PHASE_CHARGE, PHASE_WELDING}) {
-        uint8_t& status_code = ctx->evse_v2g_data.evse_status_code[phase];
-        if ((status_code == iso2_DC_EVSEStatusCodeType_EVSE_NotReady) ||
-            (status_code == iso2_DC_EVSEStatusCodeType_EVSE_Ready)) {
-            status_code = iso2_DC_EVSEStatusCodeType_EVSE_Shutdown;
-        }
+    uint8_t& status_code = ctx->evse_v2g_data.evse_status_code[PHASE_CHARGE];
+    if ((status_code == iso2_DC_EVSEStatusCodeType_EVSE_NotReady) ||
+        (status_code == iso2_DC_EVSEStatusCodeType_EVSE_Ready)) {
+        status_code = iso2_DC_EVSEStatusCodeType_EVSE_Shutdown;
     }
 }
 

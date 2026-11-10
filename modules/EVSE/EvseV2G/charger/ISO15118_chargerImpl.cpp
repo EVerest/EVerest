@@ -353,6 +353,11 @@ void ISO15118_chargerImpl::handle_receipt_is_required(bool& receipt_required) {
 void ISO15118_chargerImpl::handle_stop_charging(bool& stop) {
     // FIXME we need to use locks on v2g-ctx in all commands as they are running in different threads
 
+    // The EV has ended the energy transfer itself and is already terminating: no EVSE-initiated stop.
+    if (stop and v2g_ctx->session.welding_detection_active) {
+        return;
+    }
+
     if (stop) {
         // spawn new thread to not block command handler
         std::thread([stop] {
