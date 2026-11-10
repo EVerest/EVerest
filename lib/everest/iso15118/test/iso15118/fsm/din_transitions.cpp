@@ -752,10 +752,23 @@ SCENARIO("DIN SPEC 70121 SECC confirms an EV-initiated stop with EVSE_Shutdown")
                 secc.fsm.context().set_cp_state(d20::CpState::B);
                 weld_detect(secc);
 
-                THEN("WeldingDetectionRes carries EVSE_Shutdown as well") {
+                THEN("WeldingDetectionRes carries EVSE_Ready [V2G-DC-638]") {
                     const auto res = secc.fsm.response<message_din::WeldingDetectionResponse>();
                     REQUIRE(res.has_value());
-                    REQUIRE(res->dc_evse_status.evse_status_code == dt::DcEvseStatusCode::EVSE_Shutdown);
+                    REQUIRE(res->dc_evse_status.evse_status_code == dt::DcEvseStatusCode::EVSE_Ready);
+                }
+            }
+
+            AND_WHEN("The module requests a stop after the EV's own stop request") {
+                const bool applied = secc.fsm.context().set_charger_stop_requested(true);
+                secc.fsm.context().set_cp_state(d20::CpState::B);
+                weld_detect(secc);
+
+                THEN("The request is dropped and WeldingDetectionRes stays EVSE_Ready") {
+                    REQUIRE_FALSE(applied);
+                    const auto res = secc.fsm.response<message_din::WeldingDetectionResponse>();
+                    REQUIRE(res.has_value());
+                    REQUIRE(res->dc_evse_status.evse_status_code == dt::DcEvseStatusCode::EVSE_Ready);
                 }
             }
         }

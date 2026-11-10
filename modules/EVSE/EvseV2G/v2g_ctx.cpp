@@ -104,7 +104,7 @@ void v2g_ctx_init_dc_evse_status_codes(struct v2g_context* const ctx) {
     ctx->evse_v2g_data.evse_status_code[PHASE_ISOLATION] = iso2_DC_EVSEStatusCodeType_EVSE_IsolationMonitoringActive;
     ctx->evse_v2g_data.evse_status_code[PHASE_PRECHARGE] = iso2_DC_EVSEStatusCodeType_EVSE_Ready;
     ctx->evse_v2g_data.evse_status_code[PHASE_CHARGE] = iso2_DC_EVSEStatusCodeType_EVSE_Ready;
-    ctx->evse_v2g_data.evse_status_code[PHASE_WELDING] = iso2_DC_EVSEStatusCodeType_EVSE_NotReady;
+    ctx->evse_v2g_data.evse_status_code[PHASE_WELDING] = iso2_DC_EVSEStatusCodeType_EVSE_Ready;
     ctx->evse_v2g_data.evse_status_code[PHASE_STOP] = iso2_DC_EVSEStatusCodeType_EVSE_NotReady;
 }
 
@@ -125,7 +125,7 @@ void v2g_ctx_init_charging_state(struct v2g_context* const ctx, bool is_connecti
     ctx->session.welding_voltage_updates = 0;
     ctx->response_wait_ms = 0;
     ctx->evse_v2g_data.evse_notification = (uint8_t)0;
-    /* A stopped DC session writes EVSE_Shutdown into every phase [IEC 61851-23:2023 CC.7.6.19]. It must not outlive
+    /* A stopped DC session writes EVSE_Shutdown into its phases [IEC 61851-23:2023 CC.7.6.19]. It must not outlive
      * the connection, or the next PowerDeliveryRes is refused with FAILED_PowerDeliveryNotApplied [V2G2-480]. */
     v2g_ctx_init_dc_evse_status_codes(ctx);
 }

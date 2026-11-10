@@ -210,8 +210,14 @@ public:
     void set_isolation_status(d20::IsolationStatus status) {
         evse_status.reported_isolation_status = status;
     }
-    void set_charger_stop_requested(bool requested) {
+    // A stop requested once the EV has ended the energy transfer itself is dropped: the EV is already
+    // terminating, so this is no EVSE-initiated stop ([V2G-DC-663]). Returns whether the request applies.
+    bool set_charger_stop_requested(bool requested) {
+        if (requested and welding_detection.is_running()) {
+            return false;
+        }
         evse_status.charger_stop_requested = requested;
+        return true;
     }
     void set_charger_stop_ignored(bool ignored) {
         evse_status.charger_stop_ignored = ignored;
