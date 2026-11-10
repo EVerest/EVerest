@@ -70,8 +70,8 @@ class InterfaceView:
     def errors(self):
         return self.interface.errors
 
-    def guard(self, header: naming.InterfaceHeaderFile) -> str:
-        return naming.interface_header_guard(self.interface.name, header)
+    def guard(self, filename: str) -> str:
+        return naming.interface_header_guard(self.interface.name, filename)
 
     @property
     def implementation_class(self) -> str:

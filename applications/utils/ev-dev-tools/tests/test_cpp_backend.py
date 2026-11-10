@@ -17,7 +17,8 @@ import pytest
 
 from ev_cli import blocks
 from ev_cli.backends.cpp import naming
-from ev_cli.backends.cpp.backend import CppBackend
+from ev_cli.backends.base import OutputKind
+from ev_cli.backends.cpp.backend import TEMPLATE_DIR, CppBackend, Template
 from ev_cli.backends.cpp.mapping import CppMapping, Flavour
 from ev_cli.backends.cpp.order import order_fields, order_structs
 from ev_cli.backends.cpp.views import InterfaceView, PayloadKind, TypeUnitView
@@ -115,6 +116,17 @@ class TestStructOrder:
         assert [s.name for s in TypeUnitView(unit=unit, model=Model()).structs] == ['Inner', 'Outer']
 
 
+class TestTemplates:
+    """``Template`` is the one list of templates; get-templates and rendering use it."""
+
+    def test_every_template_on_disk_is_declared_and_every_declared_one_exists(self):
+        on_disk = {path.relative_to(TEMPLATE_DIR).as_posix() for path in TEMPLATE_DIR.rglob('*.j2')}
+        assert on_disk == {template.value for template in Template}
+
+    def test_every_output_kind_has_templates(self):
+        assert {template.kind for template in Template} == set(OutputKind)
+
+
 class TestSnakeCase:
     """Enum helper names are built from this, so its output is the API."""
 
@@ -149,13 +161,13 @@ class TestGuardsAndNames:
     def test_type_header_guard(self, unit, expected):
         assert naming.type_header_guard(unit) == expected
 
-    @pytest.mark.parametrize('header, expected', [
-        (naming.InterfaceHeaderFile.IMPLEMENTATION_HPP, 'ISOLATION_MONITOR_IMPLEMENTATION_HPP'),
-        (naming.InterfaceHeaderFile.INTERFACE_HPP, 'ISOLATION_MONITOR_INTERFACE_HPP'),
-        (naming.InterfaceHeaderFile.TYPES_HPP, 'ISOLATION_MONITOR_TYPES_HPP'),
+    @pytest.mark.parametrize('filename, expected', [
+        ('Implementation.hpp', 'ISOLATION_MONITOR_IMPLEMENTATION_HPP'),
+        ('Interface.hpp', 'ISOLATION_MONITOR_INTERFACE_HPP'),
+        ('Types.hpp', 'ISOLATION_MONITOR_TYPES_HPP'),
     ])
-    def test_interface_header_guard(self, header, expected):
-        assert naming.interface_header_guard('isolation_monitor', header) == expected
+    def test_interface_header_guard(self, filename, expected):
+        assert naming.interface_header_guard('isolation_monitor', filename) == expected
 
     def test_implementation_guard(self):
         assert naming.implementation_header_guard('main', 'evse_manager') == \

@@ -10,6 +10,7 @@ directly, through the views in :mod:`.views`.
 from __future__ import annotations
 
 import argparse
+from enum import Enum
 from pathlib import Path
 
 import jinja2
@@ -19,7 +20,6 @@ from ...files import clang_format
 from ...ir.model import Model
 from ..base import FileCategory, GeneratedFile, OutputKind, UpdatePolicy
 from . import naming
-from .naming import InterfaceHeaderFile
 from .views import (
     PayloadKind,
     ImplementationView,
@@ -28,15 +28,40 @@ from .views import (
     TypeUnitView,
 )
 
-#: One directory per output kind.  ``get-templates`` lists a kind's directory,
-#: and CMake regenerates that output when one of them changes.
 TEMPLATE_DIR = Path(__file__).parent / 'templates'
 
-INTERFACE_TEMPLATES: dict[InterfaceHeaderFile, str] = {
-    InterfaceHeaderFile.IMPLEMENTATION_HPP: 'interface/implementation-base.hpp.j2',
-    InterfaceHeaderFile.INTERFACE_HPP: 'interface/interface.hpp.j2',
-    InterfaceHeaderFile.TYPES_HPP: 'interface/types.hpp.j2',
-}
+
+class Template(Enum):
+    """Every template this backend renders; the value is its path under templates/.
+
+    The first path segment is the output kind it belongs to.  ``get-templates``
+    lists a kind's templates, and CMake regenerates that output when one of
+    them changes.
+    """
+
+    TYPE_UNIT = 'type-unit/unit.hpp.j2'
+
+    INTERFACE_IMPLEMENTATION_BASE = 'interface/implementation-base.hpp.j2'
+    INTERFACE = 'interface/interface.hpp.j2'
+    INTERFACE_TYPES = 'interface/types.hpp.j2'
+
+    LOADER_HPP = 'module-loader/ld-ev.hpp.j2'
+    LOADER_CPP = 'module-loader/ld-ev.cpp.j2'
+
+    MODULE_HPP = 'module-files/module.hpp.j2'
+    MODULE_CPP = 'module-files/module.cpp.j2'
+    IMPLEMENTATION_HPP = 'module-files/implementation.hpp.j2'
+    IMPLEMENTATION_CPP = 'module-files/implementation.cpp.j2'
+    CMAKELISTS = 'module-files/CMakeLists.txt.j2'
+    DOCS_INDEX = 'module-files/docs/index.rst.j2'
+
+    @property
+    def kind(self) -> OutputKind:
+        return OutputKind(self.value.partition('/')[0])
+
+    @property
+    def path(self) -> Path:
+        return TEMPLATE_DIR / self.value
 
 
 class CppBackend:
@@ -94,13 +119,16 @@ class CppBackend:
     # -- templates ----------------------------------------------------------
 
     def templates(self, kind: OutputKind) -> tuple[Path, ...]:
-        return tuple(sorted((TEMPLATE_DIR / kind.value).rglob('*.j2')))
+        return tuple(template.path for template in Template if template.kind is kind)
+
+    def _render(self, template: Template, view, **context) -> str:
+        return self._env.get_template(template.value).render(u=view, **context)
 
     # -- emission -----------------------------------------------------------
 
     def emit_type_unit(self, model: Model, unit: str, output_dir: Path) -> list[GeneratedFile]:
         view = TypeUnitView(unit=model.types[unit], model=model)
-        content = self._env.get_template('type-unit/unit.hpp.j2').render(u=view)
+        content = self._render(Template.TYPE_UNIT, view)
 
         path = output_dir / f'{unit}.hpp'
         return [GeneratedFile(
@@ -125,17 +153,21 @@ class CppBackend:
 
         # All of them are declared as genrule outputs in interfaces/BUILD.bazel,
         # so all of them have to be produced for every interface.
+        outputs = (
+            ('Implementation.hpp', Template.INTERFACE_IMPLEMENTATION_BASE),
+            ('Interface.hpp', Template.INTERFACE),
+            ('Types.hpp', Template.INTERFACE_TYPES),
+        )
         return [
             GeneratedFile(
-                path=output_path / header.value,
-                content=self._env.get_template(INTERFACE_TEMPLATES[header]).render(
-                    u=view, header=header),
-                printable_name=f'{interface}/{header.value}',
+                path=output_path / filename,
+                content=self._render(template, view, filename=filename),
+                printable_name=f'{interface}/{filename}',
                 source_mtime=mtime,
                 template_paths=templates,
-                abbr=f'{interface}/{header.value}',
+                abbr=f'{interface}/{filename}',
             )
-            for header in InterfaceHeaderFile
+            for filename, template in outputs
         ]
 
     def emit_module_loader(self, model: Model, module: str, output_dir: Path) -> list[GeneratedFile]:
@@ -150,15 +182,15 @@ class CppBackend:
         return [
             GeneratedFile(
                 path=output_dir / name / filename,
-                content=self._env.get_template(template).render(u=view),
+                content=self._render(template, view),
                 printable_name=f'{name}/{filename}',
                 source_mtime=mtime,
                 template_paths=templates,
                 abbr=filename,
             )
             for filename, template in (
-                ('ld-ev.hpp', 'module-loader/ld-ev.hpp.j2'),
-                ('ld-ev.cpp', 'module-loader/ld-ev.cpp.j2'),
+                ('ld-ev.hpp', Template.LOADER_HPP),
+                ('ld-ev.cpp', Template.LOADER_CPP),
             )
         ]
 
@@ -182,12 +214,12 @@ class CppBackend:
         mtime = definition.source.file.stat().st_mtime
         templates = self.templates(OutputKind.MODULE_FILES)
 
-        def rendered(template: str, view, path: Path, abbr: str, category: FileCategory,
+        def rendered(template: Template, view, path: Path, abbr: str, category: FileCategory,
                      policy: UpdatePolicy = UpdatePolicy.REGENERATE,
                      with_license: bool = True) -> GeneratedFile:
             return GeneratedFile(
                 path=path,
-                content=self._env.get_template(template).render(u=view),
+                content=self._render(template, view),
                 printable_name=path.relative_to(module_dir).as_posix(),
                 source_mtime=mtime,
                 template_paths=templates,
@@ -204,19 +236,19 @@ class CppBackend:
         header = module_dir / f'{definition.name}.hpp'
 
         files.append(rendered(
-            'module-files/CMakeLists.txt.j2',
+            Template.CMAKELISTS,
             ModuleView(module=definition, model=model,
                        blocks=read_blocks(blocks.CMAKELISTS, cmakelists)),
             cmakelists, 'cmakelists', FileCategory.CORE, with_license=False,
         ))
         files.append(rendered(
-            'module-files/module.hpp.j2',
+            Template.MODULE_HPP,
             ModuleView(module=definition, model=model, license_header=license_header,
                        blocks=read_blocks(blocks.MODULE_HEADER, header)),
             header, 'module.hpp', FileCategory.CORE,
         ))
         files.append(rendered(
-            'module-files/module.cpp.j2',
+            Template.MODULE_CPP,
             ModuleView(module=definition, model=model, license_header=license_header),
             module_dir / f'{definition.name}.cpp', 'module.cpp', FileCategory.CORE,
             UpdatePolicy.CREATE_IF_MISSING,
@@ -232,11 +264,11 @@ class CppBackend:
                 blocks=read_blocks(blocks.IMPLEMENTATION_HEADER, implementation_header),
             )
             files.append(rendered(
-                'module-files/implementation.hpp.j2', view, implementation_header,
+                Template.IMPLEMENTATION_HPP, view, implementation_header,
                 f'{provided.id}.hpp', FileCategory.INTERFACES,
             ))
             files.append(rendered(
-                'module-files/implementation.cpp.j2', view,
+                Template.IMPLEMENTATION_CPP, view,
                 module_dir / f'{provided.id}/{provided.interface}Impl.cpp',
                 f'{provided.id}.cpp', FileCategory.INTERFACES,
                 UpdatePolicy.CREATE_IF_MISSING,
@@ -244,7 +276,7 @@ class CppBackend:
 
         # -- docs -----------------------------------------------------------
         files.append(rendered(
-            'module-files/docs/index.rst.j2',
+            Template.DOCS_INDEX,
             ModuleView(module=definition, model=model),
             module_dir / 'docs' / 'index.rst', 'index.rst', FileCategory.DOCS,
             UpdatePolicy.LEAVE_ALONE, with_license=False,
