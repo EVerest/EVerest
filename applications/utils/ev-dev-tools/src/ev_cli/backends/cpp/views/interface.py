@@ -112,7 +112,7 @@ class InterfaceView:
     # -- payload spellings --------------------------------------------------
 
     def spell(self, payload: TypeExpr) -> str:
-        return self._mapping.spell(payload).text
+        return self._mapping.spell(payload)
 
     def raw_spell(self, payload: TypeExpr) -> str:
         """The C++ type the framework hands over, before any conversion.

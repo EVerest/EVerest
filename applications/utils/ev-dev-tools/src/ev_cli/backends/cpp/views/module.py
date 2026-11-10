@@ -62,7 +62,7 @@ class ProvidedView:
         return read_write_config(self.provided.config)
 
     def config_type(self, entry: ConfigEntry) -> str:
-        return self._mapping.spell(Primitive(entry.type)).text
+        return self._mapping.spell(Primitive(entry.type))
 
 
 @dataclass
@@ -180,7 +180,7 @@ class ModuleView:
         return read_write_config(self.module.config)
 
     def config_type(self, entry: ConfigEntry) -> str:
-        return self._mapping.spell(Primitive(entry.type)).text
+        return self._mapping.spell(Primitive(entry.type))
 
     # -- the runtime config client ------------------------------------------
     #

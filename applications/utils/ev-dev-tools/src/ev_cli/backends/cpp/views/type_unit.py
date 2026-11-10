@@ -7,7 +7,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from ....ir.model import Model
-from ....ir.types import Field, StructDef, TypeUnit
+from ....ir.types import Array, Field, StructDef, TypeUnit
 from .. import naming
 from ..mapping import CppMapping, Flavour
 from ..order import order_fields, order_structs
@@ -85,14 +85,17 @@ class TypeUnitView:
 
     def type_of(self, field: Field) -> str:
         """The member's type, without the optional wrapper."""
-        return self._mapping.spell(field.type).text
+        return self._mapping.spell(field.type)
 
     def field_type(self, field: Field) -> str:
         """The member's declared type, wrapped when the property is optional."""
-        return self._mapping.field_type(field)
+        spelling = self.type_of(field)
+        return spelling if field.required else f'std::optional<{spelling}>'
 
-    def is_vector(self, field: Field) -> bool:
-        return self._mapping.spell(field.type).is_vector
+    @staticmethod
+    def is_vector(field: Field) -> bool:
+        """A struct member that is an array is always a typed vector."""
+        return isinstance(field.type, Array)
 
     def identifier(self, field: Field) -> str:
         return naming.check_identifier(field.name, str(field.source))

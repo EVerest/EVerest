@@ -207,7 +207,7 @@ class TestTypeMapping:
         (JsonType.STRING, 'std::string'),
     ])
     def test_struct_members(self, field_mapping, json_type, expected):
-        assert field_mapping.spell(Primitive(json_type)).text == expected
+        assert field_mapping.spell(Primitive(json_type)) == expected
 
     @pytest.mark.parametrize('json_type, expected', [
         (JsonType.BOOLEAN, 'bool'),
@@ -217,7 +217,7 @@ class TestTypeMapping:
         (JsonType.NULL, 'std::nullptr_t'),
     ])
     def test_interface_payloads(self, payload_mapping, json_type, expected):
-        assert payload_mapping.spell(Primitive(json_type)).text == expected
+        assert payload_mapping.spell(Primitive(json_type)) == expected
 
     def test_the_two_mappings_disagree_and_that_is_deliberate(
             self, field_mapping, payload_mapping):
@@ -229,8 +229,8 @@ class TestTypeMapping:
         exists so the difference cannot be lost by accident.
         """
         for json_type in (JsonType.NUMBER, JsonType.INTEGER):
-            assert (field_mapping.spell(Primitive(json_type)).text
-                    != payload_mapping.spell(Primitive(json_type)).text)
+            assert (field_mapping.spell(Primitive(json_type))
+                    != payload_mapping.spell(Primitive(json_type)))
 
     def test_format_does_not_change_the_type(self, fixture_model):
         """A property saying ``format: date-time`` is a plain std::string."""
@@ -238,31 +238,29 @@ class TestTypeMapping:
         taken_at = next(f for f in reading.fields if f.name == 'taken_at')
         assert taken_at.constraints.format == 'date-time'
         assert CppMapping(Flavour.FIELD).spell(
-            taken_at.type).text == 'std::string'
+            taken_at.type) == 'std::string'
 
     def test_references(self, field_mapping):
-        assert field_mapping.spell(Ref(TypeRef('sample', 'Mood'))).text == 'types::sample::Mood'
-        assert field_mapping.spell(Ref(TypeRef('units', 'Power'))).text == 'types::units::Power'
+        assert field_mapping.spell(Ref(TypeRef('sample', 'Mood'))) == 'types::sample::Mood'
+        assert field_mapping.spell(Ref(TypeRef('units', 'Power'))) == 'types::units::Power'
 
     def test_local_enum(self, field_mapping):
-        assert field_mapping.spell(LocalEnum('Kind')).text == 'Kind'
+        assert field_mapping.spell(LocalEnum('Kind')) == 'Kind'
 
     def test_struct_member_arrays_are_always_typed(self, field_mapping):
-        spelling = field_mapping.spell(Array(Primitive(JsonType.STRING)))
-        assert spelling.text == 'std::vector<std::string>'
-        assert spelling.is_vector
+        assert field_mapping.spell(Array(Primitive(JsonType.STRING))) == 'std::vector<std::string>'
 
     def test_payload_arrays_are_typed_only_when_the_items_are_declared(
             self, payload_mapping):
         """``handle_get_configuration_key(Array&)`` is the visible consequence."""
-        assert payload_mapping.spell(Array(Primitive(JsonType.STRING))).text == 'Array'
+        assert payload_mapping.spell(Array(Primitive(JsonType.STRING))) == 'Array'
         assert payload_mapping.spell(
             Array(Ref(TypeRef('sample', 'Mood')))
-        ).text == 'std::vector<types::sample::Mood>'
+        ) == 'std::vector<types::sample::Mood>'
 
     def test_opaque_payloads(self, payload_mapping):
-        assert payload_mapping.spell(Opaque(JsonType.OBJECT)).text == 'Object'
-        assert payload_mapping.spell(Opaque(JsonType.ARRAY)).text == 'Array'
+        assert payload_mapping.spell(Opaque(JsonType.OBJECT)) == 'Object'
+        assert payload_mapping.spell(Opaque(JsonType.ARRAY)) == 'Array'
 
     def test_variant_alternatives_are_sorted_with_null_first(self, payload_mapping):
         """So that the variant default-constructs to the empty alternative."""
@@ -270,7 +268,7 @@ class TestTypeMapping:
             JsonType.NULL, JsonType.STRING, JsonType.NUMBER, JsonType.INTEGER,
             JsonType.BOOLEAN, JsonType.ARRAY, JsonType.OBJECT,
         ))
-        assert payload_mapping.spell(variant).text == (
+        assert payload_mapping.spell(variant) == (
             'std::variant<std::nullptr_t, Array, Object, bool, double, int, '
             'std::string>'
         )
@@ -279,7 +277,7 @@ class TestTypeMapping:
             self, payload_mapping):
         a = Variant((JsonType.STRING, JsonType.INTEGER))
         b = Variant((JsonType.INTEGER, JsonType.STRING))
-        assert payload_mapping.spell(a).text == payload_mapping.spell(b).text
+        assert payload_mapping.spell(a) == payload_mapping.spell(b)
 
 
 class TestPayloadKinds:

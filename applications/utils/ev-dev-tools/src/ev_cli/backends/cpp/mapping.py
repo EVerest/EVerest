@@ -1,18 +1,15 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright Pionix GmbH and Contributors to EVerest
-"""How a JSON Schema type becomes a C++ type.
+"""How a type expression of the IR is spelled as a C++ type.
 
-This table is the generated ABI.  Every module in everest-core and the
-hand-written mirror in ``lib/everest/everest_api_types`` compile against these
-choices, and a change here compiles cleanly while altering struct layout,
-precision, or both.  It is therefore reproduced exactly as it was -- including
-the two inconsistencies noted below, which are recorded as follow-up work
-rather than fixed in passing.
+These choices are the generated ABI.  Every module in everest-core and the
+hand-written mirror in ``lib/everest/everest_api_types`` compile against them,
+and a change here compiles cleanly while altering struct layout, precision, or
+both.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from enum import Enum
 from typing import Final
 
@@ -32,18 +29,18 @@ from .naming import qualified_type
 
 
 class Flavour(Enum):
-    """Which of the two historical mappings applies.
+    """Which of the two scalar mappings applies.
 
     They disagree: a struct member declared ``number`` becomes ``float`` while
     a command argument declared ``number`` becomes ``double``, and ``integer``
-    is ``int32_t`` in one and ``int`` in the other.  Nothing justifies the
-    difference, but reconciling it would change the layout and the precision
-    of generated structs, so both are kept.
+    is ``int32_t`` in one and ``int`` in the other.  Reconciling them would
+    change the layout and the precision of generated structs.
     """
 
     #: Members of a generated struct, from ``types/*.yaml``.
     FIELD = 'field'
-    #: Variable and command payloads in an interface's generated signatures.
+    #: Interface variables and command arguments and results, and module
+    #: configuration.
     PAYLOAD = 'payload'
 
 
@@ -67,53 +64,31 @@ PAYLOAD_SCALARS: Final[dict[JsonType, str]] = {
 }
 
 
-@dataclass(frozen=True)
-class Spelling:
-    """A C++ type, plus what a backend needs to know to convert it."""
-
-    text: str
-    is_vector: bool = False
-
-    def __str__(self) -> str:
-        return self.text
-
-
 class CppMapping:
-    """Turns :data:`~ev_cli.ir.types.TypeExpr` values into C++ spellings."""
+    """Turns :data:`~ev_cli.ir.types.TypeExpr` values into C++ type names."""
 
     def __init__(self, flavour: Flavour = Flavour.FIELD) -> None:
         self._flavour = flavour
 
-    @property
-    def scalars(self) -> dict[JsonType, str]:
-        return FIELD_SCALARS if self._flavour is Flavour.FIELD else PAYLOAD_SCALARS
-
-    # -- the mapping --------------------------------------------------------
-
-    def spell(self, expr: TypeExpr) -> Spelling:
-        if isinstance(expr, Primitive):
-            return Spelling(self._scalar(expr.json_type))
+    def spell(self, expr: TypeExpr) -> str:
+        if isinstance(expr, (Primitive, Opaque)):
+            return self._scalar(expr.json_type)
 
         if isinstance(expr, Ref):
-            return Spelling(qualified_type(expr.target.unit, expr.target.name))
+            return qualified_type(expr.target.unit, expr.target.name)
 
         if isinstance(expr, (LocalEnum, LocalStruct)):
-            return Spelling(expr.name)
+            return expr.name
 
         if isinstance(expr, Array):
             return self._array(expr)
 
-        if isinstance(expr, Opaque):
-            return Spelling(self._scalar(expr.json_type))
-
         if isinstance(expr, Variant):
-            return Spelling(self._variant(expr))
+            return self._variant(expr)
 
         raise UnsupportedDefinition(f'cannot spell {expr!r} in C++')
 
-    def _array(self, expr: Array) -> Spelling:
-        inner = self.spell(expr.items)
-
+    def _array(self, expr: Array) -> str:
         # A struct member is always a typed vector.  An interface payload only
         # becomes one when its items are a reference to a declared type: an
         # array of plain strings is handed over as the framework's raw-JSON
@@ -121,13 +96,14 @@ class CppMapping:
         # ``handle_get_configuration_key(Array&)`` in ocpp_1_6_charge_point is
         # one -- so it is part of the generated API.
         if self._flavour is Flavour.PAYLOAD and not isinstance(expr.items, Ref):
-            return Spelling(PAYLOAD_SCALARS[JsonType.ARRAY])
+            return PAYLOAD_SCALARS[JsonType.ARRAY]
 
-        return Spelling(f'std::vector<{inner.text}>', is_vector=True)
+        return f'std::vector<{self.spell(expr.items)}>'
 
     def _scalar(self, json_type: JsonType) -> str:
+        scalars = FIELD_SCALARS if self._flavour is Flavour.FIELD else PAYLOAD_SCALARS
         try:
-            return self.scalars[json_type]
+            return scalars[json_type]
         except KeyError:
             raise UnsupportedDefinition(
                 f'no C++ type for json type "{json_type.value}" as a '
@@ -145,10 +121,3 @@ class CppMapping:
         if expr.nullable:
             alternatives.insert(0, PAYLOAD_SCALARS[JsonType.NULL])
         return f'std::variant<{", ".join(alternatives)}>'
-
-    # -- convenience for the templates --------------------------------------
-
-    def field_type(self, field) -> str:
-        """A struct member's declared type, wrapped when it is optional."""
-        text = self.spell(field.type).text
-        return text if field.required else f'std::optional<{text}>'
