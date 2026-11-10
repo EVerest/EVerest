@@ -14,7 +14,7 @@ def generate_headers(args) -> int:
     output_dir = context.resolve_output_dir(
         args.output_dir, default=backend.type_output_dir, backend=backend.name)
 
-    model = context.model()
+    model = context.type_model()
     writer = context.writer(diff_only=args.diff)
     strategy = context.strategy(args.force)
 

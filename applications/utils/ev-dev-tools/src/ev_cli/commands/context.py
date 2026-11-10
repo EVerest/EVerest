@@ -32,7 +32,6 @@ class Context:
 
     _tree: SourceTree | None = field(default=None, init=False, repr=False)
     _loader: DefinitionLoader | None = field(default=None, init=False, repr=False)
-    _model: Model | None = field(default=None, init=False, repr=False)
 
     # -- construction -------------------------------------------------------
 
@@ -61,20 +60,16 @@ class Context:
             self._loader = DefinitionLoader(self.tree, Validators.load(self.schemas_dir))
         return self._loader
 
-    def model(self) -> Model:
-        """Every type unit the source tree offers.
-
-        All units are loaded even when only one is being emitted: a reference
-        into another unit has to resolve for the backend to know whether it
-        points at a struct or an enum.
-        """
-        if self._model is None:
-            self._model = build.build_model(self.loader)
-        return self._model
+    def type_model(self) -> Model:
+        """Every type unit."""
+        return Model(types=build.build_type_units(self.loader))
 
     def interface_model(self, names) -> Model:
-        """The types, plus the named interfaces."""
-        return self.model().with_interfaces(build.build_interfaces(self.loader, names))
+        """Every type unit, and the named interfaces."""
+        return Model(
+            types=build.build_type_units(self.loader),
+            interfaces=build.build_interfaces(self.loader, names),
+        )
 
     def module_model(self, names, *, with_interfaces: bool = False) -> Model:
         """The named modules, and optionally the interfaces they implement.
@@ -94,7 +89,7 @@ class Context:
             for module in modules.values() for provided in module.provides
         })
         interfaces = build.build_interfaces(self.loader, needed)
-        return Model(types=self.model().types, interfaces=interfaces, modules=modules)
+        return Model(types=build.build_type_units(self.loader), interfaces=interfaces, modules=modules)
 
     def resolve_output_dir(self, given: str | None, *, default: str | None, backend: str) -> Path:
         """Where a generating command writes.

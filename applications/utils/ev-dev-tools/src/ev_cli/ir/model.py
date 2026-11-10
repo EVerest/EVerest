@@ -1,10 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright Pionix GmbH and Contributors to EVerest
-"""The whole world, loaded once and then queried.
+"""The definitions one command works on.
 
-Definitions are loaded into a :class:`Model` and everything else asks it
-questions, so no part of the generator has to populate a cache for another part
-to find.
+A command builds a :class:`Model` holding what it needs, and the backends query
+it instead of keeping caches of their own.
 """
 
 from __future__ import annotations
@@ -21,13 +20,11 @@ from .types import Declaration, TypeUnit
 
 @dataclass(frozen=True)
 class Model:
-    """Every definition ev-cli was asked to load."""
+    """The type units, interfaces and modules a command loaded."""
 
     types: Mapping[str, TypeUnit] = field(default_factory=dict)
     interfaces: Mapping[str, InterfaceDef] = field(default_factory=dict)
     modules: Mapping[str, ModuleDef] = field(default_factory=dict)
-
-    # -- queries ------------------------------------------------------------
 
     def resolve_type(self, ref: TypeRef) -> Declaration:
         """The struct or enum a type reference names."""
@@ -42,12 +39,3 @@ class Model:
                 f'reference {ref} names a type that "{ref.unit}" does not declare'
             )
         return declaration
-
-    def with_types(self, types: Mapping[str, TypeUnit]) -> Model:
-        return Model(types=types, interfaces=self.interfaces, modules=self.modules)
-
-    def with_interfaces(self, interfaces: Mapping[str, InterfaceDef]) -> Model:
-        return Model(types=self.types, interfaces=interfaces, modules=self.modules)
-
-    def with_modules(self, modules: Mapping[str, ModuleDef]) -> Model:
-        return Model(types=self.types, interfaces=self.interfaces, modules=modules)

@@ -16,7 +16,6 @@ from ..schema.references import parse_error_reference, parse_type_reference
 from ..schema.source import SourceRef
 from .common import Constraints
 from .interfaces import ArgDef, CmdDef, ErrorDef, InterfaceDef, VarDef
-from .model import Model
 from .modules import (
     ConfigEntry,
     ModuleDef,
@@ -621,37 +620,16 @@ def build_modules(loader: DefinitionLoader, names: Iterable[str]) -> dict[str, M
     return {name: builder.build(name) for name in names}
 
 
-# --------------------------------------------------------------------------
-# Assembling a whole model
-# --------------------------------------------------------------------------
+def build_type_units(loader: DefinitionLoader) -> dict[str, TypeUnit]:
+    """Build every unit the source tree offers.
 
-def build_type_units(
-    loader: DefinitionLoader, units: Iterable[str] | None = None
-) -> dict[str, TypeUnit]:
-    """Build the named units, or every unit the source tree offers.
-
-    Callers that only want to *emit* one unit should still load them all: a
-    reference into another unit has to be resolvable for a backend to know
-    whether it points at a struct or an enum.
+    Emitting one unit still needs them all: a reference into another unit has
+    to resolve for a backend to know whether it points at a struct or an enum.
     """
-    wanted = tuple(units) if units is not None else loader.tree.type_units()
     builder = TypeUnitBuilder(loader)
-    return {unit: builder.build(unit) for unit in wanted}
+    return {unit: builder.build(unit) for unit in loader.tree.type_units()}
 
 
 def build_interfaces(loader: DefinitionLoader, names: Iterable[str]) -> dict[str, InterfaceDef]:
     builder = InterfaceBuilder(loader)
     return {name: builder.build(name) for name in names}
-
-
-def build_model(
-    loader: DefinitionLoader,
-    *,
-    units: Iterable[str] | None = None,
-    interfaces: Iterable[str] | None = None,
-) -> Model:
-    """Load the definitions once, so that everything else can query them."""
-    return Model(
-        types=build_type_units(loader, units),
-        interfaces=build_interfaces(loader, interfaces) if interfaces is not None else {},
-    )
