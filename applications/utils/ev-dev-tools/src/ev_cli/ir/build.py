@@ -103,7 +103,7 @@ class _UnitBuild:
         self._declared_enums: list[EnumDef] = []
         self._promoted_enums: list[EnumDef] = []
         self._structs: list[StructDef] = []
-        self._referenced_units: set[str] = set()
+        self._referenced_type_units: set[str] = set()
 
     # -- entry point --------------------------------------------------------
 
@@ -121,7 +121,7 @@ class _UnitBuild:
             description=self.data['description'],
             enums=enums,
             structs=structs,
-            referenced_units=frozenset(self._referenced_units),
+            referenced_type_units=frozenset(self._referenced_type_units),
             source=self.source,
         )
 
@@ -255,7 +255,7 @@ class _UnitBuild:
         reference = resolve_reference(
             self.loader, schema, source, from_unit=self.unit
         )
-        self._referenced_units.add(reference.target.unit)
+        self._referenced_type_units.add(reference.target.unit)
         return reference
 
     # -- promotion of inline declarations -----------------------------------
@@ -326,7 +326,7 @@ class _InterfaceBuild:
         self.data = data
         self.source = source
         self.loader = loader
-        self._referenced_units: set[str] = set()
+        self._referenced_type_units: set[str] = set()
 
     def run(self) -> InterfaceDef:
         return InterfaceDef(
@@ -341,7 +341,7 @@ class _InterfaceBuild:
                 for name, schema in (self.data.get('cmds') or {}).items()
             ),
             errors=self._resolve_errors(self.data.get('errors') or []),
-            referenced_units=frozenset(self._referenced_units),
+            referenced_type_units=frozenset(self._referenced_type_units),
             source=self.source,
         )
 
@@ -400,7 +400,7 @@ class _InterfaceBuild:
             reference = resolve_reference(
                 self.loader, schema, source, from_unit=None
             )
-            self._referenced_units.add(reference.target.unit)
+            self._referenced_type_units.add(reference.target.unit)
             return reference
 
         declared = schema.get('type')

@@ -211,7 +211,7 @@ class TestFixtureTypes:
         assert (l1.constraints.minimum, l1.constraints.maximum) == (0, 100000)
 
     def test_cross_unit_reference_is_recorded(self, fixture_model):
-        assert 'units' in fixture_model.types['sample'].referenced_units
+        assert 'units' in fixture_model.types['sample'].referenced_type_units
 
     def test_a_reference_resolves_to_its_declaration(self, fixture_model):
         assert fixture_model.is_enum(TypeRef('sample', 'Mood'))

@@ -84,8 +84,8 @@ class InterfaceDef:
     vars: tuple[VarDef, ...]
     cmds: tuple[CmdDef, ...]
     errors: tuple[ErrorDef, ...]
-    #: Type units this interface references, which drives generated includes.
-    referenced_units: frozenset[str]
+    #: Names of the type units whose types this interface uses; drives the generated includes.
+    referenced_type_units: frozenset[str]
     source: SourceRef
 
     def var(self, name: str) -> VarDef | None:

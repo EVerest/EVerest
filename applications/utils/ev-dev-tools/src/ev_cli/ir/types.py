@@ -163,8 +163,9 @@ class TypeUnit:
     description: str
     enums: tuple[EnumDef, ...]
     structs: tuple[StructDef, ...]
-    #: Units this one references, which drives the generated includes.
-    referenced_units: frozenset[str]
+    #: Names of the type units whose types this one uses, its own included when it refers
+    #: to a type declared beside the referring one; drives the generated includes.
+    referenced_type_units: frozenset[str]
     source: SourceRef
 
     def enum(self, name: str) -> EnumDef | None:

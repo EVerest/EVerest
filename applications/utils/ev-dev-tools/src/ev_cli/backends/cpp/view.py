@@ -79,7 +79,7 @@ class TypeUnitView:
         """
         return sorted(
             naming.type_header_include(referenced)
-            for referenced in self.unit.referenced_units
+            for referenced in self.unit.referenced_type_units
             if referenced != self.unit.unit
         )
 
@@ -229,7 +229,7 @@ class InterfaceView:
         """Type headers for every unit this interface references."""
         return sorted(
             naming.type_header_include(unit)
-            for unit in self.interface.referenced_units
+            for unit in self.interface.referenced_type_units
         )
 
     def description(self, text: str | None) -> str:
