@@ -103,6 +103,10 @@ public:
 
     void close();
 
+    // Ends a session that did not establish within V2G_SECC_CommunicationSetup_Timeout: closes the connection
+    // right away and reports D-LINK_ERROR once the FIN had time to cross the logical network.
+    void abort_communication_setup();
+
     void request_shutdown();
 
     void mark_unplugged() {
