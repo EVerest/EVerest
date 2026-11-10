@@ -1,0 +1,710 @@
+---
+asyncapi: 3.0.0
+id: 'pionix:de:everest:ocpp_device_model_API'
+info:
+  title: 'EVerest API definition for OCPP device model owners - CLIENT side (MODULE)'
+  version: 1.0.0
+  description: >-
+    API for EVerest API clients that add components and variables to the device model of an OCPP 2.x service at
+    runtime, next to those of the component config. The client acts for one or more owners. Each variable has one
+    owner, which keeps its value current, receives the writes to it and keeps its persistent attributes across
+    restarts.
+
+
+    Startup: the client publishes one registration per owner on m2e/registration. Until the OCPP service has asked
+    for the registrations, the module only collects them, keeping the latest one per owner. When the OCPP service
+    asks, the module publishes e2m/get_registrations so that clients that are already running send their
+    registrations again, and then waits. If cfg_expected_owners lists owners, it waits until each of them has
+    registered, at most cfg_expected_owners_timeout_s seconds; at the deadline it logs the owners still missing. If
+    the list is empty, it waits cfg_registration_timeout_s seconds. It then hands every collected registration to the
+    OCPP service, which starts. The OCPP service does not start before then. After startup, every registration the
+    client publishes is passed on at once, so an owner that missed the deadline can still register, without the
+    monitors of earlier boots.
+
+
+    The OCPP service answers every registration with e2m/set_registration_result, forwards writes to registered
+    variables with a request on e2m/set_value, and takes the value changes the client reports on m2e/value_changed.
+    This API is experimental.
+  license:
+    name: Apache-2.0
+    url: https://opensource.org/licenses/Apache-2.0
+  tags:
+    - name: EVerest
+    - name: OCPP
+servers:
+  default:
+    pathname: 'everest_api/1/ocpp_device_model/{module_id}'
+    host: 'localhost:1883'
+    description: default local MQTT
+    protocol: mqtt
+    variables:
+      module_id:
+        description: The ID of the module as defined in the EVerest config file.
+defaultContentType: application/json
+
+
+channels:
+  receive_get_registrations:
+    address: 'e2m/get_registrations'
+    messages:
+      receive_get_registrations:
+        $ref: '#/components/messages/receive_get_registrations'
+  receive_set_registration_result:
+    address: 'e2m/set_registration_result'
+    messages:
+      receive_set_registration_result:
+        $ref: '#/components/messages/receive_set_registration_result'
+  receive_request_set_value:
+    address: 'e2m/set_value'
+    messages:
+      receive_request_set_value:
+        $ref: '#/components/messages/receive_request_set_value'
+  send_reply_set_value:
+    address: null
+    messages:
+      send_reply_set_value:
+        $ref: '#/components/messages/send_reply_set_value'
+
+  send_registration:
+    address: 'm2e/registration'
+    messages:
+      send_registration:
+        $ref: '#/components/messages/send_registration'
+  send_value_changed:
+    address: 'm2e/value_changed'
+    messages:
+      send_value_changed:
+        $ref: '#/components/messages/send_value_changed'
+
+  receive_heartbeat:
+    address: 'e2m/heartbeat'
+    messages:
+      receive_heartbeat:
+        $ref: '#/components/messages/receive_heartbeat'
+  send_communication_check:
+    address: 'm2e/communication_check'
+    messages:
+      send_communication_check:
+        $ref: '#/components/messages/send_communication_check'
+
+
+operations:
+  receive_get_registrations:
+    title: 'Receive the request for registrations'
+    action: receive
+    description: 'Direction: EVerest to Module'
+    channel:
+      $ref: '#/channels/receive_get_registrations'
+  receive_set_registration_result:
+    title: 'Receive the result of a registration'
+    action: receive
+    description: 'Direction: EVerest to Module'
+    channel:
+      $ref: '#/channels/receive_set_registration_result'
+  receive_request_set_value:
+    title: 'Request to set a value'
+    action: receive
+    description: 'Direction: EVerest to Module'
+    channel:
+      $ref: '#/channels/receive_request_set_value'
+    reply:
+      address:
+        location: "$message.header#/replyTo"
+      channel:
+        $ref: '#/channels/send_reply_set_value'
+  send_reply_set_value:
+    title: 'Send reply to a set value request'
+    action: send
+    description: 'Direction: Module to EVerest'
+    channel:
+      $ref: '#/channels/send_reply_set_value'
+
+  send_registration:
+    title: 'Send a registration'
+    action: send
+    description: 'Direction: Module to EVerest'
+    channel:
+      $ref: '#/channels/send_registration'
+  send_value_changed:
+    title: 'Send a value change'
+    action: send
+    description: 'Direction: Module to EVerest'
+    channel:
+      $ref: '#/channels/send_value_changed'
+
+  receive_heartbeat:
+    title: 'Receive heartbeat'
+    action: receive
+    channel:
+      $ref: '#/channels/receive_heartbeat'
+  send_communication_check:
+    title: 'Send communication check'
+    action: send
+    channel:
+      $ref: '#/channels/send_communication_check'
+
+
+components:
+  messages:
+    receive_get_registrations:
+      name: receive_get_registrations
+      title: 'Request for registrations'
+      summary: >-
+        Published each time the OCPP service asks for the registrations, normally once at startup. The client
+        publishes the registration of every owner it acts for on m2e/registration, also the ones it published before.
+        No reply is expected on this topic.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/GetRegistrations'
+      examples:
+        - summary: "Two owners expected"
+          payload:
+            expected_owners:
+              - meter_1
+              - meter_2
+        - summary: "No owners expected, collection ends after cfg_registration_timeout_s"
+          payload:
+            expected_owners: []
+
+    receive_set_registration_result:
+      name: receive_set_registration_result
+      title: 'Result of a registration'
+      summary: >-
+        The outcome of one registration, published once for every registration the OCPP service received from this
+        module, at startup and at runtime. No reply is expected.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/RegistrationResult'
+      examples:
+        - summary: "Accepted, one variable defined by the component config already"
+          payload:
+            owner: meter_1
+            status: Accepted
+            rejected:
+              - component:
+                  name: Powermeter
+                  evse:
+                    id: 1
+                variable:
+                  name: Enabled
+                reason: AlreadyDefined
+                defined_by: COMPONENT_CONFIG
+        - summary: "Owner name used by another module"
+          payload:
+            owner: meter_2
+            status: OwnerInUse
+            rejected: []
+
+    receive_request_set_value:
+      name: receive_request_set_value
+      title: 'Request to set a value'
+      summary: >-
+        A write to an attribute of a registered variable, from the CSMS or from the OCPP service itself. The OCPP
+        service checked the value against the characteristics and the mutability of the variable already. Requests
+        may overlap, also for one variable. Reply within cfg_request_reply_to_s, 10 seconds by default: without a
+        reply in time, the write is answered Rejected.
+      contentType: application/json
+      payload:
+        type: object
+        required:
+          - headers
+          - payload
+        properties:
+          headers:
+            type: object
+            required:
+              - replyTo
+            properties:
+              replyTo:
+                type: string
+                description: Address to send the response to.
+          payload:
+            $ref: '#/components/schemas/WriteRequest'
+      examples:
+        - summary: "CSMS sets the current limit of a meter"
+          payload:
+            headers:
+              replyTo: 'everest_api/1/ocpp_device_model/device_model_api/m2e/reply/2b0e6a41-8c1f-4f57-9d0e-5f3c1a7b9e10'
+            payload:
+              owner: meter_1
+              component:
+                name: Powermeter
+                evse:
+                  id: 1
+              variable:
+                name: CurrentLimit
+              attribute_type: Target
+              value: '16'
+              source: csms
+    send_reply_set_value:
+      name: send_reply_set_value
+      title: 'Reply to a set value request'
+      summary: >-
+        Accepted: the owner applied exactly the written value; the OCPP service stores it, so the client does not
+        report it on m2e/value_changed. RebootRequired: the owner kept exactly the written value and applies it at
+        the next start; the OCPP service keeps the current value, and the client registers the new value at the next
+        start. Rejected: the owner did not apply the value, also when it would apply another one, a clamped one for
+        example. UnknownComponent, UnknownVariable and NotSupportedAttributeType are returned to the CSMS as they are.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/SetVariableStatus'
+      examples:
+        - summary: "Write applied"
+          payload: Accepted
+        - summary: "Write kept, applied at the next start"
+          payload: RebootRequired
+
+    send_registration:
+      name: send_registration
+      title: 'Registration of one owner'
+      summary: >-
+        Adds an owner, or replaces everything an owner registered before; the registrations of the other owners stay.
+        Before the OCPP service has asked for the registrations, the module collects them. After that, each one is
+        passed on at once, and is answered on e2m/set_registration_result. An empty components list removes
+        everything the owner registered and releases the owner name.
+        A registration passed on at once is not ordered against the answer to the request for registrations, and may
+        reach the OCPP service before it. To replace or release an owner registered at startup, wait for its
+        e2m/set_registration_result first: it follows the answer.
+        A registration that does not fit the schema, a string beyond its maximum length for example, is ignored as a
+        whole and logged; it gets no e2m/set_registration_result.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/Registration'
+      examples:
+        - summary: "A meter with a current limit and a monitored temperature"
+          payload:
+            owner: meter_1
+            components:
+              - component:
+                  name: Powermeter
+                  evse:
+                    id: 1
+                variables:
+                  - variable:
+                      name: CurrentLimit
+                    characteristics:
+                      data_type: decimal
+                      supports_monitoring: false
+                      unit: A
+                      min_limit: 6
+                      max_limit: 32
+                    attributes:
+                      - type: Actual
+                        value: '32'
+                        mutability: ReadOnly
+                      - type: Target
+                        value: '32'
+                        mutability: ReadWrite
+                        persistent: true
+                  - variable:
+                      name: Temperature
+                    characteristics:
+                      data_type: decimal
+                      supports_monitoring: true
+                      unit: Celsius
+                    attributes:
+                      - type: Actual
+                        value: '24.5'
+                        mutability: ReadOnly
+                    monitors:
+                      - type: UpperThreshold
+                        value: 85
+                        severity: 2
+                        monitor_type: HardWiredMonitor
+        - summary: "Release an owner"
+          payload:
+            owner: meter_2
+            components: []
+
+    send_value_changed:
+      name: send_value_changed
+      title: 'Value change of a registered variable'
+      summary: >-
+        Published when the owner changed a value itself. Report every change: the OCPP service holds the values in
+        memory and serves reads from there. A report that does not fit the variable, or for an owner this module did
+        not register, is ignored and logged.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/ValueChange'
+      examples:
+        - summary: "Temperature changed"
+          payload:
+            owner: meter_1
+            component:
+              name: Powermeter
+              evse:
+                id: 1
+            variable:
+              name: Temperature
+            value: '26.0'
+
+    receive_heartbeat:
+      name: receive_heartbeat
+      title: 'Receive heartbeat'
+      summary: Heartbeat produced by EVerest as configured via cfg_heartbeat_interval_ms in the EVerest configuration
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/HeartBeatId'
+      examples:
+        - summary: "Heartbeat"
+          payload: 42
+
+    send_communication_check:
+      name: send_communication_check
+      title: 'Send communication check'
+      summary: Signal to EVerest that communication is good or check shall be stopped
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/CommunicationCheck'
+      examples:
+        - summary: "CommunicationCheck"
+          payload:
+            true
+
+
+  schemas:
+    GetRegistrations:
+      description: Request for the registrations of all owners the client acts for
+      type: object
+      additionalProperties: true
+      required:
+        - expected_owners
+      properties:
+        expected_owners:
+          description: >-
+            The owners the module waits for, from cfg_expected_owners, at most cfg_expected_owners_timeout_s
+            seconds. When empty, the module waits cfg_registration_timeout_s seconds instead.
+          type: array
+          items:
+            type: string
+    DataEnum:
+      description: >-
+        Data type of a variable, as DataEnumType of OCPP 2.x
+        - string: A string of at most max_elements characters
+        - decimal: A decimal number
+        - integer: An integer number
+        - dateTime: An RFC 3339 date and time
+        - boolean: true or false
+        - OptionList: One of the comma separated values of values_list
+        - SequenceList: An ordered comma separated list of values from values_list
+        - MemberList: An unordered comma separated list of values from values_list
+      type: string
+      enum:
+        - string
+        - decimal
+        - integer
+        - dateTime
+        - boolean
+        - OptionList
+        - SequenceList
+        - MemberList
+    MutabilityEnum:
+      description: >-
+        Whether the CSMS may read and write an attribute, as MutabilityEnumType of OCPP 2.x
+      type: string
+      enum:
+        - ReadOnly
+        - WriteOnly
+        - ReadWrite
+    MonitorEnum:
+      description: >-
+        Type of a monitor, as MonitorEnumType of OCPP 2.x. TargetDelta and TargetDeltaRelative exist in OCPP 2.1 only.
+      type: string
+      enum:
+        - UpperThreshold
+        - LowerThreshold
+        - Delta
+        - Periodic
+        - PeriodicClockAligned
+        - TargetDelta
+        - TargetDeltaRelative
+    RegisteredMonitorType:
+      description: >-
+        Kind of a monitor that an owner declares with a variable. The CSMS cannot clear either kind.
+        - HardWiredMonitor: Built in by the manufacturer. The CSMS cannot change it, and it stays active under every
+          monitoring base.
+        - PreconfiguredMonitor: Preconfigured by the manufacturer. The CSMS may change it; it keeps its id and kind.
+          It is not active under the monitoring base HardWiredOnly.
+      type: string
+      enum:
+        - HardWiredMonitor
+        - PreconfiguredMonitor
+    VariableCharacteristics:
+      description: >-
+        Fixed properties of a variable, as VariableCharacteristicsType of OCPP 2.x. The OCPP service checks every write
+        against them before it reaches the client.
+      type: object
+      additionalProperties: false
+      required:
+        - data_type
+        - supports_monitoring
+      properties:
+        data_type:
+          $ref: '#/components/schemas/DataEnum'
+        supports_monitoring:
+          description: Whether the CSMS may set monitors on the variable
+          type: boolean
+        unit:
+          description: Unit of the variable, for example A, W or Celsius
+          type: string
+          maxLength: 16
+        min_limit:
+          description: Lowest value the CSMS may write to a numeric variable. Reported values are not checked.
+          type: number
+        max_limit:
+          description: Highest value the CSMS may write to a numeric variable. Reported values are not checked.
+          type: number
+        max_elements:
+          description: Maximum number of characters of a string, or of elements of a SequenceList or MemberList
+          type: integer
+          minimum: 1
+        values_list:
+          description: >-
+            Comma separated list of the allowed values of an OptionList, SequenceList or MemberList, or of a string
+          type: string
+          maxLength: 1000
+    VariableAttribute:
+      description: An attribute of a variable with its initial value, as VariableAttributeType of OCPP 2.x
+      type: object
+      additionalProperties: false
+      properties:
+        type:
+          description: Attribute type. When absent, Actual is assumed.
+          $ref: 'ocpp_consumer_API.yaml#/components/schemas/AttributeEnum'
+        value:
+          description: Initial value of the attribute. When absent, the attribute has no value.
+          type: string
+          maxLength: 2500
+        mutability:
+          description: Mutability of the attribute. When absent, every write to the attribute is rejected.
+          $ref: '#/components/schemas/MutabilityEnum'
+        persistent:
+          description: >-
+            Whether the value is kept across restarts. When absent, the attribute is not persistent. The owner keeps a
+            persistent value itself and registers it at the next start.
+          type: boolean
+        constant:
+          description: Whether the value never changes. When absent, the value is not constant.
+          type: boolean
+    RegisteredMonitor:
+      description: >-
+        A hardwired or preconfigured monitor of a registered variable. A monitor of the same type and severity stored
+        in an earlier boot is kept with its id and the changes the CSMS made to it.
+      type: object
+      additionalProperties: false
+      required:
+        - type
+        - value
+        - severity
+        - monitor_type
+      properties:
+        type:
+          $ref: '#/components/schemas/MonitorEnum'
+        value:
+          description: Threshold, delta or interval in seconds of the monitor, depending on its type
+          type: number
+        severity:
+          description: Severity of the events of the monitor, 0 (Danger) to 9 (Debug)
+          type: integer
+          minimum: 0
+          maximum: 9
+        transaction:
+          description: Whether the monitor is active only during a transaction. When absent, it is always active.
+          type: boolean
+        monitor_type:
+          $ref: '#/components/schemas/RegisteredMonitorType'
+    RegisteredVariable:
+      description: A variable that an owner adds to a component of the device model
+      type: object
+      additionalProperties: false
+      required:
+        - variable
+        - characteristics
+        - attributes
+      properties:
+        variable:
+          description: Name and instance of the variable. An instance must be absent or not empty.
+          $ref: 'ocpp_consumer_API.yaml#/components/schemas/Variable'
+        characteristics:
+          $ref: '#/components/schemas/VariableCharacteristics'
+        attributes:
+          description: The attributes of the variable with their initial values, at most one of each type
+          type: array
+          items:
+            $ref: '#/components/schemas/VariableAttribute'
+        monitors:
+          description: Hardwired and preconfigured monitors of the variable. When absent, the variable has none.
+          type: array
+          items:
+            $ref: '#/components/schemas/RegisteredMonitor'
+    RegisteredComponent:
+      description: A component with the variables that an owner adds to it
+      type: object
+      additionalProperties: false
+      required:
+        - component
+        - variables
+      properties:
+        component:
+          description: >-
+            Name, instance and EVSE of the component. An instance must be absent or not empty, and an EVSE id or
+            connector id must not be 0. A component of the component config may be extended by variables it does not
+            define.
+          $ref: 'ocpp_consumer_API.yaml#/components/schemas/Component'
+        variables:
+          type: array
+          items:
+            $ref: '#/components/schemas/RegisteredVariable'
+    Registration:
+      description: Everything one owner adds to the device model. It replaces what the same owner registered before.
+      type: object
+      additionalProperties: false
+      required:
+        - components
+      properties:
+        owner:
+          description: >-
+            Name of the owner. When absent, the owner is named by the module id of this module. A client that acts for
+            several owners, a gateway for example, names each of them. COMPONENT_CONFIG is reserved.
+          type: string
+          minLength: 1
+        components:
+          description: >-
+            The components with the variables of the owner. An empty list removes everything the owner registered and
+            releases the owner name.
+          type: array
+          items:
+            $ref: '#/components/schemas/RegisteredComponent'
+    RegistrationStatus:
+      description: >-
+        Whether a registration was passed on to the device model
+        - Accepted: Passed on; single variables may still be rejected
+        - OwnerInUse: Another module uses the owner name already. Nothing of the registration was passed on.
+      type: string
+      enum:
+        - Accepted
+        - OwnerInUse
+    RegistrationRejectionReason:
+      description: >-
+        Why a variable of a registration was rejected
+        - AlreadyDefined: The component config or another owner defines the variable already, or the registration
+          defines it twice
+        - NoAttributes: The variable has no attributes
+        - ReservedOwner: The owner is COMPONENT_CONFIG
+        - InvalidNameKey: The component or the variable has an empty instance, or the component an EVSE or connector
+          id of 0
+        - ReservedVariable: Only the component config may define the variable, as the OCPP service writes it from its
+          own state
+      type: string
+      enum:
+        - AlreadyDefined
+        - NoAttributes
+        - ReservedOwner
+        - InvalidNameKey
+        - ReservedVariable
+    RejectedVariable:
+      description: A variable of a registration that the device model rejected
+      type: object
+      additionalProperties: false
+      required:
+        - component
+        - variable
+        - reason
+      properties:
+        component:
+          $ref: 'ocpp_consumer_API.yaml#/components/schemas/Component'
+        variable:
+          $ref: 'ocpp_consumer_API.yaml#/components/schemas/Variable'
+        reason:
+          $ref: '#/components/schemas/RegistrationRejectionReason'
+        defined_by:
+          description: >-
+            For AlreadyDefined: the owner that defines the variable, COMPONENT_CONFIG for the component config, or the
+            registering owner itself for a variable it defines twice
+          type: string
+    RegistrationResult:
+      description: The outcome of the registration of one owner
+      type: object
+      additionalProperties: false
+      required:
+        - owner
+        - status
+        - rejected
+      properties:
+        owner:
+          description: Name of the owner, the module id when the registration named none
+          type: string
+        status:
+          $ref: '#/components/schemas/RegistrationStatus'
+        rejected:
+          description: >-
+            The rejected variables, empty when all were accepted. The owner receives no writes to a rejected variable
+            and does not report its values.
+          type: array
+          items:
+            $ref: '#/components/schemas/RejectedVariable'
+    WriteRequest:
+      description: A write to an attribute of a registered variable
+      type: object
+      additionalProperties: false
+      required:
+        - owner
+        - component
+        - variable
+        - attribute_type
+        - value
+        - source
+      properties:
+        owner:
+          description: Name of the owner of the variable, the module id for a registration that named no owner
+          type: string
+        component:
+          $ref: 'ocpp_consumer_API.yaml#/components/schemas/Component'
+        variable:
+          $ref: 'ocpp_consumer_API.yaml#/components/schemas/Variable'
+        attribute_type:
+          $ref: 'ocpp_consumer_API.yaml#/components/schemas/AttributeEnum'
+        value:
+          description: The value to apply
+          type: string
+          maxLength: 2500
+        source:
+          description: Source of the write, for example csms or internal
+          type: string
+    SetVariableStatus:
+      description: Outcome of a write
+      $ref: 'ocpp_consumer_API.yaml#/components/schemas/SetVariableStatusEnumType'
+    ValueChange:
+      description: A value of a registered variable that its owner changed itself
+      type: object
+      additionalProperties: false
+      required:
+        - component
+        - variable
+        - value
+      properties:
+        owner:
+          description: Name of the owner of the variable. When absent, the owner is named by the module id.
+          type: string
+          minLength: 1
+        component:
+          $ref: 'ocpp_consumer_API.yaml#/components/schemas/Component'
+        variable:
+          $ref: 'ocpp_consumer_API.yaml#/components/schemas/Variable'
+        attribute_type:
+          description: The changed attribute. When absent, Actual is assumed.
+          $ref: 'ocpp_consumer_API.yaml#/components/schemas/AttributeEnum'
+        value:
+          description: The value of the attribute. It must fit the data type and the values_list of the variable.
+          type: string
+          maxLength: 2500
+
+    CommunicationCheck:
+      type: boolean
+      description: >-
+        Send true at least every cfg_communication_check_to_s seconds to signal that the client is alive, otherwise
+        EVerest raises a CommunicationFault, which the next message clears. Send false to stop the check until the
+        module restarts.
+    HeartBeatId:
+      type: integer
+      description: "64bit unsigned integer. The id of every heartbeat increases by 1 and overflows when the maximum representable value is reached"
