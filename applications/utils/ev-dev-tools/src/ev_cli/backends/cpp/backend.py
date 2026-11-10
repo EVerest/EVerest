@@ -127,7 +127,7 @@ class CppBackend:
     # -- emission -----------------------------------------------------------
 
     def emit_type_unit(self, model: Model, unit: str, output_dir: Path) -> list[GeneratedFile]:
-        view = TypeUnitView(unit=model.types[unit], model=model)
+        view = TypeUnitView(unit=model.types[unit])
         content = self._render(Template.TYPE_UNIT, view)
 
         path = output_dir / f'{unit}.hpp'
@@ -172,7 +172,7 @@ class CppBackend:
 
     def emit_module_loader(self, model: Model, module: str, output_dir: Path) -> list[GeneratedFile]:
         definition = model.modules[module]
-        view = ModuleView(module=definition, model=model)
+        view = ModuleView(module=definition)
         # Modules are addressed by path but their generated sources sit under
         # the last segment of it.
         name = definition.name
@@ -237,19 +237,19 @@ class CppBackend:
 
         files.append(rendered(
             Template.CMAKELISTS,
-            ModuleView(module=definition, model=model,
+            ModuleView(module=definition,
                        blocks=read_blocks(blocks.CMAKELISTS, cmakelists)),
             cmakelists, 'cmakelists', FileCategory.CORE, with_license=False,
         ))
         files.append(rendered(
             Template.MODULE_HPP,
-            ModuleView(module=definition, model=model, license_header=license_header,
+            ModuleView(module=definition, license_header=license_header,
                        blocks=read_blocks(blocks.MODULE_HEADER, header)),
             header, 'module.hpp', FileCategory.CORE,
         ))
         files.append(rendered(
             Template.MODULE_CPP,
-            ModuleView(module=definition, model=model, license_header=license_header),
+            ModuleView(module=definition, license_header=license_header),
             module_dir / f'{definition.name}.cpp', 'module.cpp', FileCategory.CORE,
             UpdatePolicy.CREATE_IF_MISSING,
         ))
@@ -277,7 +277,7 @@ class CppBackend:
         # -- docs -----------------------------------------------------------
         files.append(rendered(
             Template.DOCS_INDEX,
-            ModuleView(module=definition, model=model),
+            ModuleView(module=definition),
             module_dir / 'docs' / 'index.rst', 'index.rst', FileCategory.DOCS,
             UpdatePolicy.LEAVE_ALONE, with_license=False,
         ))

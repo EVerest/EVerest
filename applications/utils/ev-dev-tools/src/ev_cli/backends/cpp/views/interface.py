@@ -12,7 +12,8 @@ from ....ir.interfaces import ArgDef, CmdDef, InterfaceDef, VarDef
 from ....ir.model import Model
 from ....ir.types import Array, JsonType, Opaque, Primitive, Ref, TypeExpr, Variant, is_enum
 from .. import naming
-from ..mapping import PAYLOAD_SCALARS, CppMapping, Flavour
+from .. import mapping
+from ..mapping import PAYLOAD_SCALARS, Flavour
 from .common import MISSING_DESCRIPTION, TEMPLATE_VERSION
 
 
@@ -44,9 +45,6 @@ class InterfaceView:
 
     interface: InterfaceDef
     model: Model
-
-    def __post_init__(self) -> None:
-        self._mapping = CppMapping(Flavour.PAYLOAD)
 
     # -- header level -------------------------------------------------------
 
@@ -112,7 +110,7 @@ class InterfaceView:
     # -- payload spellings --------------------------------------------------
 
     def spell(self, payload: TypeExpr) -> str:
-        return self._mapping.spell(payload)
+        return mapping.spell(payload, Flavour.PAYLOAD)
 
     def raw_spell(self, payload: TypeExpr) -> str:
         """The C++ type the framework hands over, before any conversion.

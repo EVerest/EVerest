@@ -19,11 +19,10 @@ from ev_cli import blocks
 from ev_cli.backends.cpp import naming
 from ev_cli.backends.base import OutputKind
 from ev_cli.backends.cpp.backend import TEMPLATE_DIR, CppBackend, Template
-from ev_cli.backends.cpp.mapping import CppMapping, Flavour
+from ev_cli.backends.cpp.mapping import Flavour, spell
 from ev_cli.backends.cpp.order import order_fields, order_structs
 from ev_cli.backends.cpp.views import InterfaceView, PayloadKind, TypeUnitView
 from ev_cli.errors import UnsupportedDefinition
-from ev_cli.ir.model import Model
 from ev_cli.ir.types import Array, Field, JsonType, LocalEnum, Opaque, Primitive, Ref, StructDef, TypeUnit, Variant
 from ev_cli.schema.references import TypeRef
 from ev_cli.schema.source import SourceRef
@@ -113,7 +112,7 @@ class TestStructOrder:
             structs=(struct('Outer', depends_on=['Inner']), struct('Inner')),
             referenced_type_units=frozenset(), source=SOURCE,
         )
-        assert [s.name for s in TypeUnitView(unit=unit, model=Model()).structs] == ['Inner', 'Outer']
+        assert [s.name for s in TypeUnitView(unit=unit).structs] == ['Inner', 'Outer']
 
 
 class TestTemplates:
@@ -192,22 +191,14 @@ class TestGuardsAndNames:
 class TestTypeMapping:
     """The generated ABI.  A change here relinks every module."""
 
-    @pytest.fixture
-    def field_mapping(self):
-        return CppMapping(Flavour.FIELD)
-
-    @pytest.fixture
-    def payload_mapping(self):
-        return CppMapping(Flavour.PAYLOAD)
-
     @pytest.mark.parametrize('json_type, expected', [
         (JsonType.BOOLEAN, 'bool'),
         (JsonType.INTEGER, 'int32_t'),
         (JsonType.NUMBER, 'float'),
         (JsonType.STRING, 'std::string'),
     ])
-    def test_struct_members(self, field_mapping, json_type, expected):
-        assert field_mapping.spell(Primitive(json_type)) == expected
+    def test_struct_members(self, json_type, expected):
+        assert spell(Primitive(json_type), Flavour.FIELD) == expected
 
     @pytest.mark.parametrize('json_type, expected', [
         (JsonType.BOOLEAN, 'bool'),
@@ -216,11 +207,10 @@ class TestTypeMapping:
         (JsonType.STRING, 'std::string'),
         (JsonType.NULL, 'std::nullptr_t'),
     ])
-    def test_interface_payloads(self, payload_mapping, json_type, expected):
-        assert payload_mapping.spell(Primitive(json_type)) == expected
+    def test_interface_payloads(self, json_type, expected):
+        assert spell(Primitive(json_type), Flavour.PAYLOAD) == expected
 
-    def test_the_two_mappings_disagree_and_that_is_deliberate(
-            self, field_mapping, payload_mapping):
+    def test_the_two_mappings_disagree_and_that_is_deliberate(self):
         """Reconciling this changes struct layout and precision.
 
         A struct member declared ``number`` is a ``float`` while a command
@@ -229,55 +219,51 @@ class TestTypeMapping:
         exists so the difference cannot be lost by accident.
         """
         for json_type in (JsonType.NUMBER, JsonType.INTEGER):
-            assert (field_mapping.spell(Primitive(json_type))
-                    != payload_mapping.spell(Primitive(json_type)))
+            assert (spell(Primitive(json_type), Flavour.FIELD)
+                    != spell(Primitive(json_type), Flavour.PAYLOAD))
 
     def test_format_does_not_change_the_type(self, fixture_model):
         """A property saying ``format: date-time`` is a plain std::string."""
         reading = fixture_model.types['sample'].struct('Reading')
         taken_at = next(f for f in reading.fields if f.name == 'taken_at')
         assert taken_at.constraints.format == 'date-time'
-        assert CppMapping(Flavour.FIELD).spell(
-            taken_at.type) == 'std::string'
+        assert spell(taken_at.type, Flavour.FIELD) == 'std::string'
 
-    def test_references(self, field_mapping):
-        assert field_mapping.spell(Ref(TypeRef('sample', 'Mood'))) == 'types::sample::Mood'
-        assert field_mapping.spell(Ref(TypeRef('units', 'Power'))) == 'types::units::Power'
+    def test_references(self):
+        assert spell(Ref(TypeRef('sample', 'Mood')), Flavour.FIELD) == 'types::sample::Mood'
+        assert spell(Ref(TypeRef('units', 'Power')), Flavour.FIELD) == 'types::units::Power'
 
-    def test_local_enum(self, field_mapping):
-        assert field_mapping.spell(LocalEnum('Kind')) == 'Kind'
+    def test_local_enum(self):
+        assert spell(LocalEnum('Kind'), Flavour.FIELD) == 'Kind'
 
-    def test_struct_member_arrays_are_always_typed(self, field_mapping):
-        assert field_mapping.spell(Array(Primitive(JsonType.STRING))) == 'std::vector<std::string>'
+    def test_struct_member_arrays_are_always_typed(self):
+        assert spell(Array(Primitive(JsonType.STRING)), Flavour.FIELD) == 'std::vector<std::string>'
 
-    def test_payload_arrays_are_typed_only_when_the_items_are_declared(
-            self, payload_mapping):
+    def test_payload_arrays_are_typed_only_when_the_items_are_declared(self):
         """``handle_get_configuration_key(Array&)`` is the visible consequence."""
-        assert payload_mapping.spell(Array(Primitive(JsonType.STRING))) == 'Array'
-        assert payload_mapping.spell(
-            Array(Ref(TypeRef('sample', 'Mood')))
-        ) == 'std::vector<types::sample::Mood>'
+        assert spell(Array(Primitive(JsonType.STRING)), Flavour.PAYLOAD) == 'Array'
+        assert spell(
+            Array(Ref(TypeRef('sample', 'Mood'))), Flavour.PAYLOAD) == 'std::vector<types::sample::Mood>'
 
-    def test_opaque_payloads(self, payload_mapping):
-        assert payload_mapping.spell(Opaque(JsonType.OBJECT)) == 'Object'
-        assert payload_mapping.spell(Opaque(JsonType.ARRAY)) == 'Array'
+    def test_opaque_payloads(self):
+        assert spell(Opaque(JsonType.OBJECT), Flavour.PAYLOAD) == 'Object'
+        assert spell(Opaque(JsonType.ARRAY), Flavour.PAYLOAD) == 'Array'
 
-    def test_variant_alternatives_are_sorted_with_null_first(self, payload_mapping):
+    def test_variant_alternatives_are_sorted_with_null_first(self):
         """So that the variant default-constructs to the empty alternative."""
         variant = Variant((
             JsonType.NULL, JsonType.STRING, JsonType.NUMBER, JsonType.INTEGER,
             JsonType.BOOLEAN, JsonType.ARRAY, JsonType.OBJECT,
         ))
-        assert payload_mapping.spell(variant) == (
+        assert spell(variant, Flavour.PAYLOAD) == (
             'std::variant<std::nullptr_t, Array, Object, bool, double, int, '
             'std::string>'
         )
 
-    def test_variant_ordering_is_independent_of_the_declared_order(
-            self, payload_mapping):
+    def test_variant_ordering_is_independent_of_the_declared_order(self):
         a = Variant((JsonType.STRING, JsonType.INTEGER))
         b = Variant((JsonType.INTEGER, JsonType.STRING))
-        assert payload_mapping.spell(a) == payload_mapping.spell(b)
+        assert spell(a, Flavour.PAYLOAD) == spell(b, Flavour.PAYLOAD)
 
 
 class TestPayloadKinds:

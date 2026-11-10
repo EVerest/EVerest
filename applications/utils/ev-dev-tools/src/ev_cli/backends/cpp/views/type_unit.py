@@ -6,10 +6,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from ....ir.model import Model
 from ....ir.types import Array, Field, StructDef, TypeUnit
 from .. import naming
-from ..mapping import CppMapping, Flavour
+from .. import mapping
+from ..mapping import Flavour
 from ..order import order_fields, order_structs
 from .common import MISSING_DESCRIPTION, TEMPLATE_VERSION
 
@@ -19,10 +19,6 @@ class TypeUnitView:
     """One ``types/*.yaml`` file, ready to render."""
 
     unit: TypeUnit
-    model: Model
-
-    def __post_init__(self) -> None:
-        self._mapping = CppMapping(Flavour.FIELD)
 
     # -- header level -------------------------------------------------------
 
@@ -85,7 +81,7 @@ class TypeUnitView:
 
     def type_of(self, field: Field) -> str:
         """The member's type, without the optional wrapper."""
-        return self._mapping.spell(field.type)
+        return mapping.spell(field.type, Flavour.FIELD)
 
     def field_type(self, field: Field) -> str:
         """The member's declared type, wrapped when the property is optional."""

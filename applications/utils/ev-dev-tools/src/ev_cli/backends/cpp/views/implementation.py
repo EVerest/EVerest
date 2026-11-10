@@ -40,7 +40,7 @@ class ImplementationView:
     license_header: str = ''
 
     def __post_init__(self) -> None:
-        self._provided = ProvidedView(self.provided, self.model)
+        self._provided = ProvidedView(self.provided)
         self._signatures = InterfaceView(interface=self.interface, model=self.model)
 
     # -- names --------------------------------------------------------------

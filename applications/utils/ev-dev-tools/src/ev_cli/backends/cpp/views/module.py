@@ -7,10 +7,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from ....ir.modules import ConfigEntry, ModuleDef, Mutability, ProvidesDef, RequiresDef
-from ....ir.model import Model
 from ....ir.types import Primitive
 from .. import naming
-from ..mapping import CppMapping, Flavour
+from .. import mapping
+from ..mapping import Flavour
 from .common import TEMPLATE_VERSION
 
 
@@ -19,10 +19,6 @@ class ProvidedView:
     """One implementation a module provides, ready to render."""
 
     provided: ProvidesDef
-    model: Model
-
-    def __post_init__(self) -> None:
-        self._mapping = CppMapping(Flavour.PAYLOAD)
 
     @property
     def id(self) -> str:
@@ -62,7 +58,7 @@ class ProvidedView:
         return read_write_config(self.provided.config)
 
     def config_type(self, entry: ConfigEntry) -> str:
-        return self._mapping.spell(Primitive(entry.type))
+        return mapping.spell(Primitive(entry.type), Flavour.PAYLOAD)
 
 
 @dataclass
@@ -106,12 +102,8 @@ class ModuleView:
     """One ``modules/<path>/manifest.yaml``, ready to render."""
 
     module: ModuleDef
-    model: Model
     blocks: dict = field(default_factory=dict)
     license_header: str = ''
-
-    def __post_init__(self) -> None:
-        self._mapping = CppMapping(Flavour.PAYLOAD)
 
     # -- names --------------------------------------------------------------
 
@@ -165,7 +157,7 @@ class ModuleView:
 
     @property
     def provides(self) -> list[ProvidedView]:
-        return [ProvidedView(p, self.model) for p in self.module.provides]
+        return [ProvidedView(p) for p in self.module.provides]
 
     @property
     def requires(self) -> list[RequiredView]:
@@ -180,7 +172,7 @@ class ModuleView:
         return read_write_config(self.module.config)
 
     def config_type(self, entry: ConfigEntry) -> str:
-        return self._mapping.spell(Primitive(entry.type))
+        return mapping.spell(Primitive(entry.type), Flavour.PAYLOAD)
 
     # -- the runtime config client ------------------------------------------
     #
