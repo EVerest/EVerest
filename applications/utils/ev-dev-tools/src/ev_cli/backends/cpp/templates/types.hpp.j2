@@ -103,7 +103,7 @@ inline void from_json(const json& j, {{ enum.name }}& e) {
 {% for struct in u.structs %}
 
 struct {{ struct.name }} {
-{% for field in struct.fields %}
+{% for field in u.fields(struct) %}
     {{ u.field_type(field) }} {{ u.identifier(field) }}; ///< {{ u.description(field.description) }}
 {% endfor %}
 
@@ -153,12 +153,12 @@ struct {{ struct.name }} {
     /// \brief Compares objects of type {{ struct.name }} for equality
     friend constexpr bool operator==(const {{ struct.name }}& k, const {{ struct.name }}& l) {
         const auto& lhs_tuple = std::tie(
-{% for field in struct.fields %}
+{% for field in u.fields(struct) %}
             k.{{ field.name }}{{ ',' if not loop.last }}
 {% endfor %}
         );
         const auto& rhs_tuple = std::tie(
-{% for field in struct.fields %}
+{% for field in u.fields(struct) %}
             l.{{ field.name }}{{ ',' if not loop.last }}
 {% endfor %}
         );

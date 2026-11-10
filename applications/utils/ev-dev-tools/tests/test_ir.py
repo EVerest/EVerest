@@ -9,18 +9,15 @@ import pytest
 from ev_cli.ir import json_io
 from ev_cli.ir.common import Constraints
 from ev_cli.ir.modules import Mutability
-from ev_cli.ir.build.order import order_fields, order_structs
 from ev_cli.ir.types import (
     SCALAR_TYPES,
     Array,
     EnumDef,
-    Field,
     JsonType,
     LocalEnum,
     Opaque,
     Primitive,
     Ref,
-    StructDef,
     Variant,
     is_enum,
 )
@@ -28,75 +25,6 @@ from ev_cli.schema.references import TypeRef
 from ev_cli.schema.source import SourceRef
 
 SOURCE = SourceRef(__file__)
-
-
-def field(name, required=False, type_=None):
-    return Field(
-        name=name, description=None, type=type_ or Primitive(JsonType.STRING),
-        required=required, source=SOURCE,
-    )
-
-
-def struct(name, depends_on=()):
-    return StructDef(
-        name=name, description='', fields=(), depends_on=tuple(depends_on),
-        source=SOURCE,
-    )
-
-
-class TestFieldOrder:
-    """Required first, source order kept within each group.
-
-    Generated types are positionally aggregate initialised in everest-core, so
-    this ordering is behaviour rather than presentation.
-    """
-
-    def test_required_come_first(self):
-        ordered = order_fields([
-            field('a'), field('b', required=True), field('c'), field('d', required=True),
-        ])
-        assert [f.name for f in ordered] == ['b', 'd', 'a', 'c']
-
-    def test_partition_is_stable(self):
-        ordered = order_fields([field(n) for n in 'zyxw'])
-        assert [f.name for f in ordered] == list('zyxw')
-
-    def test_all_required(self):
-        ordered = order_fields([field(n, required=True) for n in 'abc'])
-        assert [f.name for f in ordered] == list('abc')
-
-    def test_empty(self):
-        assert order_fields([]) == ()
-
-
-class TestStructOrder:
-    """A struct is emitted after anything it embeds, else in source order."""
-
-    def test_no_dependencies_keeps_source_order(self):
-        structs = [struct(n) for n in ('First', 'Second', 'Third')]
-        assert [s.name for s in order_structs(structs)] == ['First', 'Second', 'Third']
-
-    def test_embedded_struct_comes_first(self):
-        structs = [struct('Outer', depends_on=['Inner']), struct('Inner')]
-        assert [s.name for s in order_structs(structs)] == ['Inner', 'Outer']
-
-    def test_transitive(self):
-        structs = [
-            struct('A', depends_on=['B']),
-            struct('B', depends_on=['C']),
-            struct('C'),
-        ]
-        assert [s.name for s in order_structs(structs)] == ['C', 'B', 'A']
-
-    def test_a_cycle_does_not_hang(self):
-        """C++ cannot express it, but the generator must still terminate."""
-        structs = [struct('A', depends_on=['B']), struct('B', depends_on=['A'])]
-        assert len(order_structs(structs)) == 2
-
-    def test_unknown_dependency_is_ignored(self):
-        """A reference to another unit is not a local ordering constraint."""
-        structs = [struct('A', depends_on=['Elsewhere'])]
-        assert [s.name for s in order_structs(structs)] == ['A']
 
 
 class TestTypeExpressions:
@@ -195,11 +123,26 @@ class TestFixtureTypes:
         kind = fixture_model.types['sample'].enum('Kind')
         assert kind.values == ('First', 'Second')
 
-    def test_required_fields_first(self, fixture_model):
-        reading = fixture_model.types['sample'].struct('Reading')
-        names = [f.name for f in reading.fields]
-        assert names[:2] == ['taken_at', 'mood']
-        assert set(names[2:]) == {'power', 'history', 'label', 'kind'}
+    def test_fields_keep_source_order(self, tmp_path):
+        """Ordering for a target language is the backend's business."""
+        from conftest import make_loader
+        from ev_cli.ir.build import build_type_unit
+
+        (tmp_path / 'types').mkdir()
+        (tmp_path / 'types' / 'order.yaml').write_text(
+            'description: Field order\n'
+            'types:\n'
+            '  Pair:\n'
+            '    description: Optional before required\n'
+            '    type: object\n'
+            '    additionalProperties: false\n'
+            '    required: [second]\n'
+            '    properties:\n'
+            '      first: {description: Optional, type: string}\n'
+            '      second: {description: Required, type: string}\n'
+        )
+        pair = build_type_unit(make_loader(tmp_path), 'order').struct('Pair')
+        assert [f.name for f in pair.fields] == ['first', 'second']
 
     def test_constraints_survive(self, fixture_model):
         reading = fixture_model.types['sample'].struct('Reading')

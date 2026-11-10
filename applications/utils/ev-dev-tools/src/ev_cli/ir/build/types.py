@@ -31,7 +31,6 @@ from ..types import (
     Variant,
 )
 from .common import json_type_of, resolve_reference
-from .order import order_fields, order_structs
 
 
 def build_type_units(loader: DefinitionLoader) -> dict[str, TypeUnit]:
@@ -71,7 +70,7 @@ class _UnitBuild:
             self._declare(name, schema, root.child(name))
 
         enums = tuple(self._declared_enums) + tuple(self._promoted_enums)
-        structs = order_structs(self._structs)
+        structs = tuple(self._structs)
         self._reject_name_clashes(enums, structs)
 
         return TypeUnit(
@@ -153,7 +152,7 @@ class _UnitBuild:
         self._structs.append(StructDef(
             name=name,
             description=schema.get('description', ''),
-            fields=order_fields(fields),
+            fields=tuple(fields),
             depends_on=tuple(depends_on),
             source=source,
             constraints=Constraints.from_schema(schema),

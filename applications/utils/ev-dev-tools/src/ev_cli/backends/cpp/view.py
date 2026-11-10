@@ -32,6 +32,7 @@ from ...ir.types import (
 )
 from . import naming
 from .mapping import PAYLOAD_SCALARS, CppMapping, Flavour
+from .order import order_fields, order_structs
 
 #: Emitted into every generated header.  Bumped when the templates change in a
 #: way that should invalidate already-generated output.
@@ -91,8 +92,12 @@ class TypeUnitView:
         return self.unit.enums
 
     @property
-    def structs(self):
-        return self.unit.structs
+    def structs(self) -> tuple[StructDef, ...]:
+        return order_structs(self.unit.structs)
+
+    @staticmethod
+    def fields(struct: StructDef) -> tuple[Field, ...]:
+        return order_fields(struct.fields)
 
     @staticmethod
     def required(struct: StructDef) -> tuple[Field, ...]:

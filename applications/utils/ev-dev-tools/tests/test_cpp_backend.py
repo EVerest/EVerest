@@ -19,11 +19,100 @@ from ev_cli import blocks
 from ev_cli.backends.cpp import naming
 from ev_cli.backends.cpp.backend import CppBackend
 from ev_cli.backends.cpp.mapping import CppMapping, Flavour
-from ev_cli.backends.cpp.view import InterfaceView, PayloadKind
+from ev_cli.backends.cpp.order import order_fields, order_structs
+from ev_cli.backends.cpp.view import InterfaceView, PayloadKind, TypeUnitView
 from ev_cli.errors import UnsupportedDefinition
-from ev_cli.ir.types import Array, JsonType, LocalEnum, Opaque, Primitive, Ref, Variant
+from ev_cli.ir.model import Model
+from ev_cli.ir.types import Array, Field, JsonType, LocalEnum, Opaque, Primitive, Ref, StructDef, TypeUnit, Variant
 from ev_cli.schema.references import TypeRef
+from ev_cli.schema.source import SourceRef
 from conftest import GOLDEN_DIR
+
+SOURCE = SourceRef(__file__)
+
+
+def field(name, required=False, type_=None):
+    return Field(
+        name=name, description=None, type=type_ or Primitive(JsonType.STRING),
+        required=required, source=SOURCE,
+    )
+
+
+def struct(name, depends_on=()):
+    return StructDef(
+        name=name, description='', fields=(), depends_on=tuple(depends_on),
+        source=SOURCE,
+    )
+
+
+class TestFieldOrder:
+    """Required first, source order kept within each group.
+
+    Generated types are positionally aggregate initialised in everest-core, so
+    this ordering is behaviour rather than presentation.
+    """
+
+    def test_required_come_first(self):
+        ordered = order_fields([
+            field('a'), field('b', required=True), field('c'), field('d', required=True),
+        ])
+        assert [f.name for f in ordered] == ['b', 'd', 'a', 'c']
+
+    def test_partition_is_stable(self):
+        ordered = order_fields([field(n) for n in 'zyxw'])
+        assert [f.name for f in ordered] == list('zyxw')
+
+    def test_all_required(self):
+        ordered = order_fields([field(n, required=True) for n in 'abc'])
+        assert [f.name for f in ordered] == list('abc')
+
+    def test_empty(self):
+        assert order_fields([]) == ()
+
+    def test_the_type_view_applies_it(self):
+        pair = StructDef(
+            name='Pair', description='', fields=(field('a'), field('b', required=True)),
+            depends_on=(), source=SOURCE,
+        )
+        assert [f.name for f in TypeUnitView.fields(pair)] == ['b', 'a']
+
+
+class TestStructOrder:
+    """A struct is emitted after anything it embeds, else in source order."""
+
+    def test_no_dependencies_keeps_source_order(self):
+        structs = [struct(n) for n in ('First', 'Second', 'Third')]
+        assert [s.name for s in order_structs(structs)] == ['First', 'Second', 'Third']
+
+    def test_embedded_struct_comes_first(self):
+        structs = [struct('Outer', depends_on=['Inner']), struct('Inner')]
+        assert [s.name for s in order_structs(structs)] == ['Inner', 'Outer']
+
+    def test_transitive(self):
+        structs = [
+            struct('A', depends_on=['B']),
+            struct('B', depends_on=['C']),
+            struct('C'),
+        ]
+        assert [s.name for s in order_structs(structs)] == ['C', 'B', 'A']
+
+    def test_a_cycle_does_not_hang(self):
+        """C++ cannot express it, but the generator must still terminate."""
+        structs = [struct('A', depends_on=['B']), struct('B', depends_on=['A'])]
+        assert len(order_structs(structs)) == 2
+
+    def test_unknown_dependency_is_ignored(self):
+        """A reference to another unit is not a local ordering constraint."""
+        structs = [struct('A', depends_on=['Elsewhere'])]
+        assert [s.name for s in order_structs(structs)] == ['A']
+
+    def test_the_type_view_applies_it(self):
+        unit = TypeUnit(
+            unit='u', description='', enums=(),
+            structs=(struct('Outer', depends_on=['Inner']), struct('Inner')),
+            referenced_type_units=frozenset(), source=SOURCE,
+        )
+        assert [s.name for s in TypeUnitView(unit=unit, model=Model()).structs] == ['Inner', 'Outer']
 
 
 class TestSnakeCase:

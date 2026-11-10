@@ -1,18 +1,17 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright Pionix GmbH and Contributors to EVerest
-"""Deterministic ordering rules.
+"""The order C++ needs structs and their fields in.
 
-Order is part of the generated C++ API rather than a detail of it -- generated
-types are positionally aggregate initialised in everest-core -- so the rules
-live in one named place instead of emerging from the order in which a parser
-happened to append to a list.
+The IR keeps the order the definitions were written in.  For C++ the order is
+part of the generated API -- generated types are positionally aggregate
+initialised in everest-core -- so the rules live here, in one named place.
 """
 
 from __future__ import annotations
 
 from typing import Iterable, Sequence
 
-from ..types import Field, StructDef
+from ...ir.types import Field, StructDef
 
 
 def order_fields(fields: Iterable[Field]) -> tuple[Field, ...]:
