@@ -33,15 +33,15 @@ class TypeUnitView:
     @property
     def name(self) -> str:
         """The unit's namespace, as it appears in generated comments."""
-        return self.unit.unit
+        return self.unit.name
 
     @property
     def guard(self) -> str:
-        return naming.type_header_guard(self.unit.unit)
+        return naming.type_header_guard(self.unit.name)
 
     @property
     def namespaces(self) -> list[str]:
-        return naming.unit_namespaces(self.unit.unit)
+        return naming.unit_namespaces(self.unit.name)
 
     @property
     def includes(self) -> list[str]:
@@ -53,7 +53,7 @@ class TypeUnitView:
         return sorted(
             naming.type_header_include(referenced)
             for referenced in self.unit.referenced_type_units
-            if referenced != self.unit.unit
+            if referenced != self.unit.name
         )
 
     # -- declarations -------------------------------------------------------

@@ -108,7 +108,7 @@ class TestStructOrder:
 
     def test_the_type_view_applies_it(self):
         unit = TypeUnit(
-            unit='u', description='', enums=(),
+            name='u', description='', enums=(),
             structs=(struct('Outer', depends_on=['Inner']), struct('Inner')),
             referenced_type_units=frozenset(), source=SOURCE,
         )

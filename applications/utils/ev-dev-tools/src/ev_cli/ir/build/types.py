@@ -50,8 +50,8 @@ def build_type_unit(loader: DefinitionLoader, unit: str) -> TypeUnit:
 class _UnitBuild:
     """The build of a single type unit."""
 
-    def __init__(self, unit, data, source, loader: DefinitionLoader) -> None:
-        self.unit = unit
+    def __init__(self, name, data, source, loader: DefinitionLoader) -> None:
+        self.name = name
         self.data = data
         self.source = source
         self.loader = loader
@@ -74,7 +74,7 @@ class _UnitBuild:
         self._reject_name_clashes(enums, structs)
 
         return TypeUnit(
-            unit=self.unit,
+            name=self.name,
             description=self.data['description'],
             enums=enums,
             structs=structs,
@@ -210,7 +210,7 @@ class _UnitBuild:
 
     def _build_reference(self, schema: Mapping[str, Any], source: SourceRef) -> Ref:
         reference = resolve_reference(
-            self.loader, schema, source, from_unit=self.unit
+            self.loader, schema, source, from_unit=self.name
         )
         self._referenced_type_units.add(reference.target.unit)
         return reference

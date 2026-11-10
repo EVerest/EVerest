@@ -166,7 +166,7 @@ def is_enum(declaration: Declaration) -> bool:
 class TypeUnit:
     """One ``types/*.yaml`` file."""
 
-    unit: str
+    name: str
     description: str
     enums: tuple[EnumDef, ...]
     structs: tuple[StructDef, ...]
