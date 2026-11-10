@@ -1,20 +1,17 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright Pionix GmbH and Contributors to EVerest
-"""The IR's own guarantees: order, completeness and round-tripping."""
+"""The IR's own guarantees, and what the fixture tree builds into."""
 
 from __future__ import annotations
 
 import pytest
 
-from ev_cli.ir import json_io
 from ev_cli.ir.common import Constraints
 from ev_cli.ir.modules import Mutability
 from ev_cli.ir.types import (
     SCALAR_TYPES,
     Array,
-    EnumDef,
     JsonType,
-    LocalEnum,
     Opaque,
     Primitive,
     Ref,
@@ -22,9 +19,6 @@ from ev_cli.ir.types import (
     is_enum,
 )
 from ev_cli.schema.references import TypeRef
-from ev_cli.schema.source import SourceRef
-
-SOURCE = SourceRef(__file__)
 
 
 class TestTypeExpressions:
@@ -72,43 +66,6 @@ class TestConstraints:
     def test_is_hashable(self):
         """The dataclasses carrying it are frozen, so a list would not do."""
         hash(Constraints.from_schema({'enum': ['a', 'b']}))
-
-
-class TestRoundTrip:
-    """Every node has to be fully described by its fields.
-
-    A round trip through JSON is a compact way to say that: anything living in
-    a cache or a closure instead of a field would not survive it.
-    """
-
-    @pytest.mark.parametrize('value', [
-        Primitive(JsonType.NUMBER),
-        Array(Primitive(JsonType.STRING)),
-        Ref(TypeRef('energy', 'Power')),
-        LocalEnum('Mood'),
-        Variant((JsonType.NULL, JsonType.STRING)),
-        Constraints.from_schema({'minimum': 1, 'enum': ['a']}),
-        EnumDef(name='Mood', description='d', values=('A', 'B'), source=SOURCE),
-    ])
-    def test_type_expressions(self, value):
-        assert json_io.round_trip(value) == value
-
-    def test_a_whole_type_unit(self, fixture_model):
-        for unit in fixture_model.types.values():
-            assert json_io.round_trip(unit) == unit
-
-    def test_a_whole_interface(self, fixture_model):
-        for interface in fixture_model.interfaces.values():
-            assert json_io.round_trip(interface) == interface
-
-    def test_a_whole_module(self, fixture_model):
-        for module in fixture_model.modules.values():
-            assert json_io.round_trip(module) == module
-
-    def test_json_is_stable(self, fixture_model):
-        """Serialising twice gives the same bytes, so it can be diffed."""
-        once = json_io.dumps(fixture_model.types['sample'])
-        assert once == json_io.dumps(json_io.loads(once))
 
 
 class TestFixtureTypes:

@@ -78,11 +78,14 @@ class Constraints:
 
     def as_dict(self) -> dict[str, Any]:
         """Only the constraints that were actually set, for serialisation."""
-        return {
+        values = {
             f.name: getattr(self, f.name)
             for f in fields(self)
-            if f.name != 'has_default' and getattr(self, f.name) != f.default
+            if f.name not in ('default', 'has_default') and getattr(self, f.name) != f.default
         }
+        if self.has_default:
+            values['default'] = self.default
+        return values
 
 
 NO_CONSTRAINTS: Final[Constraints] = Constraints()
