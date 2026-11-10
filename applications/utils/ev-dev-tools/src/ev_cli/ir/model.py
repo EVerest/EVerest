@@ -13,12 +13,16 @@ from dataclasses import dataclass, field
 from typing import Mapping, Union
 
 from ..errors import DefinitionNotFound
+from ..schema.references import TypeRef
 from .interfaces import InterfaceDef
 from .modules import ModuleDef
-from ..schema.references import TypeRef
 from .types import EnumDef, StructDef, TypeUnit
 
 Declaration = Union[StructDef, EnumDef]
+
+
+def is_enum(declaration: Declaration) -> bool:
+    return isinstance(declaration, EnumDef)
 
 
 @dataclass(frozen=True)
@@ -31,8 +35,8 @@ class Model:
 
     # -- queries ------------------------------------------------------------
 
-    def resolve(self, ref: TypeRef) -> Declaration:
-        """The struct or enum a reference points at."""
+    def resolve_type(self, ref: TypeRef) -> Declaration:
+        """The struct or enum a type reference names."""
         unit = self.types.get(ref.unit)
         if unit is None:
             raise DefinitionNotFound(
@@ -44,13 +48,6 @@ class Model:
                 f'reference {ref} names a type that "{ref.unit}" does not declare'
             )
         return declaration
-
-    def is_enum(self, ref: TypeRef) -> bool:
-        return isinstance(self.resolve(ref), EnumDef)
-
-    def enum_of(self, ref: TypeRef) -> EnumDef | None:
-        declaration = self.resolve(ref)
-        return declaration if isinstance(declaration, EnumDef) else None
 
     def with_types(self, types: Mapping[str, TypeUnit]) -> Model:
         return Model(types=types, interfaces=self.interfaces, modules=self.modules)

@@ -16,7 +16,7 @@ from enum import Enum
 from ...errors import UnsupportedDefinition
 from ...ir.interfaces import ArgDef, CmdDef, InterfaceDef, VarDef
 from ...ir.modules import ConfigEntry, ModuleDef, Mutability, ProvidesDef, RequiresDef
-from ...ir.model import Model
+from ...ir.model import Model, is_enum
 from ...ir.types import (
     Array,
     Field,
@@ -246,7 +246,7 @@ class InterfaceView:
             return PayloadKind.NULL
         if isinstance(payload, Ref):
             return (
-                PayloadKind.ENUM if self.model.is_enum(payload.target)
+                PayloadKind.ENUM if is_enum(self.model.resolve_type(payload.target))
                 else PayloadKind.OBJECT
             )
         if isinstance(payload, Array):
@@ -331,7 +331,7 @@ class InterfaceView:
             return (payload.json_type.value,)
         if isinstance(payload, Ref):
             return (
-                (JsonType.STRING.value,) if self.model.is_enum(payload.target)
+                (JsonType.STRING.value,) if is_enum(self.model.resolve_type(payload.target))
                 else (JsonType.OBJECT.value,)
             )
         raise UnsupportedDefinition(f'no json type for {payload!r}')

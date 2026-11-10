@@ -8,6 +8,7 @@ import pytest
 
 from ev_cli.ir import json_io
 from ev_cli.ir.common import Constraints
+from ev_cli.ir.model import is_enum
 from ev_cli.ir.modules import Mutability
 from ev_cli.ir.order import order_fields, order_structs
 from ev_cli.ir.types import (
@@ -214,8 +215,8 @@ class TestFixtureTypes:
         assert 'units' in fixture_model.types['sample'].referenced_type_units
 
     def test_a_reference_resolves_to_its_declaration(self, fixture_model):
-        assert fixture_model.is_enum(TypeRef('sample', 'Mood'))
-        assert not fixture_model.is_enum(TypeRef('units', 'Power'))
+        assert is_enum(fixture_model.resolve_type(TypeRef('sample', 'Mood')))
+        assert not is_enum(fixture_model.resolve_type(TypeRef('units', 'Power')))
 
 
 class TestFixtureInterface:

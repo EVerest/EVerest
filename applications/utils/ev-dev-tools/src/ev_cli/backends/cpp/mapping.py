@@ -17,6 +17,7 @@ from enum import Enum
 from typing import Final
 
 from ...errors import UnsupportedDefinition
+from ...ir.model import is_enum
 from ...ir.types import (
     Array,
     JsonType,
@@ -115,7 +116,7 @@ class CppMapping:
 
         if isinstance(expr, Ref):
             text = qualified_type(expr.target.unit, expr.target.name)
-            return Spelling(text, is_enum=self._model.is_enum(expr.target))
+            return Spelling(text, is_enum=is_enum(self._model.resolve_type(expr.target)))
 
         if isinstance(expr, LocalEnum):
             return Spelling(expr.name, is_enum=True)
