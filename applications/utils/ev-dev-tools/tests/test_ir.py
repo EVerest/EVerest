@@ -9,7 +9,7 @@ import pytest
 from ev_cli.ir import json_io
 from ev_cli.ir.common import Constraints
 from ev_cli.ir.modules import Mutability
-from ev_cli.ir.order import order_fields, order_structs
+from ev_cli.ir.build.order import order_fields, order_structs
 from ev_cli.ir.types import (
     SCALAR_TYPES,
     Array,

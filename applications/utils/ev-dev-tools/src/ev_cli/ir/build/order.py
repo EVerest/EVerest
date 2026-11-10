@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from typing import Iterable, Sequence
 
-from .types import Field, StructDef
+from ..types import Field, StructDef
 
 
 def order_fields(fields: Iterable[Field]) -> tuple[Field, ...]:
