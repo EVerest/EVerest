@@ -219,8 +219,8 @@ class InterfaceView:
     def errors(self):
         return self.interface.errors
 
-    def guard(self, kind: str) -> str:
-        return naming.interface_header_guard(self.interface.name, kind)
+    def guard(self, header: naming.InterfaceHeader) -> str:
+        return naming.interface_header_guard(self.interface.name, header)
 
     @property
     def implementation_class(self) -> str:

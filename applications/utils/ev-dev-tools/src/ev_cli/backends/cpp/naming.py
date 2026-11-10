@@ -9,6 +9,8 @@ one is a source-breaking change for every implementer.
 
 from __future__ import annotations
 
+from enum import Enum
+
 from ...errors import UnsupportedDefinition
 
 #: Reserved words that cannot be used as identifiers in generated C++.
@@ -88,14 +90,16 @@ def type_header_guard(unit: str) -> str:
     return f'TYPES_{snake_case(unit[:1].upper() + unit[1:]).upper()}_TYPES_HPP'
 
 
-def interface_header_guard(interface: str, kind: str) -> str:
-    """``kind`` is one of ``implementation``, ``interface`` or ``types``."""
-    suffixes = {
-        'implementation': 'IMPLEMENTATION_HPP',
-        'interface': 'INTERFACE_HPP',
-        'types': 'TYPES_HPP',
-    }
-    return f'{snake_case(interface).upper()}_{suffixes[kind]}'
+class InterfaceHeader(Enum):
+    """The headers generated for every interface; the value names the file."""
+
+    IMPLEMENTATION = 'Implementation'
+    INTERFACE = 'Interface'
+    TYPES = 'Types'
+
+
+def interface_header_guard(interface: str, header: InterfaceHeader) -> str:
+    return f'{snake_case(interface).upper()}_{header.name}_HPP'
 
 
 def implementation_header_guard(implementation_id: str, interface: str) -> str:

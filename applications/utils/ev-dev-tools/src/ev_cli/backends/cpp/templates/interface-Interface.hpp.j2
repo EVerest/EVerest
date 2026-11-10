@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
-#ifndef {{ u.guard('interface') }}
-#define {{ u.guard('interface') }}
+#ifndef {{ u.guard(header) }}
+#define {{ u.guard(header) }}
 
 //
 // AUTO GENERATED - DO NOT EDIT!
@@ -159,4 +159,4 @@ private:
     std::optional<Mapping> _mapping;
 };
 
-#endif // {{ u.guard('interface') }}
+#endif // {{ u.guard(header) }}

@@ -37,6 +37,23 @@ class UpdatePolicy(Enum):
     LEAVE_ALONE = 'leave-alone'
 
 
+class OutputKind(Enum):
+    """What a backend is asked to emit, one per ``emit_*`` method."""
+
+    TYPE_UNIT = 'type-unit'
+    INTERFACE = 'interface'
+    MODULE_LOADER = 'module-loader'
+    MODULE_FILES = 'module-files'
+
+
+class FileCategory(Enum):
+    """The groups ``--only which`` lists a module's files under, in this order."""
+
+    CORE = 'core'
+    INTERFACES = 'interfaces'
+    DOCS = 'docs'
+
+
 @dataclass
 class GeneratedFile:
     """One file a backend produced, before anything is written to disk.
@@ -61,7 +78,7 @@ class GeneratedFile:
     #: License text this file should start with, when the module declares one.
     license_header: str | None = None
     #: Which group this file belongs to for ``--only which`` output.
-    category: str = 'core'
+    category: FileCategory = FileCategory.CORE
     #: What ``module update`` may do to it if it already exists.
     update_policy: UpdatePolicy = UpdatePolicy.REGENERATE
 
@@ -104,13 +121,11 @@ class Backend(Protocol):
         """
         ...
 
-    def templates(self, scope: str = 'all') -> list[Path]:
+    def templates(self, kind: OutputKind) -> tuple[Path, ...]:
         """Template files whose modification should force regeneration.
 
         This is what ``get-templates`` prints, and what EVerest's CMake stores
-        as a target property to use as a dependency.  ``scope`` selects the
-        group a command asks about -- ``types``, ``interface``, ``module`` --
-        or ``all``.
+        as a target property to use as a dependency.
         """
         ...
 

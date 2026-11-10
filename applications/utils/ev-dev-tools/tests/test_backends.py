@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import pytest
 
-from ev_cli.backends.base import Backend, GeneratedFile, UpdatePolicy, registry
+from ev_cli.backends.base import Backend, GeneratedFile, OutputKind, UpdatePolicy, registry
 
 #: What a backend must provide for every command to work against it.
 REQUIRED = (
@@ -49,10 +49,10 @@ class TestEveryBackend:
     def test_names_itself(self, name):
         assert registry.create(name).name == name
 
-    def test_templates_accepts_a_scope(self, name):
+    def test_templates_answers_every_output_kind(self, name):
         backend = registry.create(name)
-        for scope in ('all', 'types', 'interface', 'module'):
-            assert isinstance(backend.templates(scope), list)
+        for kind in OutputKind:
+            assert isinstance(backend.templates(kind), tuple)
 
 
 class TestBackendOptions:

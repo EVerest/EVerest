@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
-#ifndef {{ u.guard('types') }}
-#define {{ u.guard('types') }}
+#ifndef {{ u.guard(header) }}
+#define {{ u.guard(header) }}
 
 //
 // AUTO GENERATED - DO NOT EDIT!
@@ -29,4 +29,4 @@ using nlohmann::json;
 // The types this interface uses are declared in the headers included above;
 // an interface declares no types of its own.
 
-#endif // {{ u.guard('types') }}
+#endif // {{ u.guard(header) }}

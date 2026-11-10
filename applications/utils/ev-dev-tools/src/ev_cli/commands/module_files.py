@@ -12,19 +12,16 @@ but never the ``.cpp`` sources, and carries the contents of every
 from __future__ import annotations
 
 from .. import blocks, license_headers
-from ..backends.base import registry
+from ..backends.base import FileCategory, UpdatePolicy, registry
 from ..errors import EvCliError
-from ..backends.base import UpdatePolicy
 from ..files import Strategy
+from ..schema.loader import MODULES_DIR
 from .context import Context
-
-#: The order categories are reported in by ``--only which``.
-CATEGORY_ORDER = ('core', 'interfaces', 'docs')
 
 
 def write_module_files(args, *, updating: bool) -> int:
     context = Context.from_args(args)
-    module_dir = context.work_dir / 'modules' / args.module
+    module_dir = context.work_dir / MODULES_DIR / args.module
 
     model = _model_for(context, args.module)
     license_header = license_headers.find_header(
@@ -77,11 +74,11 @@ def _model_for(context: Context, module: str):
 # --------------------------------------------------------------------------
 
 def _print_available(generated) -> None:
-    for category in CATEGORY_ORDER:
+    for category in FileCategory:
         in_category = [f for f in generated if f.category == category]
         if not in_category:
             continue
-        print(f'Available files for category "{category}"')
+        print(f'Available files for category "{category.value}"')
         for file in in_category:
             print(f'  {file.abbr}')
 

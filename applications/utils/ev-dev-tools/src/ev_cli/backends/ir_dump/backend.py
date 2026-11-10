@@ -23,7 +23,7 @@ from ...ir.model import Model
 from ...ir.types import Array, LocalEnum, LocalStruct, Opaque, Primitive, Ref, Variant
 from ...schema.references import TypeRef
 from ...schema.source import SourceRef
-from ..base import GeneratedFile
+from ..base import GeneratedFile, OutputKind
 
 #: A field's type can be any of these, so each is written with a ``kind``.
 _TYPE_EXPRESSIONS = (Array, LocalEnum, LocalStruct, Opaque, Primitive, Ref, Variant)
@@ -60,8 +60,8 @@ class IrDumpBackend:
     def postprocess(self, files: list[GeneratedFile]) -> None:
         """Nothing to do: JSON comes out of the serialiser already formatted."""
 
-    def templates(self, scope: str = 'all') -> list[Path]:
-        return []
+    def templates(self, kind: OutputKind) -> tuple[Path, ...]:
+        return ()
 
     def emit_type_unit(self, model: Model, unit: str, output_dir: Path) -> list[GeneratedFile]:
         type_unit = model.types[unit]
@@ -107,7 +107,6 @@ class IrDumpBackend:
             printable_name=path.relative_to(module_dir).as_posix(),
             source_mtime=definition.source.file.stat().st_mtime,
             abbr='module.json',
-            category='core',
         )]
 
     def _dump(self, node, path: Path, sourced) -> GeneratedFile:

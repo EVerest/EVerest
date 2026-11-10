@@ -4,7 +4,7 @@
 
 from __future__ import annotations
 
-from ..backends.base import registry
+from ..backends.base import OutputKind, registry
 from .context import Context
 
 
@@ -31,5 +31,5 @@ def generate_headers(args) -> int:
 
 def get_templates(args) -> int:
     backend = registry.create(args.backend, args)
-    print(args.separator.join(str(path) for path in backend.templates('interface')))
+    print(args.separator.join(str(path) for path in backend.templates(OutputKind.INTERFACE)))
     return 0

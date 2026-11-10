@@ -149,13 +149,13 @@ class TestGuardsAndNames:
     def test_type_header_guard(self, unit, expected):
         assert naming.type_header_guard(unit) == expected
 
-    @pytest.mark.parametrize('kind, expected', [
-        ('implementation', 'ISOLATION_MONITOR_IMPLEMENTATION_HPP'),
-        ('interface', 'ISOLATION_MONITOR_INTERFACE_HPP'),
-        ('types', 'ISOLATION_MONITOR_TYPES_HPP'),
+    @pytest.mark.parametrize('header, expected', [
+        (naming.InterfaceHeader.IMPLEMENTATION, 'ISOLATION_MONITOR_IMPLEMENTATION_HPP'),
+        (naming.InterfaceHeader.INTERFACE, 'ISOLATION_MONITOR_INTERFACE_HPP'),
+        (naming.InterfaceHeader.TYPES, 'ISOLATION_MONITOR_TYPES_HPP'),
     ])
-    def test_interface_header_guard(self, kind, expected):
-        assert naming.interface_header_guard('isolation_monitor', kind) == expected
+    def test_interface_header_guard(self, header, expected):
+        assert naming.interface_header_guard('isolation_monitor', header) == expected
 
     def test_implementation_guard(self):
         assert naming.implementation_header_guard('main', 'evse_manager') == \

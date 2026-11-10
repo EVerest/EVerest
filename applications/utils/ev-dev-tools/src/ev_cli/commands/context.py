@@ -15,7 +15,7 @@ from ..errors import DefinitionNotFound, EvCliError
 from ..files import FileWriter, Strategy
 from ..ir import build
 from ..ir.model import Model
-from ..schema.loader import DefinitionLoader, SourceTree
+from ..schema.loader import TYPES_DIR, DefinitionLoader, SourceTree
 from ..schema.validate import Validators
 
 YAML_SUFFIXES = ('.yaml', '.yml')
@@ -139,8 +139,8 @@ class Context:
                 break
 
         parts = list(Path(text).parts)
-        if 'types' in parts:
-            last = len(parts) - 1 - parts[::-1].index('types')
+        if TYPES_DIR in parts:
+            last = len(parts) - 1 - parts[::-1].index(TYPES_DIR)
             parts = parts[last + 1:]
         return '/'.join(parts)
 
