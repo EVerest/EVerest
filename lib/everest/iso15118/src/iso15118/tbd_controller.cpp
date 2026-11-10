@@ -325,15 +325,6 @@ StartSessionResult TbdController::start_session(int connected_fd, const StartSes
 void TbdController::tick() {
     apply_interface_state();
 
-    if (communication_setup_timeout && communication_setup_timeout->is_reached()) {
-        logf_warning("V2G communication setup timeout (18s) expired before session was established");
-        communication_setup_timeout.reset();
-        if (sdp_server) {
-            sdp_server->set_dlink_ready(false);
-        }
-        callbacks.signal(session::feedback::Signal::DLINK_ERROR);
-    }
-
     service_active_session();
 
     if (session and communication_setup_timeout and session->is_v2g_session_established()) {
@@ -350,16 +341,17 @@ void TbdController::tick() {
         if (sdp_server) {
             sdp_server->set_dlink_ready(false);
         }
-        {
-            // The timeout is cancelled on establishment above, so any session still here has NOT established:
-            // the EV never connected (resetting closes the still-listening socket, so a late connect is refused
-            // rather than accepted), connected but sent no SupportedAppProtocolReq, or completed the handshake
-            // but sent no SessionSetupReq. For the connected cases this closes within the termination budget
-            // instead of waiting out the 60 s sequence timeout.
-            std::lock_guard<std::mutex> lock(session_mutex);
-            session.reset();
+        if (session) {
+            // The timeout is cancelled on establishment above, so the session has NOT established: the EV never
+            // connected (the still-listening socket closes, so a late connect is refused rather than accepted),
+            // connected but sent no SupportedAppProtocolReq, or completed the handshake but sent no
+            // SessionSetupReq. The session closes the connection first and reports D-LINK_ERROR itself: that
+            // signal makes SLAC leave the logical network, which the FIN has to cross before.
+            session->abort_communication_setup();
+            next_event = get_current_time_point();
+        } else {
+            callbacks.signal(session::feedback::Signal::DLINK_ERROR);
         }
-        callbacks.signal(session::feedback::Signal::DLINK_ERROR);
     }
 
     if (not session and not shutdown_active.load() and not config.enable_sdp_server and interface_bound) {

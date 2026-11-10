@@ -381,7 +381,11 @@ TimePoint const& Session::poll() {
         // Nothing has happened yet, or the connection is gone. If the V2G session is logically over,
         // complete the teardown now so the controller can reap it; this also ends the linger early.
         if (session_over()) {
-            finish_session();
+            if (dlink_signal_deadline.has_value() and now < dlink_signal_deadline.value()) {
+                next_session_event = std::min(next_session_event, dlink_signal_deadline.value());
+            } else {
+                finish_session();
+            }
         }
         return next_session_event;
     }
@@ -718,6 +722,21 @@ void Session::close() {
     connection->close();
     open_power_path();
     feedback.signal(session::feedback::Signal::DLINK_TERMINATE);
+}
+
+void Session::abort_communication_setup() {
+    if (finished_reported) {
+        return;
+    }
+    driver_stopped = true;
+    error_termination = true;
+    if (state.connected) {
+        // The FIN has to get across before SLAC leaves the logical network, but the CP oscillator goes off
+        // together with it (par_SECC_CPOscillator_Shutdown_Timeout).
+        dlink_signal_deadline = offset_time_point_by_ms(get_current_time_point(), DLINK_SIGNAL_GRACE_MS);
+        feedback.session_stop_res_sent(session::feedback::SessionStopAction::FailedTermination);
+    }
+    connection->close();
 }
 
 void Session::request_shutdown() {

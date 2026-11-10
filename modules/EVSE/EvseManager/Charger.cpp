@@ -854,8 +854,10 @@ void Charger::run_state_machine() {
                 } else {
                     // We have power and PWM is on, but EV did not proceed to state C yet (and/or HLC is not
                     // ready)
+                    // An EV with an established data link is no legacy EV. State E/F would make SLAC leave the
+                    // logical network under its running V2G session, whose own timeouts end it in order.
                     if (not shared_context.hlc_charging_active and not shared_context.legacy_wakeup_done and
-                        time_in_current_state > LEGACY_WAKEUP_TIMEOUT) {
+                        not shared_context.dlink_established and time_in_current_state > LEGACY_WAKEUP_TIMEOUT) {
                         session_log.evse(false, "EV did not transition to state C, trying one legacy wakeup "
                                                 "according to IEC61851-1 A.5.3");
                         shared_context.legacy_wakeup_done = true;
@@ -2641,6 +2643,14 @@ void Charger::notify_session_stop_res_sent(types::iso15118::SessionStopAction ac
         return;
     }
     if (not shared_context.hlc_charging_active) {
+        const bool session_setup = shared_context.current_state == EvseState::WaitingForAuthentication or
+                                   shared_context.current_state == EvseState::PrepareCharging;
+        if (action == types::iso15118::SessionStopAction::FailedTermination and hlc_use_5percent_current_session and
+            session_setup) {
+            // The communication setup failed before a V2G session was established. The D-LINK_ERROR that runs
+            // the [V2G3-M07-05] sequence follows once the TCP close crossed the data link; its X1 starts here.
+            cp_state_X1();
+        }
         return;
     }
     shared_context.hlc_allow_close_contactor = false;
