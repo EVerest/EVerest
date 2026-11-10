@@ -20,7 +20,10 @@ Integration in EVerest
 This module provides implementation for the system interface. It does not require any other modules.
 
 Connect the optional ``store`` requirement to a persistent key-value store to
-preserve the boot reason for both signed and unsigned firmware updates across resets.
+preserve the boot reason across resets: ``FirmwareUpdate`` for both signed and
+unsigned firmware updates, ``ScheduledReset`` for a ``reset`` with ``scheduled``
+set (OCPP ``OnIdle``, after the transactions ended) and ``RemoteReset`` for any
+other ``reset``. Without a store, the boot reason is always ``PowerUp``.
 Post-boot ``Installed`` reporting applies only to signed firmware updates.
 With ``ResetAfterUpdate`` enabled and a store connected, System publishes
 ``InstallRebooting`` before resetting and ``Installed`` with the original request
