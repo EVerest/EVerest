@@ -274,3 +274,63 @@ SCENARIO("Power path teardown signals") {
         }
     }
 }
+
+SCENARIO("A session that misses the communication setup timeout closes before it reports D-LINK_ERROR") {
+    using Signal = iso15118::session::feedback::Signal;
+
+    using StopAction = iso15118::session::feedback::SessionStopAction;
+
+    std::vector<Signal> seen;
+    std::vector<StopAction> stop_actions;
+    iso15118::session::feedback::Callbacks callbacks;
+    callbacks.signal = [&seen](Signal signal) { seen.push_back(signal); };
+    callbacks.session_stop_res_sent = [&stop_actions](StopAction action) { stop_actions.push_back(action); };
+
+    const iso15118::session::SessionConfig session_config{iso15118::session::EvseSetupConfig{}};
+    std::optional<iso15118::d20::PauseContext> pause_ctx{std::nullopt};
+    std::optional<iso15118::d2::PauseContext> d2_pause_ctx{std::nullopt};
+
+    auto connection = std::make_unique<MockConnection>();
+    auto* conn = connection.get();
+    iso15118::Session session{std::move(connection), session_config, callbacks, pause_ctx, d2_pause_ctx};
+
+    GIVEN("an EV that connected but sent no request") {
+        conn->fire(iso15118::io::ConnectionEvent::ACCEPTED);
+
+        WHEN("the communication setup is aborted") {
+            session.abort_communication_setup();
+            session.poll();
+
+            THEN("the connection is closed and the oscillator switched off at once, the D-LINK signal is held back") {
+                REQUIRE(conn->closed);
+                REQUIRE(stop_actions == std::vector<StopAction>{StopAction::FailedTermination});
+                REQUIRE(seen.empty());
+                REQUIRE_FALSE(session.is_finished());
+            }
+
+            AND_WHEN("the FIN had time to cross the logical network") {
+                std::this_thread::sleep_for(std::chrono::milliseconds(350));
+                session.poll();
+
+                THEN("the data link is released with D-LINK_ERROR") {
+                    REQUIRE(session.is_finished());
+                    REQUIRE(seen == std::vector<Signal>{Signal::DLINK_ERROR});
+                }
+            }
+        }
+    }
+
+    GIVEN("an EV that never connected") {
+        WHEN("the communication setup is aborted") {
+            session.abort_communication_setup();
+            session.poll();
+
+            THEN("the listening endpoint is closed and D-LINK_ERROR follows without a delay") {
+                REQUIRE(conn->closed);
+                REQUIRE(session.is_finished());
+                REQUIRE(seen == std::vector<Signal>{Signal::DLINK_ERROR});
+                REQUIRE(stop_actions.empty());
+            }
+        }
+    }
+}
