@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from functools import cached_property
 from pathlib import Path
 from typing import Mapping
 
@@ -43,7 +44,7 @@ class BlockSet:
     marker: str
     definitions: Mapping[str, BlockDefinition]
 
-    @property
+    @cached_property
     def pattern(self) -> re.Pattern:
         comment = re.escape(self.marker.split('ev@')[0].strip())
         return re.compile(

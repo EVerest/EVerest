@@ -17,9 +17,8 @@ from ..files import FileWriter, Strategy
 from ..ir import build
 from ..ir.model import Model
 from ..schema.loader import TYPES_DIR, DefinitionLoader, SourceTree
+from ..schema.references import strip_yaml_suffix
 from ..schema.validate import Validators
-
-YAML_SUFFIXES = ('.yaml', '.yml')
 
 
 @dataclass
@@ -126,13 +125,7 @@ class Context:
     @staticmethod
     def _as_unit(value) -> str:
         """Accept a unit name, a relative path, or an absolute path."""
-        text = str(value)
-        for suffix in YAML_SUFFIXES:
-            if text.endswith(suffix):
-                text = text[: -len(suffix)]
-                break
-
-        parts = list(Path(text).parts)
+        parts = list(Path(strip_yaml_suffix(str(value))).parts)
         if TYPES_DIR in parts:
             last = len(parts) - 1 - parts[::-1].index(TYPES_DIR)
             parts = parts[last + 1:]

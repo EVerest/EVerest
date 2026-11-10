@@ -41,6 +41,14 @@ _ERROR_REFERENCE = re.compile(
 YAML_SUFFIXES = ('.yaml', '.yml')
 
 
+def strip_yaml_suffix(name: str) -> str:
+    """``energy.yaml`` -> ``energy``; a name without the suffix is returned as it is."""
+    for suffix in YAML_SUFFIXES:
+        if name.endswith(suffix):
+            return name[: -len(suffix)]
+    return name
+
+
 @dataclass(frozen=True, order=True)
 class TypeRef:
     """A reference to a named type, already resolved to a unit and a name.
@@ -89,7 +97,6 @@ class ParsedErrorReference:
     namespace: str
     #: ``None`` means "every error declared in that namespace".
     name: str | None
-    raw: str
 
     @property
     def is_whole_namespace(self) -> bool:
@@ -148,13 +155,7 @@ def _resolve_relative_unit(path: str, *, from_unit: str | None, raw: str) -> str
             f'tools can resolve it'
         )
 
-    stem = path
-    for suffix in YAML_SUFFIXES:
-        if stem.endswith(suffix):
-            stem = stem[: -len(suffix)]
-            break
-
-    unit = posixpath.normpath(stem.lstrip('/'))
+    unit = posixpath.normpath(strip_yaml_suffix(path).lstrip('/'))
     if unit.startswith('..'):
         raise MalformedReference(
             f'reference {raw!r} points outside the types directory'
@@ -192,5 +193,4 @@ def parse_error_reference(raw: str) -> ParsedErrorReference:
     return ParsedErrorReference(
         namespace=match.group('namespace'),
         name=match.group('name'),
-        raw=raw,
     )

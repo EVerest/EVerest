@@ -21,6 +21,7 @@ import jsonschema
 import yaml
 
 from ..errors import SchemaError
+from .source import SourceRef
 
 
 class DocumentKind(Enum):
@@ -65,8 +66,7 @@ class Validators:
         try:
             self.by_kind[kind].validate(document)
         except jsonschema.ValidationError as err:
-            location = '/'.join(str(part) for part in err.absolute_path)
-            where = f'{path}#/{location}' if location else str(path)
+            where = SourceRef(path).child(*err.absolute_path)
             raise SchemaError(f'{where}: {err.message}') from err
 
         if kind is DocumentKind.INTERFACE:
@@ -78,16 +78,19 @@ class Validators:
         Interface ``vars`` and command arguments and results are JSON Schema
         fragments that the meta-schema cannot check directly.
         """
+        root = SourceRef(path)
         for name, definition in (document.get('vars') or {}).items():
-            self._check_is_schema(definition, path, f'/vars/{name}')
+            self._check_is_schema(definition, root.child('vars', name))
         for name, definition in (document.get('cmds') or {}).items():
+            command = root.child('cmds', name)
             for argument, schema in (definition.get('arguments') or {}).items():
-                self._check_is_schema(schema, path, f'/cmds/{name}/arguments/{argument}')
+                self._check_is_schema(schema, command.child('arguments', argument))
             if 'result' in definition:
-                self._check_is_schema(definition['result'], path, f'/cmds/{name}/result')
+                self._check_is_schema(definition['result'], command.child('result'))
 
-    def _check_is_schema(self, subschema: Any, path: Path, pointer: str) -> None:
+    @staticmethod
+    def _check_is_schema(subschema: Any, source: SourceRef) -> None:
         try:
             jsonschema.Draft7Validator.check_schema(subschema)
         except jsonschema.SchemaError as err:
-            raise SchemaError(f'{path}#{pointer}: not a valid schema: {err.message}') from err
+            raise SchemaError(f'{source}: not a valid schema: {err.message}') from err
