@@ -107,11 +107,11 @@ public:
     }
 
     /// \brief Notifies a single waiting thread to wake up
-    /// \note Call this after changing state that a wait predicate reads. Taking the lock first ensures a
+    /// \note Call this after changing state that a wait predicate reads. Notifying under the lock ensures a
     /// waiter that already evaluated its predicate is blocked in the wait and receives the notification.
     void notify_waiting_thread() {
-        { const std::lock_guard<std::mutex> lock(mutex); }
-        notify_waiting_thread_unlocked();
+        const std::lock_guard<std::mutex> lock(mutex);
+        cv.notify_one();
     }
 
 private:
