@@ -124,8 +124,8 @@ applies.
 Each entry says what to write instead.  Two categories are worth attention
 rather than only counting: a sibling ``type`` that *contradicts* the referenced
 type, and ``additionalProperties: false`` beside a reference to an object.
-Both are inert today and would change meaning if the definitions were ever read
-with OpenAPI semantics.
+Neither has an effect under EVerest's reading of the definitions, and both would
+change meaning if the definitions were read with OpenAPI semantics.
 
 The loader also accepts the conformant spelling already -- ``#/types/Power``
 within a file, ``units.yaml#/types/Power`` across files -- so the definitions

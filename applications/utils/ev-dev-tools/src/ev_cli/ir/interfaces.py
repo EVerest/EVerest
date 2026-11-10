@@ -28,7 +28,7 @@ class VarDef:
     source: SourceRef
     constraints: Constraints = NO_CONSTRAINTS
     #: MQTT quality of service, if the interface asked for one.  The framework
-    #: meta-schema allows it; nothing in everest-core sets it today.
+    #: meta-schema allows it; nothing in everest-core sets it.
     qos: int | None = None
 
 

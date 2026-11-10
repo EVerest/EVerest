@@ -22,7 +22,7 @@ from ev_cli.schema.references import (
 
 
 class TestLegacyDialect:
-    """``/energy#/Power`` -- what every definition in everest-core uses today."""
+    """``/energy#/Power`` -- what every definition in everest-core uses."""
 
     def test_same_unit(self):
         parsed = parse_type_reference('/energy#/Power', from_unit='energy')

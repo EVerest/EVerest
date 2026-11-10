@@ -7,7 +7,7 @@ from __future__ import annotations
 import pytest
 
 from ev_cli.errors import UnsupportedDefinition
-from ev_cli.ir.common import Constraints
+from ev_cli.ir.common import NO_CONSTRAINTS, Constraints
 from ev_cli.ir.modules import Mutability
 from ev_cli.ir.types import (
     SCALAR_TYPES,
@@ -59,7 +59,7 @@ class TestConstraints:
         assert constraints.has_default
 
     def test_empty_schema(self):
-        assert Constraints.from_schema({}).is_empty
+        assert Constraints.from_schema({}) == NO_CONSTRAINTS
 
     def test_a_null_default_is_not_the_same_as_no_default(self):
         assert Constraints.from_schema({'default': None}).has_default

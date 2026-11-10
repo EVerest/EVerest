@@ -183,7 +183,7 @@ class TestGuardsAndNames:
         assert naming.qualified_type('energy', 'Power') == 'types::energy::Power'
 
     def test_rejects_a_cpp_keyword_as_an_identifier(self):
-        """The previous implementation checked Python's keywords here."""
+        """C++ keywords, not Python's, are what an identifier has to avoid."""
         with pytest.raises(UnsupportedDefinition):
             naming.check_identifier('class', 'somewhere')
         naming.check_identifier('lambda', 'somewhere')  # legal in C++
@@ -232,11 +232,8 @@ class TestTypeMapping:
             assert (field_mapping.spell(Primitive(json_type)).text
                     != payload_mapping.spell(Primitive(json_type)).text)
 
-    def test_format_is_not_honoured_yet(self, fixture_model):
-        """Properties saying ``format: date-time`` are all plain std::string."""
-        from ev_cli.backends.cpp.mapping import FORMAT_TYPES
-        assert FORMAT_TYPES == {}
-
+    def test_format_does_not_change_the_type(self, fixture_model):
+        """A property saying ``format: date-time`` is a plain std::string."""
         reading = fixture_model.types['sample'].struct('Reading')
         taken_at = next(f for f in reading.fields if f.name == 'taken_at')
         assert taken_at.constraints.format == 'date-time'
@@ -332,7 +329,7 @@ class TestPayloadKinds:
             'types::sample::Reading'
 
     def test_a_variant_argument_is_passed_by_value_in_call(self, view):
-        """Reproduced from the previous implementation; see call_declaration."""
+        """Part of the generated signature; see call_declaration."""
         store = view.interface.cmd('store')
         assert view.call_declaration(store.arguments[0]).startswith('std::variant<')
         configure = view.interface.cmd('configure')

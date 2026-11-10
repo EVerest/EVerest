@@ -72,10 +72,6 @@ class Constraints:
             values['has_default'] = True
         return cls(**values)
 
-    @property
-    def is_empty(self) -> bool:
-        return self == NO_CONSTRAINTS
-
     def as_dict(self) -> dict[str, Any]:
         """Only the constraints that were actually set, for serialisation."""
         values = {

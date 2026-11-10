@@ -39,10 +39,6 @@ class Document:
     def source(self) -> SourceRef:
         return SourceRef(self.path)
 
-    @property
-    def mtime(self) -> float:
-        return self.path.stat().st_mtime
-
 
 class SourceTree:
     """Where definitions are read from.

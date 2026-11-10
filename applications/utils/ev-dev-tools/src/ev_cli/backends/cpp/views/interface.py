@@ -109,9 +109,6 @@ class InterfaceView:
             return PayloadKind.ARRAY if isinstance(payload.items, Ref) else PayloadKind.PLAIN
         return PayloadKind.PLAIN
 
-    def is_null(self, payload: TypeExpr | None) -> bool:
-        return self.kind(payload) is PayloadKind.NULL
-
     # -- payload spellings --------------------------------------------------
 
     def spell(self, payload: TypeExpr) -> str:

@@ -134,8 +134,8 @@ class CppBackend:
         return [GeneratedFile(
             path=path,
             content=content,
-            # Matches what the build logs today: the output directory's own name
-            # followed by the unit, e.g. "types/energy.hpp".
+            # The output directory's own name followed by the unit, e.g.
+            # "types/energy.hpp", as the build logs it.
             printable_name=(Path(output_dir.name) / f'{unit}.hpp').as_posix(),
             # Deliberately the unit's own modification time, not the newest
             # among the units it references: EVerest's incremental builds are

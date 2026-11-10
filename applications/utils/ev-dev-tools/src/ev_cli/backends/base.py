@@ -102,12 +102,10 @@ class Backend(Protocol):
         ``add_parser(parents=...)``.  Every backend's options are attached to
         every emitting command, because the selected backend is only known
         once ``--backend`` has been parsed; an option belonging to a target
-        that was not selected is simply inert, which is already true of
-        ``--disable-clang-format`` today.
+        that was not selected is simply inert.
 
-        New options should be prefixed with the backend's name.  The two C++
-        ones are not, because the build passes them and their spelling is
-        frozen.
+        A backend prefixes its options with its name.  The two C++ ones are
+        not, because the build passes them and their spelling is frozen.
         """
         ...
 

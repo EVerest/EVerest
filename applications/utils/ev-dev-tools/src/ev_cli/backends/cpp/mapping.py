@@ -66,14 +66,6 @@ PAYLOAD_SCALARS: Final[dict[JsonType, str]] = {
     JsonType.ARRAY: 'Array',
 }
 
-#: ``format`` values that map to a dedicated C++ type.
-#:
-#: Deliberately empty.  Properties across the type files do carry
-#: ``format: date-time``, and every one is generated as a plain
-#: ``std::string``; the templates carry a ``DateTime`` branch that nothing
-#: reaches.  Honouring the format would change those members' type.
-FORMAT_TYPES: Final[dict[str, str]] = {}
-
 
 @dataclass(frozen=True)
 class Spelling:
@@ -81,9 +73,6 @@ class Spelling:
 
     text: str
     is_vector: bool = False
-    #: Whether this is one of the framework's raw-JSON aliases rather than a
-    #: type generated from a definition.
-    is_opaque: bool = False
 
     def __str__(self) -> str:
         return self.text
@@ -115,7 +104,7 @@ class CppMapping:
             return self._array(expr)
 
         if isinstance(expr, Opaque):
-            return Spelling(self._scalar(expr.json_type), is_opaque=True)
+            return Spelling(self._scalar(expr.json_type))
 
         if isinstance(expr, Variant):
             return Spelling(self._variant(expr))
@@ -128,12 +117,11 @@ class CppMapping:
         # A struct member is always a typed vector.  An interface payload only
         # becomes one when its items are a reference to a declared type: an
         # array of plain strings is handed over as the framework's raw-JSON
-        # ``Array`` instead.  That asymmetry is what the generated interface
-        # headers have always done -- ``handle_get_configuration_key(Array&)``
-        # in ocpp_1_6_charge_point is the visible consequence -- so it is
-        # reproduced rather than tidied.
+        # ``Array`` instead.  Modules implement against that asymmetry --
+        # ``handle_get_configuration_key(Array&)`` in ocpp_1_6_charge_point is
+        # one -- so it is part of the generated API.
         if self._flavour is Flavour.PAYLOAD and not isinstance(expr.items, Ref):
-            return Spelling(PAYLOAD_SCALARS[JsonType.ARRAY], is_opaque=True)
+            return Spelling(PAYLOAD_SCALARS[JsonType.ARRAY])
 
         return Spelling(f'std::vector<{inner.text}>', is_vector=True)
 

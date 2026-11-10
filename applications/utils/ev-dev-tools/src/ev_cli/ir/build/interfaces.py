@@ -167,7 +167,7 @@ class _InterfaceBuild:
     def _resolve_errors(self, entries: Sequence[Mapping[str, Any]]) -> tuple[ErrorDef, ...]:
         """Resolve every ``/errors/<namespace>[#/<Name>]`` reference.
 
-        No template consumes the result today, but resolving is what catches a
+        No template consumes the result, but resolving is what catches a
         reference to an error that does not exist, or the same error pulled in
         twice by a list reference and a named one.
         """

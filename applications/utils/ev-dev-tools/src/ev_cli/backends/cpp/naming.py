@@ -77,9 +77,8 @@ def unit_namespaces(unit: str) -> list[str]:
 def qualified_type(unit: str, name: str) -> str:
     """A type's fully qualified name, as referenced from another unit.
 
-    Same-unit references are qualified too.  That is what the generated headers
-    have always done and it keeps the spelling of a reference independent of
-    where it is used.
+    Same-unit references are qualified too, which keeps the spelling of a
+    reference independent of where it is used.
     """
     return f'types::{unit}::{name}'
 
