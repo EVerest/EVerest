@@ -8,7 +8,6 @@ import pytest
 
 from ev_cli.ir import json_io
 from ev_cli.ir.common import Constraints
-from ev_cli.ir.model import is_enum
 from ev_cli.ir.modules import Mutability
 from ev_cli.ir.order import order_fields, order_structs
 from ev_cli.ir.types import (
@@ -23,6 +22,7 @@ from ev_cli.ir.types import (
     Ref,
     StructDef,
     Variant,
+    is_enum,
 )
 from ev_cli.schema.references import TypeRef
 from ev_cli.schema.source import SourceRef

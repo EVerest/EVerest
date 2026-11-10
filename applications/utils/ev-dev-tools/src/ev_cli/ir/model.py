@@ -10,19 +10,13 @@ to find.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Mapping, Union
+from typing import Mapping
 
 from ..errors import DefinitionNotFound
 from ..schema.references import TypeRef
 from .interfaces import InterfaceDef
 from .modules import ModuleDef
-from .types import EnumDef, StructDef, TypeUnit
-
-Declaration = Union[StructDef, EnumDef]
-
-
-def is_enum(declaration: Declaration) -> bool:
-    return isinstance(declaration, EnumDef)
+from .types import Declaration, TypeUnit
 
 
 @dataclass(frozen=True)

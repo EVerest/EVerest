@@ -16,7 +16,7 @@ from enum import Enum
 from ...errors import UnsupportedDefinition
 from ...ir.interfaces import ArgDef, CmdDef, InterfaceDef, VarDef
 from ...ir.modules import ConfigEntry, ModuleDef, Mutability, ProvidesDef, RequiresDef
-from ...ir.model import Model, is_enum
+from ...ir.model import Model
 from ...ir.types import (
     Array,
     Field,
@@ -28,6 +28,7 @@ from ...ir.types import (
     TypeExpr,
     TypeUnit,
     Variant,
+    is_enum,
 )
 from . import naming
 from .mapping import PAYLOAD_SCALARS, CppMapping, Flavour

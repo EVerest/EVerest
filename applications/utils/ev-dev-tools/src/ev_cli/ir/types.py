@@ -155,6 +155,13 @@ class EnumDef:
     source: SourceRef
 
 
+Declaration: TypeAlias = Union[StructDef, EnumDef]
+
+
+def is_enum(declaration: Declaration) -> bool:
+    return isinstance(declaration, EnumDef)
+
+
 @dataclass(frozen=True)
 class TypeUnit:
     """One ``types/*.yaml`` file."""

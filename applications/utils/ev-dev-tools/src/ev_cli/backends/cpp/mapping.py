@@ -17,7 +17,6 @@ from enum import Enum
 from typing import Final
 
 from ...errors import UnsupportedDefinition
-from ...ir.model import is_enum
 from ...ir.types import (
     Array,
     JsonType,
@@ -28,6 +27,7 @@ from ...ir.types import (
     Ref,
     TypeExpr,
     Variant,
+    is_enum,
 )
 from .naming import qualified_type
 
