@@ -90,16 +90,16 @@ def type_header_guard(unit: str) -> str:
     return f'TYPES_{snake_case(unit[:1].upper() + unit[1:]).upper()}_TYPES_HPP'
 
 
-class InterfaceHeader(Enum):
-    """The headers generated for every interface; the value names the file."""
+class InterfaceHeaderFile(Enum):
+    """The header files generated for every interface; the value is the file name."""
 
-    IMPLEMENTATION = 'Implementation'
-    INTERFACE = 'Interface'
-    TYPES = 'Types'
+    IMPLEMENTATION_HPP = 'Implementation.hpp'
+    INTERFACE_HPP = 'Interface.hpp'
+    TYPES_HPP = 'Types.hpp'
 
 
-def interface_header_guard(interface: str, header: InterfaceHeader) -> str:
-    return f'{snake_case(interface).upper()}_{header.name}_HPP'
+def interface_header_guard(interface: str, header: InterfaceHeaderFile) -> str:
+    return f'{snake_case(interface).upper()}_{header.name}'
 
 
 def implementation_header_guard(implementation_id: str, interface: str) -> str:

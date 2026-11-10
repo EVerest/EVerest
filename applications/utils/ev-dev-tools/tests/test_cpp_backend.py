@@ -150,9 +150,9 @@ class TestGuardsAndNames:
         assert naming.type_header_guard(unit) == expected
 
     @pytest.mark.parametrize('header, expected', [
-        (naming.InterfaceHeader.IMPLEMENTATION, 'ISOLATION_MONITOR_IMPLEMENTATION_HPP'),
-        (naming.InterfaceHeader.INTERFACE, 'ISOLATION_MONITOR_INTERFACE_HPP'),
-        (naming.InterfaceHeader.TYPES, 'ISOLATION_MONITOR_TYPES_HPP'),
+        (naming.InterfaceHeaderFile.IMPLEMENTATION_HPP, 'ISOLATION_MONITOR_IMPLEMENTATION_HPP'),
+        (naming.InterfaceHeaderFile.INTERFACE_HPP, 'ISOLATION_MONITOR_INTERFACE_HPP'),
+        (naming.InterfaceHeaderFile.TYPES_HPP, 'ISOLATION_MONITOR_TYPES_HPP'),
     ])
     def test_interface_header_guard(self, header, expected):
         assert naming.interface_header_guard('isolation_monitor', header) == expected

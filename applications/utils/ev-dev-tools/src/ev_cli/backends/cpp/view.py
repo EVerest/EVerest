@@ -219,7 +219,7 @@ class InterfaceView:
     def errors(self):
         return self.interface.errors
 
-    def guard(self, header: naming.InterfaceHeader) -> str:
+    def guard(self, header: naming.InterfaceHeaderFile) -> str:
         return naming.interface_header_guard(self.interface.name, header)
 
     @property

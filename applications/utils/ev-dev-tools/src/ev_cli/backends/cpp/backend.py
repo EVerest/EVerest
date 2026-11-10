@@ -19,7 +19,7 @@ from ...files import clang_format
 from ...ir.model import Model
 from ..base import FileCategory, GeneratedFile, OutputKind, UpdatePolicy
 from . import naming
-from .naming import InterfaceHeader
+from .naming import InterfaceHeaderFile
 from .view import (
     ImplementationView,
     InterfaceView,
@@ -34,7 +34,7 @@ TEMPLATE_DIR = Path(__file__).parent / 'templates'
 #: will not trigger regeneration.
 TEMPLATES: dict[OutputKind, tuple[str, ...]] = {
     OutputKind.TYPE_UNIT: ('types.hpp.j2',),
-    OutputKind.INTERFACE: tuple(f'interface-{header.value}.hpp.j2' for header in InterfaceHeader),
+    OutputKind.INTERFACE: tuple(f'interface-{header.value}.j2' for header in InterfaceHeaderFile),
     OutputKind.MODULE_LOADER: ('ld-ev.hpp.j2', 'ld-ev.cpp.j2'),
     # The skeleton sources 'module create' writes.  Deliberately not part of
     # 'module get-templates': CMake uses that to decide when to regenerate the
@@ -141,15 +141,15 @@ class CppBackend:
         # so all of them have to be produced for every interface.
         return [
             GeneratedFile(
-                path=output_path / f'{header.value}.hpp',
-                content=self._env.get_template(f'interface-{header.value}.hpp.j2').render(
+                path=output_path / header.value,
+                content=self._env.get_template(f'interface-{header.value}.j2').render(
                     u=view, header=header),
-                printable_name=f'{interface}/{header.value}.hpp',
+                printable_name=f'{interface}/{header.value}',
                 source_mtime=mtime,
                 template_paths=templates,
-                abbr=f'{interface}/{header.value}.hpp',
+                abbr=f'{interface}/{header.value}',
             )
-            for header in InterfaceHeader
+            for header in InterfaceHeaderFile
         ]
 
     def emit_module_loader(self, model: Model, module: str, output_dir: Path) -> list[GeneratedFile]:
