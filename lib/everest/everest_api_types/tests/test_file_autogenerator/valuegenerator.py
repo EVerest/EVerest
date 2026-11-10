@@ -88,11 +88,20 @@ class AcrossFileGenerator:
 
 # Integer fields whose schema bounds them; vector elements carry their index as a suffix.
 BOUNDED_INT_FIELDS = {"evse_ids": (1, 1000), "enable_priority": (0, 10000), "retries": (1, 1000), "decimals": (0, 10),
-                      "connector_id": (1, 128), "evse": (0, 128), "id": (1, 128)}
+                      "connector_id": (1, 128), "evse": (0, 128), "id": (1, 128), "severity": (0, 9),
+                      "max_elements": (1, 1000)}
 
 
 def bounded_int_range(name):
     return BOUNDED_INT_FIELDS.get(name.rstrip("0123456789"))
+
+
+# String fields whose schema allows fewer characters than the generated 30.
+BOUNDED_STRING_FIELDS = {"unit": 16}
+
+
+def bounded_string_length(name):
+    return BOUNDED_STRING_FIELDS.get(name.rstrip("0123456789"), 30)
 
 
 def get_vector_type(type_string):
@@ -194,7 +203,7 @@ class ValueGenerator:
             case "std::string" if (self.struct_name, name_string) in ValueGenerator.date_time_fields:
                 value_string = "\"2026-01-02T03:04:05.678Z\""
             case "std::string":
-                base = "\"" + "".join(random.sample(string.ascii_letters, 30)) + "\""
+                base = "\"" + "".join(random.sample(string.ascii_letters, bounded_string_length(name_string))) + "\""
                 value_string = ("rotate_string(" + base + ", seed)") if use_runtime_seed else base
             case "bool":
                 value_string = bool(random.getrandbits(1)).__str__().lower()
