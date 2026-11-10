@@ -871,15 +871,14 @@ enum v2g_event states::handle_din_power_delivery(struct v2g_connection* conn) {
     publish_din_power_delivery_req(conn->ctx, req);
 
     if (req->ReadyToChargeState == (int)0) {
-        /* The EV requested to stop the charging session. Mark the remaining phases as shut down, so that
-         * PowerDeliveryRes and WeldingDetectionRes report EVSE_Shutdown [IEC 61851-23:2023 CC.7.6.19]. More
-         * specific status codes like EVSE_UtilityInterruptEvent or EVSE_Malfunction are preserved. */
-        for (const auto phase : {PHASE_CHARGE, PHASE_WELDING}) {
-            uint8_t& status_code = conn->ctx->evse_v2g_data.evse_status_code[phase];
-            if ((status_code == din_DC_EVSEStatusCodeType_EVSE_NotReady) ||
-                (status_code == din_DC_EVSEStatusCodeType_EVSE_Ready)) {
-                status_code = din_DC_EVSEStatusCodeType_EVSE_Shutdown;
-            }
+        /* The EV requested to stop the charging session, so that PowerDeliveryRes reports EVSE_Shutdown
+         * [IEC 61851-23:2023 Table CC.9 t104, CC.7.6.19]. More specific status codes like
+         * EVSE_UtilityInterruptEvent or EVSE_Malfunction are preserved. WeldingDetectionRes keeps its own
+         * status code [V2G-DC-638]. */
+        uint8_t& status_code = conn->ctx->evse_v2g_data.evse_status_code[PHASE_CHARGE];
+        if ((status_code == din_DC_EVSEStatusCodeType_EVSE_NotReady) ||
+            (status_code == din_DC_EVSEStatusCodeType_EVSE_Ready)) {
+            status_code = din_DC_EVSEStatusCodeType_EVSE_Shutdown;
         }
         conn->ctx->p_charger->publish_current_demand_finished(nullptr);
         conn->ctx->p_charger->publish_dc_open_contactor(nullptr);

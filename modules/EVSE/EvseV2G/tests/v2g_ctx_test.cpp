@@ -74,7 +74,7 @@ protected:
                   iso2_DC_EVSEStatusCodeType_EVSE_IsolationMonitoringActive);
         EXPECT_EQ(ctx->evse_v2g_data.evse_status_code[PHASE_PRECHARGE], iso2_DC_EVSEStatusCodeType_EVSE_Ready);
         EXPECT_EQ(ctx->evse_v2g_data.evse_status_code[PHASE_CHARGE], iso2_DC_EVSEStatusCodeType_EVSE_Ready);
-        EXPECT_EQ(ctx->evse_v2g_data.evse_status_code[PHASE_WELDING], iso2_DC_EVSEStatusCodeType_EVSE_NotReady);
+        EXPECT_EQ(ctx->evse_v2g_data.evse_status_code[PHASE_WELDING], iso2_DC_EVSEStatusCodeType_EVSE_Ready);
         EXPECT_EQ(ctx->evse_v2g_data.evse_status_code[PHASE_STOP], iso2_DC_EVSEStatusCodeType_EVSE_NotReady);
     }
 
