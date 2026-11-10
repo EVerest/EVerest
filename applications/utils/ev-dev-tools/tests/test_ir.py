@@ -11,11 +11,13 @@ from ev_cli.ir.common import Constraints
 from ev_cli.ir.modules import Mutability
 from ev_cli.ir.order import order_fields, order_structs
 from ev_cli.ir.types import (
+    SCALAR_TYPES,
     Array,
     EnumDef,
     Field,
     JsonType,
     LocalEnum,
+    Opaque,
     Primitive,
     Ref,
     StructDef,
@@ -94,6 +96,20 @@ class TestStructOrder:
         """A reference to another unit is not a local ordering constraint."""
         structs = [struct('A', depends_on=['Elsewhere'])]
         assert [s.name for s in order_structs(structs)] == ['A']
+
+
+class TestTypeExpressions:
+    """``Primitive`` and ``Opaque`` divide the JSON types between them."""
+
+    @pytest.mark.parametrize('json_type', [JsonType.OBJECT, JsonType.ARRAY])
+    def test_a_primitive_holds_only_a_scalar(self, json_type):
+        with pytest.raises(ValueError):
+            Primitive(json_type)
+
+    @pytest.mark.parametrize('json_type', [t for t in JsonType if t in SCALAR_TYPES])
+    def test_an_opaque_holds_only_an_object_or_an_array(self, json_type):
+        with pytest.raises(ValueError):
+            Opaque(json_type)
 
 
 class TestConstraints:

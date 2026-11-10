@@ -46,6 +46,10 @@ class Primitive:
 
     json_type: JsonType
 
+    def __post_init__(self) -> None:
+        if self.json_type not in SCALAR_TYPES:
+            raise ValueError(f'a Primitive holds a scalar, not {self.json_type.value}')
+
 
 @dataclass(frozen=True)
 class Array:
@@ -83,6 +87,10 @@ class Opaque:
     """
 
     json_type: JsonType
+
+    def __post_init__(self) -> None:
+        if self.json_type not in (JsonType.OBJECT, JsonType.ARRAY):
+            raise ValueError(f'an Opaque holds an object or an array, not {self.json_type.value}')
 
 
 @dataclass(frozen=True)
