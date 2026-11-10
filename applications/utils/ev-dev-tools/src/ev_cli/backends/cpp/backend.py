@@ -29,6 +29,8 @@ from .views import (
     ModuleView,
     TypeUnitView,
 )
+from .views.common import TEMPLATE_VERSION
+from .views.module import ProvidedView, config_type
 
 TEMPLATE_DIR = Path(__file__).parent / 'templates'
 
@@ -103,6 +105,8 @@ class CppBackend:
         )
         self._env.filters['snake_case'] = naming.snake_case
         self._env.globals['PayloadKind'] = PayloadKind
+        self._env.globals['template_version'] = TEMPLATE_VERSION
+        self._env.globals['config_type'] = config_type
 
     # -- post-processing ----------------------------------------------------
 
@@ -145,7 +149,6 @@ class CppBackend:
             # tuned for that comparison.
             source_mtime=view.unit.source.file.stat().st_mtime,
             template_paths=self.templates(OutputKind.TYPE_UNIT),
-            abbr=f'{unit}.hpp',
         )]
 
     def emit_interface(self, model: Model, interface: str, output_dir: Path) -> list[GeneratedFile]:
@@ -168,7 +171,6 @@ class CppBackend:
                 printable_name=f'{interface}/{filename}',
                 source_mtime=mtime,
                 template_paths=templates,
-                abbr=f'{interface}/{filename}',
             )
             for filename, template in outputs
         ]
@@ -189,7 +191,6 @@ class CppBackend:
                 printable_name=f'{name}/{filename}',
                 source_mtime=mtime,
                 template_paths=templates,
-                abbr=filename,
             )
             for filename, template in (
                 ('ld-ev.hpp', Template.LOADER_HPP),
@@ -260,7 +261,8 @@ class CppBackend:
         # -- one implementation per provided interface ----------------------
         for provided in definition.provides:
             interface = model.interfaces[provided.interface]
-            implementation_header = module_dir / f'{provided.id}/{provided.interface}Impl.hpp'
+            names = ProvidedView(provided)
+            implementation_header = module_dir / names.class_header
             view = ImplementationView(
                 provided=provided, interface=interface, module=definition,
                 model=model, license_header=license_header,
@@ -272,7 +274,7 @@ class CppBackend:
             ))
             files.append(rendered(
                 Template.IMPLEMENTATION_CPP, view,
-                module_dir / f'{provided.id}/{provided.interface}Impl.cpp',
+                module_dir / names.cpp_file,
                 f'{provided.id}.cpp', FileCategory.INTERFACES,
                 UpdatePolicy.CREATE_IF_MISSING,
             ))

@@ -133,10 +133,7 @@ class StructDef:
 
     name: str
     description: str
-    #: Declaration order is part of the generated C++ API: generated types are
-    #: positionally aggregate initialised in everest-core, so reordering these
-    #: is a behavioural change.  Required fields come first, and within each
-    #: group the source order is preserved.
+    #: In the order the definition declares them.
     fields: tuple[Field, ...]
     #: Names of structs in the same unit that this one embeds, which decides
     #: emission order so that no forward declaration is needed.

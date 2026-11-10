@@ -11,25 +11,25 @@ from ....ir.modules import ConfigEntry, ModuleDef, ProvidesDef
 from ....ir.model import Model
 from ....ir.types import JsonType
 from .. import naming
-from .common import TEMPLATE_VERSION
+from .common import ProtectedRegions
 from .interface import InterfaceView
 from .module import ProvidedView
 
 
 #: What ``module create`` writes for a command it cannot know the answer to.
 DUMMY_RESULTS = {
-    JsonType.BOOLEAN.value: 'true',
-    JsonType.INTEGER.value: '42',
-    JsonType.NUMBER.value: '3.14',
-    JsonType.STRING.value: '"everest"',
-    JsonType.OBJECT.value: '{}',
-    JsonType.ARRAY.value: '{}',
-    JsonType.NULL.value: '{}',
+    JsonType.BOOLEAN: 'true',
+    JsonType.INTEGER: '42',
+    JsonType.NUMBER: '3.14',
+    JsonType.STRING: '"everest"',
+    JsonType.OBJECT: '{}',
+    JsonType.ARRAY: '{}',
+    JsonType.NULL: '{}',
 }
 
 
 @dataclass
-class ImplementationView:
+class ImplementationView(ProtectedRegions):
     """One interface implementation inside a module, ready to render."""
 
     provided: ProvidesDef
@@ -46,10 +46,6 @@ class ImplementationView:
     # -- names --------------------------------------------------------------
 
     @property
-    def template_version(self) -> str:
-        return TEMPLATE_VERSION
-
-    @property
     def id(self) -> str:
         return self.provided.id
 
@@ -58,7 +54,7 @@ class ImplementationView:
         return self._provided.class_name
 
     @property
-    def class_parent(self) -> str:
+    def base_class(self) -> str:
         return self._provided.base_class
 
     @property
@@ -93,9 +89,6 @@ class ImplementationView:
     def rwconfig(self) -> tuple[ConfigEntry, ...]:
         return self._provided.rwconfig
 
-    def config_type(self, entry: ConfigEntry) -> str:
-        return self._provided.config_type(entry)
-
     # -- command signatures -------------------------------------------------
 
     def result_type(self, cmd: CmdDef) -> str:
@@ -106,13 +99,8 @@ class ImplementationView:
 
     def dummy_result(self, cmd: CmdDef) -> str:
         """A value of the right shape, for the skeleton to compile against."""
-        names = self._signatures.json_type_names(cmd.result)
-        if len(names) != 1:
+        json_types = self._signatures.json_types_of(cmd.result)
+        if len(json_types) != 1:
             # A variant default-constructs to its first alternative.
             return '{}'
-        return DUMMY_RESULTS[names[0]]
-
-    # -- protected regions --------------------------------------------------
-
-    def block(self, name: str, indent: int = 0) -> str:
-        return self.blocks[name].render(indent)
+        return DUMMY_RESULTS[json_types[0]]

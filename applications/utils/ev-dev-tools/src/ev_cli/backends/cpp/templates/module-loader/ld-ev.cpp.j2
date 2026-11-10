@@ -2,7 +2,7 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 //
 // AUTO GENERATED - DO NOT EDIT!
-// template version {{ u.template_version }}
+// template version {{ template_version }}
 //
 
 #include "{{ u.ld_ev_header }}"
@@ -78,18 +78,18 @@ void LdEverest::init(ModuleConfigs module_configs, const ModuleInfo& mod_info) {
 {% for impl in u.provides %}
     auto {{ impl.id }}_config_input = std::move(module_configs["{{ impl.id }}"]);
 {% for item in impl.config %}
-    {{ impl.id }}_config.{{ item.name }} = std::get<{{ impl.config_type(item) }}>({{ impl.id }}_config_input["{{ item.name }}"]);
+    {{ impl.id }}_config.{{ item.name }} = std::get<{{ config_type(item) }}>({{ impl.id }}_config_input["{{ item.name }}"]);
 {% endfor %}
 {% for item in impl.rwconfig %}
-    {{ impl.id }}_rwconfig.{{ item.name }} = std::get<{{ impl.config_type(item) }}>({{ impl.id }}_config_input["{{ item.name }}"]);
+    {{ impl.id }}_rwconfig.{{ item.name }} = std::get<{{ config_type(item) }}>({{ impl.id }}_config_input["{{ item.name }}"]);
 {% endfor %}
 {% endfor %}
 
 {% for item in u.config %}
-    module_conf.{{ item.name }} = std::get<{{ u.config_type(item) }}>(module_configs["!module"]["{{ item.name }}"]);
+    module_conf.{{ item.name }} = std::get<{{ config_type(item) }}>(module_configs["!module"]["{{ item.name }}"]);
 {% endfor %}
 {% for item in u.rwconfig %}
-    module_rwconf.{{ item.name }} = std::get<{{ u.config_type(item) }}>(module_configs["!module"]["{{ item.name }}"]);
+    module_rwconf.{{ item.name }} = std::get<{{ config_type(item) }}>(module_configs["!module"]["{{ item.name }}"]);
 {% endfor %}
 
     module_info = mod_info;
@@ -102,10 +102,10 @@ void LdEverest::init(ModuleConfigs module_configs, const ModuleInfo& mod_info) {
 {% for item in impl.rwconfig %}
         config_client->register_config_change_handler("{{ impl.id }}", "{{ item.name }}",
             [](const std::string& new_value) -> Everest::config::ConfigChangeResult {
-{% if impl.config_type(item) == 'std::string' %}
+{% if config_type(item) == 'std::string' %}
                 return {{ impl.id }}_impl_p->on_{{ item.name }}_changed(new_value);
 {% else %}
-                const auto typed_value = Everest::config::conversions::ConfigFromString<{{ impl.config_type(item) }}>(new_value);
+                const auto typed_value = Everest::config::conversions::ConfigFromString<{{ config_type(item) }}>(new_value);
                 return {{ impl.id }}_impl_p->on_{{ item.name }}_changed(typed_value);
 {% endif %}
             });
@@ -122,10 +122,10 @@ void LdEverest::init(ModuleConfigs module_configs, const ModuleInfo& mod_info) {
 {% for item in u.rwconfig %}
         config_client->register_config_change_handler("!module", "{{ item.name }}",
             [](const std::string& new_value) -> Everest::config::ConfigChangeResult {
-{% if u.config_type(item) == 'std::string' %}
+{% if config_type(item) == 'std::string' %}
                 return mod_ptr->on_{{ item.name }}_changed(new_value);
 {% else %}
-                const auto typed_value = Everest::config::conversions::ConfigFromString<{{ u.config_type(item) }}>(new_value);
+                const auto typed_value = Everest::config::conversions::ConfigFromString<{{ config_type(item) }}>(new_value);
                 return mod_ptr->on_{{ item.name }}_changed(typed_value);
 {% endif %}
             });

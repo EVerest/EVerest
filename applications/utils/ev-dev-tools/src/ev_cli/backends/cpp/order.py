@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright Pionix GmbH and Contributors to EVerest
-"""The order C++ needs structs and their fields in.
+"""The order C++ needs structs in.
 
 The IR keeps the order the definitions were written in.  For C++ the order is
 part of the generated API -- generated types are positionally aggregate
@@ -9,25 +9,9 @@ initialised in everest-core -- so the rules live here, in one named place.
 
 from __future__ import annotations
 
-from typing import Iterable, Sequence
+from typing import Sequence
 
-from ...ir.types import Field, StructDef
-
-
-def order_fields(fields: Iterable[Field]) -> tuple[Field, ...]:
-    """Required fields first, source order preserved within each group.
-
-    Required members must precede optional ones because the generated
-    ``to_json`` builds the required part as a brace initialiser, and because
-    aggregate initialisation of a generated struct would otherwise change
-    meaning.  The partition is stable, so two fields with the same requiredness
-    keep the order they were written in.
-    """
-    materialised = list(fields)
-    return tuple(
-        [f for f in materialised if f.required]
-        + [f for f in materialised if not f.required]
-    )
+from ...ir.types import StructDef
 
 
 def order_structs(structs: Sequence[StructDef]) -> tuple[StructDef, ...]:

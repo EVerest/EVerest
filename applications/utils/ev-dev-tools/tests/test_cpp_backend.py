@@ -20,7 +20,7 @@ from ev_cli.backends.cpp import naming
 from ev_cli.backends.base import OutputKind
 from ev_cli.backends.cpp.backend import TEMPLATE_DIR, CppBackend, Template
 from ev_cli.backends.cpp.mapping import Flavour, spell
-from ev_cli.backends.cpp.order import order_fields, order_structs
+from ev_cli.backends.cpp.order import order_structs
 from ev_cli.backends.cpp.views import InterfaceView, PayloadKind, TypeUnitView
 from ev_cli.errors import UnsupportedDefinition
 from ev_cli.ir.types import Array, Field, JsonType, LocalEnum, Opaque, Primitive, Ref, StructDef, TypeUnit, Variant
@@ -52,29 +52,24 @@ class TestFieldOrder:
     this ordering is behaviour rather than presentation.
     """
 
+    @staticmethod
+    def ordered(*fields):
+        holder = StructDef(name='Holder', description='', fields=fields, depends_on=(), source=SOURCE)
+        return [f.name for f in TypeUnitView.fields(holder)]
+
     def test_required_come_first(self):
-        ordered = order_fields([
+        assert self.ordered(
             field('a'), field('b', required=True), field('c'), field('d', required=True),
-        ])
-        assert [f.name for f in ordered] == ['b', 'd', 'a', 'c']
+        ) == ['b', 'd', 'a', 'c']
 
     def test_partition_is_stable(self):
-        ordered = order_fields([field(n) for n in 'zyxw'])
-        assert [f.name for f in ordered] == list('zyxw')
+        assert self.ordered(*(field(n) for n in 'zyxw')) == list('zyxw')
 
     def test_all_required(self):
-        ordered = order_fields([field(n, required=True) for n in 'abc'])
-        assert [f.name for f in ordered] == list('abc')
+        assert self.ordered(*(field(n, required=True) for n in 'abc')) == list('abc')
 
     def test_empty(self):
-        assert order_fields([]) == ()
-
-    def test_the_type_view_applies_it(self):
-        pair = StructDef(
-            name='Pair', description='', fields=(field('a'), field('b', required=True)),
-            depends_on=(), source=SOURCE,
-        )
-        assert [f.name for f in TypeUnitView.fields(pair)] == ['b', 'a']
+        assert self.ordered() == []
 
 
 class TestStructOrder:

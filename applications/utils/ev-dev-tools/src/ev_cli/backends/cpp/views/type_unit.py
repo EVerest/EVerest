@@ -10,8 +10,8 @@ from ....ir.types import Array, Field, StructDef, TypeUnit
 from .. import naming
 from .. import mapping
 from ..mapping import Flavour
-from ..order import order_fields, order_structs
-from .common import MISSING_DESCRIPTION, TEMPLATE_VERSION
+from ..order import order_structs
+from .common import MISSING_DESCRIPTION
 
 
 @dataclass
@@ -21,10 +21,6 @@ class TypeUnitView:
     unit: TypeUnit
 
     # -- header level -------------------------------------------------------
-
-    @property
-    def template_version(self) -> str:
-        return TEMPLATE_VERSION
 
     @property
     def name(self) -> str:
@@ -62,9 +58,15 @@ class TypeUnitView:
     def structs(self) -> tuple[StructDef, ...]:
         return order_structs(self.unit.structs)
 
-    @staticmethod
-    def fields(struct: StructDef) -> tuple[Field, ...]:
-        return order_fields(struct.fields)
+    @classmethod
+    def fields(cls, struct: StructDef) -> tuple[Field, ...]:
+        """Required members first, each group in source order.
+
+        The generated ``to_json`` builds the required part as a brace
+        initialiser, and aggregate initialisation of a generated struct would
+        otherwise change meaning.
+        """
+        return cls.required(struct) + cls.optional(struct)
 
     @staticmethod
     def required(struct: StructDef) -> tuple[Field, ...]:
@@ -79,17 +81,18 @@ class TypeUnitView:
 
     # -- types --------------------------------------------------------------
 
-    def type_of(self, field: Field) -> str:
+    @staticmethod
+    def _spell(field: Field) -> str:
         """The member's type, without the optional wrapper."""
         return mapping.spell(field.type, Flavour.FIELD)
 
     def field_type(self, field: Field) -> str:
         """The member's declared type, wrapped when the property is optional."""
-        spelling = self.type_of(field)
+        spelling = self._spell(field)
         return spelling if field.required else f'std::optional<{spelling}>'
 
     @staticmethod
-    def is_vector(field: Field) -> bool:
+    def _is_vector(field: Field) -> bool:
         """A struct member that is an array is always a typed vector."""
         return isinstance(field.type, Array)
 
@@ -104,14 +107,14 @@ class TypeUnitView:
     def from_json_required(self, field: Field) -> str:
         target = f'k.{field.name}'
         access = f'j.at("{field.name}")'
-        if self.is_vector(field):
-            return f'{target} = std::move({access}.get<{self.type_of(field)}>());'
+        if self._is_vector(field):
+            return f'{target} = std::move({access}.get<{self._spell(field)}>());'
         return f'{target} = {access};'
 
     def from_json_optional(self, field: Field) -> str:
         target = f'k.{field.name}'
-        if self.is_vector(field):
+        if self._is_vector(field):
             return (
-                f'{target} = j.at("{field.name}").get<{self.type_of(field)}>();'
+                f'{target} = j.at("{field.name}").get<{self._spell(field)}>();'
             )
-        return f'{target} = it->get<{self.type_of(field)}>();'
+        return f'{target} = it->get<{self._spell(field)}>();'

@@ -79,21 +79,40 @@ def spell(expr: TypeExpr, flavour: Flavour) -> str:
         return _spell_array(expr, flavour)
 
     if isinstance(expr, Variant):
-        return _spell_variant(expr)
+        return f'std::variant<{variant_alternatives(expr)}>'
 
     raise UnsupportedDefinition(f'cannot spell {expr!r} in C++')
 
 
-def _spell_array(expr: Array, flavour: Flavour) -> str:
-    # A struct member is always a typed vector.  An interface payload only
-    # becomes one when its items are a reference to a declared type: an array
-    # of plain strings is handed over as the framework's raw-JSON ``Array``
-    # instead.  Modules implement against that asymmetry --
-    # ``handle_get_configuration_key(Array&)`` in ocpp_1_6_charge_point is one
-    # -- so it is part of the generated API.
-    if flavour is Flavour.PAYLOAD and not isinstance(expr.items, Ref):
-        return PAYLOAD_SCALARS[JsonType.ARRAY]
+def is_typed_payload_array(expr: Array) -> bool:
+    """Whether an array payload becomes a typed vector rather than raw JSON.
 
+    A struct member is always a typed vector.  An interface payload only
+    becomes one when its items are a reference to a declared type: an array of
+    plain strings is handed over as the framework's raw-JSON ``Array`` instead.
+    Modules implement against that asymmetry --
+    ``handle_get_configuration_key(Array&)`` in ocpp_1_6_charge_point is one --
+    so it is part of the generated API.
+    """
+    return isinstance(expr.items, Ref)
+
+
+def variant_alternatives(expr: Variant) -> str:
+    """The template arguments of a variant payload's ``std::variant``.
+
+    Sorted so that two payloads listing the same types in a different order
+    instantiate the same std::variant, with std::nullptr_t leading when null is
+    allowed so that the variant default constructs to the empty alternative.
+    """
+    alternatives = sorted(PAYLOAD_SCALARS[option] for option in expr.non_null_options)
+    if expr.nullable:
+        alternatives.insert(0, PAYLOAD_SCALARS[JsonType.NULL])
+    return ', '.join(alternatives)
+
+
+def _spell_array(expr: Array, flavour: Flavour) -> str:
+    if flavour is Flavour.PAYLOAD and not is_typed_payload_array(expr):
+        return PAYLOAD_SCALARS[JsonType.ARRAY]
     return f'std::vector<{spell(expr.items, flavour)}>'
 
 
@@ -105,14 +124,3 @@ def _spell_scalar(json_type: JsonType, flavour: Flavour) -> str:
         raise UnsupportedDefinition(
             f'no C++ type for json type "{json_type.value}" as a {flavour.value}'
         ) from None
-
-
-def _spell_variant(expr: Variant) -> str:
-    # Alternatives are sorted so that two payloads listing the same types in a
-    # different order instantiate the same std::variant, and std::nullptr_t
-    # leads when null is allowed so that the variant default constructs to the
-    # empty alternative.
-    alternatives = sorted(PAYLOAD_SCALARS[option] for option in expr.non_null_options)
-    if expr.nullable:
-        alternatives.insert(0, PAYLOAD_SCALARS[JsonType.NULL])
-    return f'std::variant<{", ".join(alternatives)}>'

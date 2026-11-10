@@ -4,7 +4,7 @@
 
 //
 // AUTO GENERATED - MARKED REGIONS WILL BE KEPT
-// template version {{ u.template_version }}
+// template version {{ template_version }}
 //
 
 #include "{{ u.ld_ev_header }}"
@@ -30,7 +30,7 @@ namespace module {
 {% if u.rwconfig %}
 struct RwConf {
 {% for item in u.rwconfig %}
-    {{ u.config_type(item) }} {{ item.name }};
+    {{ config_type(item) }} {{ item.name }};
 {% endfor %}
 };
 
@@ -46,14 +46,14 @@ struct RwConfUpdate {
     // executing your module code, so guard rw_config with a mutex both here
     // and wherever your module accesses config or rw_config
     // e.g.
-    // ConfigChangeResult on_{{ u.rwconfig[0].name }}_changed(const {{ u.config_type(u.rwconfig[0]) }}& value) override {
+    // ConfigChangeResult on_{{ u.rwconfig[0].name }}_changed(const {{ config_type(u.rwconfig[0]) }}& value) override {
     //     std::scoped_lock lock(config_mutex);
     //     rw_config.{{ u.rwconfig[0].name }} = value;
     //     return ConfigChangeResult::Accepted();
     // }
 
 {% for item in u.rwconfig %}
-    virtual ConfigChangeResult on_{{ item.name }}_changed(const {{ u.config_type(item) }}& /* value */) {
+    virtual ConfigChangeResult on_{{ item.name }}_changed(const {{ config_type(item) }}& /* value */) {
         return ConfigChangeResult::Rejected("handler not implemented");
     }
 {% endfor %}
@@ -62,11 +62,11 @@ struct RwConfUpdate {
 
 struct Conf {
 {% for item in u.config %}
-    {{ u.config_type(item) }} {{ item.name }};
+    {{ config_type(item) }} {{ item.name }};
 {% endfor %}
 
 {% for item in u.rwconfig %}
-    const {{ u.config_type(item) }}& {{ item.name }};
+    const {{ config_type(item) }}& {{ item.name }};
 {% endfor %}
 
 {% if u.rwconfig %}

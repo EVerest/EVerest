@@ -5,13 +5,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from functools import cached_property
 
 from ....ir.modules import ConfigEntry, ModuleDef, Mutability, ProvidesDef, RequiresDef
 from ....ir.types import Primitive
 from .. import naming
 from .. import mapping
 from ..mapping import Flavour
-from .common import TEMPLATE_VERSION
+from .common import ProtectedRegions
 
 
 @dataclass
@@ -23,10 +24,6 @@ class ProvidedView:
     @property
     def id(self) -> str:
         return self.provided.id
-
-    @property
-    def interface(self) -> str:
-        return self.provided.interface
 
     @property
     def class_name(self) -> str:
@@ -49,16 +46,13 @@ class ProvidedView:
     def cpp_file(self) -> str:
         return f'{self.provided.id}/{self.class_name}.cpp'
 
-    @property
+    @cached_property
     def config(self) -> tuple[ConfigEntry, ...]:
         return read_only_config(self.provided.config)
 
-    @property
+    @cached_property
     def rwconfig(self) -> tuple[ConfigEntry, ...]:
         return read_write_config(self.provided.config)
-
-    def config_type(self, entry: ConfigEntry) -> str:
-        return mapping.spell(Primitive(entry.type), Flavour.PAYLOAD)
 
 
 @dataclass
@@ -84,6 +78,11 @@ class RequiredView:
         return self.required.is_vector
 
 
+def config_type(entry: ConfigEntry) -> str:
+    """The C++ type of a configuration value, wherever it is declared."""
+    return mapping.spell(Primitive(entry.type), Flavour.PAYLOAD)
+
+
 def read_only_config(entries) -> tuple[ConfigEntry, ...]:
     """Configuration a module reads but cannot be asked to change.
 
@@ -98,7 +97,7 @@ def read_write_config(entries) -> tuple[ConfigEntry, ...]:
 
 
 @dataclass
-class ModuleView:
+class ModuleView(ProtectedRegions):
     """One ``modules/<path>/manifest.yaml``, ready to render."""
 
     module: ModuleDef
@@ -106,10 +105,6 @@ class ModuleView:
     license_header: str = ''
 
     # -- names --------------------------------------------------------------
-
-    @property
-    def template_version(self) -> str:
-        return TEMPLATE_VERSION
 
     @property
     def name(self) -> str:
@@ -155,24 +150,21 @@ class ModuleView:
 
     # -- structure ----------------------------------------------------------
 
-    @property
+    @cached_property
     def provides(self) -> list[ProvidedView]:
         return [ProvidedView(p) for p in self.module.provides]
 
-    @property
+    @cached_property
     def requires(self) -> list[RequiredView]:
         return [RequiredView(r) for r in self.module.requires]
 
-    @property
+    @cached_property
     def config(self) -> tuple[ConfigEntry, ...]:
         return read_only_config(self.module.config)
 
-    @property
+    @cached_property
     def rwconfig(self) -> tuple[ConfigEntry, ...]:
         return read_write_config(self.module.config)
-
-    def config_type(self, entry: ConfigEntry) -> str:
-        return mapping.spell(Primitive(entry.type), Flavour.PAYLOAD)
 
     # -- the runtime config client ------------------------------------------
     #
@@ -184,14 +176,5 @@ class ModuleView:
         return any(p.rwconfig for p in self.provides)
 
     @property
-    def has_module_rwconfig(self) -> bool:
-        return bool(self.rwconfig)
-
-    @property
     def declare_config_client_for_module(self) -> bool:
-        return self.has_module_rwconfig and not self.has_impl_rwconfig
-
-    # -- protected regions --------------------------------------------------
-
-    def block(self, name: str, indent: int = 0) -> str:
-        return self.blocks[name].render(indent)
+        return bool(self.rwconfig) and not self.has_impl_rwconfig

@@ -14,7 +14,6 @@ from ....ir.types import Array, JsonType, Opaque, Primitive, Ref, TypeExpr, Vari
 from .. import naming
 from .. import mapping
 from ..mapping import PAYLOAD_SCALARS, Flavour
-from .common import MISSING_DESCRIPTION, TEMPLATE_VERSION
 
 
 class PayloadKind(Enum):
@@ -49,10 +48,6 @@ class InterfaceView:
     # -- header level -------------------------------------------------------
 
     @property
-    def template_version(self) -> str:
-        return TEMPLATE_VERSION
-
-    @property
     def name(self) -> str:
         return self.interface.name
 
@@ -63,10 +58,6 @@ class InterfaceView:
     @property
     def cmds(self) -> tuple[CmdDef, ...]:
         return self.interface.cmds
-
-    @property
-    def errors(self):
-        return self.interface.errors
 
     def guard(self, filename: str) -> str:
         return naming.interface_header_guard(self.interface.name, filename)
@@ -87,9 +78,6 @@ class InterfaceView:
             for unit in self.interface.referenced_type_units
         )
 
-    def description(self, text: str | None) -> str:
-        return MISSING_DESCRIPTION if text is None else text
-
     # -- payload classification --------------------------------------------
 
     def kind(self, payload: TypeExpr | None) -> PayloadKind:
@@ -102,9 +90,7 @@ class InterfaceView:
         if isinstance(payload, Ref):
             return PayloadKind.REF
         if isinstance(payload, Array):
-            # Only an array of referenced types becomes a typed vector; an
-            # array of scalars travels as raw JSON and so needs no conversion.
-            return PayloadKind.ARRAY if isinstance(payload.items, Ref) else PayloadKind.PLAIN
+            return PayloadKind.ARRAY if mapping.is_typed_payload_array(payload) else PayloadKind.PLAIN
         return PayloadKind.PLAIN
 
     # -- payload spellings --------------------------------------------------
@@ -118,11 +104,11 @@ class InterfaceView:
         A scalar arrives as itself, so this is what the value is cast to on the
         way in.
         """
-        json_types = self.json_type_names(payload)
+        json_types = self.json_types_of(payload)
         if len(json_types) != 1:
             raise UnsupportedDefinition(
-                f'no single raw type for a payload of {json_types}')
-        return PAYLOAD_SCALARS[JsonType(json_types[0])]
+                f'no single raw type for a payload of {[t.value for t in json_types]}')
+        return PAYLOAD_SCALARS[json_types[0]]
 
     def result_type(self, cmd: CmdDef) -> str:
         """``void`` only when the interface declares no result at all.
@@ -151,7 +137,7 @@ class InterfaceView:
 
     # -- json type lists ----------------------------------------------------
 
-    def json_type_names(self, payload: TypeExpr) -> tuple[str, ...]:
+    def json_types_of(self, payload: TypeExpr) -> tuple[JsonType, ...]:
         """The json types the framework should expect for a payload.
 
         Derived from what the payload resolves to rather than from a ``type``
@@ -160,28 +146,25 @@ class InterfaceView:
         tells the truth.
         """
         if isinstance(payload, Variant):
-            return tuple(option.value for option in payload.options)
+            return payload.options
         if isinstance(payload, Array):
-            return (JsonType.ARRAY.value,)
-        if isinstance(payload, Opaque):
-            return (payload.json_type.value,)
-        if isinstance(payload, Primitive):
-            return (payload.json_type.value,)
+            return (JsonType.ARRAY,)
+        if isinstance(payload, (Opaque, Primitive)):
+            return (payload.json_type,)
         if isinstance(payload, Ref):
             return (
-                (JsonType.STRING.value,) if is_enum(self.model.resolve_type(payload.target))
-                else (JsonType.OBJECT.value,)
+                (JsonType.STRING,) if is_enum(self.model.resolve_type(payload.target))
+                else (JsonType.OBJECT,)
             )
         raise UnsupportedDefinition(f'no json type for {payload!r}')
 
     def json_types(self, payload: TypeExpr) -> str:
         """Rendered as the framework's initialiser list, e.g. ``{"number"}``."""
-        names = ', '.join(f'"{name}"' for name in self.json_type_names(payload))
+        names = ', '.join(f'"{json_type.value}"' for json_type in self.json_types_of(payload))
         return f'{{{names}}}'
 
     # -- conversion helpers -------------------------------------------------
 
-    def variant_alternatives(self, payload: TypeExpr) -> str:
-        """The template arguments of the payload's ``std::variant``."""
-        spelling = self.spell(payload)
-        return spelling[len('std::variant<'):-1]
+    @staticmethod
+    def variant_alternatives(payload: Variant) -> str:
+        return mapping.variant_alternatives(payload)

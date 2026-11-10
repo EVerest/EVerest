@@ -65,16 +65,15 @@ class IrDumpBackend:
 
     def emit_type_unit(self, model: Model, unit: str, output_dir: Path) -> list[GeneratedFile]:
         type_unit = model.types[unit]
-        return [self._dump(type_unit, output_dir / f'{unit}.json', type_unit)]
+        return [self._dump(type_unit, output_dir / f'{unit}.json')]
 
     def emit_interface(self, model: Model, interface: str, output_dir: Path) -> list[GeneratedFile]:
         definition = model.interfaces[interface]
-        return [self._dump(definition, output_dir / f'{interface}.json', definition)]
+        return [self._dump(definition, output_dir / f'{interface}.json')]
 
     def emit_module_loader(self, model: Model, module: str, output_dir: Path) -> list[GeneratedFile]:
-        name = module.rpartition('/')[2]
         definition = model.modules[module]
-        return [self._dump(definition, output_dir / name / 'module.json', definition)]
+        return [self._dump(definition, output_dir / definition.name / 'module.json')]
 
     def emit_module_files(
         self,
@@ -109,12 +108,12 @@ class IrDumpBackend:
             abbr='module.json',
         )]
 
-    def _dump(self, node, path: Path, sourced) -> GeneratedFile:
+    def _dump(self, node, path: Path) -> GeneratedFile:
         return GeneratedFile(
             path=path,
             content=self._render(node),
             printable_name=path.name,
-            source_mtime=sourced.source.file.stat().st_mtime,
+            source_mtime=node.source.file.stat().st_mtime,
         )
 
     def _render(self, value: Any) -> str:
