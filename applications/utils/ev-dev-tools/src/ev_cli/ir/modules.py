@@ -120,6 +120,3 @@ class ModuleDef:
     #: Nothing in code generation reads them; they are carried so that a
     #: packaging or documentation backend does not have to re-read the manifest.
     capabilities: tuple[str, ...] = ()
-
-    def provided(self, implementation_id: str) -> ProvidesDef | None:
-        return next((p for p in self.provides if p.id == implementation_id), None)
