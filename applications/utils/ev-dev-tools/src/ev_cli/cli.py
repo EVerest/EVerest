@@ -126,6 +126,20 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _add_write_options(
+    parser, *, force_help: str = 'force overwriting', diff: bool = True, only: bool = False,
+) -> None:
+    """``--force``, and ``--diff`` and ``--only`` where a command offers them."""
+    parser.add_argument('-f', '--force', action='store_true', help=force_help)
+    if diff:
+        parser.add_argument('-d', '--diff', '--dry-run', action='store_true',
+                            help='show the resulting diff instead of writing')
+    if only:
+        parser.add_argument('--only', type=str,
+                            help='comma separated list of module files to touch. '
+                                 'Use "--only which" to list the available names.')
+
+
 def _add_get_templates(actions, handler) -> None:
     parser = actions.add_parser(
         'get-templates', aliases=['gt'], parents=emitting(),
@@ -143,24 +157,13 @@ def _add_module_command(commands) -> None:
     create = actions.add_parser('create', aliases=['c'], parents=emitting(),
                                 help='create a module')
     create.add_argument('module', type=str, help='name of the module to create')
-    create.add_argument('-f', '--force', action='store_true',
-                        help='force overwriting - use with care!')
-    create.add_argument('-d', '--diff', '--dry-run', action='store_true',
-                        help='show the resulting diff instead of writing')
-    create.add_argument('--only', type=str,
-                        help='comma separated list of module files to touch. '
-                             'Use "--only which" to list the available names.')
+    _add_write_options(create, force_help='force overwriting - use with care!', only=True)
     create.set_defaults(handler=module_commands.create)
 
     update = actions.add_parser('update', aliases=['u'], parents=emitting(),
                                 help='update a module')
     update.add_argument('module', type=str, help='name of the module to update')
-    update.add_argument('-f', '--force', action='store_true', help='force overwriting')
-    update.add_argument('-d', '--diff', '--dry-run', action='store_true',
-                        help='show the resulting diff instead of writing')
-    update.add_argument('--only', type=str,
-                        help='comma separated list of module files to touch. '
-                             'Use "--only which" to list the available names.')
+    _add_write_options(update, only=True)
     update.set_defaults(handler=module_commands.update)
 
     loader = actions.add_parser('generate-loader', aliases=['gl'],
@@ -168,7 +171,7 @@ def _add_module_command(commands) -> None:
                                 help='generate the everest module loader')
     loader.add_argument('module', type=str,
                         help='name of the module to generate the loader for')
-    loader.add_argument('-f', '--force', action='store_true', help='force overwriting')
+    _add_write_options(loader, diff=False)
     loader.add_argument('-o', '--output-dir', type=str,
                         help=_output_dir_help('the generated loader files', 'loader_output_dir'))
     loader.set_defaults(handler=module_commands.generate_loader)
@@ -185,14 +188,12 @@ def _add_interface_command(commands) -> None:
     headers = actions.add_parser('generate-headers', aliases=['gh'],
                                  parents=emitting(),
                                  help='generate interface headers')
-    headers.add_argument('-f', '--force', action='store_true', help='force overwriting')
+    _add_write_options(headers)
     headers.add_argument('-o', '--output-dir', type=str,
                          help=_output_dir_help('the generated interface headers', 'interface_output_dir'))
-    headers.add_argument('-d', '--diff', '--dry-run', action='store_true',
-                         help='show the resulting diff instead of writing')
     headers.add_argument('interfaces', nargs='*',
                          help='interfaces to generate headers for. With none given '
-                              'all are processed and unparsable ones are skipped.')
+                              'all are processed.')
     headers.set_defaults(handler=interface_commands.generate_headers)
 
     _add_get_templates(actions, interface_commands.get_templates)
@@ -206,11 +207,9 @@ def _add_types_command(commands) -> None:
     headers = actions.add_parser('generate-headers', aliases=['gh'],
                                  parents=emitting(),
                                  help='generate type headers')
-    headers.add_argument('-f', '--force', action='store_true', help='force overwriting')
+    _add_write_options(headers)
     headers.add_argument('-o', '--output-dir', type=str,
                          help=_output_dir_help('the generated type headers', 'type_output_dir'))
-    headers.add_argument('-d', '--diff', '--dry-run', action='store_true',
-                         help='show the resulting diff instead of writing')
     headers.add_argument('types', nargs='*',
                          help='types to generate headers for. With none given all '
                               'are processed.')
