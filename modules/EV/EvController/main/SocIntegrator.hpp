@@ -24,8 +24,19 @@ enum class OnBatteryFull {
 // init rather than silently downgrading the policy to Clamp on every tick.
 OnBatteryFull parse_on_battery_full(const std::string& s);
 
+// Where the SoC comes from. Internal integrates the delivered power, External takes the SoC and
+// battery capacity from the board's ev_info directly.
+enum class SocSource {
+    Internal,
+    External,
+};
+
+// Map cfg.soc_source to SocSource. Throws std::invalid_argument on an unrecognized value.
+SocSource parse_soc_source(const std::string& s);
+
 // Ported from CarSimulation::simulate_soc to keep parity with EvManager.
-// battery_charge_wh is the source of truth; soc_pct is the cached derived value.
+// With SocSource::Internal, battery_charge_wh is the source of truth and soc_pct the cached derived
+// value. With SocSource::External, soc_pct is the source of truth and nothing is integrated.
 //
 // Called from EvCtlRuntime::on_tick(). The tick fd is armed only by Charging.enter() and
 // disarmed by Charging.leave(), so this runs only while state == Charging.

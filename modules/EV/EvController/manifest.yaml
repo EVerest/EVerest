@@ -104,6 +104,18 @@ config:
       "charge to 80%".
     type: number
     default: 100
+  soc_source:
+    description: >-
+      Source of the EV's state of charge. `internal` integrates the delivered power from
+      soc_initial_pct and dc_energy_capacity. `external` takes soc and battery_capacity from the
+      ev_info of the ev_board_support peer as measured values, in every state, forwards the SoC
+      to the ISO 15118 session at once and integrates nothing; on_battery_full then only acts on
+      the reported SoC, so idle_at_full behaves like clamp.
+    type: string
+    enum:
+      - internal
+      - external
+    default: internal
   cfg_communication_check_to_s:
     description: >-
       Communication check timeout in seconds. 0 disables the check (no

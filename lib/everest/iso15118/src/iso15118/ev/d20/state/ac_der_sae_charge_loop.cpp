@@ -11,6 +11,7 @@
 #include <iso15118/ev/d20/state/leave_charge_loop.hpp>
 #include <iso15118/ev/detail/d20/ac_target_power.hpp>
 #include <iso15118/ev/detail/d20/context_helper.hpp>
+#include <iso15118/ev/detail/d20/display_parameters.hpp>
 #include <iso15118/ev/detail/d20/sae_helper.hpp>
 #include <iso15118/message/ac_der_sae_charge_loop.hpp>
 #include <iso15118/sae_modes.hpp>
@@ -36,8 +37,10 @@ AC_DER_SAE_ChargeLoop::make_request(const der::SaeInverterProfile& profile, cons
 
 message_20::DER_SAE_AC_ChargeLoopRequest AC_DER_SAE_ChargeLoop::make_request(const Context& ctx,
                                                                              const der::SaeNegotiation& negotiation) {
-    return make_request(ctx.sae_profile(), ctx.get_ac_params(), ctx.ac_connector(), negotiation.enabled_modes,
-                        negotiation.permit_service, negotiation.settings_update_time, ctx.energy_request());
+    auto req = make_request(ctx.sae_profile(), ctx.get_ac_params(), ctx.ac_connector(), negotiation.enabled_modes,
+                            negotiation.permit_service, negotiation.settings_update_time, ctx.energy_request());
+    req.display_parameters = make_display_parameters(ctx.get_dc_params());
+    return req;
 }
 
 void AC_DER_SAE_ChargeLoop::enter() {

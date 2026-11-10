@@ -705,6 +705,7 @@ void ISO15118_evImpl::handle_enable_sae_j2847_v2g_v2h() {
 void ISO15118_evImpl::handle_update_soc(double& SoC) {
     auto h = session.handle();
     (*h).dc_params.present_soc = SoC;
+    (*h).dc_params.present_soc_known = true;
     if ((*h).current) {
         (*h).current->update_present_soc(SoC);
     }

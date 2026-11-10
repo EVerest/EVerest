@@ -186,6 +186,7 @@ struct TestFixture {
         cfg.tick_interval_ms = 250;
         cfg.on_battery_full = "clamp";
         cfg.battery_full_threshold_pct = 100.0;
+        cfg.soc_source = "internal";
         cfg.cfg_communication_check_to_s = 0;
         cfg.cfg_heartbeat_interval_ms = 0;
         cfg.enabled_at_startup = false;
