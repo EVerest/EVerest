@@ -67,7 +67,7 @@ protected:
     virtual void handle_set_powersupply_capabilities(types::power_supply_DC::Capabilities& capabilities) override;
     virtual void handle_authorization_response(types::authorization::AuthorizationStatus& authorization_status,
                                                types::authorization::CertificateStatus& certificate_status) override;
-    virtual void handle_ac_contactor_closed(bool& status) override;
+    virtual void handle_contactor_closed(bool& status) override;
     virtual void handle_cp_state_changed(types::iso15118::CpState& cp_state) override;
     virtual void handle_dlink_ready(bool& value) override;
     virtual void handle_cable_check_finished(bool& status) override;
@@ -173,6 +173,8 @@ private:
     // EvseV2G, which publishes both only with debugMode). Atomic: set from the command thread, read on
     // the loop thread.
     std::atomic_bool debug_mode{false};
+    // ISO 15118-2 and DIN report PreChargeReq targets through dc_charge_loop_req too.
+    std::atomic_bool pre_charge_active{false};
     void report_hlc_session_failed();
     // Clear the per-session state above; called for every end of the data link (terminate, error, pause).
     void reset_session_state();

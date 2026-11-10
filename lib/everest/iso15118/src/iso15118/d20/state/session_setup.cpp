@@ -2,8 +2,9 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 #include <algorithm>
 #include <iomanip>
-#include <openssl/evp.h>
 #include <sstream>
+
+#include <everest/tls/openssl_util.hpp>
 
 #include <iso15118/d20/state/ac_charge_parameter_discovery.hpp>
 #include <iso15118/d20/state/ac_der_iec_charge_parameter_discovery.hpp>
@@ -44,12 +45,9 @@ io::sha512_hash_t calculate_new_cert_session_id_hash(const io::sha512_hash_t& ve
     std::copy(vehicle_cert_hash.begin(), vehicle_cert_hash.end(),
               concatenated_session_id_vehicle.begin() + session_id.size());
 
-    unsigned int digestlen{0};
-
-    const auto result = EVP_Digest(concatenated_session_id_vehicle.data(), concatenated_session_id_vehicle.size(),
-                                   session_id_vehicle_hash.data(), &digestlen, EVP_sha512(), nullptr);
-    if (not result) {
-        logf_error("X509_digest failed");
+    if (not openssl::sha_512(concatenated_session_id_vehicle.data(), concatenated_session_id_vehicle.size(),
+                             session_id_vehicle_hash)) {
+        logf_error("SHA-512 of the session id and vehicle certificate hash failed");
         return std::array<std::uint8_t, 64>{};
     }
 

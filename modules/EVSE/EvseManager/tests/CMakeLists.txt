@@ -20,6 +20,7 @@ target_sources(${TEST_TARGET_NAME} PRIVATE
     EnergyTransferModesTest.cpp
     EventQueueTest.cpp
     ErrorHandlingTest.cpp
+    DcSetpointTest.cpp
     IECStateMachineTest.cpp
     PpAmpacityForwarderTest.cpp
     OverVoltageMonitorTest.cpp
@@ -29,16 +30,19 @@ target_sources(${TEST_TARGET_NAME} PRIVATE
     SessionLogTest.cpp
     V2gMessageTest.cpp
     VoltagePlausibilityMonitorTest.cpp
+    WeldingDetectionVoltageTest.cpp
     ../CpStateFrameEmitter.cpp
     ../ErrorHandling.cpp
     ../IECStateMachine.cpp
     ../SessionLog.cpp
     ../backtrace.cpp
     ../energy_transfer_modes.cpp
+    ../dc_setpoint.cpp
     ../powermeter_limits.cpp
     ../cable_check/PowerSupplyMeasurementWaiter.cpp
     ../over_voltage/OverVoltageMonitor.cpp
     ../voltage_plausibility/VoltagePlausibilityMonitor.cpp
+    ../welding_detection/WeldingDetectionVoltage.cpp
     ../v2gMessage.cpp
 )
 
@@ -53,6 +57,7 @@ target_link_libraries(${TEST_TARGET_NAME} PRIVATE
     everest::framework
     everest::helpers
     pugixml::pugixml
+    everest::timer
     everest::util
     sigslot
 )

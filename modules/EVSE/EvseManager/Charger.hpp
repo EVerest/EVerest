@@ -207,6 +207,8 @@ public:
 
     void notify_currentdemand_started();
     void reset_dc_enforce_target_limits_timer();
+    // Emits signal_dc_enforce_target_limits on the next main loop iteration while charging in DC mode
+    void request_dc_enforce_target_limits();
 
     std::string evse_state_to_string(EvseState s);
 
@@ -240,6 +242,9 @@ public:
     void set_hlc_charging_active();
     void set_hlc_allow_close_contactor(bool on);
     void dc_open_contactor_request();
+    // While this returns true, Finished waits with the powermeter stop_transaction: welding detection
+    // needs the meter's voltage, and a LEM DCBM blocks for seconds while it signs the OCMF record.
+    void set_transaction_stop_hold(std::function<bool()> hold);
     void dc_renegotiation_started();
 
     void set_hlc_d20_active(bool dynamic_control_mode);
@@ -595,6 +600,8 @@ private:
     const std::unique_ptr<IECStateMachine>& bsp;
     const std::unique_ptr<ErrorHandling>& error_handling;
     const std::vector<std::unique_ptr<powermeterIntf>>& r_powermeter_billing;
+    std::function<bool()> transaction_stop_hold;
+    bool transaction_stop_held() const;
     const std::unique_ptr<PersistentStore>& store;
     std::atomic<types::evse_board_support::Connector_type> connector_type{
         types::evse_board_support::Connector_type::IEC62196Type2Cable};
@@ -657,7 +664,8 @@ private:
     // during DC charging. This re-applies EVSE limits to the power supply even when the EV does not send
     // new target values or ignores updated limits from energy management.
     // The timer is reset whenever apply_new_target_voltage_current() is called from any source
-    // (subscribe callback, energy manager, or this periodic signal).
+    // (subscribe callback, energy manager, or this periodic signal), and expired early by
+    // request_dc_enforce_target_limits() when the power supply limits change.
     static constexpr int DC_ENFORCE_TARGET_LIMITS_INTERVAL_MS = 5000;
 
     types::evse_manager::EnableDisableSource active_enable_disable_source{

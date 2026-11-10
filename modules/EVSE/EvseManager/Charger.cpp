@@ -1295,17 +1295,20 @@ void Charger::run_state_machine() {
         case EvseState::Finished:
 
             if (initialize_state) {
-                // Transaction may already be stopped when it was cancelled earlier.
-                // In that case, do not sent a second transactionFinished event.
-                if (shared_context.flag_transaction_active) {
-                    stop_transaction();
-                }
-
                 // Everything should already be off, just do it here again as a backup.
                 if (config_context.charge_mode == ChargeMode::DC) {
                     signal_dc_supply_off();
                 }
                 bsp->allow_power_on(false, types::evse_board_support::Reason::PowerOff);
+            }
+
+            // Transaction may already be stopped when it was cancelled earlier. In that case, do not send a
+            // second transactionFinished event. The stop waits while welding detection holds the powermeter
+            // (see set_transaction_stop_hold), except when the session ends anyway.
+            if (shared_context.flag_transaction_active and
+                (not transaction_stop_held() or not shared_context.flag_ev_plugged_in or
+                 shared_context.flag_disable_requested)) {
+                stop_transaction();
             }
 
             // If unplugged or a disable is pending, end the session.
@@ -2453,7 +2456,7 @@ void Charger::request_error_sequence_internal() {
         shared_context.current_state == EvseState::PrepareCharging) {
         const bool limit_retries =
             config_context.ac_limit_slac_init_retries and config_context.charge_mode == ChargeMode::AC;
-        if (limit_retries and not hlc_use_5percent_current_session) {
+        if (limit_retries and not hlc_use_5percent_current_session and not shared_context.dlink_established) {
             // [V2G3-A09-13]: without 5 percent (nominal PWM or X1), no SLAC will be performed. Keep the PWM as it is.
             // This also holds after the last 5 percent retry ended in X1.
             session_log.evse(false, "No SLAC retry without 5 percent PWM");
@@ -2517,6 +2520,10 @@ void Charger::set_slac_matched(bool matched) {
 
 void Charger::reset_dc_enforce_target_limits_timer() {
     last_dc_enforce_target_limits = std::chrono::steady_clock::now();
+}
+
+void Charger::request_dc_enforce_target_limits() {
+    last_dc_enforce_target_limits = std::chrono::steady_clock::time_point{};
 }
 
 void Charger::notify_currentdemand_started() {
@@ -2773,6 +2780,16 @@ void Charger::set_hlc_allow_close_contactor(bool on) {
     Everest::scoped_lock_timeout lock(state_machine_mutex,
                                       Everest::MutexDescription::Charger_set_hlc_allow_close_contactor);
     shared_context.hlc_allow_close_contactor = on;
+}
+
+void Charger::set_transaction_stop_hold(std::function<bool()> hold) {
+    Everest::scoped_lock_timeout lock(state_machine_mutex,
+                                      Everest::MutexDescription::Charger_set_transaction_stop_hold);
+    transaction_stop_hold = std::move(hold);
+}
+
+bool Charger::transaction_stop_held() const {
+    return transaction_stop_hold and transaction_stop_hold();
 }
 
 void Charger::dc_open_contactor_request() {

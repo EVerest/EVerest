@@ -292,7 +292,8 @@ SCENARIO("ISO15118-20 EV ScheduleExchange's ScheduleTupleID reaches PowerDeliver
     primed.handle_response(make_scheduled_response(SESSION_HEADER, ResponseCode::OK, Processing::Finished, {4, 9}));
     feed_expecting(primed, Event::V2GTP_MESSAGE, StateID::DC_CableCheck);
     // [V2G20-1546]: the Context holds the pick from here on, for Start, Stop and Standby.
-    REQUIRE(primed.ctx.schedule_tuple_id() == 4);
+    REQUIRE(primed.ctx.selected_schedule().has_value());
+    REQUIRE(primed.ctx.selected_schedule()->tuple_id == 4);
 
     primed.ctx.set_cp_state(true);
     feed_expecting(primed, Event::CONTROL_MESSAGE, StateID::DC_CableCheck);

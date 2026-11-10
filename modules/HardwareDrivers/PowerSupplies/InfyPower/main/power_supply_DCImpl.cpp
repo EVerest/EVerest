@@ -144,33 +144,17 @@ void power_supply_DCImpl::handle_setMode(types::power_supply_DC::Mode& mode,
                                          types::power_supply_DC::ChargingPhase& phase) {
     std::lock_guard<std::mutex> command_lock(command_mutex);
     EVLOG_info << "Set mode via CAN: " << mode << " with phase " << phase;
-    if (mode == types::power_supply_DC::Mode::Off) {
-        mod->acdc->switch_on_off(false);
-    } else if (mode == types::power_supply_DC::Mode::Export) {
-        mod->acdc->switch_on_off(not off_for_zero_current);
-    } else if (mode == types::power_supply_DC::Mode::Import) {
-        mod->acdc->switch_on_off(true);
-    } else if (mode == types::power_supply_DC::Mode::Fault) {
-        mod->acdc->switch_on_off(false);
+    if (mode == types::power_supply_DC::Mode::Off or mode == types::power_supply_DC::Mode::Fault) {
+        below_minimum = false;
     }
-    if (mode != types::power_supply_DC::Mode::Export) {
-        off_for_zero_current = false;
-    }
+    mod->acdc->switch_on_off(output_enabled(mode));
     this->mode.store(mode);
     this->phase.store(phase);
 };
 
 void power_supply_DCImpl::handle_setExportVoltageCurrent(double& voltage, double& current) {
     std::lock_guard<std::mutex> command_lock(command_mutex);
-    if (current <= 0. and mode.load() == types::power_supply_DC::Mode::Export) {
-        exportCurrentLimit.store(0.);
-        if (not off_for_zero_current) {
-            EVLOG_info << "Infy: 0 A requested, switching DC output off";
-            off_for_zero_current = true;
-            mod->acdc->switch_on_off(false);
-        }
-        return;
-    }
+    bool below_minimum_requested = false;
     {
         std::lock_guard<std::mutex> caps_lock(caps_mutex);
         if (voltage > caps.max_export_voltage_V)
@@ -178,14 +162,21 @@ void power_supply_DCImpl::handle_setExportVoltageCurrent(double& voltage, double
         else if (voltage < caps.min_export_voltage_V)
             voltage = caps.min_export_voltage_V;
 
-        if (current > caps.max_export_current_A)
+        // The modules do not regulate to 0 A, so 0 A switches the output off like a current below the minimum.
+        below_minimum_requested = current <= 0. or current < caps.min_export_current_A;
+        if (below_minimum_requested)
+            current = 0.;
+        else if (current > caps.max_export_current_A)
             current = caps.max_export_current_A;
-        else if (current < caps.min_export_current_A)
-            current = caps.min_export_current_A;
     }
 
     exportVoltage.store(voltage);
     exportCurrentLimit.store(current);
+
+    if (below_minimum_requested) {
+        set_below_minimum(true);
+        return;
+    }
 
     const size_t active_module_count = last_module_count;
     if (active_module_count > 0) {
@@ -198,19 +189,32 @@ void power_supply_DCImpl::handle_setExportVoltageCurrent(double& voltage, double
                    << exportCurrentLimit.load() << "A (but no active modules detected)";
     }
     mod->acdc->set_voltage_current(exportVoltage.load(), exportCurrentLimit.load());
-
-    if (off_for_zero_current) {
-        off_for_zero_current = false;
-        if (mode.load() == types::power_supply_DC::Mode::Export) {
-            EVLOG_info << "Infy: current above 0 A requested, switching DC output on";
-            mod->acdc->switch_on_off(true);
-        }
-    }
+    set_below_minimum(false);
 };
+
+bool power_supply_DCImpl::output_enabled(types::power_supply_DC::Mode mode) const {
+    return (mode == types::power_supply_DC::Mode::Export or mode == types::power_supply_DC::Mode::Import) and
+           not below_minimum.load();
+}
+
+void power_supply_DCImpl::set_below_minimum(bool below) {
+    if (below_minimum.exchange(below) == below) {
+        return;
+    }
+    const bool enabled = output_enabled(mode.load());
+    EVLOG_info << "Infy: current " << (below ? "below" : "at or above") << " minimum, output "
+               << (enabled ? "on" : "off");
+    if (not mod->acdc->switch_on_off(enabled)) {
+        // Not switched: the next setpoint tries again
+        below_minimum = not below;
+        EVLOG_error << "Infy: switching the output " << (enabled ? "on" : "off") << " failed";
+    }
+}
 
 void power_supply_DCImpl::handle_setImportVoltageCurrent(double& voltage, double& current) {
     std::lock_guard<std::mutex> command_lock(command_mutex);
     bool has_import_caps = false;
+    bool below_minimum_requested = false;
     {
         std::lock_guard<std::mutex> caps_lock(caps_mutex);
         has_import_caps = caps.min_import_voltage_V.has_value() && caps.max_import_voltage_V.has_value() &&
@@ -221,10 +225,11 @@ void power_supply_DCImpl::handle_setImportVoltageCurrent(double& voltage, double
             else if (voltage < caps.min_import_voltage_V.value())
                 voltage = caps.min_import_voltage_V.value();
 
-            if (current > caps.max_import_current_A.value())
+            below_minimum_requested = current <= 0. or current < caps.min_import_current_A.value();
+            if (below_minimum_requested)
+                current = 0.;
+            else if (current > caps.max_import_current_A.value())
                 current = caps.max_import_current_A.value();
-            else if (current < caps.min_import_current_A.value())
-                current = caps.min_import_current_A.value();
         }
     }
 
@@ -232,9 +237,15 @@ void power_supply_DCImpl::handle_setImportVoltageCurrent(double& voltage, double
         minImportVoltage.store(voltage);
         importCurrentLimit.store(current);
 
+        if (below_minimum_requested) {
+            set_below_minimum(true);
+            return;
+        }
+
         EVLOG_info << "Infy: Updating voltage/current via CAN: " << minImportVoltage.load() << "V / "
                    << importCurrentLimit.load() << "A";
         mod->acdc->set_voltage_current(minImportVoltage.load(), importCurrentLimit.load());
+        set_below_minimum(false);
     }
 }
 

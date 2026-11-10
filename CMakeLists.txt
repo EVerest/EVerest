@@ -194,7 +194,7 @@ else()
         endif()
         find_package(pugixml REQUIRED)
         find_package(CURL 7.84.0 REQUIRED)
-        find_package(ftxui 6 QUIET) # optional, if not available BringUp module will not be built
+        find_package(ftxui 7 QUIET) # optional, if not available BringUp module will not be built
         if(EVEREST_DEPENDENCY_ENABLED_SDBUS_CPP)
             find_package(sdbus-c++ REQUIRED)
         endif()

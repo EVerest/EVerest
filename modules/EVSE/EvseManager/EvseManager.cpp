@@ -10,6 +10,7 @@
 #include "IECStateMachine.hpp"
 #include "SessionLog.hpp"
 #include "Timeout.hpp"
+#include "dc_setpoint.hpp"
 #include "energy_transfer_modes.hpp"
 #include "powermeter_limits.hpp"
 #include "scoped_lock_timeout.hpp"
@@ -403,6 +404,14 @@ void EvseManager::ready() {
 
     if (hlc_enabled) {
 
+        if (config.charge_mode == "DC") {
+            setup_welding_detection_voltage();
+            // Stopping the powermeter transaction blocks a LEM DCBM for seconds while it signs; the
+            // WeldingDetectionRes needs its voltage until the phase ends.
+            charger->set_transaction_stop_hold(
+                [this] { return welding_detection_voltage and welding_detection_voltage->is_active(); });
+        }
+
         // Set up EVSE ID
         types::iso15118::EVSEID evseid = {config.evse_id, config.evse_id_din};
 
@@ -414,6 +423,7 @@ void EvseManager::ready() {
         update_hlc_session_setup(session_setup);
 
         r_hlc[0]->subscribe_hlc_session_failed([this](types::evse_manager::HlcSessionFailedReasonEnum reason) {
+            end_welding_detection_phase();
             types::evse_manager::HlcSessionFailedEvent ev;
             ev.uuid = charger->get_session_id();
             ev.reason = reason;
@@ -421,6 +431,7 @@ void EvseManager::ready() {
         });
 
         r_hlc[0]->subscribe_dlink_error([this] {
+            end_welding_detection_phase();
             session_log.evse(true, "D-LINK_ERROR.req");
             hlc_link_in_use = false;
             // In case the fake DC unexpectedly disconnects due to a d-link error, we'll need to switch
@@ -438,6 +449,7 @@ void EvseManager::ready() {
 
         r_hlc[0]->subscribe_dlink_pause([this] {
             // tell charger (it will disable PWM)
+            end_welding_detection_phase();
             session_log.evse(true, "D-LINK_PAUSE.req");
             hlc_link_in_use = false;
             charger->dlink_pause();
@@ -445,6 +457,7 @@ void EvseManager::ready() {
         });
 
         r_hlc[0]->subscribe_dlink_terminate([this] {
+            end_welding_detection_phase();
             selected_d20_energy_service.reset();
             session_log.evse(true, "D-LINK_TERMINATE.req");
             hlc_link_in_use = false;
@@ -620,16 +633,25 @@ void EvseManager::ready() {
 
             // Cable check for DC charging
             r_hlc[0]->subscribe_start_cable_check([this] {
+                end_welding_detection_phase();
+                // current_demand_finished may be missing if the previous session was aborted
+                current_demand_active = false;
+                current_demand_target_received = false;
                 power_supply_DC_charging_phase = types::power_supply_DC::ChargingPhase::CableCheck;
                 cable_check();
             });
 
             // Cable check for DC charging
-            r_hlc[0]->subscribe_start_pre_charge(
-                [this] { power_supply_DC_charging_phase = types::power_supply_DC::ChargingPhase::PreCharge; });
+            r_hlc[0]->subscribe_start_pre_charge([this] {
+                current_demand_target_received = false;
+                power_supply_DC_charging_phase = types::power_supply_DC::ChargingPhase::PreCharge;
+            });
 
             // Notification that current demand has started
+            // Not ordered with respect to dc_ev_target_voltage_current: the framework delivers different vars on
+            // different threads. current_demand_target_received is therefore derived from the target itself.
             r_hlc[0]->subscribe_current_demand_started([this] {
+                end_welding_detection_phase();
                 power_supply_DC_charging_phase = types::power_supply_DC::ChargingPhase::Charging;
                 current_demand_active = true;
                 apply_new_target_voltage_current();
@@ -650,14 +672,22 @@ void EvseManager::ready() {
             r_hlc[0]->subscribe_current_demand_finished([this] {
                 current_demand_active = false;
                 sae_bidi_active = false;
-                if (not r_over_voltage_monitor.empty()) {
-                    r_over_voltage_monitor[0]->call_stop();
-                }
+                ovm_stop_after_welding_detection();
                 if (voltage_plausibility_monitor) {
                     voltage_plausibility_monitor->stop_monitor();
                 }
                 if (internal_over_voltage_monitor) {
                     internal_over_voltage_monitor->stop_monitor();
+                }
+            });
+
+            r_hlc[0]->subscribe_welding_detection([this](types::iso15118::WeldingDetectionPhase phase) {
+                session_log.evse(true, fmt::format("Welding detection {}",
+                                                   types::iso15118::welding_detection_phase_to_string(phase)));
+                if (phase == types::iso15118::WeldingDetectionPhase::Started) {
+                    welding_detection_voltage->start();
+                } else {
+                    welding_detection_voltage->finish();
                 }
             });
 
@@ -671,6 +701,7 @@ void EvseManager::ready() {
                     if (voltage_plausibility_monitor) {
                         voltage_plausibility_monitor->update_over_voltage_monitor_voltage(voltage_V);
                     }
+                    welding_detection_voltage->update(WeldingDetectionVoltageSource::OverVoltageMonitor, voltage_V);
                 });
             }
 
@@ -685,16 +716,23 @@ void EvseManager::ready() {
                     if (voltage_plausibility_monitor && m.voltage_V.has_value()) {
                         voltage_plausibility_monitor->update_isolation_monitor_voltage(m.voltage_V.value());
                     }
+                    if (m.voltage_V.has_value()) {
+                        welding_detection_voltage->update(WeldingDetectionVoltageSource::IsolationMonitor,
+                                                          m.voltage_V.value());
+                    }
+                    // The EVSE contactors are open while the IMD runs on for welding detection.
+                    const bool evaluate_faults =
+                        charger->get_current_state() == Charger::EvseState::Charging and
+                        not welding_detection_holds(WeldingDetectionVoltageSource::IsolationMonitor);
 
                     // Check for isolation errors
-                    if (charger->get_current_state() == Charger::EvseState::Charging and
-                        not check_isolation_resistance_in_range(m.resistance_F_Ohm)) {
+                    if (evaluate_faults and not check_isolation_resistance_in_range(m.resistance_F_Ohm)) {
                         error_handling->raise_isolation_resistance_fault(
                             fmt::format("Isolation resistance too low during charging: {} Ohm", m.resistance_F_Ohm),
                             "Resistance");
                     }
                     // Check L1e and L2e to PE as defined by IEC 61851-23:2023, $6.3.1.112.2
-                    if (charger->get_current_state() == Charger::EvseState::Charging) {
+                    if (evaluate_faults) {
                         bool is_in_range = check_voltage_to_protective_earth_in_range(m);
                         auto now = std::chrono::steady_clock::now();
 
@@ -744,9 +782,7 @@ void EvseManager::ready() {
             }
 
             // On start up, stop ovm in case it is still enabled from a previous run
-            if (not r_over_voltage_monitor.empty()) {
-                r_over_voltage_monitor[0]->call_stop();
-            }
+            ovm_stop();
 
             // Get voltage/current from DC power supply
             if (not r_powersupply_DC.empty()) {
@@ -772,7 +808,13 @@ void EvseManager::ready() {
                         EVLOG_info << "Hack: Restarting Isolation Measurement at " << m.voltage_V << " " << m.current_A;
                     }
 
-                    r_hlc[0]->call_update_dc_present_values(present_values);
+                    present_current_A = present_values.evse_present_current.value();
+                    welding_detection_voltage->update(WeldingDetectionVoltageSource::PowerSupply,
+                                                      present_values.evse_present_voltage);
+                    // During welding detection the selected source reports, marked as such.
+                    if (not welding_detection_voltage->is_active()) {
+                        r_hlc[0]->call_update_dc_present_values(present_values);
+                    }
 
                     {
                         // dont publish ev_info here, it will be published when other values change.
@@ -791,8 +833,7 @@ void EvseManager::ready() {
             // (signal_dc_enforce_target_limits) in case the EV doesnt respect the
             // limits or does not change the target values for some time.
             r_hlc[0]->subscribe_dc_ev_target_voltage_current([this](types::iso15118::DcEvTargetValues const& v) {
-                raw_ev_target_voltage = v.dc_ev_target_voltage;
-                raw_ev_target_current = v.dc_ev_target_current;
+                set_raw_ev_target(v.dc_ev_target_voltage, v.dc_ev_target_current, v.current_demand);
                 process_dc_ev_target_voltage_current(charger->get_evse_max_hlc_limits());
             });
 
@@ -875,20 +916,22 @@ void EvseManager::ready() {
                                          ? max_charge_current
                                          : std::min((max_charge_power / actual_voltage), max_charge_current);
 
-                    raw_ev_target_voltage = target_voltage;
-                    raw_ev_target_current = target_current;
+                    // Dynamic mode values are only sent in the charge loop
+                    set_raw_ev_target(target_voltage, target_current, true);
                     process_dc_ev_target_voltage_current(charger->get_evse_max_hlc_limits());
                 });
 
             // Car requests DC contactor open: switch off the DC supply and withdraw the power
             // permissive now, before the EV's C->B (see Charger::dc_open_contactor_request).
             r_hlc[0]->subscribe_dc_open_contactor([this] {
+                // First: the Charger's signal_dc_supply_off follows from dc_open_contactor_request().
+                imd_stop_after_welding_detection();
                 powersupply_DC_off();
                 charger->dc_open_contactor_request();
-                imd_stop();
             });
 
             r_hlc[0]->subscribe_dc_renegotiation_started([this] {
+                end_welding_detection_phase();
                 powersupply_DC_off();
                 imd_stop();
                 charger->dc_renegotiation_started();
@@ -1257,8 +1300,11 @@ void EvseManager::ready() {
         if (not r_over_voltage_monitor.empty() and event == CPEvent::CarUnplugged) {
             r_over_voltage_monitor[0]->call_reset_over_voltage_error();
         }
-        if (not r_over_voltage_monitor.empty() and (event == CPEvent::CarUnplugged or event == CPEvent::PowerOff)) {
-            r_over_voltage_monitor[0]->call_stop();
+        if (event == CPEvent::CarUnplugged) {
+            end_welding_detection_phase();
+        }
+        if (event == CPEvent::CarUnplugged or event == CPEvent::PowerOff) {
+            ovm_stop();
         }
         if (internal_over_voltage_monitor and (event == CPEvent::CarUnplugged or event == CPEvent::PowerOff)) {
             internal_over_voltage_monitor->stop_monitor();
@@ -1275,7 +1321,7 @@ void EvseManager::ready() {
             // Reset HLC auth waiting flags on new session
             if (event == CPEvent::CarPluggedIn) {
                 r_hlc[0]->call_reset_error();
-                r_hlc[0]->call_ac_contactor_closed(false);
+                r_hlc[0]->call_contactor_closed(false);
                 r_hlc[0]->call_stop_charging(false);
                 latest_target_voltage = 0;
                 latest_target_current = 0;
@@ -1285,14 +1331,14 @@ void EvseManager::ready() {
 
             if (event == CPEvent::PowerOn) {
                 contactor_open = false;
-                r_hlc[0]->call_ac_contactor_closed(true);
+                r_hlc[0]->call_contactor_closed(true);
             }
 
             if (event == CPEvent::PowerOff) {
                 contactor_open = true;
                 latest_target_voltage = 0;
                 latest_target_current = 0;
-                r_hlc[0]->call_ac_contactor_closed(false);
+                r_hlc[0]->call_contactor_closed(false);
             }
         }
     });
@@ -1306,6 +1352,11 @@ void EvseManager::ready() {
             // Update voltage plausibility monitor with powermeter voltage
             if (voltage_plausibility_monitor && p.voltage_V.has_value() && p.voltage_V.value().DC.has_value()) {
                 voltage_plausibility_monitor->update_powermeter_voltage(p.voltage_V.value().DC.value());
+            }
+            if (welding_detection_voltage and not r_powermeter_car_side.empty() and p.voltage_V.has_value() and
+                p.voltage_V.value().DC.has_value()) {
+                welding_detection_voltage->update(WeldingDetectionVoltageSource::PowermeterCarSide,
+                                                  p.voltage_V.value().DC.value());
             }
             // Inform charger about current charging current. This is used for slow OC detection.
             if (p.current_A and p.current_A.value().L1 and p.current_A.value().L2 and p.current_A.value().L3) {
@@ -2574,9 +2625,30 @@ void EvseManager::powersupply_DC_on() {
 // if it is more then what the energymanager gave us, we can limit it here.
 bool EvseManager::powersupply_DC_set(double _voltage, double _current) {
     std::lock_guard<std::mutex> set_lock(powersupply_dc_set_mutex);
-    if (last_power_supply_voltage == _voltage and last_power_supply_current == _current) {
+    // Read once so that a transition during this call cannot mix the rule sets
+    const bool demand_active = current_demand_active.load();
+    // The offered minimum and the 0 A rule apply to the current the EV requests during current demand. Until the
+    // first target the EV sent in current demand arrives, the precharge target is still in effect. Derived from
+    // the target itself, not from current_demand_started, so the delivery order of the two does not matter.
+    const bool current_demand = current_demand_target_received.load();
+    const auto caps = get_powersupply_capabilities();
+    // The offered minimum only applies during current demand, see dc_export_setpoint_current().
+    const auto hlc_caps = current_demand ? apply_powermeter_limits(caps) : caps;
+    const DcSetpointInputs inputs{_voltage,
+                                  _current,
+                                  raw_ev_target_current.load(),
+                                  latest_evse_max_current.load(),
+                                  latest_evse_max_discharge_current.load(),
+                                  current_demand,
+                                  demand_active,
+                                  is_actually_exporting_to_grid,
+                                  power_supply_DC_charging_phase.load(),
+                                  caps,
+                                  hlc_caps};
+    if (last_dc_setpoint_inputs == inputs) {
         return true;
     }
+    const auto store_inputs = [this, &inputs] { last_dc_setpoint_inputs = inputs; };
 
     double voltage = _voltage;
     double current = _current;
@@ -2589,10 +2661,17 @@ bool EvseManager::powersupply_DC_set(double _voltage, double _current) {
     // On low power DC charging this makes quite a difference
     // this option will deliver the offered ampere value in those cases
 
-    if (config.hack_fix_hlc_integer_current_requests) {
-        const double evse_max_current = latest_evse_max_current;
-        if (evse_max_current > 0. and evse_max_current - (int)current < 1.)
-            current = evse_max_current;
+    // ISO 15118-20 scheduled BPT: a negative EV target requests discharging, so it asks for no charging current.
+    // SAE J2847/2 keeps the absolute value, like the ramped current below.
+    double ev_target_current =
+        config.sae_j2847_2_bpt_enabled ? std::abs(inputs.ev_target_current) : std::max(inputs.ev_target_current, 0.);
+    if (config.hack_fix_hlc_integer_current_requests and inputs.evse_max_current > 0.) {
+        const auto raise_to_evse_max = [&inputs](double c) {
+            return inputs.evse_max_current - static_cast<int>(c) < 1. ? inputs.evse_max_current : c;
+        };
+        current = raise_to_evse_max(current);
+        // The target is compared with the offered minimum, so a rounded-down request is raised as well
+        ev_target_current = raise_to_evse_max(ev_target_current);
     }
 
     if (config.sae_j2847_2_bpt_enabled) {
@@ -2605,10 +2684,7 @@ bool EvseManager::powersupply_DC_set(double _voltage, double _current) {
         current = PRECHARGE_MIN_CURRENT_A;
     }
 
-    auto caps = get_powersupply_capabilities();
-
-    if (((config.hack_allow_bpt_with_iso2 or sae_bidi_active or session_is_iso_d20_dc_bpt()) and
-         current_demand_active) and
+    if (((config.hack_allow_bpt_with_iso2 or sae_bidi_active or session_is_iso_d20_dc_bpt()) and demand_active) and
         is_actually_exporting_to_grid) {
         if (not last_is_actually_exporting_to_grid and powersupply_dc_is_on) {
             // switching from import from grid to export to grid
@@ -2621,13 +2697,8 @@ bool EvseManager::powersupply_DC_set(double _voltage, double _current) {
         if (caps.min_import_voltage_V.has_value() and caps.max_import_voltage_V.has_value() and
             voltage >= caps.min_import_voltage_V.value() and voltage <= caps.max_import_voltage_V.value()) {
 
-            if (caps.max_import_current_A.has_value() and current > caps.max_import_current_A.value()) {
-                current = caps.max_import_current_A.value();
-            }
-
-            if (caps.min_import_current_A.has_value() and current < caps.min_import_current_A.value()) {
-                current = 0.0;
-            }
+            current = dc_import_setpoint_current(std::abs(current), std::abs(inputs.ev_target_current),
+                                                 inputs.evse_max_discharge_current, caps, hlc_caps);
 
             // Now it is within limits of DC power supply.
             // now also limit with the limits given by the energymanager.
@@ -2638,8 +2709,7 @@ bool EvseManager::powersupply_DC_set(double _voltage, double _current) {
 
             // set the new limits for the DC output
             r_powersupply_DC[0]->call_setImportVoltageCurrent(voltage, current);
-            last_power_supply_voltage = voltage;
-            last_power_supply_current = current;
+            store_inputs();
             return true;
         }
         EVLOG_critical << fmt::format("DC voltage/current out of limits requested: Voltage {:.2f} Current {:.2f}.",
@@ -2649,7 +2719,7 @@ bool EvseManager::powersupply_DC_set(double _voltage, double _current) {
     if (powersupply_dc_is_on and (charging_phase_changed or (((config.hack_allow_bpt_with_iso2 or sae_bidi_active or
                                                                session_is_iso_d20_dc_bpt()) and
                                                               last_is_actually_exporting_to_grid) and
-                                                             current_demand_active))) {
+                                                             demand_active))) {
         // switching from export to grid to import from grid
         session_log.evse(false, "DC power supply: switch ON in export mode");
         r_powersupply_DC[0]->call_setMode(types::power_supply_DC::Mode::Export, power_supply_DC_charging_phase);
@@ -2659,11 +2729,8 @@ bool EvseManager::powersupply_DC_set(double _voltage, double _current) {
     // check limits of supply
     if (voltage >= caps.min_export_voltage_V and voltage <= caps.max_export_voltage_V) {
 
-        if (current > caps.max_export_current_A)
-            current = caps.max_export_current_A;
-
-        if (current < caps.min_export_current_A)
-            current = 0.0;
+        current = dc_export_setpoint_current(current, ev_target_current, inputs.evse_max_current, current_demand, caps,
+                                             hlc_caps);
 
         // Now it is within limits of DC power supply.
         // now also limit with the limits given by the energymanager.
@@ -2674,8 +2741,7 @@ bool EvseManager::powersupply_DC_set(double _voltage, double _current) {
 
         // set the new limits for the DC output
         r_powersupply_DC[0]->call_setExportVoltageCurrent(voltage, current);
-        last_power_supply_voltage = voltage;
-        last_power_supply_current = current;
+        store_inputs();
         return true;
     }
     EVLOG_critical << fmt::format("DC voltage/current out of limits requested: Voltage {:.2f} Current {:.2f}.", voltage,
@@ -2684,14 +2750,13 @@ bool EvseManager::powersupply_DC_set(double _voltage, double _current) {
 }
 
 void EvseManager::powersupply_DC_off() {
+    std::lock_guard<std::mutex> set_lock(powersupply_dc_set_mutex);
     if (powersupply_dc_is_on) {
         session_log.evse(false, "DC power supply OFF");
         r_powersupply_DC[0]->call_setMode(types::power_supply_DC::Mode::Off, power_supply_DC_charging_phase);
         powersupply_dc_is_on = false;
-        // Invalidate the powersupply_DC_set() cache: the power supply resets its
-        // internal targets on the Off transition, so the cached values are stale now.
-        last_power_supply_voltage = 0.;
-        last_power_supply_current = 0.;
+        // The power supply resets its targets on the Off transition, so the cached setpoint is stale
+        last_dc_setpoint_inputs.reset();
     }
     power_supply_DC_charging_phase = types::power_supply_DC::ChargingPhase::Other;
 }
@@ -2783,8 +2848,55 @@ const std::vector<std::unique_ptr<powermeterIntf>>& EvseManager::r_powermeter_bi
     }
 }
 
+void EvseManager::setup_welding_detection_voltage() {
+    const auto configured = welding_detection_voltage_source_from_string(config.welding_detection_voltage_source)
+                                .value_or(WeldingDetectionVoltageSource::PowermeterCarSide);
+    WeldingDetectionVoltageSources connected;
+    connected.powermeter_car_side = not r_powermeter_car_side.empty();
+    connected.over_voltage_monitor = not r_over_voltage_monitor.empty();
+    connected.isolation_monitor = not r_imd.empty();
+    const auto source = resolve_welding_detection_voltage_source(configured, connected);
+    if (source != configured) {
+        EVLOG_warning << "welding_detection_voltage_source " << to_string(configured) << " is not connected, using "
+                      << to_string(source);
+    }
+
+    welding_detection_voltage = std::make_unique<WeldingDetectionVoltage>(
+        source,
+        [this](float voltage_V) {
+            types::iso15118::DcEvsePresentVoltageCurrent present_values;
+            present_values.evse_present_voltage = std::max(voltage_V, 0.0f);
+            present_values.evse_present_current = present_current_A.load();
+            present_values.welding_detection = true;
+            r_hlc[0]->call_update_dc_present_values(present_values);
+        },
+        [this, source] {
+            if (source == WeldingDetectionVoltageSource::OverVoltageMonitor and not r_over_voltage_monitor.empty()) {
+                r_over_voltage_monitor[0]->call_stop();
+            } else if (source == WeldingDetectionVoltageSource::IsolationMonitor) {
+                imd_stop();
+            }
+        },
+        [](const std::string& message) { EVLOG_warning << message; });
+}
+
+void EvseManager::end_welding_detection_phase() {
+    if (welding_detection_voltage) {
+        welding_detection_voltage->finish();
+    }
+}
+
+bool EvseManager::is_welding_detection_source(WeldingDetectionVoltageSource source) const {
+    return welding_detection_voltage and welding_detection_voltage->source() == source;
+}
+
+bool EvseManager::welding_detection_holds(WeldingDetectionVoltageSource source) const {
+    return is_welding_detection_source(source) and welding_detection_voltage->holds_source();
+}
+
+// The stops skip a monitor that welding detection holds as its voltage source; that stop runs when the phase ends.
 void EvseManager::imd_stop() {
-    if (r_imd.empty()) {
+    if (r_imd.empty() or welding_detection_holds(WeldingDetectionVoltageSource::IsolationMonitor)) {
         return;
     }
     auto gate = imd_unmated_gate.handle();
@@ -2792,6 +2904,30 @@ void EvseManager::imd_stop() {
         return;
     }
     r_imd[0]->call_stop();
+}
+
+void EvseManager::ovm_stop() {
+    if (r_over_voltage_monitor.empty() or welding_detection_holds(WeldingDetectionVoltageSource::OverVoltageMonitor)) {
+        return;
+    }
+    r_over_voltage_monitor[0]->call_stop();
+}
+
+// The power path opened: the welding detection voltage source keeps measuring until the phase ends.
+void EvseManager::imd_stop_after_welding_detection() {
+    if (is_welding_detection_source(WeldingDetectionVoltageSource::IsolationMonitor)) {
+        welding_detection_voltage->defer_source_stop();
+        return;
+    }
+    imd_stop();
+}
+
+void EvseManager::ovm_stop_after_welding_detection() {
+    if (is_welding_detection_source(WeldingDetectionVoltageSource::OverVoltageMonitor)) {
+        welding_detection_voltage->defer_source_stop();
+        return;
+    }
+    ovm_stop();
 }
 
 void EvseManager::imd_start() {
@@ -2903,8 +3039,15 @@ types::evse_manager::EVInfo EvseManager::get_ev_info() {
     return ev_info;
 }
 
+void EvseManager::set_raw_ev_target(double voltage, double current, std::optional<bool> current_demand) {
+    raw_ev_target_voltage = voltage;
+    raw_ev_target_current = current;
+    current_demand_target_received = current_demand.value_or(current_demand_active.load());
+}
+
 void EvseManager::process_dc_ev_target_voltage_current(const types::iso15118::DcEvseMaximumLimits& hlc_limits) {
     latest_evse_max_current = hlc_limits.evse_maximum_current_limit;
+    latest_evse_max_discharge_current = hlc_limits.evse_maximum_discharge_current_limit.value_or(0.0f);
     double clamped_voltage = raw_ev_target_voltage.load();
     double clamped_current = raw_ev_target_current.load();
 
@@ -2946,6 +3089,11 @@ void EvseManager::process_dc_ev_target_voltage_current(const types::iso15118::Dc
     const auto actual_voltage =
         ev_info_snapshot.present_voltage.has_value() ? ev_info_snapshot.present_voltage.value() : clamped_voltage;
 
+    // The offered minimum raise in dc_export_setpoint_current() stays within the power limit at the present voltage
+    latest_evse_max_current = std::min(latest_evse_max_current.load(),
+                                       evse_max_current_at(hlc_limits.evse_maximum_current_limit,
+                                                           hlc_limits.evse_maximum_power_limit, actual_voltage));
+
     const auto target_power = clamped_current * actual_voltage;
     if (target_power > hlc_limits.evse_maximum_power_limit) {
         clamped_current = hlc_limits.evse_maximum_power_limit / actual_voltage;
@@ -2963,6 +3111,8 @@ void EvseManager::process_dc_ev_target_voltage_current(const types::iso15118::Dc
         const double ceiling =
             std::max(0., dc_pause_ramp_from_A - elapsed_s * Charger::D20_PAUSE_RAMP_AMPERE_PER_SECOND);
         clamped_current = std::min(clamped_current, ceiling);
+        // Like an energy limit, so the ramp reaches 0 A below the offered minimum instead of stopping at it.
+        latest_evse_max_current = std::min(latest_evse_max_current.load(), ceiling);
     }
 
     bool target_changed = false;
@@ -3115,6 +3265,11 @@ void EvseManager::push_powersupply_capabilities_to_hlc() {
 
     if (not last_hlc_capabilities.has_value() or caps != last_hlc_capabilities.value()) {
         r_hlc[0]->call_set_powersupply_capabilities(caps);
+        // During current demand the changed limits reach the power supply through the next enforcement pass,
+        // not only once the EV follows them.
+        if (charger) {
+            charger->request_dc_enforce_target_limits();
+        }
     }
     last_hlc_capabilities = caps;
 
@@ -3126,7 +3281,7 @@ void EvseManager::push_powersupply_capabilities_to_hlc() {
     r_hlc[0]->call_set_charging_parameters(setup_physical_values);
 
     types::iso15118::DcEvseMinimumLimits evse_min_limits;
-    evse_min_limits.evse_minimum_current_limit = caps.min_export_current_A;
+    evse_min_limits.evse_minimum_current_limit = offered_min_export_current_A(caps);
     evse_min_limits.evse_minimum_voltage_limit = caps.min_export_voltage_V;
     evse_min_limits.evse_minimum_power_limit =
         evse_min_limits.evse_minimum_current_limit * evse_min_limits.evse_minimum_voltage_limit;

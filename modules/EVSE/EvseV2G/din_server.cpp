@@ -378,7 +378,7 @@ static void publish_din_precharge_req(struct v2g_context* ctx,
         });
     }
 
-    publish_dc_ev_target_voltage_current(ctx, target_voltage, target_current);
+    publish_dc_ev_target_voltage_current(ctx, target_voltage, target_current, false);
     publish_DIN_DcEvStatus(ctx, v2g_precharge_req->DC_EVStatus);
 }
 
@@ -405,7 +405,7 @@ static void publish_din_current_demand_req(struct v2g_context* ctx,
     const auto target_current = calc_physical_value(v2g_current_demand_req->EVTargetCurrent.Value,
                                                     v2g_current_demand_req->EVTargetCurrent.Multiplier);
 
-    publish_dc_ev_target_voltage_current(ctx, target_voltage, target_current);
+    publish_dc_ev_target_voltage_current(ctx, target_voltage, target_current, true);
 
     float evMaximumCurrentLimit = calc_physical_value(v2g_current_demand_req->EVMaximumCurrentLimit.Value,
                                                       v2g_current_demand_req->EVMaximumCurrentLimit.Multiplier);
@@ -872,7 +872,7 @@ enum v2g_event states::handle_din_power_delivery(struct v2g_connection* conn) {
 
     if (req->ReadyToChargeState == (int)0) {
         /* The EV requested to stop the charging session. Mark the remaining phases as shut down, so that
-         * PowerDeliveryRes and WeldingDetectionRes report EVSE_Shutdown [IEC 61851-23:2023 CC.7.5.19]. More
+         * PowerDeliveryRes and WeldingDetectionRes report EVSE_Shutdown [IEC 61851-23:2023 CC.7.6.19]. More
          * specific status codes like EVSE_UtilityInterruptEvent or EVSE_Malfunction are preserved. */
         for (const auto phase : {PHASE_CHARGE, PHASE_WELDING}) {
             uint8_t& status_code = conn->ctx->evse_v2g_data.evse_status_code[phase];
@@ -884,6 +884,9 @@ enum v2g_event states::handle_din_power_delivery(struct v2g_connection* conn) {
         conn->ctx->p_charger->publish_current_demand_finished(nullptr);
         conn->ctx->p_charger->publish_dc_open_contactor(nullptr);
         conn->ctx->session.is_charging = false;
+        v2g_ctx_start_welding_detection(conn->ctx);
+        /* Side B is disabled before the EV learns of it [IEC 61851-23:2023 Table CC.9 t103 before t104]. */
+        v2g_ctx_wait_contactor_open(conn->ctx, V2G_CONTACTOR_OPEN_TIMEOUT_DIN);
     } else {
         conn->ctx->p_charger->publish_v2g_setup_finished(nullptr);
     }
@@ -1146,6 +1149,9 @@ enum v2g_event states::handle_din_welding_detection(struct v2g_connection* conn)
 
     /* TODO: Waiting for CP-State B [V2G-DC-556]. */
 
+    /* A voltage measured after the request [IEC 61851-23:2023 CC.6.3, Table CC.9 t105 to t106]. */
+    v2g_ctx_wait_for_welding_voltage(conn->ctx);
+
     /* Now fill the evse response message */
     res->ResponseCode = din_responseCodeType_OK; // [V2G-DC-388]
 
@@ -1178,6 +1184,8 @@ enum v2g_event states::handle_din_welding_detection(struct v2g_connection* conn)
  */
 static enum v2g_event handle_din_session_stop(struct v2g_connection* conn) {
     struct din_SessionStopResType* res = &conn->exi_out.dinEXIDocument->V2G_Message.Body.SessionStopRes;
+
+    v2g_ctx_finish_welding_detection(conn->ctx);
 
     /* Now fill the EVSE response message */
     res->ResponseCode = din_responseCodeType_OK; // [V2G-DC-388]

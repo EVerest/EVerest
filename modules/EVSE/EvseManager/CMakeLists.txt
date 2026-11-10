@@ -13,6 +13,7 @@ target_sources(${MODULE_NAME}
     PRIVATE
         Charger.cpp
         energy_transfer_modes.cpp
+        dc_setpoint.cpp
         powermeter_limits.cpp
         SessionLog.cpp
         v2gMessage.cpp
@@ -25,12 +26,14 @@ target_sources(${MODULE_NAME}
         cable_check/PowerSupplyMeasurementWaiter.cpp
         over_voltage/OverVoltageMonitor.cpp
         voltage_plausibility/VoltagePlausibilityMonitor.cpp
+        welding_detection/WeldingDetectionVoltage.cpp
 )
 
 target_link_libraries(${MODULE_NAME}
     PRIVATE
         everest::everest_api_types
         everest::helpers
+        everest::timer
         everest::util
         Pal::Sigslot
         pugixml::pugixml

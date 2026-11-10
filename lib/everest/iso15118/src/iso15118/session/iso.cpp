@@ -175,6 +175,12 @@ void PowerPath::observe(session::feedback::Signal signal) {
     case Signal::AC_OPEN_CONTACTOR:
         ac_contactor_closed = false;
         break;
+    case Signal::WELDING_DETECTION_STARTED:
+        welding_detection_running = true;
+        break;
+    case Signal::WELDING_DETECTION_FINISHED:
+        welding_detection_running = false;
+        break;
     default:
         break;
     }
@@ -194,9 +200,13 @@ std::vector<session::feedback::Signal> PowerPath::take_teardown_signals() {
         // PowerDelivery(Start) and has no close signal of its own, only DC_OPEN_CONTACTOR.
         signals.push_back(Signal::DC_OPEN_CONTACTOR);
     }
+    if (welding_detection_running) {
+        signals.push_back(Signal::WELDING_DETECTION_FINISHED);
+    }
 
     charge_loop_running = false;
     ac_contactor_closed = false;
+    welding_detection_running = false;
     return signals;
 }
 
@@ -320,6 +330,12 @@ void Session::open_power_path() {
     }
 }
 
+void Session::end_welding_detection() {
+    if (power_path.welding_detection_running) {
+        feedback.signal(session::feedback::Signal::WELDING_DETECTION_FINISHED);
+    }
+}
+
 void Session::push_control_event(const d20::ControlEvent& event) {
     control_event_queue.push(event);
 }
@@ -382,6 +398,13 @@ TimePoint const& Session::poll() {
     for (const auto timeout : timeouts.check()) {
         visit_engine([timeout](auto& e) { e.on_timeout(timeout); });
         timeouts.reset_timeout(timeout);
+        if (session_over() and not clean_session_end and not error_termination) {
+            // A timeout ended the session, an abnormal end: close without the EV-first linger and switch the CP
+            // oscillator off together with the FIN (par_SECC_CPOscillator_Shutdown_Timeout), not only with the
+            // delayed D-LINK signal.
+            error_termination = true;
+            feedback.session_stop_res_sent(session::feedback::SessionStopAction::FailedTermination);
+        }
     }
 
     // check for complete sdp packet
@@ -417,6 +440,7 @@ TimePoint const& Session::poll() {
             const bool accepted =
                 visit_engine([payload_type, &view](auto& e) { return e.on_packet(payload_type, view); });
             current_request_frame = {};
+            response_held = not visit_engine([](const auto& e) { return e.has_outgoing(); });
 
             // An ignored frame ([V2G20-800]) is no request: the timers run on as if it never arrived.
             if (accepted) {
@@ -464,9 +488,14 @@ TimePoint const& Session::poll() {
                 } else {
                     const auto took =
                         std::chrono::duration_cast<std::chrono::milliseconds>(now - last_request_rx_time.value());
-                    logf_warning("Response not ready within %d ms after the request (took %lld ms), sending "
-                                 "immediately",
-                                 RESPONSE_DELAY_AFTER_REQUEST_MS, static_cast<long long>(took.count()));
+                    if (response_held) {
+                        logf_info("Response sent %lld ms after the request, held for another module",
+                                  static_cast<long long>(took.count()));
+                    } else {
+                        logf_warning("Response not ready within %d ms after the request (took %lld ms), sending "
+                                     "immediately",
+                                     RESPONSE_DELAY_AFTER_REQUEST_MS, static_cast<long long>(took.count()));
+                    }
                     response_send_after = now;
                 }
             } else {
@@ -496,6 +525,8 @@ TimePoint const& Session::poll() {
     advance_sap_handover();
 
     if (session_over() and not finished_reported) {
+        // The welding detection phase ends with the session, not with the transport teardown below.
+        end_welding_detection();
         if (error_termination or visit_engine([](const auto& e) { return e.is_finished_with_error(); })) {
             // FIN out now ([V2G-DC-940]) but hold the D-LINK signal for DLINK_SIGNAL_GRACE_MS.
             connection->close(); // idempotent
