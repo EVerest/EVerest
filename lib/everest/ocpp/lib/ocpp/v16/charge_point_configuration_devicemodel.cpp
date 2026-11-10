@@ -47,6 +47,8 @@ constexpr const std::string_view pnc_feature{"PnC"};
 
 // Matches the shipped OCPPCommCtrlr.NetworkProfileConnectionAttempts component-config default.
 constexpr std::int32_t default_network_profile_connection_attempts{3};
+// OCPP 1.6 KeyValue.value is a CiString500Type
+constexpr std::size_t max_configuration_value_length{500};
 
 constexpr v16::ConfigurationStatus convert(SetResult res) {
     switch (res) {
@@ -1480,12 +1482,11 @@ void ChargePointConfigurationDeviceModel::appendDefaultPriceTextKeyValues(std::v
 
 void ChargePointConfigurationDeviceModel::appendMeterPublicKeyKeyValues(std::vector<KeyValue>& all,
                                                                         const std::string& meter_public_keys) const {
-    if (meter_public_keys.empty()) {
-        return;
-    }
-
     const auto keys_list = utils::split_string(',', meter_public_keys);
     for (std::size_t idx = 0; idx < keys_list.size(); ++idx) {
+        if (keys_list.at(idx).empty()) {
+            continue;
+        }
         KeyValue kv;
         kv.key = meterPublicKeyString(static_cast<std::uint32_t>(idx + 1));
         kv.value = keys_list.at(idx);
@@ -2164,28 +2165,24 @@ std::optional<std::int32_t> ChargePointConfigurationDeviceModel::getSwitchSecuri
 }
 
 std::optional<KeyValue> ChargePointConfigurationDeviceModel::getPublicKeyKeyValue(const std::uint32_t connector_id) {
-    std::optional<KeyValue> result;
-    const auto max = getNumberOfConnectors();
-    if ((connector_id > max) || (connector_id < 1)) {
+    if (connector_id < 1 || connector_id > static_cast<std::uint32_t>(getNumberOfConnectors())) {
         EVLOG_warning << "Cannot get MeterPublicKey for connector " << connector_id
                       << ", because the connector id does not exist.";
-    } else {
-        // MeterPublicKeys are migrated and stored as a single CSL value.
-        const auto meter_public_keys = get_optional<std::string>(*storage, resolver, keys::valid_keys::MeterPublicKeys);
-        if (meter_public_keys.has_value() && !meter_public_keys->empty()) {
-            const auto keys_list = utils::split_string(',', meter_public_keys.value());
-            const std::size_t index = static_cast<std::size_t>(connector_id - 1);
-
-            if (index < keys_list.size()) {
-                KeyValue kv;
-                kv.key = meterPublicKeyString(connector_id);
-                kv.readonly = true;
-                kv.value = keys_list.at(index);
-                result = std::move(kv);
-            }
-        }
+        return std::nullopt;
     }
-    return result;
+
+    const auto meter_public_keys = get_optional<std::string>(*storage, resolver, keys::valid_keys::MeterPublicKeys);
+    const auto keys_list = utils::split_string(',', meter_public_keys.value_or(""));
+    const auto index = static_cast<std::size_t>(connector_id - 1);
+    if (index >= keys_list.size() || keys_list.at(index).empty()) {
+        return std::nullopt;
+    }
+
+    KeyValue kv;
+    kv.key = meterPublicKeyString(connector_id);
+    kv.readonly = true;
+    kv.value = keys_list.at(index);
+    return kv;
 }
 
 KeyValue ChargePointConfigurationDeviceModel::getAuthorizeConnectorZeroOnConnectorOneKeyValue() {
@@ -2428,7 +2425,7 @@ std::optional<std::vector<KeyValue>> ChargePointConfigurationDeviceModel::getAll
 
     const auto max = getNumberOfConnectors();
 
-    for (std::uint32_t i = 0; i <= max; i++) {
+    for (std::uint32_t i = 1; i <= max; i++) {
         auto res = getPublicKeyKeyValue(i);
         if (res) {
             list.push_back(std::move(res.value()));
@@ -2513,16 +2510,38 @@ bool ChargePointConfigurationDeviceModel::setIgnoredProfilePurposesOffline(
 
 bool ChargePointConfigurationDeviceModel::setMeterPublicKey(const std::int32_t connector_id,
                                                             const std::string& public_key_pem) {
-    bool result{false};
-    if (connector_id > getNumberOfConnectors() || connector_id < 1) {
+    const auto number_of_connectors = getNumberOfConnectors();
+    if (connector_id > number_of_connectors || connector_id < 1) {
         EVLOG_warning << "Cannot set MeterPublicKey for connector " << connector_id
                       << ", because the connector id does not exist.";
-    } else {
-        const auto key = meterPublicKeyString(connector_id);
-        const auto res = set_value(*storage, "Internal", key, public_key_pem);
-        result = res == SetResult::Accepted;
+        return false;
     }
-    return result;
+    if (public_key_pem.find(',') != std::string::npos) {
+        EVLOG_warning << "Cannot set MeterPublicKey for connector " << connector_id
+                      << ", because the key contains a comma.";
+        return false;
+    }
+    if (public_key_pem.size() > max_configuration_value_length) {
+        EVLOG_warning << "Cannot set MeterPublicKey for connector " << connector_id << ", because the key exceeds "
+                      << max_configuration_value_length << " characters.";
+        return false;
+    }
+
+    // one list element per connector, an empty element for a connector without a key
+    const auto stored = get_optional<std::string>(*storage, resolver, keys::valid_keys::MeterPublicKeys);
+    auto keys_list = utils::split_string(',', stored.value_or(""));
+    if (keys_list.size() < static_cast<std::size_t>(number_of_connectors)) {
+        keys_list.resize(static_cast<std::size_t>(number_of_connectors));
+    }
+    keys_list.at(static_cast<std::size_t>(connector_id - 1)) = public_key_pem;
+
+    const auto res = set_value(*storage, resolver, keys::valid_keys::MeterPublicKeys, utils::to_csl(keys_list));
+    if (res != SetResult::Accepted) {
+        EVLOG_warning << "Cannot set MeterPublicKey for connector " << connector_id
+                      << ", because the device model did not accept the value: " << res;
+        return false;
+    }
+    return true;
 }
 
 void ChargePointConfigurationDeviceModel::setOcspRequestInterval(const std::int32_t ocsp_request_interval) {

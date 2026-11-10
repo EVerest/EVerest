@@ -413,8 +413,9 @@ What to keep in mind
   and, generated from the code, in the installed
   ``share/everest/modules/OCPP/default_ocpp-16_mappings.yaml``.
 * Some OCPP 1.6 values are represented differently in the device model than in
-  the JSON configuration. For example, ``MeterPublicKeys`` is expanded into
-  individual ``MeterPublicKey[N]`` variables, and
+  the JSON configuration. For example, the ``MeterPublicKeys`` array is stored
+  as one comma-separated ``OCPP16LegacyCtrlr`` ``MeterPublicKeys`` value, which
+  ``GetConfiguration`` reports as one ``MeterPublicKey<N>`` key per connector, and
   ``ChargingScheduleAllowedChargingRateUnit`` values ``Current``/``Power`` are
   converted to ``A``/``W``.
 * The ``OCPP16LegacyCtrlr`` component configuration is always required, for
