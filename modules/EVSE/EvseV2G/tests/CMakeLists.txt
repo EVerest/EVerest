@@ -260,3 +260,44 @@ add_test(${ISO_SERVER_NAME} ${ISO_SERVER_NAME})
 # a regression results in a hang instead of a fail, so cap this here
 set_tests_properties(${ISO_SERVER_NAME} PROPERTIES TIMEOUT 60)
 ev_register_test_target(${ISO_SERVER_NAME})
+
+set(V2G_SIGNAL_NAME v2g_signal_test)
+add_executable(${V2G_SIGNAL_NAME})
+
+target_include_directories(${V2G_SIGNAL_NAME} PRIVATE
+    .. ../connection ${TESTS_INCLUDE_DIR}
+    ${GENERATED_INCLUDE_DIR}
+    ${CMAKE_BINARY_DIR}/generated/modules/${MODULE_NAME}
+    ${CMAKE_BINARY_DIR}/generated/include
+)
+add_dependencies(${V2G_SIGNAL_NAME} generate_cpp_files)
+
+target_compile_definitions(${V2G_SIGNAL_NAME} PRIVATE
+    -DUNIT_TEST
+)
+
+target_sources(${V2G_SIGNAL_NAME} PRIVATE
+    signal_test.cpp
+    ../connection/connection.cpp
+    ../connection/tls_connection.cpp
+    ../tools.cpp
+    ../v2g_ctx.cpp
+    log.cpp
+    requirement.cpp
+)
+
+target_link_libraries(${V2G_SIGNAL_NAME} PRIVATE
+    GTest::gtest_main
+    everest::cbv2g::din
+    everest::cbv2g::iso2
+    everest::cbv2g::tp
+    everest::log
+    everest::framework
+    everest::evse_security
+    everest::tls
+    everest::everest_api_types
+    -levent -lpthread -levent_pthreads
+)
+
+add_test(${V2G_SIGNAL_NAME} ${V2G_SIGNAL_NAME})
+ev_register_test_target(${V2G_SIGNAL_NAME})

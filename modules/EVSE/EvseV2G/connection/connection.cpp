@@ -12,6 +12,7 @@
 #include <generated/types/evse_manager.hpp>
 
 #include <arpa/inet.h>
+#include <csignal>
 #include <cstring>
 #include <ctype.h>
 #include <dirent.h>
@@ -186,6 +187,9 @@ int connection_init(struct v2g_context* v2g_ctx) {
 }
 
 int connection_init(struct v2g_context* v2g_ctx, std::string* failure_detail) {
+    // OpenSSL writes to its socket without MSG_NOSIGNAL; a peer reset must not kill the module.
+    std::signal(SIGPIPE, SIG_IGN);
+
     set_failure_detail(failure_detail, "Failed to initialize connection");
 
     if (check_interface(v2g_ctx, failure_detail) == -1) {
