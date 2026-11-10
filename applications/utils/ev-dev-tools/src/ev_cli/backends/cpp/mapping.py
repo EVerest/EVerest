@@ -83,9 +83,6 @@ class Spelling:
     text: str
     is_enum: bool = False
     is_vector: bool = False
-    #: Whether a vector's elements are enums, which need converting one by one
-    #: on their way to and from JSON.
-    element_is_enum: bool = False
     #: Whether this is one of the framework's raw-JSON aliases rather than a
     #: type generated from a definition.
     is_opaque: bool = False
@@ -148,11 +145,7 @@ class CppMapping:
         if self._flavour is Flavour.PAYLOAD and not isinstance(expr.items, Ref):
             return Spelling(PAYLOAD_SCALARS[JsonType.ARRAY], is_opaque=True)
 
-        return Spelling(
-            f'std::vector<{inner.text}>',
-            is_vector=True,
-            element_is_enum=inner.is_enum,
-        )
+        return Spelling(f'std::vector<{inner.text}>', is_vector=True)
 
     def _scalar(self, json_type: JsonType) -> str:
         try:

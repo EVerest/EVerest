@@ -51,11 +51,11 @@ public:
 {% else %}
     // publish functions for variables
 {% for var in u.vars %}
-{% set kind = u.kind(var.type).value %}
+{% set kind = u.kind(var.type) %}
     void publish_{{ var.name }}(const {{ u.spell(var.type) }}& value) {
-{% if kind == 'enum' %}
+{% if kind == PayloadKind.ENUM %}
         _ev->publish(_name, "{{ var.name }}", {{ u.to_string_view(var.type) }}(value));
-{% elif kind == 'array' and u.element_is_enum(var.type) %}
+{% elif kind == PayloadKind.ENUM_ARRAY %}
         std::vector<std::string> string_array;
         string_array.reserve(value.size());
         for (const auto& entry : value) {
@@ -136,20 +136,20 @@ private:
             (void) args; // no arguments used for this callback
 {% endif %}
 {% for argument in cmd.arguments %}
-{% set kind = u.kind(argument.type).value %}
-{% if kind == 'object' %}
+{% set kind = u.kind(argument.type) %}
+{% if kind == PayloadKind.OBJECT %}
             auto {{ argument.name }} = args.at("{{ argument.name }}").get<{{ u.spell(argument.type) }}>();
-{% elif kind == 'enum' %}
+{% elif kind == PayloadKind.ENUM %}
             auto {{ argument.name }} = {{ u.from_string(argument.type) }}(args.at("{{ argument.name }}").get<std::string>());
-{% elif kind == 'array' and u.element_is_enum(argument.type) %}
+{% elif kind == PayloadKind.ENUM_ARRAY %}
             json {{ argument.name }}_json_array = args.at("{{ argument.name }}");
             std::vector<{{ u.element(argument.type) }}> {{ argument.name }};
             for (auto entry : {{ argument.name }}_json_array) {
                 {{ argument.name }}.push_back({{ u.element_from_string(argument.type) }}(entry));
             }
-{% elif kind == 'array' %}
+{% elif kind == PayloadKind.ARRAY %}
             auto {{ argument.name }} = args.at("{{ argument.name }}").get<{{ u.spell(argument.type) }}>();
-{% elif kind == 'variant' %}
+{% elif kind == PayloadKind.VARIANT %}
             auto {{ argument.name }} = Everest::json_to_variant<{{ u.variant_alternatives(argument.type) }}>(args.at("{{ argument.name }}"));
 {% else %}
             auto {{ argument.name }} = static_cast<{{ u.raw_spell(argument.type) }}>(args.at("{{ argument.name }}"));
@@ -159,9 +159,9 @@ private:
             {{ 'auto result = ' if cmd.result }}this->handle_{{ cmd.name }}({% for argument in cmd.arguments %}{{ argument.name }}{{ ', ' if not loop.last }}{% endfor %});
 {% if cmd.result is none %}
             return nullptr;
-{% elif u.kind(cmd.result).value == 'enum' %}
+{% elif u.kind(cmd.result) == PayloadKind.ENUM %}
             return {{ u.to_string(cmd.result) }}(result);
-{% elif u.kind(cmd.result).value == 'variant' %}
+{% elif u.kind(cmd.result) == PayloadKind.VARIANT %}
             return Everest::variant_to_json(result);
 {% else %}
             return result;

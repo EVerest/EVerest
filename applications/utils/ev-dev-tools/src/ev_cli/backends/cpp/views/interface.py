@@ -19,8 +19,8 @@ from .common import MISSING_DESCRIPTION, TEMPLATE_VERSION
 class PayloadKind(Enum):
     """How a payload has to be converted on its way to and from JSON.
 
-    The generated interface headers branch on exactly these six cases, so they
-    are named once here rather than rediscovered by a chain of template
+    The generated interface headers branch on exactly these cases, so they are
+    named once here rather than rediscovered by a chain of template
     conditionals.
     """
 
@@ -28,9 +28,10 @@ class PayloadKind(Enum):
     OBJECT = 'object'
     #: A reference to a declared enum: converted through the string helpers.
     ENUM = 'enum'
-    #: A vector of referenced types, converted element by element when those
-    #: elements are enums.
+    #: A vector of referenced structs: handed to nlohmann as it is.
     ARRAY = 'array'
+    #: A vector of referenced enums: converted element by element.
+    ENUM_ARRAY = 'enum-array'
     #: Several possible json types.
     VARIANT = 'variant'
     #: No payload at all; the publish and subscribe signatures lose their
@@ -111,9 +112,11 @@ class InterfaceView:
         if isinstance(payload, Array):
             # Only an array of referenced types becomes a typed vector; an
             # array of scalars travels as raw JSON and so needs no conversion.
+            if not isinstance(payload.items, Ref):
+                return PayloadKind.PLAIN
             return (
-                PayloadKind.ARRAY if isinstance(payload.items, Ref)
-                else PayloadKind.PLAIN
+                PayloadKind.ENUM_ARRAY if is_enum(self.model.resolve_type(payload.items.target))
+                else PayloadKind.ARRAY
             )
         return PayloadKind.PLAIN
 
@@ -141,9 +144,6 @@ class InterfaceView:
         """The element type of a typed vector payload."""
         assert isinstance(payload, Array)
         return self._mapping.spell(payload.items).text
-
-    def element_is_enum(self, payload: TypeExpr) -> bool:
-        return self._mapping.spell(payload).element_is_enum
 
     def result_type(self, cmd: CmdDef) -> str:
         """``void`` only when the interface declares no result at all.

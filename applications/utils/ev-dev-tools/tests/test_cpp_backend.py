@@ -268,12 +268,6 @@ class TestTypeMapping:
             Array(Ref(TypeRef('sample', 'Mood')))
         ).text == 'std::vector<types::sample::Mood>'
 
-    def test_array_of_enums_is_flagged(self, payload_mapping):
-        spelling = payload_mapping.spell(Array(Ref(TypeRef('sample', 'Mood'))))
-        assert spelling.element_is_enum
-        assert not payload_mapping.spell(
-            Array(Ref(TypeRef('units', 'Power')))).element_is_enum
-
     def test_opaque_payloads(self, payload_mapping):
         assert payload_mapping.spell(Opaque(JsonType.OBJECT)).text == 'Object'
         assert payload_mapping.spell(Opaque(JsonType.ARRAY)).text == 'Array'
@@ -308,11 +302,19 @@ class TestPayloadKinds:
     @pytest.mark.parametrize('var_name, kind', [
         ('latest', PayloadKind.OBJECT),
         ('nothing_happened', PayloadKind.NULL),
-        ('moods_seen', PayloadKind.ARRAY),
+        ('moods_seen', PayloadKind.ENUM_ARRAY),
         ('count', PayloadKind.PLAIN),
     ])
     def test_variables(self, view, var_name, kind):
         assert view.kind(view.interface.var(var_name).type) is kind
+
+    @pytest.mark.parametrize('payload, kind', [
+        (Array(Ref(TypeRef('sample', 'Mood'))), PayloadKind.ENUM_ARRAY),
+        (Array(Ref(TypeRef('units', 'Power'))), PayloadKind.ARRAY),
+        (Array(Primitive(JsonType.STRING)), PayloadKind.PLAIN),
+    ])
+    def test_arrays(self, view, payload, kind):
+        assert view.kind(payload) is kind
 
     def test_an_enum_argument(self, view):
         configure = view.interface.cmd('configure')

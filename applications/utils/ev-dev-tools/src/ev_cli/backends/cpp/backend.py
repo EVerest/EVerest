@@ -21,6 +21,7 @@ from ..base import FileCategory, GeneratedFile, OutputKind, UpdatePolicy
 from . import naming
 from .naming import InterfaceHeaderFile
 from .views import (
+    PayloadKind,
     ImplementationView,
     InterfaceView,
     ModuleView,
@@ -86,6 +87,7 @@ class CppBackend:
             undefined=jinja2.StrictUndefined,
         )
         self._env.filters['snake_case'] = naming.snake_case
+        self._env.globals['PayloadKind'] = PayloadKind
 
     # -- post-processing ----------------------------------------------------
 
