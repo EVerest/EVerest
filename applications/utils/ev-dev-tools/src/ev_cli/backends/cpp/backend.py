@@ -4,7 +4,7 @@
 
 Everything that knows C++ lives under this package: the type mapping, the
 naming conventions and the templates.  The templates render from the IR
-directly, through the view in :mod:`.view`.
+directly, through the views in :mod:`.views`.
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ from ...ir.model import Model
 from ..base import FileCategory, GeneratedFile, OutputKind, UpdatePolicy
 from . import naming
 from .naming import InterfaceHeaderFile
-from .view import (
+from .views import (
     ImplementationView,
     InterfaceView,
     ModuleView,

@@ -20,7 +20,7 @@ from ev_cli.backends.cpp import naming
 from ev_cli.backends.cpp.backend import CppBackend
 from ev_cli.backends.cpp.mapping import CppMapping, Flavour
 from ev_cli.backends.cpp.order import order_fields, order_structs
-from ev_cli.backends.cpp.view import InterfaceView, PayloadKind, TypeUnitView
+from ev_cli.backends.cpp.views import InterfaceView, PayloadKind, TypeUnitView
 from ev_cli.errors import UnsupportedDefinition
 from ev_cli.ir.model import Model
 from ev_cli.ir.types import Array, Field, JsonType, LocalEnum, Opaque, Primitive, Ref, StructDef, TypeUnit, Variant
