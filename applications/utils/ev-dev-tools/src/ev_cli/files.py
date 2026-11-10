@@ -16,7 +16,6 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from enum import Enum
-from pathlib import Path
 
 from .backends.base import GeneratedFile
 from .errors import EvCliError
@@ -31,8 +30,6 @@ class Strategy(Enum):
     FORCE_UPDATE = 'force-update'
     #: Only ever create; never touch a file that exists.  This is what
     #: protects the ``.cpp`` files a human owns.
-    UPDATE_IF_MISSING = 'update-if-non-existent'
-    #: As above, with the message ``module create`` prints.
     CREATE = 'create'
     #: Replace it, even though creating was what was asked for.
     FORCE_CREATE = 'force-create'
@@ -65,15 +62,15 @@ class FileWriter:
         *,
         reason: str = '',
         preserve_license_header: bool = False,
-    ) -> bool:
-        """Write ``file`` if ``strategy`` allows it.  Returns whether it did."""
+    ) -> None:
+        """Write ``file`` if ``strategy`` allows it."""
         if self.diff_only:
             self._show_diff(file)
-            return False
+            return
 
         method = self._method(file, strategy)
         if method is None:
-            return False
+            return
 
         print(f'{method} file {file.printable_name}{reason}', file=self.stream)
 
@@ -82,18 +79,15 @@ class FileWriter:
         if preserve_license_header:
             content = self._keep_existing_license_header(file, content)
         file.path.write_text(content)
-        return True
 
-    def write_checking_templates(
-        self, file: GeneratedFile, strategy: Strategy
-    ) -> bool:
+    def write_checking_templates(self, file: GeneratedFile, strategy: Strategy) -> None:
         """As :meth:`write`, but a newer template forces the write.
 
         Without this a template change would leave every already-generated file
         in place, because the definitions it was built from had not changed.
         """
         newer, reason = self._template_is_newer(file)
-        return self.write(file, Strategy.FORCE_UPDATE if newer else strategy, reason=reason)
+        self.write(file, Strategy.FORCE_UPDATE if newer else strategy, reason=reason)
 
     # -- strategy -----------------------------------------------------------
 
@@ -112,16 +106,13 @@ class FileWriter:
         if strategy is Strategy.FORCE_CREATE:
             return 'Overwriting' if exists else 'Creating'
 
-        if strategy in (Strategy.CREATE, Strategy.UPDATE_IF_MISSING):
-            if exists:
-                print(
-                    f'Skipping {file.printable_name} (use create --force to recreate)',
-                    file=self.stream,
-                )
-                return None
-            return 'Creating'
-
-        raise EvCliError(f'unknown write strategy {strategy!r}')
+        if exists:
+            print(
+                f'Skipping {file.printable_name} (use create --force to recreate)',
+                file=self.stream,
+            )
+            return None
+        return 'Creating'
 
     @staticmethod
     def _template_is_newer(file: GeneratedFile) -> tuple[bool, str]:
@@ -184,35 +175,3 @@ class FileWriter:
         )
         if completed.stdout:
             print(completed.stdout, file=self.stream)
-
-
-def clang_format(config_dir: Path, file: GeneratedFile) -> None:
-    """Format C++ in place, using the ``.clang-format`` in ``config_dir``."""
-    if file.path.suffix not in ('.hpp', '.cpp'):
-        return
-
-    executable = shutil.which('clang-format')
-    if executable is None:
-        raise EvCliError(
-            'could not find clang-format; pass --disable-clang-format to skip '
-            'formatting generated sources'
-        )
-
-    config_dir = Path(config_dir)
-    if not config_dir.is_dir():
-        raise EvCliError(f'clang-format directory {config_dir} does not exist')
-    if not (config_dir / '.clang-format').exists():
-        raise EvCliError(
-            f'clang-format directory {config_dir} contains no .clang-format file'
-        )
-
-    completed = subprocess.run(
-        [executable, '--style=file'],
-        input=file.content,
-        capture_output=True,
-        cwd=config_dir,
-        encoding='utf-8',
-    )
-    if completed.returncode != 0:
-        raise EvCliError(f'clang-format failed:\n{completed.stderr}')
-    file.content = completed.stdout

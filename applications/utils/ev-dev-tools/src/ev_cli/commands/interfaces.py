@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 from ..backends.base import OutputKind, registry
-from .context import Context
+from .context import Context, print_templates, write_generated
 
 
 def generate_headers(args) -> int:
@@ -16,20 +16,11 @@ def generate_headers(args) -> int:
 
     requested = context.requested_interfaces(args.interfaces)
     model = context.interface_model(requested)
-
-    writer = context.writer(diff_only=args.diff)
-    strategy = context.strategy(args.force)
-
     for interface in requested:
         files = backend.emit_interface(model, interface, output_dir)
-        backend.postprocess(files)
-        for generated in files:
-            writer.write_checking_templates(generated, strategy)
-
+        write_generated(backend, files, force=args.force, diff_only=args.diff)
     return 0
 
 
 def get_templates(args) -> int:
-    backend = registry.create(args.backend, args)
-    print(args.separator.join(str(path) for path in backend.templates(OutputKind.INTERFACE)))
-    return 0
+    return print_templates(args, OutputKind.INTERFACE)

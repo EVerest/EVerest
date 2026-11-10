@@ -11,6 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from ..backends.base import Backend, GeneratedFile, OutputKind, registry
 from ..errors import DefinitionNotFound, EvCliError
 from ..files import FileWriter, Strategy
 from ..ir import build
@@ -104,13 +105,6 @@ class Context:
             raise EvCliError(f'the {backend} backend has no default output directory; pass --output-dir')
         return self.work_dir / default
 
-    def writer(self, *, diff_only: bool = False) -> FileWriter:
-        return FileWriter(diff_only=diff_only)
-
-    @staticmethod
-    def strategy(force: bool) -> Strategy:
-        return Strategy.FORCE_UPDATE if force else Strategy.UPDATE
-
     # -- resolving what was asked for on the command line --------------------
 
     def requested_units(self, values) -> list[str]:
@@ -160,3 +154,24 @@ def resolve_schemas_dir(schemas_dir: Path) -> Path:
             f'everest-framework.'
         )
     return schemas_dir.resolve()
+
+
+def write_generated(
+    backend: Backend, files: list[GeneratedFile], *, force: bool, diff_only: bool = False
+) -> None:
+    """Post-process what a generating command emitted and write it.
+
+    A template newer than its output forces the write, as ``--force`` does.
+    """
+    backend.postprocess(files)
+    writer = FileWriter(diff_only=diff_only)
+    strategy = Strategy.FORCE_UPDATE if force else Strategy.UPDATE
+    for generated in files:
+        writer.write_checking_templates(generated, strategy)
+
+
+def print_templates(args, kind: OutputKind) -> int:
+    """``get-templates``: the templates an output kind is rendered from."""
+    backend = registry.create(args.backend, args)
+    print(args.separator.join(str(path) for path in backend.templates(kind)))
+    return 0

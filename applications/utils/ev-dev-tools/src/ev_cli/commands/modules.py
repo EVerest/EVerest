@@ -5,7 +5,8 @@
 from __future__ import annotations
 
 from ..backends.base import OutputKind, registry
-from .context import Context
+from .context import Context, print_templates, write_generated
+from .module_files import write_module_files
 
 
 def generate_loader(args) -> int:
@@ -15,28 +16,18 @@ def generate_loader(args) -> int:
         args.output_dir, default=backend.loader_output_dir, backend=backend.name)
 
     model = context.module_model([args.module])
-    writer = context.writer()
-    strategy = context.strategy(args.force)
-
     files = backend.emit_module_loader(model, args.module, output_dir)
-    backend.postprocess(files)
-    for generated in files:
-        writer.write_checking_templates(generated, strategy)
-
+    write_generated(backend, files, force=args.force)
     return 0
 
 
 def get_templates(args) -> int:
-    backend = registry.create(args.backend, args)
-    print(args.separator.join(str(path) for path in backend.templates(OutputKind.MODULE_LOADER)))
-    return 0
+    return print_templates(args, OutputKind.MODULE_LOADER)
 
 
 def create(args) -> int:
-    from .module_files import write_module_files
     return write_module_files(args, updating=False)
 
 
 def update(args) -> int:
-    from .module_files import write_module_files
     return write_module_files(args, updating=True)

@@ -14,7 +14,7 @@ from __future__ import annotations
 from .. import blocks, license_headers
 from ..backends.base import FileCategory, UpdatePolicy, registry
 from ..errors import EvCliError
-from ..files import Strategy
+from ..files import FileWriter, Strategy
 from ..schema.loader import MODULES_DIR
 from .context import Context
 
@@ -44,14 +44,14 @@ def write_module_files(args, *, updating: bool) -> int:
     try:
         generated = _filter(generated, args.only)
     except EvCliError as err:
-        # Historically a bad filter is reported without failing, so that
-        # "--only <typo>" does not look like a generator error.
+        # A bad filter is reported without failing, so that "--only <typo>"
+        # does not look like a generator error.
         print(f'ev-cli: {err}')
         return 0
 
     backend.postprocess(generated)
 
-    writer = context.writer(diff_only=args.diff)
+    writer = FileWriter(diff_only=args.diff)
     if updating:
         _update(generated, writer, force=args.force)
     else:
@@ -124,6 +124,6 @@ def _update(generated, writer, *, force: bool) -> None:
             continue
         strategy = (
             primary if file.update_policy is UpdatePolicy.REGENERATE
-            else Strategy.UPDATE_IF_MISSING
+            else Strategy.CREATE
         )
         writer.write(file, strategy, preserve_license_header=True)
