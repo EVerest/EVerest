@@ -646,8 +646,9 @@ void systemImpl::handle_reset(types::system::ResetType& type, bool& scheduled) {
     std::thread([this, type, scheduled] {
         EVLOG_info << "Reset request received: " << type << ", " << (scheduled ? "" : "not ") << "scheduled";
         if (!this->mod->r_store.empty() and !this->mod->r_store.at(0)->call_exists(boot_reason_key)) {
-            this->mod->r_store.at(0)->call_store(boot_reason_key,
-                                                 boot_reason_to_string(types::system::BootReason::RemoteReset));
+            const auto reason =
+                scheduled ? types::system::BootReason::ScheduledReset : types::system::BootReason::RemoteReset;
+            this->mod->r_store.at(0)->call_store(boot_reason_key, boot_reason_to_string(reason));
         }
 
         std::this_thread::sleep_for(std::chrono::seconds(this->mod->config.ResetDelay));
