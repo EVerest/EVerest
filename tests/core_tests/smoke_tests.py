@@ -117,6 +117,20 @@ class DcSupplyZeroMinCurrentAdjustmentStrategy(EverestConfigAdjustmentStrategy):
         return adjusted_config
 
 
+class TokenValidationDelayAdjustmentStrategy(EverestConfigAdjustmentStrategy):
+    """
+    Adjustment strategy to delay the token validation, keeping the session in WaitingForAuthentication
+    """
+
+    def __init__(self, delay_s: float):
+        self.delay_s = delay_s
+
+    def adjust_everest_configuration(self, everest_config: Dict):
+        adjusted_config = deepcopy(everest_config)
+        adjusted_config["active_modules"]["token_validator"]["config_implementation"]["main"]["sleep"] = self.delay_s
+        return adjusted_config
+
+
 class D20TlsConfigAdjustmentStrategy(EverestConfigAdjustmentStrategy):
     """Force a specific TLS version on the direct-d20 SIL config so the
     Evse15118D20 ConnectionSSL adapter performs the handshake end to end.
@@ -1009,6 +1023,41 @@ async def test_iso15118_dc_session_error_before_session(
     assert (
         session_event_mock.call_count == 0
     ), "No session events should occur while error is active"
+
+
+@pytest.mark.asyncio
+@pytest.mark.xdist_group(name="ISO15118")
+@pytest.mark.probe_module(
+    connections={"evse_manager": [Requirement("evse_manager", "evse")]}
+)
+@pytest.mark.everest_core_config("config-sil-dc-isomux.yaml")
+@pytest.mark.everest_config_adaptions(DcConfigAdjustmentStrategy(), TokenValidationDelayAdjustmentStrategy(20))
+async def test_iso15118_dc_session_error_while_waiting_for_authorization(
+    test_controller: TestController, everest_core: EverestCore
+):
+    """
+    An error raised and cleared while the session waits for authorization does not end the session:
+    once the error is gone and the token is validated, the transaction starts without a replug.
+    """
+    _, session_event_mock, _, _ = await setup_session_mocks(test_controller, everest_core)
+    events = []
+    session_event_mock.side_effect = lambda event: events.append(event.get("event"))
+
+    test_controller.plug_in_dc_iso()
+    await wait_for_session_events(session_event_mock, ["SessionStarted", "AuthRequired"])
+
+    await asyncio.sleep(3)
+    test_controller.raise_error("MREC2GroundFailure")
+    await asyncio.sleep(3)
+    test_controller.clear_error("MREC2GroundFailure")
+
+    await wait_for_session_events(
+        session_event_mock, ["Authorized", "TransactionStarted", "PrepareCharging"], timeout=40
+    )
+    assert "Deauthorized" not in events, f"Session was deauthorized: {events}"
+    assert "SessionFinished" not in events, f"Session ended before unplug: {events}"
+
+    await end_session(test_controller, session_event_mock)
 
 
 @pytest.mark.asyncio

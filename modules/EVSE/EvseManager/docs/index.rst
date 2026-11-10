@@ -255,7 +255,8 @@ Charging State Machine
        Finished --> Idle : EV unplugged
 
        %% Early exit / Errors
-       WaitingForAuthentication --> Finished : Fatal error, stop requested, or EV unplugged
+       WaitingForAuthentication --> Finished : Stop requested or EV unplugged
+       WaitingForAuthentication --> WaitingForAuthentication : Fatal error held in X1, restart via E/F once cleared
        PrepareCharging --> StoppingCharging : Fatal error, deauth, or EV unplugged
 
        %% Pauses
@@ -277,8 +278,12 @@ State Transitions
 
 * ``Idle`` -> ``WaitingForAuthentication``: EV plugged in.
 * ``WaitingForAuthentication`` -> ``PrepareCharging``: Authorized by EIM or PnC.
-* ``WaitingForAuthentication`` -> ``Finished``: Fatal error, stop requested (e.g. via
+* ``WaitingForAuthentication`` -> ``Finished``: Stop requested (e.g. via
   ``request_stop_transaction`` or ``disable``), or EV unplugged.
+* ``WaitingForAuthentication`` with a fatal error: the session is held in X1 without a data
+  link. Once the error clears, ``T_step_EF`` (X1 -> E/F -> X1, [V2G3-M07-04]) wakes the EV up
+  and ``WaitingForAuthentication`` starts over, so no replug is needed. Errors that only clear
+  on unplug keep the session in the hold until the EV is unplugged.
 * ``PrepareCharging`` -> ``Charging``: Contactor close allowed.
 * ``Charging`` -> ``StoppingCharging``: Triggered by any **Stop Condition** (see below).
 * ``StoppingCharging`` -> ``Finished``: No transaction, EV unplugged, or not authorized.

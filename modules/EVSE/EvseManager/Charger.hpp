@@ -552,6 +552,8 @@ private:
         bool ac_x1_fallback_nominal_timeout_running{false};
         std::chrono::time_point<std::chrono::steady_clock> ac_x1_fallback_nominal_timeout_started;
         bool auth_received_printed{false};
+        // A fatal error stopped the session setup in WaitingForAuthentication; matching restarts once it clears.
+        bool auth_hold_on_error{false};
 
         bool hlc_charge_loop_no_energy_timeout_running{false};
         std::chrono::time_point<std::chrono::steady_clock> iso_charge_loop_no_energy_timeout_started;
