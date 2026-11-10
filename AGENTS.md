@@ -197,7 +197,8 @@ module's manifest to a `module_id` plus that module's `implementation_id`.
 
 `ev-cli` turns `manifest.yaml`, `interfaces/*.yaml` and `types/*.yaml` into C++
 scaffolding. It lives in-tree at `applications/utils/ev-dev-tools/`, installs into the
-build venv, and templates are under `src/ev_cli/templates/`.
+build venv, and the C++ templates are under `src/ev_cli/backends/cpp/templates/`, one
+directory per output kind.
 
 A file is ev-cli-managed if it carries `// ev@<uuid>:v1` markers. Content between paired
 markers is yours; everything else is regenerated. This includes files that look

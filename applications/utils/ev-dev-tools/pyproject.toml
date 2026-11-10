@@ -39,7 +39,7 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 "ev_cli" = ["licenses/**/*"]
-"ev_cli.backends.cpp" = ["templates/*.j2"]
+"ev_cli.backends.cpp" = ["templates/**/*.j2"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
