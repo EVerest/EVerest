@@ -6,12 +6,14 @@ from __future__ import annotations
 
 import pytest
 
+from ev_cli.errors import UnsupportedDefinition
 from ev_cli.ir.common import Constraints
 from ev_cli.ir.modules import Mutability
 from ev_cli.ir.types import (
     SCALAR_TYPES,
     Array,
     JsonType,
+    LocalStruct,
     Opaque,
     Primitive,
     Ref,
@@ -117,6 +119,56 @@ class TestFixtureTypes:
     def test_a_reference_resolves_to_its_declaration(self, fixture_model):
         assert is_enum(fixture_model.resolve_type(TypeRef('sample', 'Mood')))
         assert not is_enum(fixture_model.resolve_type(TypeRef('units', 'Power')))
+
+
+class TestInlineObjects:
+    """An object written inline becomes a struct named after its property."""
+
+    @staticmethod
+    def build(tmp_path, types_yaml):
+        from conftest import make_loader
+        from ev_cli.ir.build import build_type_unit
+
+        (tmp_path / 'types').mkdir()
+        (tmp_path / 'types' / 'inline.yaml').write_text(
+            'description: Inline objects\ntypes:\n' + types_yaml
+        )
+        return build_type_unit(make_loader(tmp_path), 'inline')
+
+    @staticmethod
+    def holder(name, member, member_type='string'):
+        return (
+            f'  {name}:\n'
+            f'    description: {name}\n'
+            f'    type: object\n'
+            f'    properties:\n'
+            f'      detail:\n'
+            f'        description: The detail\n'
+            f'        type: object\n'
+            f'        properties:\n'
+            f'          {member}: {{description: m, type: {member_type}}}\n'
+        )
+
+    def test_the_same_shape_is_declared_once(self, tmp_path):
+        unit = self.build(tmp_path, self.holder('First', 'text') + self.holder('Second', 'text'))
+        assert [s.name for s in unit.structs].count('Detail') == 1
+        assert unit.struct('Second').fields[0].type == LocalStruct('Detail')
+
+    @pytest.mark.parametrize('member, member_type', [('other', 'string'), ('text', 'integer')])
+    def test_another_shape_under_the_same_name_is_rejected(self, tmp_path, member, member_type):
+        with pytest.raises(UnsupportedDefinition, match='"Detail" was already declared'):
+            self.build(tmp_path, self.holder('First', 'text') + self.holder('Second', member, member_type))
+
+    def test_a_declared_struct_of_another_shape_is_not_reused(self, tmp_path):
+        declared = (
+            '  Detail:\n'
+            '    description: Declared\n'
+            '    type: object\n'
+            '    properties:\n'
+            '      number: {description: n, type: integer}\n'
+        )
+        with pytest.raises(UnsupportedDefinition, match='"Detail" was already declared'):
+            self.build(tmp_path, declared + self.holder('Holder', 'text'))
 
 
 class TestFixtureInterface:

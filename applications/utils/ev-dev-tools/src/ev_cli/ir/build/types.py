@@ -126,6 +126,11 @@ class _UnitBuild:
     def _register_struct(
         self, name: str, schema: Mapping[str, Any], source: SourceRef
     ) -> None:
+        self._structs.append(self._build_struct(name, schema, source))
+
+    def _build_struct(
+        self, name: str, schema: Mapping[str, Any], source: SourceRef
+    ) -> StructDef:
         required = set(schema.get('required') or [])
         depends_on: list[str] = []
         fields: list[Field] = []
@@ -149,14 +154,14 @@ class _UnitBuild:
                 constraints=Constraints.from_schema(property_schema),
             ))
 
-        self._structs.append(StructDef(
+        return StructDef(
             name=name,
             description=schema.get('description', ''),
             fields=tuple(fields),
             depends_on=tuple(depends_on),
             source=source,
             constraints=Constraints.from_schema(schema),
-        ))
+        )
 
     # -- type expressions ---------------------------------------------------
 
@@ -249,9 +254,21 @@ class _UnitBuild:
     ) -> LocalStruct:
         name = capitalize_first(enclosing_name)
         depends_on.append(name)
-        if not any(struct.name == name for struct in self._structs):
+
+        existing = next((s for s in self._structs if s.name == name), None)
+        if existing is None:
             self._register_struct(name, schema, source)
+        elif _members(existing) != _members(self._build_struct(name, schema, source)):
+            raise UnsupportedDefinition(
+                f'{source}: an inline object named "{name}" was already '
+                f'declared at {existing.source} with different properties'
+            )
         return LocalStruct(name)
+
+
+def _members(struct: StructDef) -> tuple[tuple[str, TypeExpr, bool], ...]:
+    """What a struct's generated declaration depends on."""
+    return tuple((field.name, field.type, field.required) for field in struct.fields)
 
 
 def capitalize_first(name: str) -> str:
