@@ -153,6 +153,11 @@ class TestInlineObjects:
             f'          {member}: {{description: m, type: {member_type}}}\n'
         )
 
+    def test_an_embedded_struct_is_declared_before_the_one_embedding_it(self, tmp_path):
+        """The order C++ needs, without forward declarations."""
+        unit = self.build(tmp_path, self.holder('Holder', 'text'))
+        assert [s.name for s in unit.structs] == ['Detail', 'Holder']
+
     def test_the_same_shape_is_declared_once(self, tmp_path):
         unit = self.build(tmp_path, self.holder('First', 'text') + self.holder('Second', 'text'))
         assert [s.name for s in unit.structs].count('Detail') == 1

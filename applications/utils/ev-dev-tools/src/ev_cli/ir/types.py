@@ -135,9 +135,6 @@ class StructDef:
     description: str
     #: In the order the definition declares them.
     fields: tuple[Field, ...]
-    #: Names of structs in the same unit that this one embeds, which decides
-    #: emission order so that no forward declaration is needed.
-    depends_on: tuple[str, ...]
     source: SourceRef
     constraints: Constraints = NO_CONSTRAINTS
 

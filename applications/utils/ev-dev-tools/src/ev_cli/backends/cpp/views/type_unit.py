@@ -9,7 +9,6 @@ from dataclasses import dataclass
 from ....ir.types import Array, Field, StructDef, TypeUnit
 from .. import naming
 from ..cpp_type import Flavour, to_cpp_type
-from ..order import order_structs
 from .common import MISSING_DESCRIPTION
 
 
@@ -55,7 +54,7 @@ class TypeUnitView:
 
     @property
     def structs(self) -> tuple[StructDef, ...]:
-        return order_structs(self.unit.structs)
+        return self.unit.structs
 
     @classmethod
     def fields(cls, struct: StructDef) -> tuple[Field, ...]:

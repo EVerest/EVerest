@@ -129,13 +129,18 @@ class _UnitBuild:
     def _register_struct(
         self, name: str, schema: Mapping[str, Any], source: SourceRef
     ) -> None:
+        """Add a struct to the unit, after the inline structs its members promote.
+
+        Building the members first registers every inline object they hold, so
+        each struct comes after the structs it embeds: the order C++ needs, with
+        no forward declarations.
+        """
         self._structs.append(self._build_struct(name, schema, source))
 
     def _build_struct(
         self, name: str, schema: Mapping[str, Any], source: SourceRef
     ) -> StructDef:
         required = set(schema.get('required') or [])
-        depends_on: list[str] = []
         fields: list[Field] = []
 
         for property_name, property_schema in (schema.get('properties') or {}).items():
@@ -144,10 +149,7 @@ class _UnitBuild:
             fields.append(Field(
                 name=property_name,
                 description=property_schema.get('description'),
-                type=self._build_type_expr(
-                    property_schema, property_source,
-                    enclosing_name=property_name, depends_on=depends_on,
-                ),
+                type=self._build_type_expr(property_schema, property_source, enclosing_name=property_name),
                 required=property_name in required,
                 source=property_source,
                 constraints=Constraints.from_schema(property_schema),
@@ -157,7 +159,6 @@ class _UnitBuild:
             name=name,
             description=schema.get('description', ''),
             fields=tuple(fields),
-            depends_on=tuple(depends_on),
             source=source,
             constraints=Constraints.from_schema(schema),
         )
@@ -168,7 +169,6 @@ class _UnitBuild:
         source: SourceRef,
         *,
         enclosing_name: str,
-        depends_on: list[str],
     ) -> TypeExpr:
         if '$ref' in schema:
             return resolve_reference(self.loader, schema, source, from_unit=self.name)
@@ -189,14 +189,11 @@ class _UnitBuild:
                 raise UnsupportedDefinition(
                     f'{source}: an array must declare its "items"'
                 )
-            return Array(self._build_type_expr(
-                items, source.child('items'),
-                enclosing_name=enclosing_name, depends_on=depends_on,
-            ))
+            return Array(self._build_type_expr(items, source.child('items'), enclosing_name=enclosing_name))
 
         # What remains is an object.
         if 'properties' in schema:
-            return self._promote_struct(enclosing_name, schema, source, depends_on)
+            return self._promote_struct(enclosing_name, schema, source)
         # An object with nothing said about its contents travels as raw JSON;
         # the framework passes it through untouched.
         return Opaque(JsonType.OBJECT)
@@ -229,10 +226,8 @@ class _UnitBuild:
         enclosing_name: str,
         schema: Mapping[str, Any],
         source: SourceRef,
-        depends_on: list[str],
     ) -> LocalStruct:
         name = capitalize_first(enclosing_name)
-        depends_on.append(name)
 
         existing = next((s for s in self._structs if s.name == name), None)
         if existing is None:

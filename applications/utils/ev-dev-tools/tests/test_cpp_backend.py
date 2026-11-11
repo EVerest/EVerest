@@ -20,10 +20,9 @@ from ev_cli.backends.cpp import naming
 from ev_cli.backends.base import OutputKind
 from ev_cli.backends.cpp.backend import TEMPLATE_DIR, CppBackend, Template
 from ev_cli.backends.cpp.cpp_type import Flavour, to_cpp_type
-from ev_cli.backends.cpp.order import order_structs
 from ev_cli.backends.cpp.views import InterfaceView, PayloadKind, TypeUnitView
 from ev_cli.errors import UnsupportedDefinition
-from ev_cli.ir.types import Array, Field, JsonType, LocalEnum, Opaque, Primitive, Ref, StructDef, TypeUnit, Variant
+from ev_cli.ir.types import Array, Field, JsonType, LocalEnum, Opaque, Primitive, Ref, StructDef, Variant
 from ev_cli.schema.references import TypeRef
 from ev_cli.schema.source import SourceRef
 from conftest import GOLDEN_DIR
@@ -38,13 +37,6 @@ def field(name, required=False, type_=None):
     )
 
 
-def struct(name, depends_on=()):
-    return StructDef(
-        name=name, description='', fields=(), depends_on=tuple(depends_on),
-        source=SOURCE,
-    )
-
-
 class TestFieldOrder:
     """Required first, source order kept within each group.
 
@@ -54,7 +46,7 @@ class TestFieldOrder:
 
     @staticmethod
     def ordered(*fields):
-        holder = StructDef(name='Holder', description='', fields=fields, depends_on=(), source=SOURCE)
+        holder = StructDef(name='Holder', description='', fields=fields, source=SOURCE)
         return [f.name for f in TypeUnitView.fields(holder)]
 
     def test_required_come_first(self):
@@ -70,44 +62,6 @@ class TestFieldOrder:
 
     def test_empty(self):
         assert self.ordered() == []
-
-
-class TestStructOrder:
-    """A struct is emitted after anything it embeds, else in source order."""
-
-    def test_no_dependencies_keeps_source_order(self):
-        structs = [struct(n) for n in ('First', 'Second', 'Third')]
-        assert [s.name for s in order_structs(structs)] == ['First', 'Second', 'Third']
-
-    def test_embedded_struct_comes_first(self):
-        structs = [struct('Outer', depends_on=['Inner']), struct('Inner')]
-        assert [s.name for s in order_structs(structs)] == ['Inner', 'Outer']
-
-    def test_transitive(self):
-        structs = [
-            struct('A', depends_on=['B']),
-            struct('B', depends_on=['C']),
-            struct('C'),
-        ]
-        assert [s.name for s in order_structs(structs)] == ['C', 'B', 'A']
-
-    def test_a_cycle_does_not_hang(self):
-        """C++ cannot express it, but the generator must still terminate."""
-        structs = [struct('A', depends_on=['B']), struct('B', depends_on=['A'])]
-        assert len(order_structs(structs)) == 2
-
-    def test_unknown_dependency_is_ignored(self):
-        """A reference to another unit is not a local ordering constraint."""
-        structs = [struct('A', depends_on=['Elsewhere'])]
-        assert [s.name for s in order_structs(structs)] == ['A']
-
-    def test_the_type_view_applies_it(self):
-        unit = TypeUnit(
-            name='u', description='', enums=(),
-            structs=(struct('Outer', depends_on=['Inner']), struct('Inner')),
-            referenced_type_units=frozenset(), source=SOURCE,
-        )
-        assert [s.name for s in TypeUnitView(unit=unit).structs] == ['Inner', 'Outer']
 
 
 class TestTemplates:
