@@ -279,7 +279,9 @@ State Transitions
 * ``WaitingForAuthentication`` -> ``PrepareCharging``: Authorized by EIM or PnC.
 * ``WaitingForAuthentication`` -> ``Finished``: Fatal error, stop requested (e.g. via
   ``request_stop_transaction`` or ``disable``), or EV unplugged.
-* ``PrepareCharging`` -> ``Charging``: Contactor close allowed.
+* ``PrepareCharging`` -> ``Charging``: Contactor close allowed. With a nominal duty cycle and a
+  SLAC matching in progress, state C does not close the contactor until the matching ended (matched or
+  failed): the EV toggles B-C-B to validate the matching (CM_VALIDATE).
 * ``Charging`` -> ``StoppingCharging``: Triggered by any **Stop Condition** (see below).
 * ``StoppingCharging`` -> ``Finished``: No transaction, EV unplugged, or not authorized.
 * ``Finished`` -> ``Idle``: EV unplugged.
@@ -290,6 +292,8 @@ State Transitions
 * ``ChargingPausedEV`` -> ``ChargingPausedEVSE``: No power available (AC BASIC only).
 * ``ChargingPausedEVSE`` -> ``PrepareCharging``: Power available, no EVSE pause and errors cleared.
 * ``StoppingCharging`` -> ``ChargingPausedEV``: EV-initiated pause after stop sequence.
+* ``ChargingPausedEV`` / ``ChargingPausedEVSE`` -> ``T_step_X1`` -> ``T_step_EF`` -> same pause state: an
+  established data link was lost while basic AC charging at a nominal duty cycle is paused ([V2G3-M07-05]).
 
 **ISO 15118-20 EVSE pause**
 

@@ -225,6 +225,8 @@ public:
     // AC HLC session authorized by PnC whose EV never started the charging loop: the data link ending is
     // the EV asking for basic charging.
     bool pnc_without_charging_loop() const;
+    // The EV toggles B-C-B to validate the matching (CM_VALIDATE); these edges are no charge requests.
+    bool slac_matching_in_progress() const;
     void dlink_error();
     // Returns true if the terminate was a data link loss during session setup and was handled as a D-LINK_ERROR;
     // the caller then forwards a D-LINK_ERROR rather than a D-LINK_TERMINATE to the data link layer.

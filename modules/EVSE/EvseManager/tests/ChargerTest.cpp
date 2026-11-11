@@ -1507,6 +1507,100 @@ TEST_F(ChargerDlinkErrorTest, ErrorRoutineIgnoredDuringPauseStillClearsDataLink)
     EXPECT_EQ(charger->current_state(), Charger::EvseState::T_step_EF);
 }
 
+// A link lost while basic charging at nominal PWM is paused runs the same sequence as in PrepareCharging
+// ([V2G3-M07-05]) and returns to the pause.
+TEST_F(ChargerDlinkErrorTest, ErrorRoutineDuringBasicPauseAtNominalPwmGoesThroughX1) {
+    for (const auto paused : {Charger::EvseState::ChargingPausedEV, Charger::EvseState::ChargingPausedEVSE}) {
+        auto& ctx = charger->get_shared_context();
+        charger->get_config_context().charge_mode = Charger::ChargeMode::AC;
+        ctx.current_state = paused;
+        ctx.hlc_charging_active = false;
+        charger->get_hlc_use_5percent_current_session() = false;
+        charger->set_dlink_ready(true);
+
+        charger->request_error_sequence();
+
+        EXPECT_EQ(charger->current_state(), Charger::EvseState::T_step_X1);
+        EXPECT_TRUE(charger->get_internal_context().t_step_X1_until_unmatched);
+        EXPECT_EQ(charger->get_internal_context().t_step_EF_return_state, paused);
+        EXPECT_FALSE(ctx.dlink_established);
+    }
+}
+
+// CM_VALIDATE at a nominal duty cycle: the EV toggles B-C-B while the matching runs. These edges are no charge
+// requests; taken as such they closed the contactor and left the charger paused, where a lost link went unnoticed
+// (ISO 15118-5 TC_SECC_AC_VTB_PLCLinkStatus_006).
+struct ChargerValidationToggleTest : public ChargerDlinkErrorTest {
+    void setup_authorized_at_nominal_pwm() {
+        auto& ctx = charger->get_shared_context();
+        auto& cfg = charger->get_config_context();
+        cfg.charge_mode = Charger::ChargeMode::AC;
+        cfg.ac_hlc_enabled = true;
+        ctx.current_state = Charger::EvseState::PrepareCharging;
+        ctx.flag_ev_plugged_in = true;
+        ctx.flag_transaction_active = true;
+        ctx.flag_authorized = true;
+        ctx.hlc_charging_active = false;
+        ctx.max_current_cable = 32.0f;
+        charger->get_hlc_use_5percent_current_session() = false;
+        charger->set_max_current(16.0f, std::chrono::steady_clock::now() + std::chrono::hours(1));
+        charger->run_state_machine();
+        ASSERT_EQ(charger->current_state(), Charger::EvseState::PrepareCharging);
+    }
+
+    void bcb_toggle() {
+        charger->process_event(CPEvent::CarRequestedPower);
+        EXPECT_EQ(charger->current_state(), Charger::EvseState::PrepareCharging);
+        charger->process_event(CPEvent::CarRequestedStopPower);
+        EXPECT_EQ(charger->current_state(), Charger::EvseState::PrepareCharging);
+    }
+};
+
+TEST_F(ChargerValidationToggleTest, TogglesDuringMatchingStayInPrepareCharging) {
+    setup_authorized_at_nominal_pwm();
+    charger->set_matching_started(true);
+
+    bcb_toggle();
+    bcb_toggle();
+
+    charger->set_slac_matched(true);
+    charger->set_dlink_ready(true);
+    charger->request_error_sequence();
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::T_step_X1) << "[V2G3-M07-05]";
+}
+
+TEST_F(ChargerValidationToggleTest, StateCHeldUntilMatchedStartsCharging) {
+    setup_authorized_at_nominal_pwm();
+    charger->set_matching_started(true);
+    charger->process_event(CPEvent::CarRequestedPower);
+    ASSERT_EQ(charger->current_state(), Charger::EvseState::PrepareCharging);
+
+    charger->set_slac_matched(true);
+    charger->run_state_machine();
+
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::Charging);
+}
+
+TEST_F(ChargerValidationToggleTest, StateCHeldUntilMatchingFailedStartsCharging) {
+    setup_authorized_at_nominal_pwm();
+    charger->set_matching_started(true);
+    charger->process_event(CPEvent::CarRequestedPower);
+    ASSERT_EQ(charger->current_state(), Charger::EvseState::PrepareCharging);
+
+    charger->set_matching_started(false);
+    charger->run_state_machine();
+
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::Charging);
+}
+
+TEST_F(ChargerValidationToggleTest, StateCWithoutMatchingStartsChargingAtOnce) {
+    setup_authorized_at_nominal_pwm();
+
+    charger->process_event(CPEvent::CarRequestedPower);
+
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::Charging);
+}
+
 // The HLC reports the lost link while the EVSE is still in the X1 of the error sequence; the reinit it requests
 // replaces T_step_X1 without running its exit. The next ordinary T_step_X1 must not inherit the link-loss handling.
 TEST_F(ChargerDlinkErrorTest, LinkLossX1DoesNotOutliveReinit) {
