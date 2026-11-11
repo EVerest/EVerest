@@ -33,8 +33,6 @@ class Context:
     _tree: SourceTree | None = field(default=None, init=False, repr=False)
     _loader: DefinitionLoader | None = field(default=None, init=False, repr=False)
 
-    # -- construction -------------------------------------------------------
-
     @classmethod
     def from_args(cls, args) -> Context:
         everest_dirs = tuple(Path(entry).resolve() for entry in args.everest_dir)
@@ -45,8 +43,6 @@ class Context:
             schemas_dir=schemas_dir,
             licenses_dir=Path(args.licenses),
         )
-
-    # -- lazily built pieces ------------------------------------------------
 
     @property
     def tree(self) -> SourceTree:
@@ -103,8 +99,6 @@ class Context:
         if default is None:
             raise EvCliError(f'the {backend} backend has no default output directory; pass --output-dir')
         return self.work_dir / default
-
-    # -- resolving what was asked for on the command line --------------------
 
     def requested_units(self, values) -> list[str]:
         """Type units named on the command line, or all of them."""

@@ -23,7 +23,7 @@ def write_module_files(args, *, updating: bool) -> int:
     context = Context.from_args(args)
     module_dir = context.work_dir / MODULES_DIR / args.module
 
-    model = _model_for(context, args.module)
+    model = context.module_model([args.module], with_interfaces=True)
     license_header = license_headers.find_header(
         license_headers.search_dirs(context.work_dir, context.licenses_dir),
         model.modules[args.module].metadata.license,
@@ -58,15 +58,6 @@ def write_module_files(args, *, updating: bool) -> int:
         _create(generated, writer, force=args.force)
 
     return 0
-
-
-# --------------------------------------------------------------------------
-# Inputs
-# --------------------------------------------------------------------------
-
-def _model_for(context: Context, module: str):
-    """The module, the interfaces it implements, and the types those use."""
-    return context.module_model([module], with_interfaces=True)
 
 
 # --------------------------------------------------------------------------

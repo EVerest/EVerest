@@ -89,8 +89,6 @@ class FileWriter:
         newer, reason = self._template_is_newer(file)
         self.write(file, Strategy.FORCE_UPDATE if newer else strategy, reason=reason)
 
-    # -- strategy -----------------------------------------------------------
-
     def _method(self, file: GeneratedFile, strategy: Strategy) -> str | None:
         exists = file.path.exists()
 
@@ -124,8 +122,6 @@ class FileWriter:
                 return True, ' (Template file has changed since last generation)'
         return False, ''
 
-    # -- license headers ----------------------------------------------------
-
     def _keep_existing_license_header(self, file: GeneratedFile, content: str) -> str:
         """Leave a license header a human replaced alone.
 
@@ -151,8 +147,6 @@ class FileWriter:
 
         print(f'Keeping the existing licence header:\n{existing}', file=self.stream)
         return content.replace(header, existing.strip())
-
-    # -- diffing ------------------------------------------------------------
 
     def _show_diff(self, file: GeneratedFile) -> None:
         diff = shutil.which('diff')

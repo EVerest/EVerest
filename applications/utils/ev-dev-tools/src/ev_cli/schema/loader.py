@@ -89,8 +89,6 @@ class SourceTree:
             f'{", ".join(str(d) for d in self.everest_dirs)}'
         )
 
-    # -- individual files ---------------------------------------------------
-
     def type_file(self, unit: str) -> Path:
         return self.resolve(f'{TYPES_DIR}/{unit}.yaml')
 
@@ -105,8 +103,6 @@ class SourceTree:
         if not path.exists():
             raise DefinitionNotFound(f'could not find module manifest {path}')
         return path
-
-    # -- discovery ----------------------------------------------------------
 
     def type_units(self) -> tuple[str, ...]:
         """Every type unit across all roots, first root winning on a clash."""
@@ -148,8 +144,6 @@ class DefinitionLoader:
         self.validators = validators
         self._cache: dict[Path, Document] = {}
 
-    # -- typed accessors ----------------------------------------------------
-
     def type_document(self, unit: str) -> Document:
         return self._load(self.tree.type_file(unit), DocumentKind.TYPE)
 
@@ -176,8 +170,6 @@ class DefinitionLoader:
 
     def module_document(self, module: str) -> Document:
         return self._load(self.tree.manifest_file(module), DocumentKind.MANIFEST)
-
-    # -- internals ----------------------------------------------------------
 
     def _load(self, path: Path, kind: DocumentKind) -> Document:
         cached = self._cache.get(path)

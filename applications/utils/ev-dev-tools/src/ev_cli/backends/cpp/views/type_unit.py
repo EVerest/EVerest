@@ -15,11 +15,13 @@ from .common import MISSING_DESCRIPTION
 
 @dataclass
 class TypeUnitView:
-    """One ``types/*.yaml`` file, ready to render."""
+    """One ``types/*.yaml`` file, ready to render.
+
+    Every member goes through nlohmann; a generated enum's own to_json and
+    from_json are found by ADL.
+    """
 
     unit: TypeUnit
-
-    # -- header level -------------------------------------------------------
 
     @property
     def name(self) -> str:
@@ -46,8 +48,6 @@ class TypeUnitView:
             for referenced in self.unit.referenced_type_units
             if referenced != self.unit.name
         )
-
-    # -- declarations -------------------------------------------------------
 
     @property
     def enums(self):
@@ -78,8 +78,6 @@ class TypeUnitView:
     def description(self, text: str | None) -> str:
         return MISSING_DESCRIPTION if text is None else text
 
-    # -- types --------------------------------------------------------------
-
     @staticmethod
     def _cpp_type(field: Field) -> str:
         """The member's type, without the optional wrapper."""
@@ -97,11 +95,6 @@ class TypeUnitView:
 
     def identifier(self, field: Field) -> str:
         return naming.check_identifier(field.name, str(field.source))
-
-    # -- conversions --------------------------------------------------------
-    #
-    # Every member goes through nlohmann; a generated enum's own to_json and
-    # from_json are found by ADL.
 
     def from_json_required(self, field: Field) -> str:
         target = f'k.{field.name}'

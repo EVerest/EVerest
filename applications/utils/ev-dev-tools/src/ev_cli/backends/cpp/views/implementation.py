@@ -43,8 +43,6 @@ class ImplementationView(ProtectedRegions):
         self._provided = ProvidedView(self.provided)
         self._signatures = InterfaceView(interface=self.interface, model=self.model)
 
-    # -- names --------------------------------------------------------------
-
     @property
     def id(self) -> str:
         return self.provided.id
@@ -75,8 +73,6 @@ class ImplementationView(ProtectedRegions):
         return naming.implementation_header_guard(
             self.provided.id, self.provided.interface)
 
-    # -- structure ----------------------------------------------------------
-
     @property
     def cmds(self):
         return self.interface.cmds
@@ -88,8 +84,6 @@ class ImplementationView(ProtectedRegions):
     @property
     def rwconfig(self) -> tuple[ConfigEntry, ...]:
         return self._provided.rwconfig
-
-    # -- command signatures -------------------------------------------------
 
     def result_type(self, cmd: CmdDef) -> str:
         return self._signatures.result_type(cmd)

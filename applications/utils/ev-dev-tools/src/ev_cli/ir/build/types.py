@@ -62,8 +62,6 @@ class _UnitBuild:
         self._structs: list[StructDef] = []
         self._referenced_type_units: set[str] = set()
 
-    # -- entry point --------------------------------------------------------
-
     def run(self) -> TypeUnit:
         root = self.source.child('types')
         for name, schema in (self.data.get('types') or {}).items():
@@ -95,8 +93,6 @@ class _UnitBuild:
                     f'declared at {previous} in the same unit'
                 )
             seen[declaration.name] = declaration.source
-
-    # -- declarations -------------------------------------------------------
 
     def _declare(self, name: str, schema: Mapping[str, Any], source: SourceRef) -> None:
         declared = schema.get('type')
@@ -163,8 +159,6 @@ class _UnitBuild:
             constraints=Constraints.from_schema(schema),
         )
 
-    # -- type expressions ---------------------------------------------------
-
     def _build_type_expr(
         self,
         schema: Mapping[str, Any],
@@ -210,8 +204,6 @@ class _UnitBuild:
         )
         self._referenced_type_units.add(reference.target.unit)
         return reference
-
-    # -- promotion of inline declarations -----------------------------------
 
     def _promote_enum(
         self, enclosing_name: str, schema: Mapping[str, Any], source: SourceRef

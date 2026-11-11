@@ -44,19 +44,9 @@ class InterfaceView:
     interface: InterfaceDef
     model: Model
 
-    # -- header level -------------------------------------------------------
-
     @property
     def name(self) -> str:
         return self.interface.name
-
-    @property
-    def vars(self) -> tuple[VarDef, ...]:
-        return self.interface.vars
-
-    @property
-    def cmds(self) -> tuple[CmdDef, ...]:
-        return self.interface.cmds
 
     def guard(self, filename: str) -> str:
         return naming.interface_header_guard(self.interface.name, filename)
@@ -77,7 +67,13 @@ class InterfaceView:
             for unit in self.interface.referenced_type_units
         )
 
-    # -- payload classification --------------------------------------------
+    @property
+    def vars(self) -> tuple[VarDef, ...]:
+        return self.interface.vars
+
+    @property
+    def cmds(self) -> tuple[CmdDef, ...]:
+        return self.interface.cmds
 
     def kind(self, payload: TypeExpr | None) -> PayloadKind:
         if payload is None:
@@ -91,8 +87,6 @@ class InterfaceView:
         if isinstance(payload, Array):
             return PayloadKind.ARRAY if is_typed_payload_array(payload) else PayloadKind.PLAIN
         return PayloadKind.PLAIN
-
-    # -- payload types ------------------------------------------------------
 
     @staticmethod
     def cpp_type(payload: TypeExpr) -> str:
@@ -123,8 +117,6 @@ class InterfaceView:
             return f'{cpp_type} {argument.name}'
         return f'const {cpp_type}& {argument.name}'
 
-    # -- json type lists ----------------------------------------------------
-
     def json_types_of(self, payload: TypeExpr) -> tuple[JsonType, ...]:
         """The json types the framework should expect for a payload.
 
@@ -150,8 +142,6 @@ class InterfaceView:
         """Rendered as the framework's initialiser list, e.g. ``{"number"}``."""
         names = ', '.join(f'"{json_type.value}"' for json_type in self.json_types_of(payload))
         return f'{{{names}}}'
-
-    # -- conversion helpers -------------------------------------------------
 
     @staticmethod
     def variant_alternatives(payload: Variant) -> str:

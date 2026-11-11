@@ -66,8 +66,6 @@ class _InterfaceBuild:
             source=self.source,
         )
 
-    # -- vars and cmds ------------------------------------------------------
-
     def _build_var(self, name: str, schema: Mapping[str, Any], source: SourceRef) -> VarDef:
         return VarDef(
             name=name,
@@ -114,8 +112,6 @@ class _InterfaceBuild:
             constraints=Constraints.from_schema(schema),
         )
 
-    # -- payloads -----------------------------------------------------------
-
     def _build_payload(self, schema: Mapping[str, Any], source: SourceRef) -> TypeExpr:
         if '$ref' in schema:
             reference = resolve_reference(
@@ -151,8 +147,6 @@ class _InterfaceBuild:
                 f'in types/ and reference it with $ref.'
             )
         return Opaque(JsonType.OBJECT)
-
-    # -- errors -------------------------------------------------------------
 
     def _resolve_errors(self, entries: Sequence[Mapping[str, Any]]) -> tuple[ErrorDef, ...]:
         """Resolve every ``/errors/<namespace>[#/<Name>]`` reference.

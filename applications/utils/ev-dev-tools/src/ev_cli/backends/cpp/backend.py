@@ -108,8 +108,6 @@ class CppBackend:
         self._env.globals['template_version'] = TEMPLATE_VERSION
         self._env.globals['config_type'] = config_type
 
-    # -- post-processing ----------------------------------------------------
-
     def postprocess(self, files: list[GeneratedFile]) -> None:
         """Format the generated C++ sources with clang-format.
 
@@ -123,15 +121,11 @@ class CppBackend:
         for file in sources:
             file.content = _clang_format(executable, self._clang_format_dir, file.content)
 
-    # -- templates ----------------------------------------------------------
-
     def templates(self, kind: OutputKind) -> tuple[Path, ...]:
         return tuple(template.path for template in Template if template.kind is kind)
 
     def _render(self, template: Template, view, **context) -> str:
         return self._env.get_template(template.value).render(u=view, **context)
-
-    # -- emission -----------------------------------------------------------
 
     def emit_type_unit(self, model: Model, unit: str, output_dir: Path) -> list[GeneratedFile]:
         view = TypeUnitView(unit=model.types[unit])
@@ -235,7 +229,6 @@ class CppBackend:
 
         files: list[GeneratedFile] = []
 
-        # -- core -----------------------------------------------------------
         cmakelists = module_dir / 'CMakeLists.txt'
         header = module_dir / f'{definition.name}.hpp'
 
@@ -258,7 +251,6 @@ class CppBackend:
             UpdatePolicy.CREATE_IF_MISSING,
         ))
 
-        # -- one implementation per provided interface ----------------------
         for provided in definition.provides:
             interface = model.interfaces[provided.interface]
             names = ProvidedView(provided)
@@ -279,7 +271,6 @@ class CppBackend:
                 UpdatePolicy.CREATE_IF_MISSING,
             ))
 
-        # -- docs -----------------------------------------------------------
         files.append(rendered(
             Template.DOCS_INDEX,
             ModuleView(module=definition),

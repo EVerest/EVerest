@@ -103,8 +103,6 @@ class ModuleView(ProtectedRegions):
     blocks: dict = field(default_factory=dict)
     license_header: str = ''
 
-    # -- names --------------------------------------------------------------
-
     @property
     def name(self) -> str:
         return self.module.name
@@ -112,10 +110,6 @@ class ModuleView(ProtectedRegions):
     @property
     def class_name(self) -> str:
         return self.module.name
-
-    @property
-    def description(self) -> str:
-        return self.module.description
 
     @property
     def guard(self) -> str:
@@ -133,7 +127,9 @@ class ModuleView(ProtectedRegions):
     def module_header(self) -> str:
         return f'{self.module.name}.hpp'
 
-    # -- manifest flags -----------------------------------------------------
+    @property
+    def description(self) -> str:
+        return self.module.description
 
     @property
     def enable_external_mqtt(self) -> bool:
@@ -146,8 +142,6 @@ class ModuleView(ProtectedRegions):
     @property
     def enable_global_errors(self) -> bool:
         return self.module.enable_global_errors
-
-    # -- structure ----------------------------------------------------------
 
     @cached_property
     def provides(self) -> list[ProvidedView]:
@@ -165,15 +159,15 @@ class ModuleView(ProtectedRegions):
     def rwconfig(self) -> tuple[ConfigEntry, ...]:
         return read_write_config(self.module.config)
 
-    # -- the runtime config client ------------------------------------------
-    #
-    # The generated loader declares it at most once, before whichever set of
-    # read-write parameters comes first.
-
     @property
     def has_impl_rwconfig(self) -> bool:
         return any(p.rwconfig for p in self.provides)
 
     @property
     def declare_config_client_for_module(self) -> bool:
+        """Whether the module's own read-write parameters declare the runtime config client.
+
+        The generated loader declares it at most once, before whichever set of
+        read-write parameters comes first.
+        """
         return bool(self.rwconfig) and not self.has_impl_rwconfig
