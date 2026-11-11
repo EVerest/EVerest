@@ -11,7 +11,6 @@ from ....ir.modules import ConfigEntry, ModuleDef, ProvidesDef
 from ....ir.model import Model
 from ....ir.types import JsonType
 from .. import naming
-from .common import ProtectedRegions
 from .interface import InterfaceView
 from .module import ProvidedView
 
@@ -29,7 +28,7 @@ DUMMY_RESULTS = {
 
 
 @dataclass
-class ImplementationView(ProtectedRegions):
+class ImplementationView:
     """One interface implementation inside a module, ready to render."""
 
     provided: ProvidesDef

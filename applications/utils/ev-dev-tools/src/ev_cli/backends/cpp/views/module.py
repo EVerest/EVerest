@@ -11,7 +11,6 @@ from ....ir.modules import ConfigEntry, ModuleDef, Mutability, ProvidesDef, Requ
 from ....ir.types import Primitive
 from .. import naming
 from ..cpp_type import Flavour, to_cpp_type
-from .common import ProtectedRegions
 
 
 @dataclass
@@ -96,7 +95,7 @@ def read_write_config(entries) -> tuple[ConfigEntry, ...]:
 
 
 @dataclass
-class ModuleView(ProtectedRegions):
+class ModuleView:
     """One ``modules/<path>/manifest.yaml``, ready to render."""
 
     module: ModuleDef

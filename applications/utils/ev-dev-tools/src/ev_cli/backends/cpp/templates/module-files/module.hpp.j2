@@ -23,7 +23,7 @@
 #include <{{ requirement.exports_header }}>
 {% endfor %}
 
-{{ u.block('add_headers') }}
+{{ u.blocks.add_headers.render() }}
 
 namespace module {
 
@@ -151,10 +151,10 @@ public:
     RwConf& rw_config;
 {% endif %}
 
-    {{ u.block('public_defs', 4) }}
+    {{ u.blocks.public_defs.render(4) }}
 
 protected:
-    {{ u.block('protected_defs', 4) }}
+    {{ u.blocks.protected_defs.render(4) }}
 
 private:
     friend class LdEverest;
@@ -162,11 +162,11 @@ private:
     void ready();
     void shutdown();
 
-    {{ u.block('private_defs', 4) }}
+    {{ u.blocks.private_defs.render(4) }}
 
 };
 
-{{ u.block('after_class') }}
+{{ u.blocks.after_class.render() }}
 
 } // namespace module
 

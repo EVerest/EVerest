@@ -11,7 +11,7 @@
 
 #include "{{ u.module_header }}"
 
-{{ u.block('add_headers') }}
+{{ u.blocks.add_headers.render() }}
 
 namespace module {
 namespace {{ u.id }} {
@@ -84,7 +84,7 @@ public:
 {% endif %}
     {};
 
-    {{ u.block('public_defs', 4) }}
+    {{ u.blocks.public_defs.render(4) }}
 
 protected:
 {% if not u.cmds %}
@@ -96,7 +96,7 @@ protected:
 {% endfor %}
 {% endif %}
 
-    {{ u.block('protected_defs', 4) }}
+    {{ u.blocks.protected_defs.render(4) }}
 
 private:
     const Everest::PtrContainer<{{ u.module_class }}>& mod;
@@ -109,10 +109,10 @@ private:
     virtual void ready() override;
     void shutdown() override;
 
-    {{ u.block('private_defs', 4) }}
+    {{ u.blocks.private_defs.render(4) }}
 };
 
-{{ u.block('after_class') }}
+{{ u.blocks.after_class.render() }}
 
 } // namespace {{ u.id }}
 } // namespace module
