@@ -123,7 +123,7 @@ class CppBackend:
         content = self._render(Template.TYPE_UNIT, view)
 
         path = output_dir / f'{unit}.hpp'
-        return self._postprocess([GeneratedFile(
+        header = GeneratedFile(
             path=path,
             content=content,
             # The output directory's own name followed by the unit, e.g.
@@ -134,7 +134,8 @@ class CppBackend:
             # tuned for that comparison.
             source_mtime=view.unit.source.file.stat().st_mtime,
             template_paths=self.templates(OutputKind.TYPE_UNIT),
-        )])
+        )
+        return self._postprocess([header])
 
     def emit_interface(self, model: Model, interface: str, output_dir: Path) -> list[GeneratedFile]:
         view = InterfaceView(interface=model.interfaces[interface], model=model)
@@ -149,7 +150,7 @@ class CppBackend:
             ('Interface.hpp', Template.INTERFACE),
             ('Types.hpp', Template.INTERFACE_TYPES),
         )
-        return self._postprocess([
+        headers = [
             GeneratedFile(
                 path=output_path / filename,
                 content=self._render(template, view, filename=filename),
@@ -158,7 +159,8 @@ class CppBackend:
                 template_paths=templates,
             )
             for filename, template in outputs
-        ])
+        ]
+        return self._postprocess(headers)
 
     def emit_module_loader(self, model: Model, module: str, output_dir: Path) -> list[GeneratedFile]:
         definition = model.modules[module]
@@ -169,7 +171,7 @@ class CppBackend:
         mtime = definition.source.file.stat().st_mtime
         templates = self.templates(OutputKind.MODULE_LOADER)
 
-        return self._postprocess([
+        loader_files = [
             GeneratedFile(
                 path=output_dir / name / filename,
                 content=self._render(template, view),
@@ -181,7 +183,8 @@ class CppBackend:
                 ('ld-ev.hpp', Template.LOADER_HPP),
                 ('ld-ev.cpp', Template.LOADER_CPP),
             )
-        ])
+        ]
+        return self._postprocess(loader_files)
 
     def emit_module_files(
         self,
@@ -218,24 +221,24 @@ class CppBackend:
                 license_header=license_header if with_license else None,
             )
 
-        files: list[GeneratedFile] = []
+        module_files: list[GeneratedFile] = []
 
         cmakelists = module_dir / 'CMakeLists.txt'
         header = module_dir / f'{definition.name}.hpp'
 
-        files.append(rendered(
+        module_files.append(rendered(
             Template.CMAKELISTS,
             ModuleView(module=definition,
                        blocks=read_blocks(blocks.CMAKELISTS, cmakelists)),
             cmakelists, 'cmakelists', FileCategory.CORE, with_license=False,
         ))
-        files.append(rendered(
+        module_files.append(rendered(
             Template.MODULE_HPP,
             ModuleView(module=definition, license_header=license_header,
                        blocks=read_blocks(blocks.MODULE_HEADER, header)),
             header, 'module.hpp', FileCategory.CORE,
         ))
-        files.append(rendered(
+        module_files.append(rendered(
             Template.MODULE_CPP,
             ModuleView(module=definition, license_header=license_header),
             module_dir / f'{definition.name}.cpp', 'module.cpp', FileCategory.CORE,
@@ -251,22 +254,22 @@ class CppBackend:
                 model=model, license_header=license_header,
                 blocks=read_blocks(blocks.IMPLEMENTATION_HEADER, implementation_header),
             )
-            files.append(rendered(
+            module_files.append(rendered(
                 Template.IMPLEMENTATION_HPP, view, implementation_header,
                 f'{provided.id}.hpp', FileCategory.INTERFACES,
             ))
-            files.append(rendered(
+            module_files.append(rendered(
                 Template.IMPLEMENTATION_CPP, view,
                 module_dir / names.cpp_file,
                 f'{provided.id}.cpp', FileCategory.INTERFACES,
                 UpdatePolicy.CREATE_IF_MISSING,
             ))
 
-        files.append(rendered(
+        module_files.append(rendered(
             Template.DOCS_INDEX,
             ModuleView(module=definition),
             module_dir / 'docs' / 'index.rst', 'index.rst', FileCategory.DOCS,
             UpdatePolicy.LEAVE_ALONE, with_license=False,
         ))
 
-        return self._postprocess(files)
+        return self._postprocess(module_files)
