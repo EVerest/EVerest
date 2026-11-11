@@ -272,6 +272,105 @@ TEST_CASE("ConfigServiceClient::set_config_value", "[config_service]") {
     }
 }
 
+TEST_CASE("ConfigServiceClient correlates every request with its own id", "[config_service]") {
+    const std::string prefix = "everest/";
+    const std::string module_id = "my_module";
+    auto mock = std::make_shared<MockMQTTAbstraction>(prefix);
+    ConfigServiceClient client(mock, module_id, {}, everest::config::Access{});
+    mock->set_get_response(make_error_response());
+
+    const everest::config::ConfigurationParameterIdentifier identifier{"target_module", "some_param", std::nullopt};
+    const std::vector<std::function<void()>> requests = {
+        [&] { client.get_module_configs(); },
+        [&] { client.get_mappings(); },
+        [&] { client.get_config_value(identifier); },
+        [&] { client.set_config_value(identifier, "42"); },
+    };
+    const auto request = GENERATE(0, 1, 2, 3);
+
+    requests.at(request)();
+    REQUIRE(mock->last_get_request().has_value());
+    const auto first = mock->last_get_request().value();
+    requests.at(request)();
+    const auto second = mock->last_get_request().value();
+
+    REQUIRE(first.correlation_id.has_value());
+    REQUIRE(first.request_data.has_value());
+    CHECK(nlohmann::json::parse(first.request_data.value()).at("id") == first.correlation_id.value());
+    REQUIRE(second.correlation_id.has_value());
+    CHECK(first.correlation_id.value() != second.correlation_id.value());
+}
+
+TEST_CASE("Config service Request and Response require an id", "[config_service]") {
+    Request request;
+    request.type = Type::Get;
+    request.request = GetRequest{GetType::All};
+    request.origin = "my_module";
+    request.id = "abc";
+
+    Response response;
+    response.status = ResponseStatus::Error;
+    response.id = "abc";
+
+    SECTION("the id survives the round trip") {
+        const Request parsed = nlohmann::json(request);
+        CHECK(parsed.id == "abc");
+        const Response parsed_response = nlohmann::json(response);
+        CHECK(parsed_response.id == "abc");
+    }
+
+    SECTION("a message without id is rejected") {
+        nlohmann::json request_json = request;
+        request_json.erase("id");
+        CHECK_THROWS(request_json.get<Request>());
+
+        nlohmann::json response_json = response;
+        response_json.erase("id");
+        CHECK_THROWS(response_json.get<Response>());
+    }
+}
+
+TEST_CASE("ConfigServiceClient answers set requests of the manager", "[config_service]") {
+    const std::string prefix = "everest/";
+    auto mock = std::make_shared<MockMQTTAbstraction>(prefix);
+    ConfigServiceClient client(mock, "my_module", {}, everest::config::Access{});
+    const std::string request_topic = prefix + "modules/my_module/config/set_request";
+
+    std::vector<std::string> applied;
+    client.register_config_change_handler("main", "some_param", [&applied](const std::string& value) {
+        applied.push_back(value);
+        return ConfigChangeResult::Accepted();
+    });
+    REQUIRE(mock->registered_handlers().count(request_topic) == 1);
+    const auto deliver = [&](const nlohmann::json& data) {
+        (*mock->registered_handlers().at(request_topic)->handler)(request_topic, data);
+    };
+
+    const nlohmann::json set_request = {{"identifier",
+                                         {{"module_id", "my_module"},
+                                          {"configuration_parameter_name", "some_param"},
+                                          {"module_implementation_id", "main"}}},
+                                        {"value", "42"}};
+
+    SECTION("the response repeats the id of the request") {
+        deliver({{"type", "Set"}, {"origin", ""}, {"request", set_request}, {"id", "forward-1"}});
+
+        CHECK(applied == std::vector<std::string>{"42"});
+        REQUIRE(mock->published().size() == 1);
+        CHECK(mock->published().front().first == prefix + "modules/my_module/config/set_response");
+        const Response response = mock->published().front().second.at("data");
+        CHECK(response.id == "forward-1");
+        CHECK(std::get<SetResponse>(response.response).status == SetResponseStatus::Accepted);
+    }
+
+    SECTION("a request without id is ignored") {
+        deliver({{"type", "Set"}, {"origin", ""}, {"request", set_request}});
+
+        CHECK(applied.empty());
+        CHECK(mock->published().empty());
+    }
+}
+
 TEST_CASE("ConfigServiceClient::get_mappings", "[config_service]") {
     const std::string prefix = "everest/";
     const std::string module_id = "my_module";
@@ -342,8 +441,11 @@ TEST_CASE("MqttConfigServiceHandler", "[config_service]") {
     const std::string config_topic = prefix + "config/request";
 
     // Convenience: invoke the registered handler with a request JSON
-    auto invoke = [&](const nlohmann::json& req) {
+    auto invoke = [&](nlohmann::json req) {
         REQUIRE(mock.registered_handlers().count(config_topic) == 1);
+        if (not req.contains("id")) {
+            req["id"] = "request-id";
+        }
         (*mock.registered_handlers().at(config_topic)->handler)(config_topic, req);
     };
 
@@ -392,6 +494,42 @@ TEST_CASE("MqttConfigServiceHandler", "[config_service]") {
         CHECK(resp.status == ResponseStatus::Error);
         CHECK(resp.status_info == "Exception during handling of request: stub failure");
         CHECK_FALSE(resp.type.has_value());
+    }
+
+    SECTION("handler echoes the request id in its response") {
+        const nlohmann::json request = {
+            {"type", "Get"}, {"origin", "target_module"}, {"request", {{"type", "Module"}}}, {"id", "request-1"}};
+
+        invoke(request);
+
+        REQUIRE(mock.published().size() == 1);
+        const Response resp = parse_published_response(mock.published().front());
+        CHECK(resp.status == ResponseStatus::Ok);
+        CHECK(resp.id == "request-1");
+    }
+
+    SECTION("handler echoes the request id in error responses") {
+        const bool handling_throws = GENERATE(false, true);
+        stub_svc.throw_on_get_active_module_configurations = handling_throws;
+        const auto origin = handling_throws ? std::string("target_module") : std::string("ghost_module");
+        const nlohmann::json request = {
+            {"type", "Get"}, {"origin", origin}, {"request", {{"type", "Module"}}}, {"id", "request-2"}};
+
+        invoke(request);
+
+        REQUIRE(mock.published().size() == 1);
+        const Response resp = parse_published_response(mock.published().front());
+        CHECK(resp.status == ResponseStatus::Error);
+        CHECK(resp.id == "request-2");
+    }
+
+    SECTION("handler ignores a request without id") {
+        const nlohmann::json request = {
+            {"type", "Get"}, {"origin", "target_module"}, {"request", {{"type", "Module"}}}};
+
+        (*mock.registered_handlers().at(config_topic)->handler)(config_topic, request);
+
+        CHECK(mock.published().empty());
     }
 
     SECTION("handler responds to Get::Module request") {
@@ -507,6 +645,12 @@ TEST_CASE("MqttConfigServiceHandler", "[config_service]") {
         const auto& fwd = mock.last_get_request().value();
         CHECK(fwd.request_topic == prefix + "modules/target_module/config/set_request");
         CHECK(fwd.response_topic == prefix + "modules/target_module/config/set_response");
+        REQUIRE(fwd.correlation_id.has_value());
+        REQUIRE(fwd.request_data.has_value());
+        const Request forwarded = nlohmann::json::parse(fwd.request_data.value());
+        CHECK(forwarded.id == fwd.correlation_id.value());
+        CHECK(forwarded.type == Type::Set);
+        CHECK(std::get<SetRequest>(forwarded.request).value == "new_value");
 
         // Verify the response published back to the origin
         const Response resp = parse_published_response(mock.published().back());
@@ -660,8 +804,11 @@ active_modules:
     MqttConfigServiceHandler service(mock, core);
 
     const std::string config_topic = prefix + "config/request";
-    auto invoke = [&](const nlohmann::json& req) {
+    auto invoke = [&](nlohmann::json req) {
         REQUIRE(mock.registered_handlers().count(config_topic) == 1);
+        if (not req.contains("id")) {
+            req["id"] = "request-id";
+        }
         (*mock.registered_handlers().at(config_topic)->handler)(config_topic, req);
     };
 

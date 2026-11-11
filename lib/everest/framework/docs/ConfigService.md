@@ -111,6 +111,11 @@ module that requested the change (`publish_config_update_notifications()` in `li
 rules do not allow reading). All at QOS2. Payload structures are
 in [MQTT Communication](MQTTCommunication.md).
 
+Each request on `config/request` carries an `id` that the reply on `modules/{origin}/response` repeats;
+`MessageHandler` delivers a reply to the request with that id, so one module can have several requests in flight.
+The set request the manager forwards to a module and the module's reply carry an `id` in the same way, so a late
+reply to a forward that timed out is not taken for the reply to the next one.
+
 Modules reach this through `ConfigServiceClient`; read requests are answered by
 `MqttConfigServiceHandler` from the `ConfigServiceCore` snapshot, writes are forwarded to
 `set_config_parameters()` and always target the active slot.

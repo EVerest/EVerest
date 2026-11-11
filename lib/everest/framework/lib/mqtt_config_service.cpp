@@ -5,6 +5,7 @@
 
 #include <fmt/format.h>
 
+#include <everest/helpers/helpers.hpp>
 #include <everest/logging.hpp>
 
 #include <utils/config.hpp>
@@ -337,6 +338,16 @@ void publish_config_update_notifications(MQTTAbstraction& mqtt_abstraction, Conf
 }
 } // namespace
 
+MQTTRequest make_config_service_request(const std::string& everest_prefix, Request request) {
+    request.id = everest::helpers::get_uuid();
+    MQTTRequest mqtt_request;
+    mqtt_request.response_topic = fmt::format("{}modules/{}/response", everest_prefix, request.origin);
+    mqtt_request.request_topic = fmt::format("{}config/request", everest_prefix);
+    mqtt_request.request_data = json(request).dump();
+    mqtt_request.correlation_id = request.id;
+    return mqtt_request;
+}
+
 ConfigServiceClient::ConfigServiceClient(std::shared_ptr<MQTTAbstraction> mqtt_abstraction,
                                          const std::string& module_id,
                                          const std::map<std::string, std::string, std::less<>>& module_names,
@@ -350,11 +361,7 @@ std::map<ModuleIdType, everest::config::ModuleConfigurationParameters> ConfigSer
     get_request.request = GetRequest{GetType::All};
     get_request.origin = m_origin;
 
-    MQTTRequest mqtt_request;
-    mqtt_request.response_topic =
-        fmt::format("{}modules/{}/response", m_mqtt_abstraction->get_everest_prefix(), get_request.origin);
-    mqtt_request.request_topic = fmt::format("{}config/request", m_mqtt_abstraction->get_everest_prefix());
-    mqtt_request.request_data = json(get_request).dump();
+    const auto mqtt_request = make_config_service_request(m_mqtt_abstraction->get_everest_prefix(), get_request);
 
     try {
         Response response = m_mqtt_abstraction->get(mqtt_request, mqtt_get_config_retries);
@@ -386,11 +393,7 @@ std::map<std::string, ModuleTierMappings> ConfigServiceClient::get_mappings() {
     get_request.request = GetRequest{GetType::AllMappings};
     get_request.origin = m_origin;
 
-    MQTTRequest mqtt_request;
-    mqtt_request.response_topic =
-        fmt::format("{}modules/{}/response", m_mqtt_abstraction->get_everest_prefix(), get_request.origin);
-    mqtt_request.request_topic = fmt::format("{}config/request", m_mqtt_abstraction->get_everest_prefix());
-    mqtt_request.request_data = json(get_request).dump();
+    const auto mqtt_request = make_config_service_request(m_mqtt_abstraction->get_everest_prefix(), get_request);
 
     try {
         Response response = m_mqtt_abstraction->get(mqtt_request, mqtt_get_config_retries);
@@ -426,11 +429,7 @@ ConfigServiceClient::set_config_value(const everest::config::ConfigurationParame
     request.request = set_request;
 
     try {
-        MQTTRequest mqtt_request;
-        mqtt_request.response_topic =
-            fmt::format("{}modules/{}/response", m_mqtt_abstraction->get_everest_prefix(), request.origin);
-        mqtt_request.request_topic = fmt::format("{}config/request", m_mqtt_abstraction->get_everest_prefix());
-        mqtt_request.request_data = json(request).dump();
+        const auto mqtt_request = make_config_service_request(m_mqtt_abstraction->get_everest_prefix(), request);
 
         const Response response = m_mqtt_abstraction->get(mqtt_request, mqtt_get_config_retries);
         result.status = response.status;
@@ -463,11 +462,7 @@ ConfigServiceClient::get_config_value(const everest::config::ConfigurationParame
     request.request = get_request;
 
     try {
-        MQTTRequest mqtt_request;
-        mqtt_request.response_topic =
-            fmt::format("{}modules/{}/response", m_mqtt_abstraction->get_everest_prefix(), request.origin);
-        mqtt_request.request_topic = fmt::format("{}config/request", m_mqtt_abstraction->get_everest_prefix());
-        mqtt_request.request_data = json(request).dump();
+        const auto mqtt_request = make_config_service_request(m_mqtt_abstraction->get_everest_prefix(), request);
         const Response response = m_mqtt_abstraction->get(mqtt_request, mqtt_get_config_retries);
         result.status = response.status;
         result.status_info = response.status_info;
@@ -514,7 +509,9 @@ void ConfigServiceClient::mqtt_set_request(const nlohmann::json& data) {
     SetResponse set_response;
 
     try {
-        SetRequest set_request = data;
+        const Request request = data;
+        response.id = request.id;
+        const auto& set_request = std::get<SetRequest>(request.request);
         const auto& name = set_request.identifier.configuration_parameter_name;
 
         // Copy the handler out under the lock and invoke it outside of it: the callback is
@@ -548,6 +545,10 @@ void ConfigServiceClient::mqtt_set_request(const nlohmann::json& data) {
             response.status_info = "No handler registered for parameter: " + name;
         }
     } catch (const std::exception& e) {
+        if (response.id.empty()) {
+            EVLOG_error << "Ignoring malformed set request: " << e.what();
+            return;
+        }
         response.status = ResponseStatus::Error;
         response.status_info = std::string("Exception in config change handler: ") + e.what();
     }
@@ -651,11 +652,13 @@ MqttConfigServiceHandler::MqttConfigServiceHandler(MQTTAbstraction& mqtt_abstrac
         // Set as soon as the request is parsed, so the catch handler below can still answer the
         // requester when request handling throws.
         std::optional<std::string> response_topic;
+        std::string request_id;
         try {
             Request request = data;
             response.type = request.type;
             response_topic =
                 fmt::format("{}modules/{}/response", mqtt_abstraction.get_everest_prefix(), request.origin);
+            request_id = request.id;
 
             const auto module_configs_ptr = config_svc.get_active_module_configurations();
             const auto& module_configs = *module_configs_ptr;
@@ -684,6 +687,7 @@ MqttConfigServiceHandler::MqttConfigServiceHandler(MQTTAbstraction& mqtt_abstrac
                 auto set_request = std::get<SetRequest>(request.request);
                 response = handle_set_request(set_request, request.origin, module_configs, config_svc);
             }
+            response.id = request_id;
 
             MqttMessagePayload payload{MqttMessageType::ConfigurationResponse, response};
             mqtt_abstraction.publish(response_topic.value(), payload, QOS::QOS2);
@@ -696,6 +700,7 @@ MqttConfigServiceHandler::MqttConfigServiceHandler(MQTTAbstraction& mqtt_abstrac
                 Response error_response;
                 error_response.status = ResponseStatus::Error;
                 error_response.status_info = std::string("Exception during handling of request: ") + e.what();
+                error_response.id = request_id;
                 try {
                     MqttMessagePayload payload{MqttMessageType::ConfigurationResponse, error_response};
                     mqtt_abstraction.publish(response_topic.value(), payload, QOS::QOS2);
@@ -736,13 +741,19 @@ MqttConfigServiceHandler::cmd_set_cfg_param(const everest::config::Configuration
     set_request.identifier = cfg_param_id;
     set_request.value = value;
 
+    Request request;
+    request.type = Type::Set;
+    request.request = set_request;
+    request.id = everest::helpers::get_uuid();
+
     // Forward set request to target module via MQTT and wait for its response.
     MQTTRequest mqtt_request;
     mqtt_request.response_topic = fmt::format("{}modules/{}/config/set_response",
                                               m_mqtt_abstraction.get_everest_prefix(), cfg_param_id.module_id);
     mqtt_request.request_topic =
         fmt::format("{}modules/{}/config/set_request", m_mqtt_abstraction.get_everest_prefix(), cfg_param_id.module_id);
-    mqtt_request.request_data = nlohmann::json(set_request).dump();
+    mqtt_request.request_data = nlohmann::json(request).dump();
+    mqtt_request.correlation_id = request.id;
 
     const Response module_response = m_mqtt_abstraction.get(mqtt_request, mqtt_get_config_retries);
 
@@ -956,6 +967,7 @@ void from_json(const nlohmann::json& j, SetResponse& r) {
 void to_json(nlohmann::json& j, const Request& r) {
     j = {{"type", conversions::type_to_string(r.type)}, {"origin", r.origin}};
     j["request"] = Everest::variant_to_json(r.request);
+    j["id"] = r.id;
 }
 
 void from_json(const nlohmann::json& j, Request& r) {
@@ -966,6 +978,7 @@ void from_json(const nlohmann::json& j, Request& r) {
         r.request = j.at("request").get<SetRequest>();
     }
     r.origin = j.at("origin");
+    r.id = j.at("id");
 }
 
 void to_json(nlohmann::json& j, const Response& r) {
@@ -974,6 +987,7 @@ void to_json(nlohmann::json& j, const Response& r) {
         j["type"] = conversions::type_to_string(r.type.value());
     }
     j["response"] = Everest::variant_to_json(r.response);
+    j["id"] = r.id;
 }
 
 void from_json(const nlohmann::json& j, Response& r) {
@@ -989,6 +1003,7 @@ void from_json(const nlohmann::json& j, Response& r) {
             r.response = j.at("response").get<SetResponse>();
         }
     }
+    r.id = j.at("id");
 }
 
 void to_json(nlohmann::json& j, const SetConfigResult& r) {

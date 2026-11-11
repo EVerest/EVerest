@@ -173,6 +173,14 @@ The manager handles them and routes responses back to the requesting module's pr
 All configuration messages use `ConfigurationRequest` / `ConfigurationResponse` as the `msg_type`. The `data`
 field holds the request or response object.
 
+Every request carries an `id`, a UUID, and its response repeats it, error responses included. This holds for the
+requests of a module on `config/request` and for the set requests the manager forwards to a module. The requester
+delivers a response to the pending request with the same `id` and drops a response whose `id` matches no pending
+request, such as a late response to a request that timed out. A request without `id` is not answered.
+
+The retained topics a module reads at startup (interfaces, types, settings, schemas, manifests, module names) are
+not responses to a request. Their messages are delivered by topic alone, whatever their `data` contains.
+
 #### Get Own Module Configuration
 
 Used during module startup to retrieve the module's own configuration.
@@ -183,7 +191,8 @@ Used during module startup to retrieve the module's own configuration.
   "data": {
     "type": "Get",
     "origin": "<module_id>",
-    "request": { "type": "Module" }
+    "request": { "type": "Module" },
+    "id": "<request_id>"
   }
 }
 ```
@@ -198,7 +207,8 @@ Retrieves configurations of all modules the requesting module has read access to
   "data": {
     "type": "Get",
     "origin": "<module_id>",
-    "request": { "type": "All" }
+    "request": { "type": "All" },
+    "id": "<request_id>"
   }
 }
 ```
@@ -220,7 +230,8 @@ Retrieves a single parameter identified by module, parameter name, and optional 
         "configuration_parameter_name": "<param_name>",
         "module_implementation_id": "<impl_id>"
       }
-    }
+    },
+    "id": "<request_id>"
   }
 }
 ```
@@ -237,7 +248,8 @@ Retrieves requirement mappings of all modules the requesting module has read acc
   "data": {
     "type": "Get",
     "origin": "<module_id>",
-    "request": { "type": "AllMappings" }
+    "request": { "type": "AllMappings" },
+    "id": "<request_id>"
   }
 }
 ```
@@ -261,16 +273,17 @@ additionally forwards the request to the target module afterwards so the module 
         "module_implementation_id": "<impl_id>"
       },
       "value": "<string_value>"
-    }
+    },
+    "id": "<request_id>"
   }
 }
 ```
 
 #### Forwarded Set Request (Manager → Target Module)
 
-For ReadWrite parameters the manager forwards the validated SetRequest to the target module on a dedicated topic.
-Unlike the original client request, this payload carries the bare `identifier`/`value` pair — without the
-outer `type`/`origin` wrapper used for the module-to-manager request.
+For ReadWrite parameters the manager forwards the validated SetRequest to the target module on a dedicated topic,
+in the same wrapper as the module-to-manager request. `origin` is empty and `id` identifies the forwarded request,
+not the request of the module that asked for the change.
 
 Topic: `{everest_prefix}modules/{target_module_id}/config/set_request`
 
@@ -278,19 +291,24 @@ Topic: `{everest_prefix}modules/{target_module_id}/config/set_request`
 {
   "msg_type": "ConfigurationRequest",
   "data": {
-    "identifier": {
-      "module_id": "<target_module_id>",
-      "configuration_parameter_name": "<param_name>",
-      "module_implementation_id": "<impl_id>"
+    "type": "Set",
+    "origin": "",
+    "request": {
+      "identifier": {
+        "module_id": "<target_module_id>",
+        "configuration_parameter_name": "<param_name>",
+        "module_implementation_id": "<impl_id>"
+      },
+      "value": "<string_value>"
     },
-    "value": "<string_value>"
+    "id": "<request_id>"
   }
 }
 ```
 
 #### Module Set Response (Target Module → Manager)
 
-The target module replies with a standard set response.
+The target module replies with a standard set response that repeats the `id` of the forwarded request.
 
 Topic: `{everest_prefix}modules/{target_module_id}/config/set_response`
 
@@ -301,7 +319,8 @@ Topic: `{everest_prefix}modules/{target_module_id}/config/set_response`
     "status": "Ok",
     "status_info": "",
     "type": "Set",
-    "response": { "status": "Accepted", "status_info": "" }
+    "response": { "status": "Accepted", "status_info": "" },
+    "id": "<request_id>"
   }
 }
 ```
@@ -335,7 +354,7 @@ Topic: `{everest_prefix}modules/{module_id}/config/updates`
 #### Response (Manager → Requesting Module)
 
 The manager always responds on `{everest_prefix}modules/{origin}/response`. The `type` and `response` fields
-mirror the request type. `type` is omitted when `status` is not `Ok`.
+mirror the request type. `type` is omitted when `status` is not `Ok`. `id` is the `id` of the request.
 
 ```json
 {
@@ -347,7 +366,8 @@ mirror the request type. `type` is omitted when `status` is not `Ok`.
     "response": {
       "type": "Module",
       "data": { }
-    }
+    },
+    "id": "<request_id>"
   }
 }
 ```
@@ -361,7 +381,8 @@ For set responses the inner `response` object contains a `status` field instead 
     "status": "Ok",
     "status_info": "",
     "type": "Set",
-    "response": { "status": "Accepted", "status_info": "" }
+    "response": { "status": "Accepted", "status_info": "" },
+    "id": "<request_id>"
   }
 }
 ```

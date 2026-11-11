@@ -90,9 +90,15 @@ private:
         std::unordered_map<std::string, everest::lib::util::simple_queue<ParsedMessage>> pending_messages;
     };
 
+    struct PendingConfigResponse {
+        MqttTopic topic;
+        SharedTypedHandler handler;
+    };
+
     struct ResponseHandlers {
         std::map<CmdId, std::shared_ptr<TypedHandler>> cmd; // cmd result handlers of module
-        SingleHandlerMap config; // configuration response handlers of module, one per response topic
+        SingleHandlerMap config;                            // readers of a topic that sent no request, one per topic
+        std::map<std::string, PendingConfigResponse> config_by_id; // handlers of pending requests by request id
     };
 
     struct GenericHandlers {
