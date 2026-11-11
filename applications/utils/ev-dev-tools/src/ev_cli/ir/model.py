@@ -8,8 +8,8 @@ it instead of keeping caches of their own.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 from collections.abc import Mapping
+from dataclasses import dataclass, field
 
 from ..errors import DefinitionNotFound
 from ..schema.references import TypeRef

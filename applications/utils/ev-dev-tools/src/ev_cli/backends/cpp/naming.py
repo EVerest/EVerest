@@ -10,6 +10,7 @@ one is a source-breaking change for every implementer.
 from __future__ import annotations
 
 from itertools import pairwise
+
 from ...errors import UnsupportedDefinition
 
 #: Reserved words that cannot be used as identifiers in generated C++.

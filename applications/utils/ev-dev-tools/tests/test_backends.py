@@ -3,11 +3,10 @@
 """Every registered backend has to be a whole backend.
 
 A single-backend abstraction is indistinguishable from no abstraction, and the
-way that shows up is a protocol method only one implementation bothers with.
-That happened: ``emit_module_files`` was added to the C++ backend and left out
-of both the protocol and ``ir-dump``, so ``module create`` silently hardcoded
-``cpp`` and selecting any other target would have failed at the attribute
-lookup.  These tests are the guard against a repeat.
+way that shows up is a protocol method only one implementation bothers with: a
+command calling it works for that target and fails at the attribute lookup for
+every other.  These tests check that each registered backend implements the
+whole protocol.
 """
 
 from __future__ import annotations
@@ -85,7 +84,7 @@ class TestBackendOptions:
         assert '--disable-clang-format' in flags
         assert '--clang-format-file' in flags
 
-    def test_a_backend_reads_its_own_options(self, fixture_model, tmp_path):
+    def test_disabling_clang_format_skips_looking_for_it(self, fixture_model, tmp_path):
         """With --disable-clang-format nothing looks for clang-format or its directory."""
         args = argparse.Namespace(
             disable_clang_format=True, clang_format_file=str(tmp_path / 'does-not-exist'))

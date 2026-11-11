@@ -106,9 +106,6 @@ def _build_provides(name: str, schema: Mapping[str, Any], source: SourceRef) -> 
         description=schema['description'],
         config=_build_config(schema.get('config'), source.child('config')),
         source=source,
-        # The manifest allows further primitive properties here, which the
-        # framework matches requirements against.  Code generation ignores
-        # them; they are carried so the IR does not lose them.
         extra={k: v for k, v in schema.items() if k not in known},
     )
 

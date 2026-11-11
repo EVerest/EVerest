@@ -4,9 +4,9 @@
 
 These two write into a directory a human owns, which makes the write strategies
 the important part rather than the rendering.  ``create`` never replaces an
-existing file unless asked; ``update`` replaces the headers and the build file
-but never the ``.cpp`` sources, and carries the contents of every
-``ev@<uuid>`` region across from the file it is replacing.
+existing file unless asked; ``update`` regenerates what the generator owns,
+creates what a human owns only when it is missing, and carries the contents of
+every ``ev@<uuid>`` region across from the file it is replacing.
 """
 
 from __future__ import annotations
@@ -99,11 +99,9 @@ def _create(generated, writer, *, force: bool) -> None:
 def _update(generated, writer, *, force: bool) -> None:
     """Replace what the generator owns, keep what a human owns.
 
-    Which is which comes from the backend: for C++ the ``.cpp`` files are where
-    a module's behaviour lives and are only ever created, never replaced -- not
-    even with ``--force``, for which the deliberate escape is
-    ``module create --force --only <id>.cpp``.  The command does not need to
-    know that, and with another target it would not be true.
+    Which is which is each file's update policy, set by the backend.  A file a
+    human owns is not replaced even with ``--force``; the deliberate escape is
+    ``module create --force --only <name>``.
     """
     primary = Strategy.FORCE_UPDATE if force else Strategy.UPDATE
 

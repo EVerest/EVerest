@@ -70,17 +70,8 @@ class TestConstraints:
         hash(Constraints.from_schema({'enum': ['a', 'b']}))
 
 
-class TestFixtureTypes:
-    """What the fixture tree should have produced."""
-
-    def test_declared_enums_come_before_promoted_ones(self, fixture_model):
-        unit = fixture_model.types['sample']
-        # Mood is declared; Kind is an enum written inline on a property.
-        assert [e.name for e in unit.enums] == ['Mood', 'Kind']
-
-    def test_inline_enum_is_named_after_its_property(self, fixture_model):
-        kind = fixture_model.types['sample'].enum('Kind')
-        assert kind.values == ('First', 'Second')
+class TestSourceOrder:
+    """The IR keeps the order the definitions were written in."""
 
     def test_fields_keep_source_order(self, tmp_path):
         """Ordering for a target language is the backend's business."""
@@ -102,6 +93,19 @@ class TestFixtureTypes:
         )
         pair = build_type_unit(make_loader(tmp_path), 'order').struct('Pair')
         assert [f.name for f in pair.fields] == ['first', 'second']
+
+
+class TestFixtureTypes:
+    """What the fixture tree should have produced."""
+
+    def test_declared_enums_come_before_promoted_ones(self, fixture_model):
+        unit = fixture_model.types['sample']
+        # Mood is declared; Kind is an enum written inline on a property.
+        assert [e.name for e in unit.enums] == ['Mood', 'Kind']
+
+    def test_inline_enum_is_named_after_its_property(self, fixture_model):
+        kind = fixture_model.types['sample'].enum('Kind')
+        assert kind.values == ('First', 'Second')
 
     def test_constraints_survive(self, fixture_model):
         reading = fixture_model.types['sample'].struct('Reading')
@@ -159,7 +163,7 @@ class TestInlineObjects:
         with pytest.raises(UnsupportedDefinition, match='"Detail" was already declared'):
             self.build(tmp_path, self.holder('First', 'text') + self.holder('Second', member, member_type))
 
-    def test_a_declared_struct_of_another_shape_is_not_reused(self, tmp_path):
+    def test_a_declared_struct_of_another_shape_is_rejected(self, tmp_path):
         declared = (
             '  Detail:\n'
             '    description: Declared\n'
@@ -242,7 +246,7 @@ class TestFixtureInterface:
 
 class TestFixtureModule:
 
-    def test_mutability_is_a_field_not_an_exception(self, fixture_model):
+    def test_each_config_entry_carries_its_mutability(self, fixture_model):
         module = fixture_model.modules['Sample']
         by_name = {c.name: c for c in module.config}
         assert by_name['read_only_setting'].mutability is Mutability.READ_ONLY

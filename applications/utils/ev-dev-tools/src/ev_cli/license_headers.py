@@ -9,8 +9,8 @@ own texts without ev-cli knowing anything about them.
 
 from __future__ import annotations
 
-from pathlib import Path
 from collections.abc import Sequence
+from pathlib import Path
 
 from .errors import LicenseNotFound
 

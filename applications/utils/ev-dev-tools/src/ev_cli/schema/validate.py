@@ -6,8 +6,7 @@ The meta-schemas in ``lib/everest/framework/schemas`` are draft-07, and so is
 the validation done here.  That is deliberate: this generator's job is to
 keep reading the definitions EVerest has today, and the framework's own C++
 validator supports draft-07 only.  The keyword subset actually used means the
-choice of draft is not observable -- but saying so is not the same as changing
-it, and changing it belongs with the source migration, not here.
+choice of draft is not observable.
 """
 
 from __future__ import annotations

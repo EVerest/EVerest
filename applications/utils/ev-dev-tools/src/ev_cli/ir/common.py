@@ -4,10 +4,9 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, fields
 from collections.abc import Mapping
+from dataclasses import dataclass, fields
 from typing import Any, Final
-
 
 #: Schema keyword -> :class:`Constraints` field.  Also serves as the list of
 #: validation keywords the IR claims to preserve, which the losslessness test

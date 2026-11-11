@@ -15,10 +15,10 @@ is silently dropping someone's work.
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 from functools import cached_property
 from pathlib import Path
-from collections.abc import Mapping
 
 from .errors import BlockError
 

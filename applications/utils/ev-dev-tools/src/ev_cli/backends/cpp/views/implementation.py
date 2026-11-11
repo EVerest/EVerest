@@ -7,13 +7,12 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from ....ir.interfaces import ArgDef, CmdDef, InterfaceDef
-from ....ir.modules import ConfigEntry, ModuleDef, ProvidesDef
 from ....ir.model import Model
+from ....ir.modules import ConfigEntry, ModuleDef, ProvidesDef
 from ....ir.types import JsonType, TypeExpr
 from .. import naming
 from .interface import InterfaceView
 from .module import ProvidedView
-
 
 #: What ``module create`` writes for a command it cannot know the answer to.
 DUMMY_RESULTS = {

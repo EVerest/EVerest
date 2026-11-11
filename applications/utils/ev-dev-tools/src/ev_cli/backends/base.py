@@ -11,10 +11,10 @@ OpenAPI, documentation -- an addition rather than a second parser.
 from __future__ import annotations
 
 import argparse
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from collections.abc import Callable
 from typing import Protocol, runtime_checkable
 
 from ..ir.model import Model

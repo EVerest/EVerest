@@ -11,9 +11,9 @@ outside tools.  Keeping the search here, in one place, means the reference
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from collections.abc import Sequence
 from typing import Any
 
 import yaml

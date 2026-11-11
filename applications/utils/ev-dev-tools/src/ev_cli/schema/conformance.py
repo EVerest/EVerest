@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright Pionix GmbH and Contributors to EVerest
-"""Reporting what in a reference would not conform to JSON Schema 2020-12.
+"""Reporting where the definitions would not conform to JSON Schema 2020-12.
 
 Under JSON Schema draft-07 every keyword sitting beside a ``$ref`` is
 *ignored*.  Under 2020-12 -- and therefore under OpenAPI 3.1 -- the same
@@ -13,7 +13,8 @@ Every generator in the tree already ignores those siblings, and the IR does
 not carry them: a reference there is a reference plus a description, and
 nothing else.  Each sibling is reported here, as is a reference written in the
 legacy form, so that the sources can be cleaned up and so that the two
-genuinely dangerous shapes are visible rather than latent.
+genuinely dangerous shapes are visible rather than latent.  A document that
+declares no ``$schema`` is reported as well, once per document.
 
 Findings are kept apart from the IR: whether a definition was written in
 EVerest's historical dialect is a fact about the source text, and no backend
@@ -25,9 +26,9 @@ definition document -- type units, interfaces, error lists and module manifests
 from __future__ import annotations
 
 from collections import Counter
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from enum import Enum
-from collections.abc import Iterator, Mapping, Sequence
 from typing import Any
 
 from .loader import DefinitionLoader, Document

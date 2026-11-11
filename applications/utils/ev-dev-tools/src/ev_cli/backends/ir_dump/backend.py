@@ -13,10 +13,10 @@ from __future__ import annotations
 
 import argparse
 import json
+from collections.abc import Mapping
 from dataclasses import fields, is_dataclass
 from enum import Enum
 from pathlib import Path
-from collections.abc import Mapping
 from typing import Any
 
 from ...ir.common import Constraints

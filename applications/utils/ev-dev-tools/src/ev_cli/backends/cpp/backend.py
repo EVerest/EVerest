@@ -10,9 +10,9 @@ directly, through the views in :mod:`.views`.
 from __future__ import annotations
 
 import argparse
+from collections.abc import Iterable
 from enum import Enum
 from pathlib import Path
-from collections.abc import Iterable
 
 import jinja2
 
@@ -24,10 +24,10 @@ from ..base import FileCategory, GeneratedFile, OutputKind, UpdatePolicy
 from . import naming
 from .postprocess import format_sources
 from .views import (
-    PayloadKind,
     ImplementationView,
     InterfaceView,
     ModuleView,
+    PayloadKind,
     TypeUnitView,
 )
 from .views.common import TEMPLATE_VERSION
@@ -173,8 +173,6 @@ class CppBackend:
         definition = model.modules[module]
         _reject_cpp_keywords(_config_entries(definition))
         view = ModuleView(module=definition)
-        # Modules are addressed by path but their generated sources sit under
-        # the last segment of it.
         name = definition.name
         mtime = definition.source.file.stat().st_mtime
         templates = self.templates(OutputKind.MODULE_LOADER)
