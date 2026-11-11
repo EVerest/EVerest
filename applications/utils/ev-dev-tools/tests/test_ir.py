@@ -171,6 +171,43 @@ class TestInlineObjects:
             self.build(tmp_path, declared + self.holder('Holder', 'text'))
 
 
+class TestIdentifiers:
+    """A name that becomes part of a generated identifier has to be one."""
+
+    @staticmethod
+    def write(tmp_path, relative, text):
+        path = tmp_path / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text)
+
+    def test_a_dotted_variable_name_is_rejected(self, tmp_path):
+        from conftest import make_loader
+        from ev_cli.ir.build import build_interface
+
+        self.write(tmp_path, 'interfaces/odd.yaml', (
+            'description: Odd names\n'
+            'vars:\n'
+            '  level.max: {description: Dotted, type: number}\n'
+        ))
+        with pytest.raises(UnsupportedDefinition, match='variable name "level.max"'):
+            build_interface(make_loader(tmp_path), 'odd')
+
+    def test_a_hyphenated_configuration_name_is_rejected(self, tmp_path):
+        from conftest import make_loader
+        from ev_cli.ir.build import build_module
+
+        self.write(tmp_path, 'modules/Odd/manifest.yaml', (
+            'description: Odd module\n'
+            'config:\n'
+            '  max-current: {description: Hyphenated, type: number}\n'
+            'metadata:\n'
+            '  license: https://opensource.org/licenses/Apache-2.0\n'
+            '  authors: [Someone]\n'
+        ))
+        with pytest.raises(UnsupportedDefinition, match='configuration name "max-current"'):
+            build_module(make_loader(tmp_path), 'Odd')
+
+
 class TestFixtureInterface:
 
     def test_payload_shapes(self, fixture_model):

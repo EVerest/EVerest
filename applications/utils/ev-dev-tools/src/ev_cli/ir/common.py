@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, fields
-from typing import Any, Final
+from typing import Any, Final, Mapping
 
 
 #: Schema keyword -> :class:`Constraints` field.  Also serves as the list of
@@ -58,7 +58,7 @@ class Constraints:
     has_default: bool = False
 
     @classmethod
-    def from_schema(cls, schema: dict[str, Any]) -> Constraints:
+    def from_schema(cls, schema: Mapping[str, Any]) -> Constraints:
         values: dict[str, Any] = {
             attribute: (
                 tuple(schema[keyword]) if keyword in _SEQUENCE_KEYWORDS

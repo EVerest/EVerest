@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
-def escape_pointer_segment(segment: str) -> str:
+def escape_pointer_segment(segment: str | int) -> str:
     """Escape one segment of a JSON pointer as RFC 6901 requires."""
     return str(segment).replace('~', '~0').replace('/', '~1')
 

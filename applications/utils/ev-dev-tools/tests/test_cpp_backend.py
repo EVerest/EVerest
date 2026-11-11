@@ -183,6 +183,36 @@ class TestGuardsAndNames:
         naming.check_identifier('lambda', 'somewhere')  # legal in C++
 
 
+class TestCppKeywords:
+    """C++ reserves a word only where generated code uses a name on its own."""
+
+    @staticmethod
+    def emit(tmp_path, cmds_yaml):
+        from conftest import make_loader
+        from ev_cli.ir.build import build_interface
+        from ev_cli.ir.model import Model
+
+        (tmp_path / 'interfaces').mkdir()
+        (tmp_path / 'interfaces' / 'odd.yaml').write_text('description: Odd names\ncmds:\n' + cmds_yaml)
+        model = Model(interfaces={'odd': build_interface(make_loader(tmp_path), 'odd')})
+        backend = CppBackend(argparse.Namespace(disable_clang_format=True))
+        return backend.emit_interface(model, 'odd', tmp_path / 'out')
+
+    def test_an_argument_named_after_a_keyword_is_rejected(self, tmp_path):
+        """Arguments are the handler's parameter names."""
+        with pytest.raises(UnsupportedDefinition, match='"delete" is a C\\+\\+ keyword'):
+            self.emit(tmp_path, (
+                '  remove:\n'
+                '    description: Takes a keyword argument\n'
+                '    arguments:\n'
+                '      delete: {description: A keyword, type: boolean}\n'
+            ))
+
+    def test_a_command_named_after_a_keyword_is_accepted(self, tmp_path):
+        """A command name is always part of a longer one, such as handle_delete."""
+        assert self.emit(tmp_path, '  delete: {description: A keyword command}\n')
+
+
 class TestTypeMapping:
     """The generated ABI.  A change here relinks every module."""
 

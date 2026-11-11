@@ -14,7 +14,7 @@ import argparse
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Protocol, runtime_checkable
+from typing import Callable, Protocol, runtime_checkable
 
 from ..ir.model import Model
 
@@ -94,6 +94,10 @@ class Backend(Protocol):
     interface_output_dir: str | None
     loader_output_dir: str | None
 
+    def __init__(self, args: argparse.Namespace | None = None) -> None:
+        """Built from the parsed command line, or with every option at its default."""
+        ...
+
     @staticmethod
     def options() -> argparse.ArgumentParser:
         """The command line options that belong to this target alone.
@@ -147,15 +151,15 @@ class BackendRegistry:
     """The backends this build of ev-cli knows about."""
 
     def __init__(self) -> None:
-        self._factories: dict[str, callable] = {}
+        self._factories: dict[str, Callable[[], type[Backend]]] = {}
 
-    def register(self, name: str, factory) -> None:
+    def register(self, name: str, factory: Callable[[], type[Backend]]) -> None:
         self._factories[name] = factory
 
     def names(self) -> tuple[str, ...]:
         return tuple(sorted(self._factories))
 
-    def backend_class(self, name: str) -> type:
+    def backend_class(self, name: str) -> type[Backend]:
         """The backend's class, imported on demand.
 
         Needed as well as :meth:`create` because a backend's options have to

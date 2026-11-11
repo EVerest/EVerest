@@ -18,7 +18,7 @@ from ..modules import (
     ProvidesDef,
     RequiresDef,
 )
-from .common import json_type_of
+from .common import json_type_of, reject_non_identifier
 
 
 def build_modules(loader: DefinitionLoader, names: Iterable[str]) -> dict[str, ModuleDef]:
@@ -70,6 +70,7 @@ def _build_config(entries: Mapping[str, Any] | None, source: SourceRef) -> tuple
 
 
 def _build_config_entry(name: str, schema: Mapping[str, Any], source: SourceRef) -> ConfigEntry:
+    reject_non_identifier(name, source, 'configuration name')
     return ConfigEntry(
         name=name,
         description=schema['description'],
@@ -96,6 +97,7 @@ def _read_mutability(schema: Mapping[str, Any], source: SourceRef) -> Mutability
 
 
 def _build_provides(name: str, schema: Mapping[str, Any], source: SourceRef) -> ProvidesDef:
+    reject_non_identifier(name, source, 'implementation id')
     known = {'description', 'interface', 'config'}
     return ProvidesDef(
         id=name,
@@ -111,6 +113,7 @@ def _build_provides(name: str, schema: Mapping[str, Any], source: SourceRef) -> 
 
 
 def _build_requires(name: str, schema: Mapping[str, Any], source: SourceRef) -> RequiresDef:
+    reject_non_identifier(name, source, 'requirement id')
     ignore = schema.get('ignore') or {}
     ignored_vars = ignore.get('vars', ())
     if isinstance(ignored_vars, str):

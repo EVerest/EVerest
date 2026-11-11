@@ -29,7 +29,7 @@ from ..types import (
     TypeUnit,
     Variant,
 )
-from .common import read_declared_type, referenced_units, resolve_reference
+from .common import read_declared_type, referenced_units, reject_non_identifier, resolve_reference
 
 
 def build_type_units(loader: DefinitionLoader) -> dict[str, TypeUnit]:
@@ -85,7 +85,8 @@ class _UnitBuild:
     ) -> None:
         """Two declarations of the same name would not compile once emitted."""
         seen: dict[str, SourceRef] = {}
-        for declaration in (*enums, *structs):
+        declarations: list[EnumDef | StructDef] = [*enums, *structs]
+        for declaration in declarations:
             previous = seen.get(declaration.name)
             if previous is not None:
                 raise UnsupportedDefinition(
@@ -132,11 +133,7 @@ class _UnitBuild:
         fields: list[Field] = []
 
         for property_name, property_schema in (schema.get('properties') or {}).items():
-            if not property_name.isidentifier():
-                raise UnsupportedDefinition(
-                    f'{source}: property name "{property_name}" is not usable as '
-                    f'an identifier in generated code'
-                )
+            reject_non_identifier(property_name, source, 'property name')
             property_source = source.child('properties', property_name)
             fields.append(Field(
                 name=property_name,

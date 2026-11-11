@@ -12,11 +12,14 @@ from __future__ import annotations
 import argparse
 from enum import Enum
 from pathlib import Path
+from typing import Iterable
 
 import jinja2
 
 from ... import blocks
+from ...ir.interfaces import ArgDef
 from ...ir.model import Model
+from ...ir.modules import ConfigEntry, ModuleDef
 from ..base import FileCategory, GeneratedFile, OutputKind, UpdatePolicy
 from . import naming
 from .postprocess import clang_format
@@ -138,7 +141,9 @@ class CppBackend:
         return self._postprocess([header])
 
     def emit_interface(self, model: Model, interface: str, output_dir: Path) -> list[GeneratedFile]:
-        view = InterfaceView(interface=model.interfaces[interface], model=model)
+        definition = model.interfaces[interface]
+        _reject_cpp_keywords(argument for cmd in definition.cmds for argument in cmd.arguments)
+        view = InterfaceView(interface=definition, model=model)
         output_path = output_dir / interface
         mtime = view.interface.source.file.stat().st_mtime
         templates = self.templates(OutputKind.INTERFACE)
@@ -164,6 +169,7 @@ class CppBackend:
 
     def emit_module_loader(self, model: Model, module: str, output_dir: Path) -> list[GeneratedFile]:
         definition = model.modules[module]
+        _reject_cpp_keywords(_config_entries(definition))
         view = ModuleView(module=definition)
         # Modules are addressed by path but their generated sources sit under
         # the last segment of it.
@@ -197,6 +203,7 @@ class CppBackend:
     ) -> list[GeneratedFile]:
         """The sources ``module create`` and ``module update`` manage."""
         definition = model.modules[module]
+        _reject_cpp_keywords(_config_entries(definition))
         mtime = definition.source.file.stat().st_mtime
         templates = self.templates(OutputKind.MODULE_FILES)
 
@@ -268,3 +275,14 @@ class CppBackend:
         ))
 
         return self._postprocess(module_files)
+
+
+def _config_entries(module: ModuleDef) -> list[ConfigEntry]:
+    """The module's own configuration and that of every implementation it provides."""
+    return [*module.config, *(entry for provided in module.provides for entry in provided.config)]
+
+
+def _reject_cpp_keywords(named: Iterable[ArgDef | ConfigEntry]) -> None:
+    """Refuse names generated C++ uses on their own, when C++ reserves them."""
+    for entry in named:
+        naming.check_identifier(entry.name, str(entry.source))

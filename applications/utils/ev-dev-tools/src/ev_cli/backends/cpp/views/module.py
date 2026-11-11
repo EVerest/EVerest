@@ -46,11 +46,11 @@ class ProvidedView:
 
     @cached_property
     def config(self) -> tuple[ConfigEntry, ...]:
-        return read_only_config(self.provided.config)
+        return select_static_config(self.provided.config)
 
     @cached_property
     def rwconfig(self) -> tuple[ConfigEntry, ...]:
-        return read_write_config(self.provided.config)
+        return select_read_write_config(self.provided.config)
 
 
 @dataclass
@@ -81,8 +81,8 @@ def config_type(entry: ConfigEntry) -> str:
     return to_cpp_type(Primitive(entry.type), Flavour.PAYLOAD)
 
 
-def read_only_config(entries) -> tuple[ConfigEntry, ...]:
-    """Configuration a module reads but cannot be asked to change.
+def select_static_config(entries) -> tuple[ConfigEntry, ...]:
+    """Configuration that gets no change handler: ``ReadOnly`` and ``WriteOnly`` entries.
 
     Splitting a module's configuration in two is a presentation decision -- the
     IR records each entry's mutability and nothing more -- so it happens here.
@@ -90,7 +90,8 @@ def read_only_config(entries) -> tuple[ConfigEntry, ...]:
     return tuple(e for e in entries if e.mutability is not Mutability.READ_WRITE)
 
 
-def read_write_config(entries) -> tuple[ConfigEntry, ...]:
+def select_read_write_config(entries) -> tuple[ConfigEntry, ...]:
+    """Configuration that can be changed at runtime, each entry with its own handler."""
     return tuple(e for e in entries if e.mutability is Mutability.READ_WRITE)
 
 
@@ -152,11 +153,11 @@ class ModuleView:
 
     @cached_property
     def config(self) -> tuple[ConfigEntry, ...]:
-        return read_only_config(self.module.config)
+        return select_static_config(self.module.config)
 
     @cached_property
     def rwconfig(self) -> tuple[ConfigEntry, ...]:
-        return read_write_config(self.module.config)
+        return select_read_write_config(self.module.config)
 
     @property
     def has_impl_rwconfig(self) -> bool:

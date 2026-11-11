@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from ....ir.interfaces import ArgDef, CmdDef, InterfaceDef
 from ....ir.modules import ConfigEntry, ModuleDef, ProvidesDef
 from ....ir.model import Model
-from ....ir.types import JsonType
+from ....ir.types import JsonType, TypeExpr
 from .. import naming
 from .interface import InterfaceView
 from .module import ProvidedView
@@ -90,9 +90,9 @@ class ImplementationView:
     def argument_declaration(self, argument: ArgDef) -> str:
         return self._signatures.argument_declaration(argument)
 
-    def dummy_result(self, cmd: CmdDef) -> str:
+    def dummy_result(self, result: TypeExpr) -> str:
         """A value of the right shape, for the skeleton to compile against."""
-        json_types = self._signatures.json_types_of(cmd.result)
+        json_types = self._signatures.json_types_of(result)
         if len(json_types) != 1:
             # A variant default-constructs to its first alternative.
             return '{}'

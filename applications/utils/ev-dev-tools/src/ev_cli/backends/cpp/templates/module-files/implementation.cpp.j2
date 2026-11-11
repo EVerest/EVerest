@@ -21,7 +21,7 @@ void {{ u.class_name }}::shutdown() {
 {{ u.result_type(cmd) }} {{ u.class_name }}::handle_{{ cmd.name }}({% for argument in cmd.arguments %}{{ u.argument_declaration(argument) }}{{ ', ' if not loop.last }}{% endfor %}) {
     // your code for cmd {{ cmd.name }} goes here
 {% if cmd.result is not none %}
-    return {{ u.dummy_result(cmd) }};
+    return {{ u.dummy_result(cmd.result) }};
 {% endif %}
 }
 {% endfor %}

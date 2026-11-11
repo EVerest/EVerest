@@ -25,16 +25,11 @@ from pathlib import Path
 import pytest
 import yaml
 
+from conftest import EVEREST_DIR, SCHEMAS_DIR, needs_everest
+
 EV_CLI = shlex.split(os.environ.get('EV_CLI', 'ev-cli'))
 
-# tests/ -> ev-dev-tools/ -> utils/ -> applications/ -> repository root
-EVEREST_DIR = Path(os.environ.get('EVEREST_CORE', Path(__file__).resolve().parents[4]))
-SCHEMAS_DIR = EVEREST_DIR / 'lib' / 'everest' / 'framework' / 'schemas'
-
-pytestmark = pytest.mark.skipif(
-    not SCHEMAS_DIR.is_dir(),
-    reason=f'no everest-core checkout at {EVEREST_DIR} (set EVEREST_CORE)',
-)
+pytestmark = needs_everest
 
 
 def run(*args: str, cwd: Path | None = None, check: bool = True) -> subprocess.CompletedProcess:

@@ -21,7 +21,7 @@ from ..types import (
     TypeExpr,
     Variant,
 )
-from .common import read_declared_type, referenced_units, resolve_reference
+from .common import read_declared_type, referenced_units, reject_non_identifier, resolve_reference
 
 
 def build_interfaces(loader: DefinitionLoader, names: Iterable[str]) -> dict[str, InterfaceDef]:
@@ -73,6 +73,7 @@ class _InterfaceBuild:
         )
 
     def _build_var(self, name: str, schema: Mapping[str, Any], source: SourceRef) -> VarDef:
+        reject_non_identifier(name, source, 'variable name')
         return VarDef(
             name=name,
             description=schema['description'],
@@ -83,6 +84,7 @@ class _InterfaceBuild:
         )
 
     def _build_cmd(self, name: str, schema: Mapping[str, Any], source: SourceRef) -> CmdDef:
+        reject_non_identifier(name, source, 'command name')
         arguments = tuple(
             self._build_argument(argument, argument_schema, source.child('arguments', argument))
             # Declaration order is the order of the generated handler's
@@ -110,6 +112,7 @@ class _InterfaceBuild:
         )
 
     def _build_argument(self, name: str, schema: Mapping[str, Any], source: SourceRef) -> ArgDef:
+        reject_non_identifier(name, source, 'argument name')
         return ArgDef(
             name=name,
             description=schema['description'],

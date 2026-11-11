@@ -13,8 +13,11 @@ from ...errors import UnsupportedDefinition
 
 #: Reserved words that cannot be used as identifiers in generated C++.
 #:
-#: Whether a name is a legal identifier at all is checked earlier, when the IR
-#: is built, since that applies to any target.
+#: Whether a name is a legal identifier at all is checked when the IR is built,
+#: since that applies to any target.  These matter only for the names generated
+#: code uses on their own: struct members, command arguments and configuration
+#: entries.  Variable and command names are always part of a longer identifier,
+#: such as ``handle_delete``.
 CPP_KEYWORDS = frozenset({
     'alignas', 'alignof', 'and', 'and_eq', 'asm', 'auto', 'bitand', 'bitor',
     'bool', 'break', 'case', 'catch', 'char', 'char8_t', 'char16_t',

@@ -22,6 +22,14 @@ def json_type_of(declared: Any, source: SourceRef) -> JsonType:
         ) from None
 
 
+def reject_non_identifier(name: str, source: SourceRef, what: str) -> None:
+    """Refuse a name that generated code in any language would need as an identifier."""
+    if not name.isidentifier():
+        raise UnsupportedDefinition(
+            f'{source}: {what} "{name}" is not usable as an identifier in generated code'
+        )
+
+
 def read_declared_type(schema: Mapping[str, Any], source: SourceRef) -> JsonType | Variant:
     """The ``type`` a schema without a ``$ref`` declares: one json type, or a list of them."""
     declared = schema.get('type')
