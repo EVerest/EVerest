@@ -182,7 +182,7 @@ class TestIdentifiers:
     def write(tmp_path, relative, text):
         path = tmp_path / relative
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(text)
+        path.write_text(text, encoding='utf-8')
 
     def test_a_dotted_variable_name_is_rejected(self, tmp_path):
         from conftest import make_loader
@@ -195,6 +195,23 @@ class TestIdentifiers:
         ))
         with pytest.raises(UnsupportedDefinition, match='variable name "level.max"'):
             build_interface(make_loader(tmp_path), 'odd')
+
+    def test_a_non_ascii_property_name_is_rejected(self, tmp_path):
+        """Python would accept it as an identifier; not every target language does."""
+        from conftest import make_loader
+        from ev_cli.ir.build import build_type_unit
+
+        self.write(tmp_path, 'types/odd.yaml', (
+            'description: Odd names\n'
+            'types:\n'
+            '  Box:\n'
+            '    description: A box\n'
+            '    type: object\n'
+            '    properties:\n'
+            '      gr\u00f6\u00dfe: {description: Size, type: number}\n'
+        ))
+        with pytest.raises(UnsupportedDefinition, match='property name "gr\u00f6\u00dfe"'):
+            build_type_unit(make_loader(tmp_path), 'odd')
 
     def test_a_hyphenated_configuration_name_is_rejected(self, tmp_path):
         from conftest import make_loader

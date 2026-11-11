@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterable, Mapping
 from typing import Any
 
@@ -23,9 +24,14 @@ def read_json_type(declared: Any, source: SourceRef) -> JsonType:
         ) from None
 
 
+#: What every target language accepts as an identifier: ASCII letters, digits
+#: and underscores, not starting with a digit.
+_IDENTIFIER = re.compile(r'[A-Za-z_][A-Za-z0-9_]*')
+
+
 def reject_non_identifier(name: str, source: SourceRef, what: str) -> None:
     """Refuse a name that generated code in any language would need as an identifier."""
-    if not name.isidentifier():
+    if not _IDENTIFIER.fullmatch(name):
         raise UnsupportedDefinition(
             f'{source}: {what} "{name}" is not usable as an identifier in generated code'
         )
