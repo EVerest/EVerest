@@ -109,16 +109,6 @@ class Backend(Protocol):
         """
         ...
 
-    def postprocess(self, files: list[GeneratedFile]) -> None:
-        """Adjust generated content in place before anything is written.
-
-        This is where a target does whatever only it understands -- running
-        clang-format over C++, for instance.  Keeping it here rather than in
-        the commands means a command never has to know what kind of files it
-        is dealing with.
-        """
-        ...
-
     def templates(self, kind: OutputKind) -> tuple[Path, ...]:
         """Template files whose modification should force regeneration.
 

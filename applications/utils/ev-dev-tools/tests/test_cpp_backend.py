@@ -10,6 +10,7 @@ including ones nobody thought to write a case for.
 
 from __future__ import annotations
 
+import argparse
 import os
 from pathlib import Path
 
@@ -320,8 +321,8 @@ class TestPayloadKinds:
 # --------------------------------------------------------------------------
 
 def generate_everything(model, out_dir: Path) -> dict[str, str]:
-    """Every file the backend can produce for the fixture tree."""
-    backend = CppBackend()
+    """Every file the backend can produce for the fixture tree, unformatted."""
+    backend = CppBackend(argparse.Namespace(disable_clang_format=True))
     produced: dict[str, str] = {}
 
     for unit in sorted(model.types):

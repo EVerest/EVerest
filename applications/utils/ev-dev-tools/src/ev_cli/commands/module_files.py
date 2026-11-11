@@ -49,8 +49,6 @@ def write_module_files(args, *, updating: bool) -> int:
         print(f'ev-cli: {err}')
         return 0
 
-    backend.postprocess(generated)
-
     writer = FileWriter(diff_only=args.diff)
     if updating:
         _update(generated, writer, force=args.force)

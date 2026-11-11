@@ -18,7 +18,7 @@ def generate_headers(args) -> int:
     model = context.interface_model(requested)
     for interface in requested:
         files = backend.emit_interface(model, interface, output_dir)
-        write_generated(backend, files, force=args.force, diff_only=args.diff)
+        write_generated(files, force=args.force, diff_only=args.diff)
     return 0
 
 

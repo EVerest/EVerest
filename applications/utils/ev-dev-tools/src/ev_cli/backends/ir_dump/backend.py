@@ -57,9 +57,6 @@ class IrDumpBackend:
             Path(root).resolve() for root in (*everest_dirs, *([work_dir] if work_dir else []))
         )
 
-    def postprocess(self, files: list[GeneratedFile]) -> None:
-        """Nothing to do: JSON comes out of the serialiser already formatted."""
-
     def templates(self, kind: OutputKind) -> tuple[Path, ...]:
         return ()
 

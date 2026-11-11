@@ -17,7 +17,7 @@ def generate_headers(args) -> int:
     model = context.type_model()
     for unit in context.requested_units(args.types):
         files = backend.emit_type_unit(model, unit, output_dir)
-        write_generated(backend, files, force=args.force, diff_only=args.diff)
+        write_generated(files, force=args.force, diff_only=args.diff)
     return 0
 
 

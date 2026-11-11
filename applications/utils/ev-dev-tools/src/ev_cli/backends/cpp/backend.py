@@ -10,18 +10,16 @@ directly, through the views in :mod:`.views`.
 from __future__ import annotations
 
 import argparse
-import shutil
-import subprocess
 from enum import Enum
 from pathlib import Path
 
 import jinja2
 
 from ... import blocks
-from ...errors import EvCliError
 from ...ir.model import Model
 from ..base import FileCategory, GeneratedFile, OutputKind, UpdatePolicy
 from . import naming
+from .postprocess import clang_format
 from .views import (
     PayloadKind,
     ImplementationView,
@@ -108,18 +106,11 @@ class CppBackend:
         self._env.globals['template_version'] = TEMPLATE_VERSION
         self._env.globals['config_type'] = config_type
 
-    def postprocess(self, files: list[GeneratedFile]) -> None:
-        """Format the generated C++ sources with clang-format.
-
-        The commands do not know that C++ needs formatting, or which of a
-        target's outputs are even C++.
-        """
-        sources = [file for file in files if file.path.suffix in ('.hpp', '.cpp')]
-        if self._disable_clang_format or not sources:
-            return
-        executable = _find_clang_format(self._clang_format_dir)
-        for file in sources:
-            file.content = _clang_format(executable, self._clang_format_dir, file.content)
+    def _finish(self, files: list[GeneratedFile]) -> list[GeneratedFile]:
+        """Format what was rendered, unless ``--disable-clang-format`` says not to."""
+        if not self._disable_clang_format:
+            clang_format(files, self._clang_format_dir)
+        return files
 
     def templates(self, kind: OutputKind) -> tuple[Path, ...]:
         return tuple(template.path for template in Template if template.kind is kind)
@@ -132,7 +123,7 @@ class CppBackend:
         content = self._render(Template.TYPE_UNIT, view)
 
         path = output_dir / f'{unit}.hpp'
-        return [GeneratedFile(
+        return self._finish([GeneratedFile(
             path=path,
             content=content,
             # The output directory's own name followed by the unit, e.g.
@@ -143,7 +134,7 @@ class CppBackend:
             # tuned for that comparison.
             source_mtime=view.unit.source.file.stat().st_mtime,
             template_paths=self.templates(OutputKind.TYPE_UNIT),
-        )]
+        )])
 
     def emit_interface(self, model: Model, interface: str, output_dir: Path) -> list[GeneratedFile]:
         view = InterfaceView(interface=model.interfaces[interface], model=model)
@@ -158,7 +149,7 @@ class CppBackend:
             ('Interface.hpp', Template.INTERFACE),
             ('Types.hpp', Template.INTERFACE_TYPES),
         )
-        return [
+        return self._finish([
             GeneratedFile(
                 path=output_path / filename,
                 content=self._render(template, view, filename=filename),
@@ -167,7 +158,7 @@ class CppBackend:
                 template_paths=templates,
             )
             for filename, template in outputs
-        ]
+        ])
 
     def emit_module_loader(self, model: Model, module: str, output_dir: Path) -> list[GeneratedFile]:
         definition = model.modules[module]
@@ -178,7 +169,7 @@ class CppBackend:
         mtime = definition.source.file.stat().st_mtime
         templates = self.templates(OutputKind.MODULE_LOADER)
 
-        return [
+        return self._finish([
             GeneratedFile(
                 path=output_dir / name / filename,
                 content=self._render(template, view),
@@ -190,7 +181,7 @@ class CppBackend:
                 ('ld-ev.hpp', Template.LOADER_HPP),
                 ('ld-ev.cpp', Template.LOADER_CPP),
             )
-        ]
+        ])
 
     def emit_module_files(
         self,
@@ -278,32 +269,4 @@ class CppBackend:
             UpdatePolicy.LEAVE_ALONE, with_license=False,
         ))
 
-        return files
-
-
-def _find_clang_format(config_dir: Path) -> str:
-    """The clang-format executable, once ``config_dir`` is known to configure it."""
-    executable = shutil.which('clang-format')
-    if executable is None:
-        raise EvCliError(
-            'could not find clang-format; pass --disable-clang-format to skip '
-            'formatting generated sources'
-        )
-    if not config_dir.is_dir():
-        raise EvCliError(f'clang-format directory {config_dir} does not exist')
-    if not (config_dir / '.clang-format').exists():
-        raise EvCliError(f'clang-format directory {config_dir} contains no .clang-format file')
-    return executable
-
-
-def _clang_format(executable: str, config_dir: Path, source: str) -> str:
-    completed = subprocess.run(
-        [executable, '--style=file'],
-        input=source,
-        capture_output=True,
-        cwd=config_dir,
-        encoding='utf-8',
-    )
-    if completed.returncode != 0:
-        raise EvCliError(f'clang-format failed:\n{completed.stderr}')
-    return completed.stdout
+        return self._finish(files)

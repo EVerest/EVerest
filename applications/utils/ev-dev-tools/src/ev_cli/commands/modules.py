@@ -17,7 +17,7 @@ def generate_loader(args) -> int:
 
     model = context.module_model([args.module])
     files = backend.emit_module_loader(model, args.module, output_dir)
-    write_generated(backend, files, force=args.force)
+    write_generated(files, force=args.force)
     return 0
 
 

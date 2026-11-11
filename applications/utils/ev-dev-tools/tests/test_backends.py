@@ -12,6 +12,8 @@ lookup.  These tests are the guard against a repeat.
 
 from __future__ import annotations
 
+import argparse
+
 import pytest
 
 from ev_cli.backends.base import Backend, GeneratedFile, OutputKind, UpdatePolicy, registry
@@ -19,7 +21,6 @@ from ev_cli.backends.base import Backend, GeneratedFile, OutputKind, UpdatePolic
 #: What a backend must provide for every command to work against it.
 REQUIRED = (
     'options',
-    'postprocess',
     'templates',
     'emit_type_unit',
     'emit_interface',
@@ -60,7 +61,6 @@ class TestBackendOptions:
 
     @pytest.mark.parametrize('name', registry.names())
     def test_options_is_a_usable_parent_parser(self, name):
-        import argparse
         parser = registry.backend_class(name).options()
         assert isinstance(parser, argparse.ArgumentParser)
         # a parent that adds its own -h would collide with every child's
@@ -85,17 +85,12 @@ class TestBackendOptions:
         assert '--disable-clang-format' in flags
         assert '--clang-format-file' in flags
 
-    def test_a_backend_reads_its_own_options(self):
-        import argparse
-        args = argparse.Namespace(disable_clang_format=True, clang_format_file='/tmp')
-        backend = registry.create('cpp', args)
-        # nothing to format, but the call must respect the flag rather than
-        # looking for a .clang-format that is not there
-        backend.postprocess([])
-
-    def test_a_backend_is_usable_without_any_arguments(self):
-        for name in registry.names():
-            registry.create(name).postprocess([])
+    def test_a_backend_reads_its_own_options(self, fixture_model, tmp_path):
+        """With --disable-clang-format nothing looks for clang-format or its directory."""
+        args = argparse.Namespace(
+            disable_clang_format=True, clang_format_file=str(tmp_path / 'does-not-exist'))
+        files = registry.create('cpp', args).emit_type_unit(fixture_model, 'units', tmp_path)
+        assert [file.path.name for file in files] == ['units.hpp']
 
 
 def test_unknown_backend_is_reported_with_the_alternatives():
@@ -115,7 +110,7 @@ class TestUpdatePolicy:
         from ev_cli import blocks
         from ev_cli.backends.cpp.backend import CppBackend
 
-        files = CppBackend().emit_module_files(
+        files = CppBackend(argparse.Namespace(disable_clang_format=True)).emit_module_files(
             fixture_model, 'Sample', tmp_path,
             license_header='// SPDX-License-Identifier: Apache-2.0',
             read_blocks=lambda block_set, path: blocks.placeholders(block_set),

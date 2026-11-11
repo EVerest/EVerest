@@ -11,7 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from ..backends.base import Backend, GeneratedFile, OutputKind, registry
+from ..backends.base import GeneratedFile, OutputKind, registry
 from ..errors import DefinitionNotFound, EvCliError
 from ..files import FileWriter, Strategy
 from ..ir import build
@@ -143,14 +143,11 @@ def resolve_schemas_dir(schemas_dir: Path) -> Path:
     return schemas_dir.resolve()
 
 
-def write_generated(
-    backend: Backend, files: list[GeneratedFile], *, force: bool, diff_only: bool = False
-) -> None:
-    """Post-process what a generating command emitted and write it.
+def write_generated(files: list[GeneratedFile], *, force: bool, diff_only: bool = False) -> None:
+    """Write what a generating command emitted.
 
     A template newer than its output forces the write, as ``--force`` does.
     """
-    backend.postprocess(files)
     writer = FileWriter(diff_only=diff_only)
     strategy = Strategy.FORCE_UPDATE if force else Strategy.UPDATE
     for generated in files:
