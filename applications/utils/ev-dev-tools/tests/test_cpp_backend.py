@@ -324,11 +324,11 @@ class TestPayloadKinds:
     def test_json_types_come_from_the_target_not_the_sibling(self, view):
         """``mood`` writes ``type: object`` beside a reference to a string enum."""
         configure = view.interface.cmd('configure')
-        assert view.json_types(configure.arguments[0].type) == '{"string"}'
+        assert view.json_types_initializer(configure.arguments[0].type) == '{"string"}'
 
     def test_a_variant_lists_every_option(self, view):
         store = view.interface.cmd('store')
-        assert view.json_types(store.arguments[0].type) == (
+        assert view.json_types_initializer(store.arguments[0].type) == (
             '{"null", "string", "number", "integer", "boolean", "array", "object"}'
         )
 

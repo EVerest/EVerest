@@ -9,6 +9,7 @@ one is a source-breaking change for every implementer.
 
 from __future__ import annotations
 
+from itertools import pairwise
 from ...errors import UnsupportedDefinition
 
 #: Reserved words that cannot be used as identifiers in generated C++.
@@ -55,7 +56,7 @@ def snake_case(word: str) -> str:
         )
 
     out = [word[0].lower()]
-    for previous, current in zip(word, word[1:]):
+    for previous, current in pairwise(word):
         if previous.isalpha() and previous.islower() and current.isupper():
             out.append('_')
         out.append(current.lower() if current.isalnum() else '_')

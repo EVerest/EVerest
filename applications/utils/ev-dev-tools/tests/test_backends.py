@@ -114,7 +114,7 @@ class TestUpdatePolicy:
             license_header='// SPDX-License-Identifier: Apache-2.0',
             preserve_regions=False,
         )
-        policy = {f.abbr: f.update_policy for f in files}
+        policy = {f.only_key: f.update_policy for f in files}
 
         # Regenerated: the build file and the headers.
         assert policy['cmakelists'] is UpdatePolicy.REGENERATE

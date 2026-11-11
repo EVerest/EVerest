@@ -68,7 +68,7 @@ def _print_available(generated) -> None:
             continue
         print(f'Available files for category "{category.value}"')
         for file in in_category:
-            print(f'  {file.abbr}')
+            print(f'  {file.only_key}')
 
 
 def _filter(generated, only: str | None):
@@ -76,14 +76,14 @@ def _filter(generated, only: str | None):
         return generated
 
     wanted = {name.strip() for name in only.split(',')}
-    known = {f.abbr for f in generated}
+    known = {f.only_key for f in generated}
     unknown = wanted - known
     if unknown:
         raise EvCliError(
             f'unknown file filters for --only: {", ".join(sorted(unknown))}\n'
             f'Use "--only which" to show the available names'
         )
-    return [f for f in generated if f.abbr in wanted]
+    return [f for f in generated if f.only_key in wanted]
 
 
 # --------------------------------------------------------------------------

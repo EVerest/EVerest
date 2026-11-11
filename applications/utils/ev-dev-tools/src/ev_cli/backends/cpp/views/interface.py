@@ -138,7 +138,7 @@ class InterfaceView:
             )
         raise UnsupportedDefinition(f'no json type for {payload!r}')
 
-    def json_types(self, payload: TypeExpr) -> str:
+    def json_types_initializer(self, payload: TypeExpr) -> str:
         """Rendered as the framework's initialiser list, e.g. ``{"number"}``."""
         names = ', '.join(f'"{json_type.value}"' for json_type in self.json_types_of(payload))
         return f'{{{names}}}'

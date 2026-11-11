@@ -68,11 +68,11 @@ class FileWriter:
             self._show_diff(file)
             return
 
-        method = self._method(file, strategy)
-        if method is None:
+        action = self._choose_action(file, strategy)
+        if action is None:
             return
 
-        print(f'{method} file {file.printable_name}{reason}', file=self.stream)
+        print(f'{action} file {file.printable_name}{reason}', file=self.stream)
 
         file.path.parent.mkdir(parents=True, exist_ok=True)
         content = file.content
@@ -86,10 +86,14 @@ class FileWriter:
         Without this a template change would leave every already-generated file
         in place, because the definitions it was built from had not changed.
         """
-        newer, reason = self._template_is_newer(file)
-        self.write(file, Strategy.FORCE_UPDATE if newer else strategy, reason=reason)
+        reason = self._reason_to_force(file)
+        if reason is None:
+            self.write(file, strategy)
+        else:
+            self.write(file, Strategy.FORCE_UPDATE, reason=reason)
 
-    def _method(self, file: GeneratedFile, strategy: Strategy) -> str | None:
+    def _choose_action(self, file: GeneratedFile, strategy: Strategy) -> str | None:
+        """How the write is logged, or ``None`` once the skip has been reported."""
         exists = file.path.exists()
 
         if strategy is Strategy.UPDATE:
@@ -113,14 +117,15 @@ class FileWriter:
         return 'Creating'
 
     @staticmethod
-    def _template_is_newer(file: GeneratedFile) -> tuple[bool, str]:
+    def _reason_to_force(file: GeneratedFile) -> str | None:
+        """Why ``file`` has to be written whatever the strategy says, if it has to."""
         if not file.path.exists():
-            return True, ' (Generated file did not exist)'
+            return ' (Generated file did not exist)'
         generated_at = file.path.stat().st_mtime
         for template in file.template_paths:
             if template.exists() and template.stat().st_mtime > generated_at:
-                return True, ' (Template file has changed since last generation)'
-        return False, ''
+                return ' (Template file has changed since last generation)'
+        return None
 
     def _keep_existing_license_header(self, file: GeneratedFile, content: str) -> str:
         """Leave a license header a human replaced alone.
@@ -145,7 +150,7 @@ class FileWriter:
         if not existing:
             return content
 
-        print(f'Keeping the existing licence header:\n{existing}', file=self.stream)
+        print(f'Keeping the existing license header:\n{existing}', file=self.stream)
         return content.replace(header, existing.strip())
 
     def _show_diff(self, file: GeneratedFile) -> None:
@@ -166,6 +171,7 @@ class FileWriter:
             input=file.content,
             capture_output=True,
             encoding='utf-8',
+            check=False,
         )
         if completed.stdout:
             print(completed.stdout, file=self.stream)

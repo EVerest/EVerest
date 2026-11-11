@@ -16,7 +16,8 @@ import json
 from dataclasses import fields, is_dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Any, Mapping
+from collections.abc import Mapping
+from typing import Any
 
 from ...ir.common import Constraints
 from ...ir.model import Model
@@ -102,7 +103,7 @@ class IrDumpBackend:
             content=self._render(payload),
             printable_name=path.relative_to(module_dir).as_posix(),
             source_mtime=definition.source.file.stat().st_mtime,
-            abbr='module.json',
+            only_key=path.name,
         )]
 
     def _dump(self, node, path: Path) -> GeneratedFile:

@@ -18,7 +18,7 @@ import re
 from dataclasses import dataclass
 from functools import cached_property
 from pathlib import Path
-from typing import Mapping
+from collections.abc import Mapping
 
 from .errors import BlockError
 
@@ -70,11 +70,11 @@ class Block:
     #: Whether this is the placeholder rather than something a human wrote.
     #: Only the placeholder gets indented by the renderer; captured content
     #: keeps the indentation it was written with.
-    first_use: bool = True
+    is_placeholder: bool = True
 
     def render(self, indent: int = 0) -> str:
         padding = ' ' * indent
-        opening = f'{padding}{self.content}' if self.first_use else self.content
+        opening = f'{padding}{self.content}' if self.is_placeholder else self.content
         return f'{self.tag}\n{opening}\n{padding}{self.tag}'
 
 
@@ -117,7 +117,7 @@ def extract(block_set: BlockSet, path: Path) -> dict[str, Block]:
         if line.strip() == tag:
             if collected:
                 blocks[name] = Block(
-                    tag=tag, content=''.join(collected).rstrip(), first_use=False
+                    tag=tag, content=''.join(collected).rstrip(), is_placeholder=False
                 )
             open_block = None
         else:

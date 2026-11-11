@@ -9,7 +9,7 @@ initialised in everest-core -- so the rules live here, in one named place.
 
 from __future__ import annotations
 
-from typing import Sequence
+from collections.abc import Sequence
 
 from ...ir.types import StructDef
 

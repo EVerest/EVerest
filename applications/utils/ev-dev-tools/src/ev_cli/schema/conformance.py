@@ -27,7 +27,8 @@ from __future__ import annotations
 from collections import Counter
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Iterator, Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
+from typing import Any
 
 from .loader import DefinitionLoader, Document
 from .references import ParsedReference, TypeRef, format_type_reference, parse_type_reference

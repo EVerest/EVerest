@@ -8,7 +8,8 @@ survives between units and the order units are built in cannot matter.
 
 from __future__ import annotations
 
-from typing import Any, Mapping, Sequence
+from collections.abc import Mapping, Sequence
+from typing import Any
 
 from ...errors import UnsupportedDefinition
 from ...schema.loader import DefinitionLoader
@@ -29,7 +30,12 @@ from ..types import (
     TypeUnit,
     Variant,
 )
-from .common import read_declared_type, referenced_units, reject_non_identifier, resolve_reference
+from .common import (
+    collect_referenced_units,
+    read_declared_type,
+    reject_non_identifier,
+    resolve_reference,
+)
 
 
 def build_type_units(loader: DefinitionLoader) -> dict[str, TypeUnit]:
@@ -74,7 +80,7 @@ class _UnitBuild:
             description=self.data['description'],
             enums=enums,
             structs=structs,
-            referenced_type_units=referenced_units(
+            referenced_type_units=collect_referenced_units(
                 field.type for struct in structs for field in struct.fields
             ),
             source=self.source,

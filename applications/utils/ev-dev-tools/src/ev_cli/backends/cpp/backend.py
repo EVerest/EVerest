@@ -12,7 +12,7 @@ from __future__ import annotations
 import argparse
 from enum import Enum
 from pathlib import Path
-from typing import Iterable
+from collections.abc import Iterable
 
 import jinja2
 
@@ -22,7 +22,7 @@ from ...ir.model import Model
 from ...ir.modules import ConfigEntry, ModuleDef
 from ..base import FileCategory, GeneratedFile, OutputKind, UpdatePolicy
 from . import naming
-from .postprocess import clang_format
+from .postprocess import format_sources
 from .views import (
     PayloadKind,
     ImplementationView,
@@ -114,7 +114,7 @@ class CppBackend:
     def _postprocess(self, files: list[GeneratedFile]) -> list[GeneratedFile]:
         """Format what was rendered, unless ``--disable-clang-format`` says not to."""
         if not self._disable_clang_format:
-            clang_format(files, self._clang_format_dir)
+            format_sources(files, self._clang_format_dir)
         return files
 
     def templates(self, kind: OutputKind) -> tuple[Path, ...]:
@@ -209,16 +209,17 @@ class CppBackend:
         mtime = definition.source.file.stat().st_mtime
         templates = self.templates(OutputKind.MODULE_FILES)
 
-        def rendered(template: Template, view, path: Path, abbr: str, category: FileCategory,
-                     policy: UpdatePolicy = UpdatePolicy.REGENERATE,
-                     with_license: bool = True) -> GeneratedFile:
+        def render_module_file(
+            template: Template, view, path: Path, *, only_key: str, category: FileCategory,
+            policy: UpdatePolicy = UpdatePolicy.REGENERATE, with_license: bool = True,
+        ) -> GeneratedFile:
             return GeneratedFile(
                 path=path,
                 content=self._render(template, view),
                 printable_name=path.relative_to(module_dir).as_posix(),
                 source_mtime=mtime,
                 template_paths=templates,
-                abbr=abbr,
+                only_key=only_key,
                 category=category,
                 update_policy=policy,
                 license_header=license_header if with_license else None,
@@ -229,51 +230,51 @@ class CppBackend:
         cmakelists = module_dir / 'CMakeLists.txt'
         header = module_dir / f'{definition.name}.hpp'
 
-        module_files.append(rendered(
+        module_files.append(render_module_file(
             Template.CMAKELISTS,
             ModuleView(module=definition,
                        blocks=blocks.load(blocks.CMAKELISTS, cmakelists, preserve=preserve_regions)),
-            cmakelists, 'cmakelists', FileCategory.CORE, with_license=False,
+            cmakelists, only_key='cmakelists', category=FileCategory.CORE, with_license=False,
         ))
-        module_files.append(rendered(
+        module_files.append(render_module_file(
             Template.MODULE_HPP,
             ModuleView(module=definition, license_header=license_header,
                        blocks=blocks.load(blocks.MODULE_HEADER, header, preserve=preserve_regions)),
-            header, 'module.hpp', FileCategory.CORE,
+            header, only_key='module.hpp', category=FileCategory.CORE,
         ))
-        module_files.append(rendered(
+        module_files.append(render_module_file(
             Template.MODULE_CPP,
             ModuleView(module=definition, license_header=license_header),
-            module_dir / f'{definition.name}.cpp', 'module.cpp', FileCategory.CORE,
-            UpdatePolicy.CREATE_IF_MISSING,
+            module_dir / f'{definition.name}.cpp', only_key='module.cpp', category=FileCategory.CORE,
+            policy=UpdatePolicy.CREATE_IF_MISSING,
         ))
 
         for provided in definition.provides:
             interface = model.interfaces[provided.interface]
-            names = ProvidedView(provided)
-            implementation_header = module_dir / names.class_header
+            provided_view = ProvidedView(provided)
+            implementation_header = module_dir / provided_view.class_header
             view = ImplementationView(
                 provided=provided, interface=interface, module=definition,
                 model=model, license_header=license_header,
                 blocks=blocks.load(blocks.IMPLEMENTATION_HEADER, implementation_header,
                                    preserve=preserve_regions),
             )
-            module_files.append(rendered(
+            module_files.append(render_module_file(
                 Template.IMPLEMENTATION_HPP, view, implementation_header,
-                f'{provided.id}.hpp', FileCategory.INTERFACES,
+                only_key=f'{provided.id}.hpp', category=FileCategory.INTERFACES,
             ))
-            module_files.append(rendered(
+            module_files.append(render_module_file(
                 Template.IMPLEMENTATION_CPP, view,
-                module_dir / names.cpp_file,
-                f'{provided.id}.cpp', FileCategory.INTERFACES,
-                UpdatePolicy.CREATE_IF_MISSING,
+                module_dir / provided_view.cpp_file,
+                only_key=f'{provided.id}.cpp', category=FileCategory.INTERFACES,
+                policy=UpdatePolicy.CREATE_IF_MISSING,
             ))
 
-        module_files.append(rendered(
+        module_files.append(render_module_file(
             Template.DOCS_INDEX,
             ModuleView(module=definition),
-            module_dir / 'docs' / 'index.rst', 'index.rst', FileCategory.DOCS,
-            UpdatePolicy.LEAVE_ALONE, with_license=False,
+            module_dir / 'docs' / 'index.rst', only_key='index.rst', category=FileCategory.DOCS,
+            policy=UpdatePolicy.LEAVE_ALONE, with_license=False,
         ))
 
         return self._postprocess(module_files)

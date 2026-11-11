@@ -115,7 +115,7 @@ private:
 {% else %}
         {{ cmd.name }}_cmd.arg_types = {
 {% for argument in cmd.arguments %}
-            {"{{ argument.name }}", {{ u.json_types(argument.type) }}}{{ ',' if not loop.last }}
+            {"{{ argument.name }}", {{ u.json_types_initializer(argument.type) }}}{{ ',' if not loop.last }}
 {% endfor %}
         };
 {% endif %}
@@ -144,7 +144,7 @@ private:
 {% endif %}
         };
 {% if cmd.result is not none %}
-        {{ cmd.name }}_cmd.return_type = {{ u.json_types(cmd.result) }};
+        {{ cmd.name }}_cmd.return_type = {{ u.json_types_initializer(cmd.result) }};
 {% endif %}
         cmds.emplace_back(std::move({{ cmd.name }}_cmd));
 {% if not loop.last %}

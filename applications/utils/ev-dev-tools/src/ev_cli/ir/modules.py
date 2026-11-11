@@ -11,7 +11,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Mapping
+from collections.abc import Mapping
+from typing import Any
 
 from ..schema.source import SourceRef
 from .common import NO_CONSTRAINTS, Constraints

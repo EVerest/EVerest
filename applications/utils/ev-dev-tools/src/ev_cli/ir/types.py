@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import TypeAlias, Union
+from typing import TypeAlias
 
 from ..schema.references import TypeRef
 from ..schema.source import SourceRef
@@ -108,7 +108,7 @@ class Variant:
         return tuple(o for o in self.options if o is not JsonType.NULL)
 
 
-TypeExpr: TypeAlias = Union[Primitive, Array, Ref, LocalEnum, LocalStruct, Opaque, Variant]
+TypeExpr: TypeAlias = Primitive | Array | Ref | LocalEnum | LocalStruct | Opaque | Variant
 
 
 # --------------------------------------------------------------------------
@@ -152,7 +152,7 @@ class EnumDef:
     source: SourceRef
 
 
-Declaration: TypeAlias = Union[StructDef, EnumDef]
+Declaration: TypeAlias = StructDef | EnumDef
 
 
 def is_enum(declaration: Declaration) -> bool:

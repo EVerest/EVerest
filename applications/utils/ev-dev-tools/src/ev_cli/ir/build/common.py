@@ -4,7 +4,8 @@
 
 from __future__ import annotations
 
-from typing import Any, Iterable, Mapping
+from collections.abc import Iterable, Mapping
+from typing import Any
 
 from ...errors import UnsupportedDefinition
 from ...schema.loader import DefinitionLoader
@@ -13,7 +14,7 @@ from ...schema.source import SourceRef
 from ..types import Array, JsonType, Ref, TypeExpr, Variant
 
 
-def json_type_of(declared: Any, source: SourceRef) -> JsonType:
+def read_json_type(declared: Any, source: SourceRef) -> JsonType:
     try:
         return JsonType(declared)
     except ValueError:
@@ -36,8 +37,8 @@ def read_declared_type(schema: Mapping[str, Any], source: SourceRef) -> JsonType
     if declared is None:
         raise UnsupportedDefinition(f'{source}: neither a "type" nor a "$ref"')
     if isinstance(declared, list):
-        return Variant(tuple(json_type_of(entry, source) for entry in declared))
-    return json_type_of(declared, source)
+        return Variant(tuple(read_json_type(entry, source) for entry in declared))
+    return read_json_type(declared, source)
 
 
 def resolve_reference(
@@ -57,7 +58,7 @@ def resolve_reference(
     return Ref(reference.target)
 
 
-def referenced_units(types: Iterable[TypeExpr]) -> frozenset[str]:
+def collect_referenced_units(types: Iterable[TypeExpr]) -> frozenset[str]:
     """The type units the given type expressions refer into."""
     units: set[str] = set()
     pending = list(types)

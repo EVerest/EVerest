@@ -9,7 +9,7 @@ it instead of keeping caches of their own.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Mapping
+from collections.abc import Mapping
 
 from ..errors import DefinitionNotFound
 from ..schema.references import TypeRef

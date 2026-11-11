@@ -255,8 +255,8 @@ def test_module_create_only_which_lists_the_file_filters(scratch_module):
 
     for category in ('core', 'interfaces', 'docs'):
         assert f'category "{category}"' in out
-    for abbr in ('cmakelists', 'module.hpp', 'module.cpp', 'main.hpp', 'main.cpp', 'index.rst'):
-        assert abbr in out
+    for only_key in ('cmakelists', 'module.hpp', 'module.cpp', 'main.hpp', 'main.cpp', 'index.rst'):
+        assert only_key in out
     # "which" must not touch the filesystem
     assert relative_files(module_dir) == {'manifest.yaml'}
 

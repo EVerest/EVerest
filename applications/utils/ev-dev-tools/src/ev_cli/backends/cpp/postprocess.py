@@ -12,7 +12,7 @@ from ...errors import EvCliError
 from ..base import GeneratedFile
 
 
-def clang_format(files: list[GeneratedFile], config_dir: Path) -> None:
+def format_sources(files: list[GeneratedFile], config_dir: Path) -> None:
     """Format the ``.hpp`` and ``.cpp`` files among ``files`` in place.
 
     The style is the ``.clang-format`` in ``config_dir``.
@@ -20,12 +20,12 @@ def clang_format(files: list[GeneratedFile], config_dir: Path) -> None:
     sources = [file for file in files if file.path.suffix in ('.hpp', '.cpp')]
     if not sources:
         return
-    executable = _find_clang_format(config_dir)
+    executable = _check_clang_format_setup(config_dir)
     for file in sources:
         file.content = _format(executable, config_dir, file.content)
 
 
-def _find_clang_format(config_dir: Path) -> str:
+def _check_clang_format_setup(config_dir: Path) -> str:
     """The clang-format executable, once ``config_dir`` is known to configure it."""
     executable = shutil.which('clang-format')
     if executable is None:
@@ -47,6 +47,7 @@ def _format(executable: str, config_dir: Path, source: str) -> str:
         capture_output=True,
         cwd=config_dir,
         encoding='utf-8',
+        check=False,
     )
     if completed.returncode != 0:
         raise EvCliError(f'clang-format failed:\n{completed.stderr}')

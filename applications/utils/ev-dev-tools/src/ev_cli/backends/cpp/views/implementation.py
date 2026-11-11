@@ -40,7 +40,7 @@ class ImplementationView:
 
     def __post_init__(self) -> None:
         self._provided = ProvidedView(self.provided)
-        self._signatures = InterfaceView(interface=self.interface, model=self.model)
+        self._interface_view = InterfaceView(interface=self.interface, model=self.model)
 
     @property
     def id(self) -> str:
@@ -85,14 +85,14 @@ class ImplementationView:
         return self._provided.rwconfig
 
     def result_type(self, cmd: CmdDef) -> str:
-        return self._signatures.result_type(cmd)
+        return self._interface_view.result_type(cmd)
 
     def argument_declaration(self, argument: ArgDef) -> str:
-        return self._signatures.argument_declaration(argument)
+        return self._interface_view.argument_declaration(argument)
 
     def dummy_result(self, result: TypeExpr) -> str:
         """A value of the right shape, for the skeleton to compile against."""
-        json_types = self._signatures.json_types_of(result)
+        json_types = self._interface_view.json_types_of(result)
         if len(json_types) != 1:
             # A variant default-constructs to its first alternative.
             return '{}'

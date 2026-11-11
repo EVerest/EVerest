@@ -10,7 +10,7 @@ own texts without ev-cli knowing anything about them.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Sequence
+from collections.abc import Sequence
 
 from .errors import LicenseNotFound
 

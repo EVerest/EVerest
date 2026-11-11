@@ -14,7 +14,8 @@ import argparse
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Callable, Protocol, runtime_checkable
+from collections.abc import Callable
+from typing import Protocol, runtime_checkable
 
 from ..ir.model import Model
 
@@ -74,7 +75,7 @@ class GeneratedFile:
     #: Templates involved, so a changed template forces regeneration.
     template_paths: tuple[Path, ...] = ()
     #: The ``--only`` filter key, for the files ``module create`` manages.
-    abbr: str | None = None
+    only_key: str | None = None
     #: License text this file should start with, when the module declares one.
     license_header: str | None = None
     #: Which group this file belongs to for ``--only which`` output.

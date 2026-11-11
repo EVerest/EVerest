@@ -4,7 +4,8 @@
 
 from __future__ import annotations
 
-from typing import Any, Iterable, Mapping
+from collections.abc import Iterable, Mapping
+from typing import Any
 
 from ...errors import UnsupportedDefinition
 from ...schema.loader import DefinitionLoader
@@ -18,7 +19,7 @@ from ..modules import (
     ProvidesDef,
     RequiresDef,
 )
-from .common import json_type_of, reject_non_identifier
+from .common import read_json_type, reject_non_identifier
 
 
 def build_modules(loader: DefinitionLoader, names: Iterable[str]) -> dict[str, ModuleDef]:
@@ -74,7 +75,7 @@ def _build_config_entry(name: str, schema: Mapping[str, Any], source: SourceRef)
     return ConfigEntry(
         name=name,
         description=schema['description'],
-        type=json_type_of(schema['type'], source),
+        type=read_json_type(schema['type'], source),
         source=source,
         mutability=_read_mutability(schema, source),
         constraints=Constraints.from_schema(schema),
