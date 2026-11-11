@@ -12,8 +12,7 @@ from ....ir.interfaces import ArgDef, CmdDef, InterfaceDef, VarDef
 from ....ir.model import Model
 from ....ir.types import Array, JsonType, Opaque, Primitive, Ref, TypeExpr, Variant, is_enum
 from .. import naming
-from .. import mapping
-from ..mapping import PAYLOAD_SCALARS, Flavour
+from ..cpp_type import Flavour, is_typed_payload_array, to_cpp_type, variant_alternatives
 
 
 class PayloadKind(Enum):
@@ -90,37 +89,26 @@ class InterfaceView:
         if isinstance(payload, Ref):
             return PayloadKind.REF
         if isinstance(payload, Array):
-            return PayloadKind.ARRAY if mapping.is_typed_payload_array(payload) else PayloadKind.PLAIN
+            return PayloadKind.ARRAY if is_typed_payload_array(payload) else PayloadKind.PLAIN
         return PayloadKind.PLAIN
 
-    # -- payload spellings --------------------------------------------------
+    # -- payload types ------------------------------------------------------
 
-    def spell(self, payload: TypeExpr) -> str:
-        return mapping.spell(payload, Flavour.PAYLOAD)
-
-    def raw_spell(self, payload: TypeExpr) -> str:
-        """The C++ type the framework hands over, before any conversion.
-
-        A scalar arrives as itself, so this is what the value is cast to on the
-        way in.
-        """
-        json_types = self.json_types_of(payload)
-        if len(json_types) != 1:
-            raise UnsupportedDefinition(
-                f'no single raw type for a payload of {[t.value for t in json_types]}')
-        return PAYLOAD_SCALARS[json_types[0]]
+    @staticmethod
+    def cpp_type(payload: TypeExpr) -> str:
+        return to_cpp_type(payload, Flavour.PAYLOAD)
 
     def result_type(self, cmd: CmdDef) -> str:
         """``void`` only when the interface declares no result at all.
 
         The meta-schema forbids a command result of type ``null``, so a
-        declared result always has a type to spell.
+        declared result always has a C++ type.
         """
-        return 'void' if cmd.result is None else self.spell(cmd.result)
+        return 'void' if cmd.result is None else self.cpp_type(cmd.result)
 
     def argument_declaration(self, argument: ArgDef) -> str:
         """As the handler receives it: a mutable reference."""
-        return f'{self.spell(argument.type)}& {argument.name}'
+        return f'{self.cpp_type(argument.type)}& {argument.name}'
 
     def call_declaration(self, argument: ArgDef) -> str:
         """As a caller passes it: a const reference.
@@ -130,10 +118,10 @@ class InterfaceView:
         and quietly changing a generated signature compiles everywhere and is
         noticed nowhere.
         """
-        spelling = self.spell(argument.type)
+        cpp_type = self.cpp_type(argument.type)
         if self.kind(argument.type) is PayloadKind.VARIANT:
-            return f'{spelling} {argument.name}'
-        return f'const {spelling}& {argument.name}'
+            return f'{cpp_type} {argument.name}'
+        return f'const {cpp_type}& {argument.name}'
 
     # -- json type lists ----------------------------------------------------
 
@@ -167,4 +155,4 @@ class InterfaceView:
 
     @staticmethod
     def variant_alternatives(payload: Variant) -> str:
-        return mapping.variant_alternatives(payload)
+        return variant_alternatives(payload)

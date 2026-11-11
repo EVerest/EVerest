@@ -10,8 +10,7 @@ from functools import cached_property
 from ....ir.modules import ConfigEntry, ModuleDef, Mutability, ProvidesDef, RequiresDef
 from ....ir.types import Primitive
 from .. import naming
-from .. import mapping
-from ..mapping import Flavour
+from ..cpp_type import Flavour, to_cpp_type
 from .common import ProtectedRegions
 
 
@@ -80,7 +79,7 @@ class RequiredView:
 
 def config_type(entry: ConfigEntry) -> str:
     """The C++ type of a configuration value, wherever it is declared."""
-    return mapping.spell(Primitive(entry.type), Flavour.PAYLOAD)
+    return to_cpp_type(Primitive(entry.type), Flavour.PAYLOAD)
 
 
 def read_only_config(entries) -> tuple[ConfigEntry, ...]:

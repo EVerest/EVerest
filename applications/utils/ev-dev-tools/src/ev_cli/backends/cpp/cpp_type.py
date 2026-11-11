@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright Pionix GmbH and Contributors to EVerest
-"""How a type expression of the IR is spelled as a C++ type.
+"""How a type expression of the IR becomes a C++ type.
 
 These choices are the generated ABI.  Every module in everest-core and the
 hand-written mirror in ``lib/everest/everest_api_types`` compile against them,
@@ -64,10 +64,10 @@ PAYLOAD_SCALARS: Final[dict[JsonType, str]] = {
 }
 
 
-def spell(expr: TypeExpr, flavour: Flavour) -> str:
+def to_cpp_type(expr: TypeExpr, flavour: Flavour) -> str:
     """The C++ type name of a type expression."""
     if isinstance(expr, (Primitive, Opaque)):
-        return _spell_scalar(expr.json_type, flavour)
+        return _to_cpp_scalar(expr.json_type, flavour)
 
     if isinstance(expr, Ref):
         return qualified_type(expr.target.unit, expr.target.name)
@@ -76,12 +76,12 @@ def spell(expr: TypeExpr, flavour: Flavour) -> str:
         return expr.name
 
     if isinstance(expr, Array):
-        return _spell_array(expr, flavour)
+        return _to_cpp_array(expr, flavour)
 
     if isinstance(expr, Variant):
         return f'std::variant<{variant_alternatives(expr)}>'
 
-    raise UnsupportedDefinition(f'cannot spell {expr!r} in C++')
+    raise UnsupportedDefinition(f'no C++ type for {expr!r}')
 
 
 def is_typed_payload_array(expr: Array) -> bool:
@@ -110,13 +110,13 @@ def variant_alternatives(expr: Variant) -> str:
     return ', '.join(alternatives)
 
 
-def _spell_array(expr: Array, flavour: Flavour) -> str:
+def _to_cpp_array(expr: Array, flavour: Flavour) -> str:
     if flavour is Flavour.PAYLOAD and not is_typed_payload_array(expr):
         return PAYLOAD_SCALARS[JsonType.ARRAY]
-    return f'std::vector<{spell(expr.items, flavour)}>'
+    return f'std::vector<{to_cpp_type(expr.items, flavour)}>'
 
 
-def _spell_scalar(json_type: JsonType, flavour: Flavour) -> str:
+def _to_cpp_scalar(json_type: JsonType, flavour: Flavour) -> str:
     scalars = FIELD_SCALARS if flavour is Flavour.FIELD else PAYLOAD_SCALARS
     try:
         return scalars[json_type]

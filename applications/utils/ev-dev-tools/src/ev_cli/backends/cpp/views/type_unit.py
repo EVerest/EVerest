@@ -8,8 +8,7 @@ from dataclasses import dataclass
 
 from ....ir.types import Array, Field, StructDef, TypeUnit
 from .. import naming
-from .. import mapping
-from ..mapping import Flavour
+from ..cpp_type import Flavour, to_cpp_type
 from ..order import order_structs
 from .common import MISSING_DESCRIPTION
 
@@ -82,14 +81,14 @@ class TypeUnitView:
     # -- types --------------------------------------------------------------
 
     @staticmethod
-    def _spell(field: Field) -> str:
+    def _cpp_type(field: Field) -> str:
         """The member's type, without the optional wrapper."""
-        return mapping.spell(field.type, Flavour.FIELD)
+        return to_cpp_type(field.type, Flavour.FIELD)
 
     def field_type(self, field: Field) -> str:
         """The member's declared type, wrapped when the property is optional."""
-        spelling = self._spell(field)
-        return spelling if field.required else f'std::optional<{spelling}>'
+        cpp_type = self._cpp_type(field)
+        return cpp_type if field.required else f'std::optional<{cpp_type}>'
 
     @staticmethod
     def _is_vector(field: Field) -> bool:
@@ -108,13 +107,13 @@ class TypeUnitView:
         target = f'k.{field.name}'
         access = f'j.at("{field.name}")'
         if self._is_vector(field):
-            return f'{target} = std::move({access}.get<{self._spell(field)}>());'
+            return f'{target} = std::move({access}.get<{self._cpp_type(field)}>());'
         return f'{target} = {access};'
 
     def from_json_optional(self, field: Field) -> str:
         target = f'k.{field.name}'
         if self._is_vector(field):
             return (
-                f'{target} = j.at("{field.name}").get<{self._spell(field)}>();'
+                f'{target} = j.at("{field.name}").get<{self._cpp_type(field)}>();'
             )
-        return f'{target} = it->get<{self._spell(field)}>();'
+        return f'{target} = it->get<{self._cpp_type(field)}>();'

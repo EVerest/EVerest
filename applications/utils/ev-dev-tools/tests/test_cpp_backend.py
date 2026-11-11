@@ -19,7 +19,7 @@ from ev_cli import blocks
 from ev_cli.backends.cpp import naming
 from ev_cli.backends.base import OutputKind
 from ev_cli.backends.cpp.backend import TEMPLATE_DIR, CppBackend, Template
-from ev_cli.backends.cpp.mapping import Flavour, spell
+from ev_cli.backends.cpp.cpp_type import Flavour, to_cpp_type
 from ev_cli.backends.cpp.order import order_structs
 from ev_cli.backends.cpp.views import InterfaceView, PayloadKind, TypeUnitView
 from ev_cli.errors import UnsupportedDefinition
@@ -193,7 +193,7 @@ class TestTypeMapping:
         (JsonType.STRING, 'std::string'),
     ])
     def test_struct_members(self, json_type, expected):
-        assert spell(Primitive(json_type), Flavour.FIELD) == expected
+        assert to_cpp_type(Primitive(json_type), Flavour.FIELD) == expected
 
     @pytest.mark.parametrize('json_type, expected', [
         (JsonType.BOOLEAN, 'bool'),
@@ -203,7 +203,7 @@ class TestTypeMapping:
         (JsonType.NULL, 'std::nullptr_t'),
     ])
     def test_interface_payloads(self, json_type, expected):
-        assert spell(Primitive(json_type), Flavour.PAYLOAD) == expected
+        assert to_cpp_type(Primitive(json_type), Flavour.PAYLOAD) == expected
 
     def test_the_two_mappings_disagree_and_that_is_deliberate(self):
         """Reconciling this changes struct layout and precision.
@@ -214,35 +214,35 @@ class TestTypeMapping:
         exists so the difference cannot be lost by accident.
         """
         for json_type in (JsonType.NUMBER, JsonType.INTEGER):
-            assert (spell(Primitive(json_type), Flavour.FIELD)
-                    != spell(Primitive(json_type), Flavour.PAYLOAD))
+            assert (to_cpp_type(Primitive(json_type), Flavour.FIELD)
+                    != to_cpp_type(Primitive(json_type), Flavour.PAYLOAD))
 
     def test_format_does_not_change_the_type(self, fixture_model):
         """A property saying ``format: date-time`` is a plain std::string."""
         reading = fixture_model.types['sample'].struct('Reading')
         taken_at = next(f for f in reading.fields if f.name == 'taken_at')
         assert taken_at.constraints.format == 'date-time'
-        assert spell(taken_at.type, Flavour.FIELD) == 'std::string'
+        assert to_cpp_type(taken_at.type, Flavour.FIELD) == 'std::string'
 
     def test_references(self):
-        assert spell(Ref(TypeRef('sample', 'Mood')), Flavour.FIELD) == 'types::sample::Mood'
-        assert spell(Ref(TypeRef('units', 'Power')), Flavour.FIELD) == 'types::units::Power'
+        assert to_cpp_type(Ref(TypeRef('sample', 'Mood')), Flavour.FIELD) == 'types::sample::Mood'
+        assert to_cpp_type(Ref(TypeRef('units', 'Power')), Flavour.FIELD) == 'types::units::Power'
 
     def test_local_enum(self):
-        assert spell(LocalEnum('Kind'), Flavour.FIELD) == 'Kind'
+        assert to_cpp_type(LocalEnum('Kind'), Flavour.FIELD) == 'Kind'
 
     def test_struct_member_arrays_are_always_typed(self):
-        assert spell(Array(Primitive(JsonType.STRING)), Flavour.FIELD) == 'std::vector<std::string>'
+        assert to_cpp_type(Array(Primitive(JsonType.STRING)), Flavour.FIELD) == 'std::vector<std::string>'
 
     def test_payload_arrays_are_typed_only_when_the_items_are_declared(self):
         """``handle_get_configuration_key(Array&)`` is the visible consequence."""
-        assert spell(Array(Primitive(JsonType.STRING)), Flavour.PAYLOAD) == 'Array'
-        assert spell(
+        assert to_cpp_type(Array(Primitive(JsonType.STRING)), Flavour.PAYLOAD) == 'Array'
+        assert to_cpp_type(
             Array(Ref(TypeRef('sample', 'Mood'))), Flavour.PAYLOAD) == 'std::vector<types::sample::Mood>'
 
     def test_opaque_payloads(self):
-        assert spell(Opaque(JsonType.OBJECT), Flavour.PAYLOAD) == 'Object'
-        assert spell(Opaque(JsonType.ARRAY), Flavour.PAYLOAD) == 'Array'
+        assert to_cpp_type(Opaque(JsonType.OBJECT), Flavour.PAYLOAD) == 'Object'
+        assert to_cpp_type(Opaque(JsonType.ARRAY), Flavour.PAYLOAD) == 'Array'
 
     def test_variant_alternatives_are_sorted_with_null_first(self):
         """So that the variant default-constructs to the empty alternative."""
@@ -250,7 +250,7 @@ class TestTypeMapping:
             JsonType.NULL, JsonType.STRING, JsonType.NUMBER, JsonType.INTEGER,
             JsonType.BOOLEAN, JsonType.ARRAY, JsonType.OBJECT,
         ))
-        assert spell(variant, Flavour.PAYLOAD) == (
+        assert to_cpp_type(variant, Flavour.PAYLOAD) == (
             'std::variant<std::nullptr_t, Array, Object, bool, double, int, '
             'std::string>'
         )
@@ -258,7 +258,7 @@ class TestTypeMapping:
     def test_variant_ordering_is_independent_of_the_declared_order(self):
         a = Variant((JsonType.STRING, JsonType.INTEGER))
         b = Variant((JsonType.INTEGER, JsonType.STRING))
-        assert spell(a, Flavour.PAYLOAD) == spell(b, Flavour.PAYLOAD)
+        assert to_cpp_type(a, Flavour.PAYLOAD) == to_cpp_type(b, Flavour.PAYLOAD)
 
 
 class TestPayloadKinds:

@@ -48,10 +48,10 @@ public:
     // variables available for subscription
 {% for var in u.vars %}
 {% set kind = u.kind(var.type) %}
-    void subscribe_{{ var.name }}(const std::function<void({% if kind != PayloadKind.NULL %}const {{ u.spell(var.type) }}&{% endif %})>& listener) {
+    void subscribe_{{ var.name }}(const std::function<void({% if kind != PayloadKind.NULL %}const {{ u.cpp_type(var.type) }}&{% endif %})>& listener) {
         _adapter->subscribe(_req, "{{ var.name }}", [func = std::move(listener)](const Value& value) {
 {% if kind == PayloadKind.NULL %}
-            if (not Everest::detail::is_type_compatible<{{ u.spell(var.type) }}>(value.type())) {
+            if (not Everest::detail::is_type_compatible<{{ u.cpp_type(var.type) }}>(value.type())) {
                 EVLOG_error << "Callback for variable '{{ var.name }}' in interface '{{ u.name }}' has wrong type!";
             }
             func();
@@ -60,7 +60,7 @@ public:
 {% elif kind == PayloadKind.VARIANT %}
             func(Everest::json_to_variant<{{ u.variant_alternatives(var.type) }}>(value));
 {% else %}
-            func(static_cast<{{ u.raw_spell(var.type) }}>(value));
+            func(static_cast<{{ u.cpp_type(var.type) }}>(value));
 {% endif %}
         });
     }
@@ -110,7 +110,7 @@ public:
 {% elif kind == PayloadKind.VARIANT %}
         auto retval = Everest::json_to_variant<{{ u.variant_alternatives(cmd.result) }}>(result.value());
 {% else %}
-        auto retval = static_cast<{{ u.raw_spell(cmd.result) }}>(result.value());
+        auto retval = static_cast<{{ u.cpp_type(cmd.result) }}>(result.value());
 {% endif %}
         return retval;
 {% endif %}

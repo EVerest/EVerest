@@ -51,7 +51,7 @@ public:
 {% else %}
     // publish functions for variables
 {% for var in u.vars %}
-    void publish_{{ var.name }}(const {{ u.spell(var.type) }}& value) {
+    void publish_{{ var.name }}(const {{ u.cpp_type(var.type) }}& value) {
         _ev->publish(_name, "{{ var.name }}", value);
     }
 {% endfor %}
@@ -126,11 +126,11 @@ private:
 {% for argument in cmd.arguments %}
 {% set kind = u.kind(argument.type) %}
 {% if kind in (PayloadKind.REF, PayloadKind.ARRAY) %}
-            auto {{ argument.name }} = args.at("{{ argument.name }}").get<{{ u.spell(argument.type) }}>();
+            auto {{ argument.name }} = args.at("{{ argument.name }}").get<{{ u.cpp_type(argument.type) }}>();
 {% elif kind == PayloadKind.VARIANT %}
             auto {{ argument.name }} = Everest::json_to_variant<{{ u.variant_alternatives(argument.type) }}>(args.at("{{ argument.name }}"));
 {% else %}
-            auto {{ argument.name }} = static_cast<{{ u.raw_spell(argument.type) }}>(args.at("{{ argument.name }}"));
+            auto {{ argument.name }} = static_cast<{{ u.cpp_type(argument.type) }}>(args.at("{{ argument.name }}"));
 {% endif %}
 {% endfor %}
 
