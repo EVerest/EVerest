@@ -24,13 +24,12 @@ from ..types import (
     LocalStruct,
     Opaque,
     Primitive,
-    Ref,
     StructDef,
     TypeExpr,
     TypeUnit,
     Variant,
 )
-from .common import read_declared_type, resolve_reference
+from .common import read_declared_type, referenced_units, resolve_reference
 
 
 def build_type_units(loader: DefinitionLoader) -> dict[str, TypeUnit]:
@@ -60,7 +59,6 @@ class _UnitBuild:
         self._declared_enums: list[EnumDef] = []
         self._promoted_enums: list[EnumDef] = []
         self._structs: list[StructDef] = []
-        self._referenced_type_units: set[str] = set()
 
     def run(self) -> TypeUnit:
         root = self.source.child('types')
@@ -76,7 +74,9 @@ class _UnitBuild:
             description=self.data['description'],
             enums=enums,
             structs=structs,
-            referenced_type_units=frozenset(self._referenced_type_units),
+            referenced_type_units=referenced_units(
+                field.type for struct in structs for field in struct.fields
+            ),
             source=self.source,
         )
 
@@ -168,7 +168,7 @@ class _UnitBuild:
         depends_on: list[str],
     ) -> TypeExpr:
         if '$ref' in schema:
-            return self._build_reference(schema, source)
+            return resolve_reference(self.loader, schema, source, from_unit=self.name)
 
         json_type = read_declared_type(schema, source)
         if isinstance(json_type, Variant):
@@ -197,13 +197,6 @@ class _UnitBuild:
         # An object with nothing said about its contents travels as raw JSON;
         # the framework passes it through untouched.
         return Opaque(JsonType.OBJECT)
-
-    def _build_reference(self, schema: Mapping[str, Any], source: SourceRef) -> Ref:
-        reference = resolve_reference(
-            self.loader, schema, source, from_unit=self.name
-        )
-        self._referenced_type_units.add(reference.target.unit)
-        return reference
 
     def _promote_enum(
         self, enclosing_name: str, schema: Mapping[str, Any], source: SourceRef

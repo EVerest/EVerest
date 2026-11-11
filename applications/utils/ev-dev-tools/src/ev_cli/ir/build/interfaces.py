@@ -21,7 +21,7 @@ from ..types import (
     TypeExpr,
     Variant,
 )
-from .common import read_declared_type, resolve_reference
+from .common import read_declared_type, referenced_units, resolve_reference
 
 
 def build_interfaces(loader: DefinitionLoader, names: Iterable[str]) -> dict[str, InterfaceDef]:
@@ -47,22 +47,28 @@ class _InterfaceBuild:
         self.data = data
         self.source = source
         self.loader = loader
-        self._referenced_type_units: set[str] = set()
 
     def run(self) -> InterfaceDef:
+        variables = tuple(
+            self._build_var(name, schema, self.source.child('vars', name))
+            for name, schema in (self.data.get('vars') or {}).items()
+        )
+        commands = tuple(
+            self._build_cmd(name, schema, self.source.child('cmds', name))
+            for name, schema in (self.data.get('cmds') or {}).items()
+        )
+        payloads = (
+            [var.type for var in variables]
+            + [argument.type for cmd in commands for argument in cmd.arguments]
+            + [cmd.result for cmd in commands if cmd.result is not None]
+        )
         return InterfaceDef(
             name=self.name,
             description=self.data['description'],
-            vars=tuple(
-                self._build_var(name, schema, self.source.child('vars', name))
-                for name, schema in (self.data.get('vars') or {}).items()
-            ),
-            cmds=tuple(
-                self._build_cmd(name, schema, self.source.child('cmds', name))
-                for name, schema in (self.data.get('cmds') or {}).items()
-            ),
+            vars=variables,
+            cmds=commands,
             errors=self._resolve_errors(self.data.get('errors') or []),
-            referenced_type_units=frozenset(self._referenced_type_units),
+            referenced_type_units=referenced_units(payloads),
             source=self.source,
         )
 
@@ -114,11 +120,7 @@ class _InterfaceBuild:
 
     def _build_payload(self, schema: Mapping[str, Any], source: SourceRef) -> TypeExpr:
         if '$ref' in schema:
-            reference = resolve_reference(
-                self.loader, schema, source, from_unit=None
-            )
-            self._referenced_type_units.add(reference.target.unit)
-            return reference
+            return resolve_reference(self.loader, schema, source, from_unit=None)
 
         json_type = read_declared_type(schema, source)
         if isinstance(json_type, Variant):

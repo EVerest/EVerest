@@ -21,7 +21,7 @@ URL_SCHEMES = ('http://', 'https://')
 BUNDLED_DIR = Path(__file__).parent / 'licenses'
 
 
-def license_path_fragment(license_url: str) -> str:
+def _strip_url_scheme(license_url: str) -> str:
     for scheme in URL_SCHEMES:
         if license_url.startswith(scheme):
             return license_url[len(scheme):]
@@ -41,7 +41,7 @@ def search_dirs(work_dir: Path, additional: Path | None) -> list[Path]:
 
 def find_header(dirs: Sequence[Path], license_url: str) -> str:
     """The license text for ``license_url``, from the last directory that has it."""
-    fragment = license_path_fragment(license_url)
+    fragment = _strip_url_scheme(license_url)
 
     found: Path | None = None
     for directory in dirs:

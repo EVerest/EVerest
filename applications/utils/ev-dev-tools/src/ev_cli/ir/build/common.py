@@ -4,13 +4,13 @@
 
 from __future__ import annotations
 
-from typing import Any, Mapping
+from typing import Any, Iterable, Mapping
 
 from ...errors import UnsupportedDefinition
 from ...schema.loader import DefinitionLoader
 from ...schema.references import parse_type_reference
 from ...schema.source import SourceRef
-from ..types import JsonType, Ref, Variant
+from ..types import Array, JsonType, Ref, TypeExpr, Variant
 
 
 def json_type_of(declared: Any, source: SourceRef) -> JsonType:
@@ -47,3 +47,16 @@ def resolve_reference(
     reference = parse_type_reference(schema['$ref'], from_unit=from_unit)
     loader.type_declaration(reference.target, source)
     return Ref(reference.target)
+
+
+def referenced_units(types: Iterable[TypeExpr]) -> frozenset[str]:
+    """The type units the given type expressions refer into."""
+    units: set[str] = set()
+    pending = list(types)
+    while pending:
+        expr = pending.pop()
+        if isinstance(expr, Ref):
+            units.add(expr.target.unit)
+        elif isinstance(expr, Array):
+            pending.append(expr.items)
+    return frozenset(units)
