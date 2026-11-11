@@ -107,13 +107,12 @@ class TestUpdatePolicy:
         ).update_policy is UpdatePolicy.REGENERATE
 
     def test_the_cpp_backend_protects_its_sources(self, fixture_model, tmp_path):
-        from ev_cli import blocks
         from ev_cli.backends.cpp.backend import CppBackend
 
         files = CppBackend(argparse.Namespace(disable_clang_format=True)).emit_module_files(
             fixture_model, 'Sample', tmp_path,
             license_header='// SPDX-License-Identifier: Apache-2.0',
-            read_blocks=lambda block_set, path: blocks.placeholders(block_set),
+            preserve_regions=False,
         )
         policy = {f.abbr: f.update_policy for f in files}
 

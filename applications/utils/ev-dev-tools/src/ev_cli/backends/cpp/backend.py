@@ -193,15 +193,9 @@ class CppBackend:
         module_dir: Path,
         *,
         license_header: str,
-        read_blocks,
+        preserve_regions: bool,
     ) -> list[GeneratedFile]:
-        """The sources ``module create`` and ``module update`` manage.
-
-        ``read_blocks`` is handed in rather than looked up here: which regions
-        a file protects is a property of the template, and so belongs to this
-        backend, but whether an existing file should be read back is the
-        command's decision.
-        """
+        """The sources ``module create`` and ``module update`` manage."""
         definition = model.modules[module]
         mtime = definition.source.file.stat().st_mtime
         templates = self.templates(OutputKind.MODULE_FILES)
@@ -229,13 +223,13 @@ class CppBackend:
         module_files.append(rendered(
             Template.CMAKELISTS,
             ModuleView(module=definition,
-                       blocks=read_blocks(blocks.CMAKELISTS, cmakelists)),
+                       blocks=blocks.load(blocks.CMAKELISTS, cmakelists, preserve=preserve_regions)),
             cmakelists, 'cmakelists', FileCategory.CORE, with_license=False,
         ))
         module_files.append(rendered(
             Template.MODULE_HPP,
             ModuleView(module=definition, license_header=license_header,
-                       blocks=read_blocks(blocks.MODULE_HEADER, header)),
+                       blocks=blocks.load(blocks.MODULE_HEADER, header, preserve=preserve_regions)),
             header, 'module.hpp', FileCategory.CORE,
         ))
         module_files.append(rendered(
@@ -252,7 +246,8 @@ class CppBackend:
             view = ImplementationView(
                 provided=provided, interface=interface, module=definition,
                 model=model, license_header=license_header,
-                blocks=read_blocks(blocks.IMPLEMENTATION_HEADER, implementation_header),
+                blocks=blocks.load(blocks.IMPLEMENTATION_HEADER, implementation_header,
+                                   preserve=preserve_regions),
             )
             module_files.append(rendered(
                 Template.IMPLEMENTATION_HPP, view, implementation_header,

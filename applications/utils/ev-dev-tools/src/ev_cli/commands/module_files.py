@@ -11,7 +11,7 @@ but never the ``.cpp`` sources, and carries the contents of every
 
 from __future__ import annotations
 
-from .. import blocks, license_headers
+from .. import license_headers
 from ..backends.base import FileCategory, UpdatePolicy, registry
 from ..errors import EvCliError
 from ..files import FileWriter, Strategy
@@ -33,8 +33,7 @@ def write_module_files(args, *, updating: bool) -> int:
     generated = backend.emit_module_files(
         model, args.module, module_dir,
         license_header=license_header,
-        read_blocks=lambda block_set, path: blocks.load(
-            block_set, path, update=updating),
+        preserve_regions=updating,
     )
 
     if args.only == 'which':

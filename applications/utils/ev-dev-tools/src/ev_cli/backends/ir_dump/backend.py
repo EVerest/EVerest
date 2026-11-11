@@ -79,7 +79,7 @@ class IrDumpBackend:
         module_dir: Path,
         *,
         license_header: str,
-        read_blocks,
+        preserve_regions: bool,
     ) -> list[GeneratedFile]:
         """The module together with the interfaces it implements.
 

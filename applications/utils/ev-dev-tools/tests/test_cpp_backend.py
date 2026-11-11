@@ -16,7 +16,6 @@ from pathlib import Path
 
 import pytest
 
-from ev_cli import blocks
 from ev_cli.backends.cpp import naming
 from ev_cli.backends.base import OutputKind
 from ev_cli.backends.cpp.backend import TEMPLATE_DIR, CppBackend, Template
@@ -339,7 +338,7 @@ def generate_everything(model, out_dir: Path) -> dict[str, str]:
         for file in backend.emit_module_files(
             model, module, out_dir / 'module-files',
             license_header='// SPDX-License-Identifier: Apache-2.0',
-            read_blocks=lambda block_set, path: blocks.placeholders(block_set),
+            preserve_regions=False,
         ):
             relative = file.path.relative_to(out_dir / 'module-files').as_posix()
             produced[f'module-files/{module}/{relative}'] = file.content

@@ -86,9 +86,9 @@ def placeholders(block_set: BlockSet) -> dict[str, Block]:
     }
 
 
-def load(block_set: BlockSet, path: Path, *, update: bool) -> dict[str, Block]:
-    """The regions to render, read back from ``path`` when updating."""
-    if not update or not path.exists():
+def load(block_set: BlockSet, path: Path, *, preserve: bool) -> dict[str, Block]:
+    """The regions to render: read back from ``path`` to preserve them, else placeholders."""
+    if not preserve or not path.exists():
         return placeholders(block_set)
     return extract(block_set, path)
 

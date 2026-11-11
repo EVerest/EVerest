@@ -14,7 +14,7 @@ import argparse
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Callable, Protocol, runtime_checkable
+from typing import Protocol, runtime_checkable
 
 from ..ir.model import Model
 
@@ -133,13 +133,12 @@ class Backend(Protocol):
         module_dir: Path,
         *,
         license_header: str,
-        read_blocks: Callable[..., dict],
+        preserve_regions: bool,
     ) -> list[GeneratedFile]:
         """The scaffolding ``module create`` and ``module update`` manage.
 
-        ``read_blocks`` is passed in rather than looked up: which regions a
-        file protects is the backend's business, but whether an existing file
-        should be read back is the command's.
+        With ``preserve_regions`` the protected regions of files that already
+        exist are carried over; otherwise every region starts as its placeholder.
         """
         ...
 
