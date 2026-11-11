@@ -1569,25 +1569,26 @@ TEST_F(ChargerValidationToggleTest, TogglesDuringMatchingStayInPrepareCharging) 
     EXPECT_EQ(charger->current_state(), Charger::EvseState::T_step_X1) << "[V2G3-M07-05]";
 }
 
-TEST_F(ChargerValidationToggleTest, StateCHeldUntilMatchedStartsCharging) {
+// IEC 61851-1 Table A.6 sequence 4: a state C that outlasts a toggle is a charge request, also during the matching.
+TEST_F(ChargerValidationToggleTest, StateCLongerThanAToggleStartsChargingDuringMatching) {
+    setup_authorized_at_nominal_pwm();
+    charger->set_matching_started(true);
+    charger->process_event(CPEvent::CarRequestedPower);
+    ASSERT_EQ(charger->current_state(), Charger::EvseState::PrepareCharging);
+
+    charger->get_internal_context().car_requested_power_at -= std::chrono::seconds(1);
+    charger->run_state_machine();
+
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::Charging);
+}
+
+TEST_F(ChargerValidationToggleTest, StateCStartsChargingOnceMatched) {
     setup_authorized_at_nominal_pwm();
     charger->set_matching_started(true);
     charger->process_event(CPEvent::CarRequestedPower);
     ASSERT_EQ(charger->current_state(), Charger::EvseState::PrepareCharging);
 
     charger->set_slac_matched(true);
-    charger->run_state_machine();
-
-    EXPECT_EQ(charger->current_state(), Charger::EvseState::Charging);
-}
-
-TEST_F(ChargerValidationToggleTest, StateCHeldUntilMatchingFailedStartsCharging) {
-    setup_authorized_at_nominal_pwm();
-    charger->set_matching_started(true);
-    charger->process_event(CPEvent::CarRequestedPower);
-    ASSERT_EQ(charger->current_state(), Charger::EvseState::PrepareCharging);
-
-    charger->set_matching_started(false);
     charger->run_state_machine();
 
     EXPECT_EQ(charger->current_state(), Charger::EvseState::Charging);

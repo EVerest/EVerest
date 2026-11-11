@@ -280,8 +280,8 @@ State Transitions
 * ``WaitingForAuthentication`` -> ``Finished``: Fatal error, stop requested (e.g. via
   ``request_stop_transaction`` or ``disable``), or EV unplugged.
 * ``PrepareCharging`` -> ``Charging``: Contactor close allowed. With a nominal duty cycle and a
-  SLAC matching in progress, state C does not close the contactor until the matching ended (matched or
-  failed): the EV toggles B-C-B to validate the matching (CM_VALIDATE).
+  SLAC matching in progress, state C closes the contactor only once it lasted 1 s or the matching ended:
+  the EV toggles B-C-B to validate the matching (CM_VALIDATE), and a toggle is no charge request.
 * ``Charging`` -> ``StoppingCharging``: Triggered by any **Stop Condition** (see below).
 * ``StoppingCharging`` -> ``Finished``: No transaction, EV unplugged, or not authorized.
 * ``Finished`` -> ``Idle``: EV unplugged.

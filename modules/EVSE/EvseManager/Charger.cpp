@@ -848,7 +848,7 @@ void Charger::run_state_machine() {
 
                 // Power is available or we are in HLC, PWM is already enabled. Check if we can go to charging
                 if ((shared_context.iec_allow_close_contactor and not hlc_use_5percent_current_session and
-                     not slac_matching_in_progress()) or
+                     not state_c_may_be_validation_toggle()) or
                     (shared_context.iec_allow_close_contactor and shared_context.hlc_allow_close_contactor and
                      hlc_use_5percent_current_session)) {
                     set_state(EvseState::Charging);
@@ -1371,6 +1371,10 @@ void Charger::process_event(CPEvent cp_event) {
 }
 
 void Charger::process_cp_events_state(CPEvent cp_event) {
+    if (cp_event == CPEvent::CarRequestedPower) {
+        internal_context.car_requested_power_at = std::chrono::steady_clock::now();
+    }
+
     switch (shared_context.current_state) {
 
     case EvseState::Idle:
@@ -2525,6 +2529,11 @@ void Charger::set_matching_started(bool m) {
 
 bool Charger::slac_matching_in_progress() const {
     return shared_context.matching_started and not shared_context.slac_matched;
+}
+
+bool Charger::state_c_may_be_validation_toggle() const {
+    return slac_matching_in_progress() and
+           std::chrono::steady_clock::now() - internal_context.car_requested_power_at < VALIDATION_TOGGLE_HOLD;
 }
 
 void Charger::set_slac_matched(bool matched) {
