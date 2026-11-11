@@ -106,7 +106,7 @@ class CppBackend:
         self._env.globals['template_version'] = TEMPLATE_VERSION
         self._env.globals['config_type'] = config_type
 
-    def _finish(self, files: list[GeneratedFile]) -> list[GeneratedFile]:
+    def _postprocess(self, files: list[GeneratedFile]) -> list[GeneratedFile]:
         """Format what was rendered, unless ``--disable-clang-format`` says not to."""
         if not self._disable_clang_format:
             clang_format(files, self._clang_format_dir)
@@ -123,7 +123,7 @@ class CppBackend:
         content = self._render(Template.TYPE_UNIT, view)
 
         path = output_dir / f'{unit}.hpp'
-        return self._finish([GeneratedFile(
+        return self._postprocess([GeneratedFile(
             path=path,
             content=content,
             # The output directory's own name followed by the unit, e.g.
@@ -149,7 +149,7 @@ class CppBackend:
             ('Interface.hpp', Template.INTERFACE),
             ('Types.hpp', Template.INTERFACE_TYPES),
         )
-        return self._finish([
+        return self._postprocess([
             GeneratedFile(
                 path=output_path / filename,
                 content=self._render(template, view, filename=filename),
@@ -169,7 +169,7 @@ class CppBackend:
         mtime = definition.source.file.stat().st_mtime
         templates = self.templates(OutputKind.MODULE_LOADER)
 
-        return self._finish([
+        return self._postprocess([
             GeneratedFile(
                 path=output_dir / name / filename,
                 content=self._render(template, view),
@@ -269,4 +269,4 @@ class CppBackend:
             UpdatePolicy.LEAVE_ALONE, with_license=False,
         ))
 
-        return self._finish(files)
+        return self._postprocess(files)
