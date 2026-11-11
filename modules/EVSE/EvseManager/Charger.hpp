@@ -317,6 +317,9 @@ private:
     bool pwm_signal_off() const;
     void note_pwm_switched_off();
     bool must_wait_in_x1_before_pwm();
+    bool slac_matching_in_progress() const;
+    // The EV toggles B-C-B to validate the matching (CM_VALIDATE); such a state C is no charge request.
+    bool state_c_may_be_validation_toggle() const;
     void update_pwm_now_if_changed(float duty_cycle);
     void update_pwm_now_if_changed_ampere(float duty_cycle);
     void update_pwm_max_every_5seconds_ampere(float duty_cycle);
@@ -542,6 +545,7 @@ private:
         // Time at which a running PWM was switched off (X1 or 100 % duty cycle). IEC 61851-1:2017 Table A.6
         // sequence 9.2 requires at least IEC_MIN_X1_BEFORE_PWM_MS in X1 before PWM is enabled again.
         std::optional<std::chrono::time_point<std::chrono::steady_clock>> pwm_switched_off_at{};
+        std::chrono::steady_clock::time_point car_requested_power_at{};
         bool min_x1_wait_logged{false};
 
         // E/F matching retries in 5 percent mode since plug-in or the last match ([V2G3-M06-07])
@@ -620,6 +624,9 @@ private:
     // Maximum duration of a BCB toggle sequence of 1-3 BCB toggles
     static constexpr auto TT_EVSE_VALD_TOGGLE =
         std::chrono::milliseconds(3500 + 200); // We give 200 msecs tolerance to the norm values (table 3 ISO15118-3)
+    // A state C during the matching counts as a charge request once it outlasts a validation toggle
+    // (TP_EV_vald_state_duration, table 3 ISO15118-3); IEC 61851-1 Table A.6 sequence 4 allows 3 s to energize.
+    static constexpr auto VALIDATION_TOGGLE_HOLD = std::chrono::milliseconds(1000);
     static constexpr auto MAINLOOP_UPDATE_RATE = std::chrono::milliseconds(100);
     static constexpr float PWM_5_PERCENT = 0.05;
     // [V2G-DC-968] V2G_SECC_CPOscillator_Retain_Time: keep the 5% oscillator on for 1.5 s after
