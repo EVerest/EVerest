@@ -126,11 +126,12 @@ Have a look at this categorized list of all guides:
 
       How to change the codes, texts and device model components OCPP reports for EVerest errors.
 
-   .. grid-item-card:: Add Components to the OCPP Device Model
+   .. grid-item-card:: Add Components to the OCPP Device Model from an External Application
       :link: ocpp-device-model
       :link-type: doc
 
-      How a module adds its own components and variables to the OCPP device model and handles the writes to them.
+      How an application outside EVerest adds its own components and variables to the OCPP device model and handles
+      the writes to them.
 
    .. grid-item-card:: Migrate from EvseV2G and IsoMux to Evse15118D20
       :link: iso15118-stack-migration

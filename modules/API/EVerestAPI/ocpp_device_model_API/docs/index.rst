@@ -9,7 +9,7 @@
    This API is **experimental**: its topics and types may change without further notice.
 
 The module lets a client outside EVerest add components and variables to the OCPP 2.x device model, as an owner of
-the ``ocpp_device_model`` interface. See :ref:`howto-ocpp-device-model` for the concepts.
+the ``ocpp_device_model`` interface. See :ref:`howto-ocpp-device-model` for a walk-through.
 
 At startup, the module answers ``get_registrations`` from the registrations clients publish on ``m2e/registration``:
 

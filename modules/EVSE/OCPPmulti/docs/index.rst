@@ -87,6 +87,8 @@ connection attempt until the request times out, so the charge point never reache
 With the default ``false`` no request is sent and the connection is established directly (``IFace`` handling
 included).
 
+.. _handwritten_ocppmulti_device-model-component-configs:
+
 Device model configuration via component configs
 =================================================
 
