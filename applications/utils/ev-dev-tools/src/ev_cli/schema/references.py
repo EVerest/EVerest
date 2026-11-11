@@ -62,7 +62,8 @@ class TypeRef:
     name: str
 
     def __str__(self) -> str:
-        return f'{self.unit}#/{self.name}'
+        """The conformant spelling, as written from any other unit."""
+        return f'{self.unit}.yaml#/types/{self.name}'
 
 
 class Dialect(Enum):
@@ -180,7 +181,7 @@ def format_type_reference(target: TypeRef, *, from_unit: str | None) -> str:
     """
     if target.unit == from_unit:
         return f'#/types/{target.name}'
-    return f'{target.unit}.yaml#/types/{target.name}'
+    return str(target)
 
 
 def parse_error_reference(raw: str) -> ParsedErrorReference:
