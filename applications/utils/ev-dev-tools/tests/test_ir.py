@@ -26,15 +26,15 @@ from ev_cli.schema.references import TypeRef
 class TestTypeExpressions:
     """``Primitive`` and ``Opaque`` divide the JSON types between them."""
 
-    @pytest.mark.parametrize('json_type', [JsonType.OBJECT, JsonType.ARRAY])
-    def test_a_primitive_holds_only_a_scalar(self, json_type):
-        with pytest.raises(ValueError):
-            Primitive(json_type)
+    def test_a_primitive_holds_only_a_scalar(self):
+        for json_type in (JsonType.OBJECT, JsonType.ARRAY):
+            with pytest.raises(ValueError):
+                Primitive(json_type)
 
-    @pytest.mark.parametrize('json_type', [t for t in JsonType if t in SCALAR_TYPES])
-    def test_an_opaque_holds_only_an_object_or_an_array(self, json_type):
-        with pytest.raises(ValueError):
-            Opaque(json_type)
+    def test_an_opaque_holds_only_an_object_or_an_array(self):
+        for json_type in SCALAR_TYPES:
+            with pytest.raises(ValueError):
+                Opaque(json_type)
 
 
 class TestConstraints:

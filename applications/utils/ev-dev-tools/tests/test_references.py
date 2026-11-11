@@ -21,6 +21,18 @@ from ev_cli.schema.references import (
 )
 
 
+def accepted(parse, candidates):
+    """The candidates ``parse`` takes without raising MalformedReference."""
+    taken = []
+    for raw in candidates:
+        try:
+            parse(raw)
+        except MalformedReference:
+            continue
+        taken.append(raw)
+    return taken
+
+
 class TestLegacyDialect:
     """``/energy#/Power`` -- what every definition in everest-core uses."""
 
@@ -43,17 +55,15 @@ class TestLegacyDialect:
         parsed = parse_type_reference('/units#/Power', from_unit=None)
         assert parsed.target == TypeRef('units', 'Power')
 
-    @pytest.mark.parametrize('raw', [
-        'energy#/Power',        # no leading slash and no .yaml
-        '/energy',              # no fragment
-        '/energy#Power',        # fragment is not a pointer
-        '/energy#/a/b',         # fragment names more than a type
-        '/#/Power',             # no unit
-        '',
-    ])
-    def test_rejects_nonsense(self, raw):
-        with pytest.raises(MalformedReference):
-            parse_type_reference(raw, from_unit='energy')
+    def test_rejects_nonsense(self):
+        assert accepted(lambda raw: parse_type_reference(raw, from_unit='energy'), [
+            'energy#/Power',        # no leading slash and no .yaml
+            '/energy',              # no fragment
+            '/energy#Power',        # fragment is not a pointer
+            '/energy#/a/b',         # fragment names more than a type
+            '/#/Power',             # no unit
+            '',
+        ]) == []
 
     def test_rejects_a_non_string(self):
         with pytest.raises(MalformedReference):
@@ -101,34 +111,29 @@ class TestConformantDialect:
 
 class TestBothDialectsAgree:
 
-    @pytest.mark.parametrize('legacy, conformant, from_unit', [
-        ('/energy#/Power', '#/types/Power', 'energy'),
-        ('/units#/Power', 'units.yaml#/types/Power', 'energy'),
-    ])
-    def test_resolve_to_the_same_target(self, legacy, conformant, from_unit):
-        assert (
-            parse_type_reference(legacy, from_unit=from_unit).target
-            == parse_type_reference(conformant, from_unit=from_unit).target
-        )
+    def test_resolve_to_the_same_target(self):
+        for legacy, conformant in (('/energy#/Power', '#/types/Power'),
+                                   ('/units#/Power', 'units.yaml#/types/Power')):
+            assert (
+                parse_type_reference(legacy, from_unit='energy').target
+                == parse_type_reference(conformant, from_unit='energy').target
+            )
 
 
 class TestFormatTypeReference:
     """What the conformance report tells you to write instead."""
 
-    @pytest.mark.parametrize('target, from_unit, expected', [
-        (TypeRef('energy', 'Power'), 'energy', '#/types/Power'),
-        (TypeRef('units', 'Power'), 'energy', 'units.yaml#/types/Power'),
-        (TypeRef('units', 'Power'), None, 'units.yaml#/types/Power'),
-    ])
-    def test_suggestion(self, target, from_unit, expected):
-        assert format_type_reference(target, from_unit=from_unit) == expected
+    def test_suggestion(self):
+        assert format_type_reference(TypeRef('energy', 'Power'), from_unit='energy') == '#/types/Power'
+        assert format_type_reference(TypeRef('units', 'Power'), from_unit='energy') == 'units.yaml#/types/Power'
+        assert format_type_reference(TypeRef('units', 'Power'), from_unit=None) == 'units.yaml#/types/Power'
 
-    @pytest.mark.parametrize('from_unit', ['energy', None])
-    def test_suggestion_round_trips(self, from_unit):
+    def test_suggestion_round_trips(self):
         """The advice has to be advice that works."""
         target = TypeRef('units', 'Power')
-        suggested = format_type_reference(target, from_unit=from_unit)
-        assert parse_type_reference(suggested, from_unit=from_unit).target == target
+        for from_unit in ('energy', None):
+            suggested = format_type_reference(target, from_unit=from_unit)
+            assert parse_type_reference(suggested, from_unit=from_unit).target == target
 
 
 class TestErrorReferences:
@@ -145,13 +150,11 @@ class TestErrorReferences:
         assert (parsed.namespace, parsed.name) == ('example', 'ExampleErrorA')
         assert not parsed.is_whole_namespace
 
-    @pytest.mark.parametrize('raw', [
-        '/error/example',                 # wrong prefix
-        'errors/example',                 # no leading slash
-        '/errors/Example',                # namespace must start lower case
-        '/errors/example#/lowercase',     # error names are upper camel
-        '/errors/example#/',
-    ])
-    def test_rejects_nonsense(self, raw):
-        with pytest.raises(MalformedReference):
-            parse_error_reference(raw)
+    def test_rejects_nonsense(self):
+        assert accepted(parse_error_reference, [
+            '/error/example',                 # wrong prefix
+            'errors/example',                 # no leading slash
+            '/errors/Example',                # namespace must start lower case
+            '/errors/example#/lowercase',     # error names are upper camel
+            '/errors/example#/',
+        ]) == []

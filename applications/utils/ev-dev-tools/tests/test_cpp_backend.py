@@ -49,18 +49,12 @@ class TestFieldOrder:
         holder = StructDef(name='Holder', description='', fields=fields, source=SOURCE)
         return [f.name for f in TypeUnitView.fields(holder)]
 
-    def test_required_come_first(self):
+    def test_required_come_first_and_each_group_keeps_source_order(self):
         assert self.ordered(
             field('a'), field('b', required=True), field('c'), field('d', required=True),
         ) == ['b', 'd', 'a', 'c']
-
-    def test_partition_is_stable(self):
         assert self.ordered(*(field(n) for n in 'zyxw')) == list('zyxw')
-
-    def test_all_required(self):
         assert self.ordered(*(field(n, required=True) for n in 'abc')) == list('abc')
-
-    def test_empty(self):
         assert self.ordered() == []
 
 
@@ -78,21 +72,21 @@ class TestTemplates:
 class TestSnakeCase:
     """Enum helper names are built from this, so its output is the API."""
 
-    @pytest.mark.parametrize('word, expected', [
-        ('ChargingPhase', 'charging_phase'),
-        ('EvseState', 'evse_state'),
-        ('Mode', 'mode'),
-        ('power_supply_DC', 'power_supply_dc'),
-        ('OCSPRequestData', 'ocsprequest_data'),
-        ('ISO15118', 'iso15118'),
-        ('Power', 'power'),
-        ('a', 'a'),
-        ('', ''),
-        ('with-dash', 'with_dash'),
-        ('trailing_', 'trailing_'),
-    ])
-    def test_conversion(self, word, expected):
-        assert naming.snake_case(word) == expected
+    def test_conversion(self):
+        expected = {
+            'ChargingPhase': 'charging_phase',
+            'EvseState': 'evse_state',
+            'Mode': 'mode',
+            'power_supply_DC': 'power_supply_dc',
+            'OCSPRequestData': 'ocsprequest_data',
+            'ISO15118': 'iso15118',
+            'Power': 'power',
+            'a': 'a',
+            '': '',
+            'with-dash': 'with_dash',
+            'trailing_': 'trailing_',
+        }
+        assert {word: naming.snake_case(word) for word in expected} == expected
 
     def test_rejects_a_name_it_cannot_start_from(self):
         with pytest.raises(UnsupportedDefinition):
@@ -101,21 +95,23 @@ class TestSnakeCase:
 
 class TestGuardsAndNames:
 
-    @pytest.mark.parametrize('unit, expected', [
-        ('energy', 'TYPES_ENERGY_TYPES_HPP'),
-        ('power_supply_DC', 'TYPES_POWER_SUPPLY_DC_TYPES_HPP'),
-        ('units_signed', 'TYPES_UNITS_SIGNED_TYPES_HPP'),
-    ])
-    def test_type_header_guard(self, unit, expected):
-        assert naming.type_header_guard(unit) == expected
+    def test_type_header_guard(self):
+        expected = {
+            'energy': 'TYPES_ENERGY_TYPES_HPP',
+            'power_supply_DC': 'TYPES_POWER_SUPPLY_DC_TYPES_HPP',
+            'units_signed': 'TYPES_UNITS_SIGNED_TYPES_HPP',
+        }
+        assert {unit: naming.type_header_guard(unit) for unit in expected} == expected
 
-    @pytest.mark.parametrize('filename, expected', [
-        ('Implementation.hpp', 'ISOLATION_MONITOR_IMPLEMENTATION_HPP'),
-        ('Interface.hpp', 'ISOLATION_MONITOR_INTERFACE_HPP'),
-        ('Types.hpp', 'ISOLATION_MONITOR_TYPES_HPP'),
-    ])
-    def test_interface_header_guard(self, filename, expected):
-        assert naming.interface_header_guard('isolation_monitor', filename) == expected
+    def test_interface_header_guard(self):
+        expected = {
+            'Implementation.hpp': 'ISOLATION_MONITOR_IMPLEMENTATION_HPP',
+            'Interface.hpp': 'ISOLATION_MONITOR_INTERFACE_HPP',
+            'Types.hpp': 'ISOLATION_MONITOR_TYPES_HPP',
+        }
+        assert {
+            filename: naming.interface_header_guard('isolation_monitor', filename) for filename in expected
+        } == expected
 
     def test_implementation_guard(self):
         assert naming.implementation_header_guard('main', 'evse_manager') == \
@@ -170,24 +166,24 @@ class TestCppKeywords:
 class TestTypeMapping:
     """The generated ABI.  A change here relinks every module."""
 
-    @pytest.mark.parametrize('json_type, expected', [
-        (JsonType.BOOLEAN, 'bool'),
-        (JsonType.INTEGER, 'int32_t'),
-        (JsonType.NUMBER, 'float'),
-        (JsonType.STRING, 'std::string'),
-    ])
-    def test_struct_members(self, json_type, expected):
-        assert to_cpp_type(Primitive(json_type), Flavour.FIELD) == expected
+    def test_struct_members(self):
+        expected = {
+            JsonType.BOOLEAN: 'bool',
+            JsonType.INTEGER: 'int32_t',
+            JsonType.NUMBER: 'float',
+            JsonType.STRING: 'std::string',
+        }
+        assert {t: to_cpp_type(Primitive(t), Flavour.FIELD) for t in expected} == expected
 
-    @pytest.mark.parametrize('json_type, expected', [
-        (JsonType.BOOLEAN, 'bool'),
-        (JsonType.INTEGER, 'int'),
-        (JsonType.NUMBER, 'double'),
-        (JsonType.STRING, 'std::string'),
-        (JsonType.NULL, 'std::nullptr_t'),
-    ])
-    def test_interface_payloads(self, json_type, expected):
-        assert to_cpp_type(Primitive(json_type), Flavour.PAYLOAD) == expected
+    def test_interface_payloads(self):
+        expected = {
+            JsonType.BOOLEAN: 'bool',
+            JsonType.INTEGER: 'int',
+            JsonType.NUMBER: 'double',
+            JsonType.STRING: 'std::string',
+            JsonType.NULL: 'std::nullptr_t',
+        }
+        assert {t: to_cpp_type(Primitive(t), Flavour.PAYLOAD) for t in expected} == expected
 
     def test_the_two_mappings_disagree_and_that_is_deliberate(self):
         """Reconciling this changes struct layout and precision.
@@ -254,22 +250,22 @@ class TestPayloadKinds:
             model=fixture_model,
         )
 
-    @pytest.mark.parametrize('var_name, kind', [
-        ('latest', PayloadKind.REF),
-        ('nothing_happened', PayloadKind.NULL),
-        ('moods_seen', PayloadKind.ARRAY),
-        ('count', PayloadKind.PLAIN),
-    ])
-    def test_variables(self, view, var_name, kind):
-        assert view.kind(view.interface.var(var_name).type) is kind
+    def test_variables(self, view):
+        expected = {
+            'latest': PayloadKind.REF,
+            'nothing_happened': PayloadKind.NULL,
+            'moods_seen': PayloadKind.ARRAY,
+            'count': PayloadKind.PLAIN,
+        }
+        assert {name: view.kind(view.interface.var(name).type) for name in expected} == expected
 
-    @pytest.mark.parametrize('payload, kind', [
-        (Array(Ref(TypeRef('sample', 'Mood'))), PayloadKind.ARRAY),
-        (Array(Ref(TypeRef('units', 'Power'))), PayloadKind.ARRAY),
-        (Array(Primitive(JsonType.STRING)), PayloadKind.PLAIN),
-    ])
-    def test_arrays(self, view, payload, kind):
-        assert view.kind(payload) is kind
+    def test_arrays(self, view):
+        expected = {
+            Array(Ref(TypeRef('sample', 'Mood'))): PayloadKind.ARRAY,
+            Array(Ref(TypeRef('units', 'Power'))): PayloadKind.ARRAY,
+            Array(Primitive(JsonType.STRING)): PayloadKind.PLAIN,
+        }
+        assert {payload: view.kind(payload) for payload in expected} == expected
 
     def test_an_enum_argument(self, view):
         configure = view.interface.cmd('configure')

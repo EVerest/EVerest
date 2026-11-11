@@ -17,16 +17,6 @@ import pytest
 
 from ev_cli.backends.base import Backend, GeneratedFile, OutputKind, UpdatePolicy, registry
 
-#: What a backend must provide for every command to work against it.
-REQUIRED = (
-    'options',
-    'templates',
-    'emit_type_unit',
-    'emit_interface',
-    'emit_module_loader',
-    'emit_module_files',
-)
-
 
 def test_more_than_one_backend_is_registered():
     """Otherwise none of the below proves anything about the abstraction."""
@@ -37,14 +27,8 @@ def test_more_than_one_backend_is_registered():
 class TestEveryBackend:
 
     def test_satisfies_the_protocol(self, name):
+        """The protocol is runtime checkable, so this checks every member is there."""
         assert isinstance(registry.create(name), Backend)
-
-    @pytest.mark.parametrize('method', REQUIRED)
-    def test_implements(self, name, method):
-        backend = registry.create(name)
-        assert callable(getattr(backend, method, None)), (
-            f'backend "{name}" does not implement {method}()'
-        )
 
     def test_names_itself(self, name):
         assert registry.create(name).name == name

@@ -77,16 +77,15 @@ def test_version_is_parseable_by_cmake():
 # get-templates
 # --------------------------------------------------------------------------
 
-@pytest.mark.parametrize('command', ['types', 'interface', 'module'])
-@pytest.mark.parametrize('separator', [';', '\n'])
-def test_get_templates_lists_existing_template_files(command, separator):
+def test_get_templates_lists_existing_template_files():
     """CMake stores the result as a target property used as DEPENDS."""
-    out = run(command, 'get-templates', f'--separator={separator}',
-              '--schemas-dir', str(SCHEMAS_DIR)).stdout.strip()
-    paths = [Path(p) for p in out.split(separator) if p]
-    assert paths, f'{command} get-templates returned nothing'
-    for path in paths:
-        assert path.is_file(), f'{path} does not exist'
+    for command in ('types', 'interface', 'module'):
+        for separator in (';', '\n'):
+            out = run(command, 'get-templates', f'--separator={separator}',
+                      '--schemas-dir', str(SCHEMAS_DIR)).stdout.strip()
+            paths = [Path(p) for p in out.split(separator) if p]
+            assert paths, f'{command} get-templates returned nothing'
+            assert [path for path in paths if not path.is_file()] == []
 
 
 def test_get_templates_default_separator_is_newline():
@@ -316,11 +315,11 @@ def test_module_update_preserves_code_inside_ev_blocks(scratch_module):
     assert sentinel in header.read_text()
 
 
-@pytest.mark.parametrize('action', ['create', 'update'])
-def test_module_create_and_update_accept_a_backend(scratch_module, action):
+def test_module_create_and_update_accept_a_backend(scratch_module):
     """They emit code, so they pick a target like every other emitting command."""
     work_dir, _, _ = scratch_module
-    run('module', action, 'Example', *common_args(work_dir), '--backend', 'cpp')
+    for action in ('create', 'update'):
+        run('module', action, 'Example', *common_args(work_dir), '--backend', 'cpp')
 
 
 def test_module_create_can_target_another_backend(scratch_module):
@@ -346,16 +345,16 @@ def test_module_update_does_not_overwrite_the_module_cpp(scratch_module):
 # argument surface
 # --------------------------------------------------------------------------
 
-@pytest.mark.parametrize('argv', [
-    ('nonsense',),
-    ('types',),                      # a subcommand is required
-    ('module',),
-    ('interface',),
-    ('helpers',),
-    ('types', 'nonsense'),
-])
-def test_invalid_invocations_exit_nonzero(argv):
-    assert run(*argv, check=False).returncode != 0
+def test_invalid_invocations_exit_nonzero():
+    invocations = [
+        ('nonsense',),
+        ('types',),                      # a subcommand is required
+        ('module',),
+        ('interface',),
+        ('helpers',),
+        ('types', 'nonsense'),
+    ]
+    assert [argv for argv in invocations if run(*argv, check=False).returncode == 0] == []
 
 
 def test_missing_everest_dir_fails(tmp_path):
@@ -396,25 +395,28 @@ def test_type_units_are_read_only_from_the_types_directory(tmp_path):
     assert relative_files(tmp_path / 'out') == {'top.hpp'}
 
 
-@pytest.mark.parametrize('content, explanation', [
-    ('', 'has no content'),
-    ('# only a comment\n', 'has no content'),
-    ('- description: x\n', 'holds a list'),
-    ('description\n', 'holds a single value'),
-])
-def test_a_definition_without_key_value_entries_is_explained(tmp_path, content, explanation):
+def test_a_definition_without_key_value_entries_is_explained(tmp_path):
+    explanations = {
+        '': 'has no content',
+        '# only a comment\n': 'has no content',
+        '- description: x\n': 'holds a list',
+        'description\n': 'holds a single value',
+    }
     (tmp_path / 'types').mkdir()
-    (tmp_path / 'types' / 'odd.yaml').write_text(content)
-    proc = run(
-        'types', 'generate-headers',
-        '--disable-clang-format',
-        '--schemas-dir', str(SCHEMAS_DIR),
-        '--everest-dir', str(tmp_path),
-        '--output-dir', str(tmp_path / 'out'),
-        check=False,
-    )
-    assert proc.returncode != 0
-    assert explanation in proc.stderr
+    unexplained = []
+    for content, explanation in explanations.items():
+        (tmp_path / 'types' / 'odd.yaml').write_text(content)
+        proc = run(
+            'types', 'generate-headers',
+            '--disable-clang-format',
+            '--schemas-dir', str(SCHEMAS_DIR),
+            '--everest-dir', str(tmp_path),
+            '--output-dir', str(tmp_path / 'out'),
+            check=False,
+        )
+        if proc.returncode == 0 or explanation not in proc.stderr:
+            unexplained.append(content)
+    assert unexplained == []
 
 
 def test_missing_work_dir_fails_before_writing(tmp_path):
@@ -433,27 +435,32 @@ def test_missing_work_dir_fails_before_writing(tmp_path):
     assert not work_dir.exists()
 
 
-@pytest.mark.parametrize('payload, pointer', [
-    ('vars:\n  broken:\n    description: A var\n    type: notatype\n', '#/vars/broken'),
-    ('cmds:\n  run:\n    description: A command\n    arguments:\n      broken:\n'
-     '        description: An argument\n        type: notatype\n', '#/cmds/run/arguments/broken'),
-    ('cmds:\n  run:\n    description: A command\n    result:\n'
-     '      description: A result\n      type: notatype\n', '#/cmds/run/result'),
-])
-def test_an_interface_payload_must_be_a_valid_schema(tmp_path, payload, pointer):
+def test_an_interface_payload_must_be_a_valid_schema(tmp_path):
     """The interface meta-schema cannot check its embedded payload schemas."""
+    payloads = {
+        '#/vars/broken': 'vars:\n  broken:\n    description: A var\n    type: notatype\n',
+        '#/cmds/run/arguments/broken': (
+            'cmds:\n  run:\n    description: A command\n    arguments:\n      broken:\n'
+            '        description: An argument\n        type: notatype\n'),
+        '#/cmds/run/result': (
+            'cmds:\n  run:\n    description: A command\n    result:\n'
+            '      description: A result\n      type: notatype\n'),
+    }
     (tmp_path / 'interfaces').mkdir()
-    (tmp_path / 'interfaces' / 'odd.yaml').write_text('description: An interface\n' + payload)
-    proc = run(
-        'interface', 'generate-headers', 'odd',
-        '--disable-clang-format',
-        '--schemas-dir', str(SCHEMAS_DIR),
-        '--everest-dir', str(tmp_path),
-        '--output-dir', str(tmp_path / 'out'),
-        check=False,
-    )
-    assert proc.returncode != 0
-    assert f'odd.yaml{pointer}: not a valid schema' in proc.stderr
+    unreported = []
+    for pointer, payload in payloads.items():
+        (tmp_path / 'interfaces' / 'odd.yaml').write_text('description: An interface\n' + payload)
+        proc = run(
+            'interface', 'generate-headers', 'odd',
+            '--disable-clang-format',
+            '--schemas-dir', str(SCHEMAS_DIR),
+            '--everest-dir', str(tmp_path),
+            '--output-dir', str(tmp_path / 'out'),
+            check=False,
+        )
+        if proc.returncode == 0 or f'odd.yaml{pointer}: not a valid schema' not in proc.stderr:
+            unreported.append(pointer)
+    assert unreported == []
 
 
 def test_generating_every_interface_fails_on_a_broken_one(tmp_path):
@@ -552,14 +559,14 @@ def test_everest_dir_without_entries_fails(tmp_path):
     assert proc.returncode != 0
 
 
-@pytest.mark.parametrize('argv', [
-    ('--help',),
-    ('module', '--help'),
-    ('mod', 'create', '--help'),
-    ('if', 'generate-headers', '--help'),
-    ('ty', 'gh', '--help'),
-    ('conformance-report', '--help'),
-    ('hlp', '--help'),
-])
-def test_help_is_available_at_every_level(argv):
-    assert 'usage' in run(*argv).stdout.lower()
+def test_help_is_available_at_every_level():
+    invocations = [
+        ('--help',),
+        ('module', '--help'),
+        ('mod', 'create', '--help'),
+        ('if', 'generate-headers', '--help'),
+        ('ty', 'gh', '--help'),
+        ('conformance-report', '--help'),
+        ('hlp', '--help'),
+    ]
+    assert [argv for argv in invocations if 'usage' not in run(*argv).stdout.lower()] == []
