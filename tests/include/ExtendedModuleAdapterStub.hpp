@@ -144,10 +144,14 @@ public:
         topic += "modules/";
         topic += id;
         topic += "/config/set_request";
-        Everest::config::SetRequest req;
-        req.identifier.module_id = id;
-        req.identifier.configuration_parameter_name = name;
-        req.value = value;
+        Everest::config::SetRequest set_request;
+        set_request.identifier.module_id = id;
+        set_request.identifier.configuration_parameter_name = name;
+        set_request.value = value;
+        Everest::config::Request req;
+        req.type = Everest::config::Type::Set;
+        req.request = set_request;
+        req.id = "runtime-config-set";
         json obj = req;
         call(HandlerType::ConfigurationRequest, topic, obj);
     }

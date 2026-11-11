@@ -85,7 +85,11 @@ public:
 
     nlohmann::json get(const MQTTRequest& request, std::size_t /*retries*/ = 0) override {
         m_last_get_request = request;
-        return m_get_response;
+        auto response = m_get_response;
+        if (request.correlation_id.has_value() && response.is_object()) {
+            response["id"] = request.correlation_id.value();
+        }
+        return response;
     }
 
     nlohmann::json get(const std::string& topic, QOS qos, std::size_t retries = 0) override {

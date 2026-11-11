@@ -330,6 +330,10 @@ const std::string& MQTTAbstractionImpl::get_external_prefix() const {
 
 nlohmann::json MQTTAbstractionImpl::get_internal(const MQTTRequest& request) {
     BOOST_LOG_FUNCTION();
+    if (request.request_topic.has_value() && not request.correlation_id.has_value()) {
+        EVLOG_AND_THROW(
+            EverestInternalError(fmt::format("Request on {} without correlation id", request.request_topic.value())));
+    }
     // Shared with the handler, which may still be running when this function returns on timeout.
     const auto res_promise = std::make_shared<std::promise<json>>();
     std::future<json> res_future = res_promise->get_future();
@@ -340,7 +344,11 @@ nlohmann::json MQTTAbstractionImpl::get_internal(const MQTTRequest& request) {
 
     // FIXME: use configurable HandlerType?
     const auto res_token =
-        std::make_shared<TypedHandler>(HandlerType::ConfigurationResponse, std::make_shared<Handler>(res_handler));
+        request.correlation_id.has_value()
+            ? std::make_shared<TypedHandler>(request.response_topic, request.correlation_id.value(),
+                                             HandlerType::ConfigurationResponse, std::make_shared<Handler>(res_handler))
+            : std::make_shared<TypedHandler>(HandlerType::ConfigurationResponse,
+                                             std::make_shared<Handler>(res_handler));
     this->register_handler(request.response_topic, res_token, request.qos);
     if (request.request_topic.has_value()) {
         if (request.request_data.has_value()) {
@@ -522,8 +530,11 @@ void MQTTAbstractionImpl::unregister_handler(const std::string& topic, const Tok
 
     this->message_handler.unregister_handler(topic, token);
 
-    // cmd response topics are shared by all calls of that cmd and stay subscribed
-    if (this->mqtt_is_connected && token && token->type != HandlerType::Result) {
+    // Response topics of requests matched by id are shared by all requests and stay subscribed
+    const bool shared_response_topic =
+        token && (token->type == HandlerType::Result ||
+                  (token->type == HandlerType::ConfigurationResponse && not token->id.empty()));
+    if (this->mqtt_is_connected && token && not shared_response_topic) {
         this->unsubscribe(topic);
     }
 }

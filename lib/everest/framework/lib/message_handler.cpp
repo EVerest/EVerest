@@ -458,7 +458,11 @@ void MessageHandler::register_handler(const std::string& topic, std::shared_ptr<
     }
     case HandlerType::ConfigurationResponse: {
         auto lock = responses.handle();
-        lock->config[topic] = handler;
+        if (handler->id.empty()) {
+            lock->config[topic] = handler;
+        } else {
+            lock->config_by_id[handler->id] = {topic, handler};
+        }
         break;
     }
     case HandlerType::ModuleReady: {
@@ -514,7 +518,14 @@ void MessageHandler::unregister_handler(const std::string& topic, const std::sha
     }
     case HandlerType::ConfigurationResponse: {
         auto lock = responses.handle();
-        erase_handler(lock->config, topic, handler);
+        if (handler->id.empty()) {
+            erase_handler(lock->config, topic, handler);
+            break;
+        }
+        const auto it = lock->config_by_id.find(handler->id);
+        if (it != lock->config_by_id.end() && it->second.handler == handler) {
+            lock->config_by_id.erase(it);
+        }
         break;
     }
     case HandlerType::ModuleReady: {
@@ -645,12 +656,24 @@ void MessageHandler::handle_get_config_response(const std::string& topic, const 
         return;
     }
 
-    // Each request waits for exactly one response, so the handler is consumed by the first response on its topic.
+    std::optional<std::string> id;
+    if (data_it->is_object()) {
+        const auto id_it = data_it->find("id");
+        if (id_it != data_it->end() && id_it->is_string()) {
+            id = id_it->get<std::string>();
+        }
+    }
+
+    // Each request waits for exactly one response, so its handler is consumed by the first response matching it.
     std::shared_ptr<TypedHandler> handler_copy;
     {
         auto handle = responses.handle();
-        const auto it = handle->config.find(topic);
-        if (it != handle->config.end()) {
+        auto& by_id = handle->config_by_id;
+        const auto by_id_it = id.has_value() ? by_id.find(id.value()) : by_id.end();
+        if (by_id_it != by_id.end() && by_id_it->second.topic == topic) {
+            handler_copy = by_id_it->second.handler;
+            by_id.erase(by_id_it);
+        } else if (const auto it = handle->config.find(topic); it != handle->config.end()) {
             handler_copy = it->second;
             handle->config.erase(it);
         }

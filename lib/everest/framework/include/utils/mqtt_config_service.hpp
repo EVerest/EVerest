@@ -94,7 +94,8 @@ struct SetResponse {
 struct Request {
     Type type = Type::Unknown;                                    ///< The type of request
     std::variant<std::monostate, GetRequest, SetRequest> request; ///< The request itself
-    std::string origin; ///< The origin of the request, the module id of the requesting module
+    std::string origin; ///< The module id of the requesting module, empty for requests of the manager
+    std::string id;     ///< Correlation id, repeated in the response
 };
 
 /// \brief Represents a container for various responses to requests made to the ConfigService
@@ -103,6 +104,7 @@ struct Response {
     std::string status_info;                       ///< Can contain additional status information
     std::optional<Type> type; ///< The type of the response, identical to the request, missing when status is Error
     std::variant<std::monostate, GetResponse, SetResponse> response; ///< The response itself
+    std::string id;                                                  ///< The correlation id of the request
 };
 
 /// \brief Represents a container for getting a configuration parameter
@@ -155,6 +157,14 @@ struct ConfigChangeResult {
     }
 };
 
+/// \brief \returns the MQTT request that sends \p request with a new correlation id to the config service and waits
+/// for the response carrying that id
+MQTTRequest make_config_service_request(const std::string& everest_prefix, Request request);
+
+/// \brief Client of the config service for one module
+///
+/// The request methods may be called concurrently from any thread: every request carries its own correlation id, so
+/// each call receives the response to its own request.
 class ConfigServiceClient {
 public:
     using ConfigChangeHandler = std::function<ConfigChangeResult(const std::string& new_value)>;

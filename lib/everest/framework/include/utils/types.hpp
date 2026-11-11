@@ -199,6 +199,9 @@ struct MQTTRequest {
     std::chrono::milliseconds timeout = std::chrono::milliseconds(mqtt_get_config_timeout_ms);
     std::optional<std::string> request_topic;
     std::optional<std::string> request_data;
+    /// Required with a request_topic: the id that request_data carries and the response repeats. Without it the next
+    /// message on response_topic is returned.
+    std::optional<std::string> correlation_id;
 };
 } // namespace Everest
 
