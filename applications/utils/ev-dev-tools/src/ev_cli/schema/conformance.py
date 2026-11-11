@@ -119,6 +119,11 @@ def format_summary(findings: Sequence[Finding]) -> str:
     return '\n'.join(lines)
 
 
+def ref_siblings(schema: Mapping[str, Any]) -> dict[str, Any]:
+    """The keys beside a ``$ref`` that the IR does not carry over."""
+    return {key: value for key, value in schema.items() if key not in KEPT_BESIDE_REF}
+
+
 def collect_findings(loader: DefinitionLoader) -> list[Finding]:
     """Every place where the definitions rely on EVerest's own reading of JSON Schema."""
     tree = loader.tree
@@ -190,7 +195,7 @@ def _find_in_reference(
             conformant_form=format_type_reference(reference.target, from_unit=from_unit),
         )
 
-    siblings = {key: value for key, value in schema.items() if key not in KEPT_BESIDE_REF}
+    siblings = ref_siblings(schema)
     declared_type = siblings.pop('type', None)
 
     if declared_type is not None:
