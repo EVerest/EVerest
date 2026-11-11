@@ -830,13 +830,59 @@ TEST_F(ChargePointCommonTestFixtureV2, FirmwareNotificationGuardTracksCycleBound
     testing::Mock::VerifyAndClearExpectations(&all_connectors_unavailable);
 
     charge_point.on_firmware_update_status_notification(1, FirmwareStatusEnum::Idle);
-    EXPECT_CALL(all_connectors_unavailable, Call()).Times(0);
+    EXPECT_CALL(all_connectors_unavailable, Call()).Times(1);
     charge_point.on_firmware_update_status_notification(1, FirmwareStatusEnum::InstallScheduled, true);
     testing::Mock::VerifyAndClearExpectations(&all_connectors_unavailable);
 
     charge_point.on_firmware_update_status_notification(1, FirmwareStatusEnum::Installed);
     EXPECT_CALL(all_connectors_unavailable, Call()).Times(1);
     charge_point.on_firmware_update_status_notification(2, FirmwareStatusEnum::InstallScheduled, true);
+    charge_point.stop();
+}
+
+TEST_F(ChargePointCommonTestFixtureV2, RejectedDeferredRequestRearmsInstallNotification) {
+    configure_callbacks_with_mocks();
+    testing::MockFunction<void()> all_connectors_unavailable;
+    callbacks.all_connectors_unavailable_callback = all_connectors_unavailable.AsStdFunction();
+    const auto& defer_cv = ControllerComponentVariables::DeferFirmwareDownloadDuringTransaction;
+    ASSERT_EQ(device_model->set_value(defer_cv.component, defer_cv.variable.value(), AttributeEnum::Actual, "true",
+                                      "TEST", true),
+              SetVariableStatusEnum::Accepted);
+    auto database_handler = create_database_handler();
+    TestChargePoint charge_point(create_evse_connector_structure(), device_model, database_handler,
+                                 create_message_queue(database_handler), TEMP_OUTPUT_PATH,
+                                 std::make_shared<EvseSecurityMock>(), callbacks);
+    charge_point.start();
+
+    EXPECT_CALL(all_connectors_unavailable, Call()).Times(1);
+    charge_point.on_firmware_update_status_notification(1, FirmwareStatusEnum::InstallScheduled, true);
+    testing::Mock::VerifyAndClearExpectations(&all_connectors_unavailable);
+
+    const ocpp::DateTime timestamp("2024-01-17T17:00:00");
+    charge_point.on_transaction_started(1, 1, "some-session-id", timestamp, TriggerReasonEnum::Authorized, MeterValue(),
+                                        {}, {}, {}, {}, ChargingStateEnum::EVConnected);
+
+    UpdateFirmwareRequest request;
+    request.requestId = 2;
+    request.firmware.location = "https://firmware.example.com/firmware.bin";
+    request.firmware.retrieveDateTime = ocpp::DateTime("2024-01-01T00:00:00Z");
+    ocpp::EnhancedMessage<MessageType> update_firmware;
+    update_firmware.messageType = MessageType::UpdateFirmware;
+    update_firmware.message = ocpp::Call<UpdateFirmwareRequest>(request);
+    EXPECT_CALL(update_firmware_request_callback_mock, Call(testing::_)).Times(0);
+    charge_point.handle_message(update_firmware);
+    testing::Mock::VerifyAndClearExpectations(&update_firmware_request_callback_mock);
+
+    UpdateFirmwareResponse rejected;
+    rejected.status = UpdateFirmwareStatusEnum::Rejected;
+    EXPECT_CALL(update_firmware_request_callback_mock, Call(testing::_)).WillOnce(testing::Return(rejected));
+    charge_point.on_transaction_finished(1, timestamp, MeterValue(), ReasonEnum::StoppedByEV,
+                                         TriggerReasonEnum::StopAuthorized, {}, {}, ChargingStateEnum::EVConnected);
+    testing::Mock::VerifyAndClearExpectations(&update_firmware_request_callback_mock);
+
+    EXPECT_CALL(all_connectors_unavailable, Call()).Times(1);
+    charge_point.on_firmware_update_status_notification(3, FirmwareStatusEnum::InstallScheduled, true);
+    testing::Mock::VerifyAndClearExpectations(&all_connectors_unavailable);
     charge_point.stop();
 }
 

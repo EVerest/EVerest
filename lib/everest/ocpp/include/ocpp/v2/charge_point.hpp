@@ -404,13 +404,6 @@ public:
     virtual std::vector<int> get_network_connection_slots() const = 0;
 };
 
-/// \brief Whether the running firmware update still has to be told that all connectors became unavailable.
-enum class AllConnectorsUnavailableNotificationState {
-    Idle,
-    Waiting,
-    Notified,
-};
-
 /// \brief Class implements OCPP2.0.1 Charging Station
 class ChargePoint : public ChargePointInterface, private ocpp::ChargingStationBase {
 
@@ -456,9 +449,6 @@ private:
     /// does not: an owner may be between unregistering and registering again then.
     bool absent_variables_removed{false};
     bool skip_invalid_csms_certificate_notifications{false};
-    // Limits the all-connectors-unavailable notification to one per update cycle
-    std::atomic<AllConnectorsUnavailableNotificationState> all_connectors_unavailable_notification_state{
-        AllConnectorsUnavailableNotificationState::Idle};
 
     /// \brief Component responsible for maintaining and persisting the operational status of CS, EVSEs, and connectors.
     std::shared_ptr<ComponentStateManagerInterface> component_state_manager;

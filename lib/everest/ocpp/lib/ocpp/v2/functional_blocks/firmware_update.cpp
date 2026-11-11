@@ -31,8 +31,7 @@ FirmwareUpdate::FirmwareUpdate(const FunctionalBlockContext& functional_block_co
     security(security),
     registration_status(registration_status),
     update_firmware_request_callback(update_firmware_request_callback),
-    all_connectors_unavailable_callback(all_connectors_unavailable_callback),
-    firmware_status(FirmwareStatusEnum::Idle) {
+    all_connectors_unavailable_callback(all_connectors_unavailable_callback) {
 }
 
 void FirmwareUpdate::on_registration_accepted() {
@@ -56,24 +55,49 @@ void FirmwareUpdate::handle_message(const ocpp::EnhancedMessage<MessageType>& me
 void FirmwareUpdate::on_firmware_update_status_notification(std::int32_t request_id,
                                                             const FirmwareStatusEnum& firmware_update_status,
                                                             std::optional<bool> disable_connectors_during_install) {
+    const bool cycle_ended =
+        is_firmware_status_end_state(firmware_update_status) or firmware_update_status == FirmwareStatusEnum::Idle;
+
     bool is_duplicate = false;
-    if (this->firmware_status == firmware_update_status) {
-        if (request_id == -1 or
-            (this->firmware_status_id.has_value() and this->firmware_status_id.value() == request_id)) {
-            // already sent, do not send again
-            is_duplicate = true;
+    FirmwareStatusEnum install_pending_status = FirmwareStatusEnum::SignatureVerified;
+    {
+        auto handle = this->cycle.handle();
+        auto& state = *handle;
+        state.status_generation += 1;
+        if (cycle_ended) {
+            state.notification_state = InstallNotificationState::Idle;
+        } else if (firmware_update_status != FirmwareStatusEnum::DownloadScheduled and
+                   state.notification_state == InstallNotificationState::Idle) {
+            // A deferred download keeps the connectors unavailable long before the install, so it does not arm
+            // the notification
+            state.notification_state = InstallNotificationState::Waiting;
+        }
+        install_pending_status = status_before_installing(state, request_id);
+        if (cycle_ended) {
+            state.requested_update_active = false;
+        }
+        if (state.firmware_status == firmware_update_status) {
+            if (request_id == -1 or
+                (state.firmware_status_id.has_value() and state.firmware_status_id.value() == request_id)) {
+                // already sent, do not send again
+                is_duplicate = true;
+            }
+        }
+        if (!is_duplicate) {
+            // Firmware status and id are stored for future trigger message request.
+            state.firmware_status = firmware_update_status;
+            if (request_id != -1) {
+                state.firmware_status_id = request_id;
+            }
         }
     }
 
     if (!is_duplicate) {
         FirmwareStatusNotificationRequest req;
         req.status = firmware_update_status;
-        // Firmware status and id are stored for future trigger message request.
-        this->firmware_status = req.status;
 
         if (request_id != -1) {
             req.requestId = request_id; // L01.FR.20
-            this->firmware_status_id = request_id;
         }
 
         {
@@ -108,7 +132,7 @@ void FirmwareUpdate::on_firmware_update_status_notification(std::int32_t request
             this->restore_all_connector_states();
         }
 
-        if (this->firmware_status_before_installing == req.status) {
+        if (install_pending_status == req.status) {
             // FIXME(Kai): This is a temporary workaround, because the EVerest System module does not keep track of
             // transactions and can't inquire about their status from the OCPP modules. If the firmware status is
             // expected to become "Installing", but we still have a transaction running, the update will wait for the
@@ -116,8 +140,8 @@ void FirmwareUpdate::on_firmware_update_status_notification(std::int32_t request
             // to pass.
             const auto transaction_active = this->context.evse_manager.any_transaction_active(std::nullopt);
             if (transaction_active) {
-                this->firmware_status = FirmwareStatusEnum::InstallScheduled;
-                req.status = firmware_status;
+                this->cycle.handle()->firmware_status = FirmwareStatusEnum::InstallScheduled;
+                req.status = FirmwareStatusEnum::InstallScheduled;
                 const ocpp::Call<FirmwareStatusNotificationRequest> call(req);
                 this->context.message_dispatcher.dispatch_call_async(call);
             }
@@ -139,14 +163,18 @@ void FirmwareUpdate::on_firmware_update_status_notification(std::int32_t request
 void FirmwareUpdate::on_firmware_status_notification_request() {
     FirmwareStatusNotificationRequest request;
 
-    if (this->firmware_status == FirmwareStatusEnum::Idle or this->firmware_status == FirmwareStatusEnum::Installed) {
-        // L01.FR.25
-        // do not set requestId when idle: L01.FR.20
-        request.status = FirmwareStatusEnum::Idle;
-    } else { // L01.FR.26
-        // So not Idle or Installed
-        request.status = this->firmware_status;
-        request.requestId = this->firmware_status_id;
+    {
+        auto handle = this->cycle.handle();
+        if (handle->firmware_status == FirmwareStatusEnum::Idle or
+            handle->firmware_status == FirmwareStatusEnum::Installed) {
+            // L01.FR.25
+            // do not set requestId when idle: L01.FR.20
+            request.status = FirmwareStatusEnum::Idle;
+        } else { // L01.FR.26
+            // So not Idle or Installed
+            request.status = handle->firmware_status;
+            request.requestId = handle->firmware_status_id;
+        }
     }
 
     const ocpp::Call<FirmwareStatusNotificationRequest> call(request);
@@ -164,13 +192,68 @@ void FirmwareUpdate::on_transaction_finished() {
         }
     }
     if (request.has_value()) {
-        const UpdateFirmwareResponse response = this->update_firmware_request_callback(request.value());
+        const UpdateFirmwareResponse response = this->request_firmware_update(request.value());
         if (response.status != UpdateFirmwareStatusEnum::Accepted) {
             EVLOG_warning << "Deferred firmware update was not accepted after transaction finished: "
                           << conversions::update_firmware_status_enum_to_string(response.status);
             this->on_firmware_update_status_notification(request.value().requestId, FirmwareStatusEnum::DownloadFailed);
         }
     }
+}
+
+void FirmwareUpdate::on_all_connectors_unavailable() {
+    if (!this->all_connectors_unavailable_callback.has_value()) {
+        return;
+    }
+    {
+        auto handle = this->cycle.handle();
+        if (handle->notification_state != InstallNotificationState::Waiting) {
+            return;
+        }
+        handle->notification_state = InstallNotificationState::Notified;
+        handle->notified_generation = handle->status_generation;
+    }
+    this->all_connectors_unavailable_callback.value()();
+}
+
+FirmwareUpdate::RequestedUpdate FirmwareUpdate::to_requested_update(const UpdateFirmwareRequest& request) {
+    const bool is_signed = request.firmware.signingCertificate.has_value() or request.firmware.signature.has_value();
+    return {request.requestId, is_signed ? FirmwareStatusEnum::SignatureVerified : FirmwareStatusEnum::Downloaded};
+}
+
+UpdateFirmwareResponse FirmwareUpdate::request_firmware_update(const UpdateFirmwareRequest& request) {
+    std::uint64_t generation_before_callback = 0;
+    {
+        auto handle = this->cycle.handle();
+        generation_before_callback = handle->status_generation;
+        // Known before the callback returns, so a status reported from within it is classified by this request
+        handle->offered_update = to_requested_update(request);
+    }
+    const auto response = this->update_firmware_request_callback(request);
+
+    auto handle = this->cycle.handle();
+    handle->offered_update.reset();
+    if (response.status == UpdateFirmwareStatusEnum::Accepted or
+        response.status == UpdateFirmwareStatusEnum::AcceptedCanceled) {
+        const bool notified_by_this_update = handle->notification_state == InstallNotificationState::Notified and
+                                             handle->notified_generation > generation_before_callback;
+        if (!notified_by_this_update) {
+            handle->notification_state = InstallNotificationState::Waiting;
+        }
+    }
+    return response;
+}
+
+FirmwareStatusEnum FirmwareUpdate::status_before_installing(const CycleState& state, const std::int32_t request_id) {
+    if (state.offered_update.has_value() and request_id == state.offered_update->request_id) {
+        return state.offered_update->status_before_installing;
+    }
+    if (state.requested_update.has_value() and
+        (request_id == state.requested_update->request_id or (request_id == -1 and state.requested_update_active))) {
+        return state.requested_update->status_before_installing;
+    }
+    // An update the CSMS did not request: one reported without a request id is taken as unsigned
+    return request_id == -1 ? FirmwareStatusEnum::Downloaded : FirmwareStatusEnum::SignatureVerified;
 }
 
 bool FirmwareUpdate::is_download_deferral_required() const {
@@ -185,6 +268,7 @@ void FirmwareUpdate::handle_firmware_update_req(Call<UpdateFirmwareRequest> call
     UpdateFirmwareResponse response;
     const auto msg = call.msg;
     bool cert_valid_or_not_set = true;
+    const auto generation_before_callback = this->cycle.handle()->status_generation;
 
     // L01.FR.22 check if certificate is valid
     if (msg.firmware.signingCertificate.has_value() and
@@ -222,7 +306,7 @@ void FirmwareUpdate::handle_firmware_update_req(Call<UpdateFirmwareRequest> call
             response.status = UpdateFirmwareStatusEnum::Accepted;
             download_deferred = true;
         } else {
-            response = update_firmware_request_callback(msg);
+            response = this->request_firmware_update(msg);
         }
         if (superseded_deferred_request and response.status == UpdateFirmwareStatusEnum::Accepted) {
             // L01.FR.24: the previously deferred update is canceled by this one. Only the response reports it; the
@@ -237,18 +321,30 @@ void FirmwareUpdate::handle_firmware_update_req(Call<UpdateFirmwareRequest> call
 
     if ((response.status == UpdateFirmwareStatusEnum::Accepted) or
         (response.status == UpdateFirmwareStatusEnum::AcceptedCanceled)) {
-        // Drop what a previous cycle queued behind a running transaction, so a cycle that died without reaching
-        // an end state cannot force the EVSE Inoperative once that transaction ends
-        this->availability.drop_non_persistent_scheduled_changes();
-        if (call.msg.firmware.signingCertificate.has_value() or call.msg.firmware.signature.has_value()) {
-            this->firmware_status_before_installing = FirmwareStatusEnum::SignatureVerified;
-        } else {
-            this->firmware_status_before_installing = FirmwareStatusEnum::Downloaded;
+        bool restore_connectors = false;
+        {
+            auto handle = this->cycle.handle();
+            auto& state = *handle;
+            state.requested_update = to_requested_update(msg);
+            state.requested_update_active = true;
+            // A status reported since the callback started already belongs to the accepted update and is kept
+            if (state.status_generation == generation_before_callback) {
+                // Reset the last-seen firmware status to prevent accidental deduplication in a new update cycle
+                state.firmware_status = FirmwareStatusEnum::Idle;
+                state.firmware_status_id = std::nullopt;
+                restore_connectors = state.connectors_disabled;
+            }
+            if (download_deferred) {
+                state.notification_state = InstallNotificationState::Idle;
+            }
         }
-
-        // Reset the last-seen firmware status to prevent accidental deduplication in a new update cycle
-        this->firmware_status = FirmwareStatusEnum::Idle;
-        this->firmware_status_id = std::nullopt;
+        // An update that never reported its end must not keep the connectors unavailable, nor force an EVSE
+        // Inoperative once its transaction ends
+        if (restore_connectors) {
+            this->restore_all_connector_states();
+        } else {
+            this->availability.drop_non_persistent_scheduled_changes();
+        }
     }
 
     if (download_deferred) {
@@ -272,6 +368,7 @@ void FirmwareUpdate::change_all_connectors_to_unavailable_for_firmware_update() 
     msg.operationalStatus = OperationalStatusEnum::Inoperative;
 
     const auto transaction_active = this->context.evse_manager.any_transaction_active(std::nullopt);
+    this->cycle.handle()->connectors_disabled = true;
 
     if (!transaction_active) {
         // execute change availability if possible
@@ -280,10 +377,8 @@ void FirmwareUpdate::change_all_connectors_to_unavailable_for_firmware_update() 
                 set_evse_connectors_unavailable(evse, false);
             }
         }
-        // Check succeeded, trigger the callback if needed
-        if (this->all_connectors_unavailable_callback.has_value() and
-            this->context.evse_manager.are_all_connectors_effectively_inoperative()) {
-            this->all_connectors_unavailable_callback.value()();
+        if (this->context.evse_manager.are_all_connectors_effectively_inoperative()) {
+            this->on_all_connectors_unavailable();
         }
     } else if (response.status == ChangeAvailabilityStatusEnum::Scheduled) {
         // put all EVSEs to unavailable that do not have active transaction
@@ -294,8 +389,7 @@ void FirmwareUpdate::change_all_connectors_to_unavailable_for_firmware_update() 
                 EVSE e;
                 e.id = evse.get_id();
                 msg.evse = e;
-                // Deliberately overwrites whatever the CSMS has queued for this EVSE, because the connectors
-                // have to be unavailable for the install. A queued Inoperative still gets what it asked for
+                // Queued alongside whatever the CSMS has scheduled for this EVSE
                 this->availability.set_scheduled_change_availability_requests(evse.get_id(), {msg, false});
             }
         }
@@ -303,6 +397,7 @@ void FirmwareUpdate::change_all_connectors_to_unavailable_for_firmware_update() 
 }
 
 void FirmwareUpdate::restore_all_connector_states() {
+    this->cycle.handle()->connectors_disabled = false;
     for (auto& evse : this->context.evse_manager) {
         const std::uint32_t number_of_connectors = evse.get_number_of_connectors();
 

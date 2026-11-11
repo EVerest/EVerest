@@ -102,7 +102,6 @@ private:
     struct PendingFirmwareStatus {
         std::int32_t request_id;
         FirmwareStatusNotification status;
-        std::optional<bool> disable_connectors_during_install;
     };
     everest::lib::util::monitor<std::optional<PendingFirmwareStatus>> pending_firmware_status;
     UploadLogStatusEnumType log_status{UploadLogStatusEnumType::Idle};
@@ -111,9 +110,19 @@ private:
     fs::path share_path;
 
     bool boot_notification_callerror;
-    bool firmware_update_is_pending = false;
-    bool disable_connectors_during_install = true;
-    std::atomic_bool all_connectors_unavailable_notified{false};
+    struct FirmwareInstallState {
+        bool pending{false};
+        bool disable_connectors{true};
+        // The all_connectors_unavailable_callback was called in this update cycle
+        bool notified{false};
+        // Connectors were made unavailable for an update and not restored since
+        bool connectors_disabled{false};
+        // Connectors with a running transaction, made unavailable for the install once it ends
+        std::set<std::int32_t> connectors_awaiting_disable;
+    };
+    everest::lib::util::monitor<FirmwareInstallState> firmware_install_state;
+    // Counts the firmware statuses reported by the application; guarded by pending_firmware_status
+    std::uint64_t firmware_status_generation{0};
 
     std::shared_ptr<ocpp::ConnectivityManagerInterface> connectivity_manager;
     std::unique_ptr<ocpp::MessageDispatcherInterface<MessageType>> message_dispatcher;
@@ -268,26 +277,40 @@ private:
     /// its absence a suspended connector reports its suspend reason if ReportSuspendedEVSEReasonChange is set.
     void triggered_status_notification(const std::int32_t connector);
     void diagnostic_status_notification(DiagnosticsStatus status, bool initiated_by_trigger_message = false);
-    void firmware_status_notification(FirmwareStatus status, bool initiated_by_trigger_message = false,
-                                      bool disable_connectors_during_install = true);
+    void firmware_status_notification(FirmwareStatus status, bool initiated_by_trigger_message = false);
     void log_status_notification(UploadLogStatusEnumType status, int requestId,
                                  bool initiated_by_trigger_message = false);
     void send_firmware_update_status_notification(const PendingFirmwareStatus& status);
     void reset_firmware_status_if_finished(std::int32_t request_id, FirmwareStatusNotification status);
+
+    /// \brief Applies what \p status means for the install: marks it pending (disabling the connectors unless
+    /// \p disable_connectors_during_install says otherwise), opts into disabling on InstallScheduled, and clears the
+    /// pending state once the update has ended. Runs regardless of the CSMS registration state.
+    void apply_firmware_install_state(std::int32_t request_id, FirmwareStatusNotification status,
+                                      std::optional<bool> disable_connectors_during_install);
     void signed_firmware_update_status_notification(FirmwareStatusEnumType status, int requestId,
-                                                    bool initiated_by_trigger_message = false,
-                                                    bool disable_connectors_during_install = true);
+                                                    bool initiated_by_trigger_message = false);
 
     /// \brief Changes all unoccupied connectors to unavailable. If a transaction is running schedule an availabilty
     /// change. If all connectors are unavailable signal to the firmware updater that installation of the firmware
     /// update can proceed
     void change_all_connectors_to_unavailable_for_firmware_update();
 
+    /// \brief Signals once per update cycle that the installation can proceed, if an install that needs the
+    /// connectors unavailable is pending and no transaction is running.
+    void allow_firmware_installation_if_no_transaction();
+
+    bool firmware_install_needs_connectors_unavailable();
+
+    /// \brief Enables the connectors stored as Operative. With \p only_if_disabled it does so only if a firmware
+    /// update made them unavailable.
+    void restore_connectors_after_firmware_update(bool only_if_disabled);
+
     /// \brief Marks a firmware install as pending, disabling the connectors when \p disable_connectors is true.
     void set_firmware_install_pending(bool disable_connectors);
 
-    /// \brief Clears the pending-install state, re-arms the all_connectors_unavailable_callback guard and drops
-    /// availability changes the firmware update queued but never executed.
+    /// \brief Clears the pending-install state, re-arms the all_connectors_unavailable_callback guard and forgets
+    /// the connectors the firmware update still had to disable.
     void clear_firmware_install_pending();
 
     /// \brief Tries to resume the transactions given by \p resuming_session_ids . This function retrieves open
@@ -743,6 +766,8 @@ public:
     /// \param disable_connectors_during_install Whether all connectors should be made unavailable (disabled) for the
     /// duration of the firmware install. Keep unset to use the defaults (disable connectors in the Downloaded and
     /// SignatureVerified phases for unsigned and signed updates respectively)
+    /// Connector availability and the all_connectors_unavailable_callback follow the status immediately; only the
+    /// status message waits for the BootNotification to be accepted.
     void
     on_firmware_update_status_notification(std::int32_t request_id,
                                            const ocpp::FirmwareStatusNotification firmware_update_status,

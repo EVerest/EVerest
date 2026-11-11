@@ -183,23 +183,24 @@ TEST_F(ChargePointConnectivityTest, StartConnectsStopDisconnects) {
     charge_point->stop();
 }
 
-TEST_F(ChargePointConnectivityTest, FirmwareCleanupPreservesPersistentAvailabilityChanges) {
+TEST_F(ChargePointConnectivityTest, FirmwareCleanupPreservesCsmsAvailabilityChanges) {
     auto charge_point = make_charge_point();
-    charge_point->firmware_update_is_pending = true;
-    charge_point->disable_connectors_during_install = false;
-    charge_point->all_connectors_unavailable_notified = true;
-    charge_point->change_availability_queue = {
-        {1, {AvailabilityType::Inoperative, true}},
-        {2, {AvailabilityType::Inoperative, false}},
-    };
+    charge_point->set_firmware_install_pending(false);
+    {
+        auto state = charge_point->firmware_install_state.handle();
+        state->notified = true;
+        state->connectors_awaiting_disable = {2};
+    }
+    charge_point->change_availability_queue = {{1, {AvailabilityType::Inoperative, true}}};
 
     charge_point->clear_firmware_install_pending();
 
-    EXPECT_FALSE(charge_point->firmware_update_is_pending);
-    EXPECT_TRUE(charge_point->disable_connectors_during_install);
-    EXPECT_FALSE(charge_point->all_connectors_unavailable_notified);
-    ASSERT_EQ(charge_point->change_availability_queue.size(), 1);
-    EXPECT_TRUE(charge_point->change_availability_queue.at(1).persist);
+    auto state = charge_point->firmware_install_state.handle();
+    EXPECT_FALSE(state->pending);
+    EXPECT_TRUE(state->disable_connectors);
+    EXPECT_FALSE(state->notified);
+    EXPECT_TRUE(state->connectors_awaiting_disable.empty());
+    EXPECT_EQ(charge_point->change_availability_queue.size(), 1);
 }
 
 // stop() is the external "stop OCPP communication" control, not destruction: the charge point stays alive

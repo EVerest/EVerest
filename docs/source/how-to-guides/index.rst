@@ -132,6 +132,13 @@ Have a look at this categorized list of all guides:
 
       How to move a deployment from the deprecated EvseV2G and IsoMux modules to Evse15118D20.
 
+   .. grid-item-card:: Control Connector Availability During a Firmware Update
+      :link: firmware-update-connector-availability
+      :link-type: doc
+
+      How a system implementation keeps connectors available for an update, decides after inspecting the
+      package, and installs while the station is offline.
+
 .. toctree::
     :maxdepth: 1
     :hidden:
@@ -156,3 +163,4 @@ Have a look at this categorized list of all guides:
     ocpp-storage-migration
     ocpp-custom-error-mapping
     iso15118-stack-migration
+    firmware-update-connector-availability

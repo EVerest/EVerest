@@ -212,18 +212,26 @@ Some general notes: the "connector" parameter of some of the callbacks refers to
 
   can be used to notify libocpp of a log status notification
 
-- on_firmware_update_status_notification(std::int32_t request_id, std::string firmware_update_status, bool disable_connectors_during_install = true)
+- on_firmware_update_status_notification(std::int32_t request_id, FirmwareStatusNotification firmware_update_status, std::optional<bool> disable_connectors_during_install = std::nullopt)
 
   can be used to notify libocpp of a firmware update status notification
 
-  Firmware status reported before the BootNotification is accepted is held until boot completes.
-  The latest pending status is sent once as a SignedFirmwareStatusNotification with its request ID,
-  or as a FirmwareStatusNotification when the request ID is -1.
-  During Pending, a firmware status trigger of the matching kind (TriggerMessage for request ID -1,
-  ExtendedTriggerMessage for a signed status) sends the held status with its
-  disable_connectors_during_install and clears it, so boot acceptance does not send it again.
-  A trigger of the other kind leaves the held status in place.
-  Terminal status returns to Idle after either path sends it.
+  disable_connectors_during_install controls whether all connectors are made unavailable for the
+  install. Left unset, connectors are disabled with the Downloaded status of an unsigned update and
+  the SignatureVerified status of a signed one. Set to false at that point, the connectors stay
+  available; a later InstallScheduled status with the flag set to true disables them after all, for
+  a system that only knows after inspecting the downloaded package whether the install needs them.
+  Once all connectors are unavailable, the all_connectors_unavailable_callback tells the system that
+  the install may proceed. Connector availability and that callback follow the status immediately
+  and do not depend on the CSMS, so an update can be installed while the charge point is offline.
+
+  Only the status message waits: firmware status reported before the BootNotification is accepted
+  is held until boot completes. The latest pending status is sent once as a
+  SignedFirmwareStatusNotification with its request ID, or as a FirmwareStatusNotification when the
+  request ID is -1. During Pending, a firmware status trigger of the matching kind (TriggerMessage
+  for request ID -1, ExtendedTriggerMessage for a signed status) sends the held status and clears
+  it, so boot acceptance does not send it again. A trigger of the other kind leaves the held status
+  in place. Terminal status returns to Idle after either path sends it.
 
 - on_meter_values(std::int32_t connector, const Powermeter& powermeter)
 

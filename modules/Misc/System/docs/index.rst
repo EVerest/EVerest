@@ -30,3 +30,8 @@ With ``ResetAfterUpdate`` enabled and a store connected, System publishes
 ID when the stack starts again. Without a store, it publishes only ``Installed``
 before resetting. With ``ResetAfterUpdate`` disabled, it publishes ``Installed``
 without resetting.
+
+Whether an update takes the connectors out of service is controlled per update through
+``firmware_update_metadata.disable_connectors_during_install``, read from the ``#`` fragment of an
+unsigned update's location or from the metadata block of a signed package. See
+:ref:`howto-firmware-update-connector-availability`.

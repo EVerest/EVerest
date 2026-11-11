@@ -15,5 +15,6 @@ public:
     MOCK_METHOD(void, on_firmware_status_notification_request, (), (override));
     MOCK_METHOD(void, on_transaction_finished, (), (override));
     MOCK_METHOD(void, on_registration_accepted, (), (override));
+    MOCK_METHOD(void, on_all_connectors_unavailable, (), (override));
 };
 } // namespace ocpp::v2

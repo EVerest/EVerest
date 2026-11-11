@@ -449,4 +449,155 @@ TEST_F(FirmwareUpdateDeferredDownloadTest, IdleRestoresConnectorsAndDropsPending
     firmware_update->on_firmware_update_status_notification(-1, FirmwareStatusEnum::Idle);
 }
 
+TEST_F(FirmwareUpdateDeferredDownloadTest, InstallScheduledDisablesConnectorsWhileRegistrationPending) {
+    registration_status = RegistrationStatusEnum::Pending;
+    auto& evse = evse_manager->get_mock(1);
+    ON_CALL(evse, get_number_of_connectors()).WillByDefault(Return(1));
+
+    EXPECT_CALL(evse, set_connector_operative_status(1, OperationalStatusEnum::Inoperative, false));
+
+    firmware_update->on_firmware_update_status_notification(1, FirmwareStatusEnum::InstallScheduled, true);
+    EXPECT_TRUE(firmware_status_notifications().empty());
+}
+
+TEST_F(FirmwareUpdateDeferredDownloadTest, LocalUnsignedCycleDisablesConnectorsAtDownloaded) {
+    auto& evse = evse_manager->get_mock(1);
+    ON_CALL(evse, get_number_of_connectors()).WillByDefault(Return(1));
+
+    EXPECT_CALL(evse, set_connector_operative_status(1, OperationalStatusEnum::Inoperative, false));
+
+    firmware_update->on_firmware_update_status_notification(-1, FirmwareStatusEnum::Downloading);
+    firmware_update->on_firmware_update_status_notification(-1, FirmwareStatusEnum::Downloaded);
+}
+
+class FirmwareUpdateConnectorAvailabilityTest : public FirmwareUpdateDeferredDownloadTest {
+protected:
+    Availability real_availability{*fb_context, std::nullopt, std::nullopt};
+    std::function<UpdateFirmwareResponse(const UpdateFirmwareRequest&)> update_callback;
+    std::unique_ptr<FirmwareUpdate> firmware_update_with_availability;
+    testing::MockFunction<void()> all_connectors_unavailable;
+
+    FirmwareUpdateConnectorAvailabilityTest() {
+        ON_CALL(evse_manager->get_mock(1), get_number_of_connectors()).WillByDefault(Return(1));
+        ON_CALL(component_state_manager, get_evse_individual_operational_status(_))
+            .WillByDefault(Return(OperationalStatusEnum::Operative));
+        ON_CALL(component_state_manager, get_connector_individual_operational_status(_, _))
+            .WillByDefault(Return(OperationalStatusEnum::Operative));
+        update_callback = [](const UpdateFirmwareRequest&) {
+            UpdateFirmwareResponse response;
+            response.status = UpdateFirmwareStatusEnum::Accepted;
+            return response;
+        };
+        firmware_update_with_availability = std::make_unique<FirmwareUpdate>(
+            *fb_context, real_availability, security,
+            [this](const UpdateFirmwareRequest& request) { return this->update_callback(request); },
+            all_connectors_unavailable.AsStdFunction(), registration_status);
+    }
+};
+
+TEST_F(FirmwareUpdateConnectorAvailabilityTest, CsmsScheduledInoperativeSurvivesFirmwareCycle) {
+    auto& evse = evse_manager->get_mock(1);
+    start_transaction();
+
+    ChangeAvailabilityRequest request;
+    request.operationalStatus = OperationalStatusEnum::Inoperative;
+    request.evse = EVSE{1};
+    bool transaction_active = false;
+    const auto response = real_availability.change_availability_req(transaction_active, request);
+    ASSERT_EQ(response.status, ChangeAvailabilityStatusEnum::Scheduled);
+
+    firmware_update_with_availability->on_firmware_update_status_notification(1, FirmwareStatusEnum::SignatureVerified);
+    firmware_update_with_availability->on_firmware_update_status_notification(1,
+                                                                              FirmwareStatusEnum::InstallationFailed);
+
+    end_transaction();
+    EXPECT_CALL(evse, set_evse_operative_status(OperationalStatusEnum::Inoperative, true));
+    real_availability.handle_scheduled_change_availability_requests(1);
+}
+
+TEST_F(FirmwareUpdateConnectorAvailabilityTest, CsmsScheduledConnectorInoperativeSurvivesFirmwareCycle) {
+    auto& evse = evse_manager->get_mock(1);
+    start_transaction();
+
+    ChangeAvailabilityRequest request;
+    request.operationalStatus = OperationalStatusEnum::Inoperative;
+    EVSE connector;
+    connector.id = 1;
+    connector.connectorId = 1;
+    request.evse = connector;
+    bool transaction_active = false;
+    const auto response = real_availability.change_availability_req(transaction_active, request);
+    ASSERT_EQ(response.status, ChangeAvailabilityStatusEnum::Scheduled);
+
+    firmware_update_with_availability->on_firmware_update_status_notification(1, FirmwareStatusEnum::SignatureVerified);
+    firmware_update_with_availability->on_firmware_update_status_notification(1,
+                                                                              FirmwareStatusEnum::InstallationFailed);
+
+    end_transaction();
+    EXPECT_CALL(evse, set_connector_operative_status(1, OperationalStatusEnum::Inoperative, true));
+    real_availability.handle_scheduled_change_availability_requests(1);
+}
+
+TEST_F(FirmwareUpdateConnectorAvailabilityTest, AcceptedRequestRearmsNotificationOfUnfinishedUpdate) {
+    update_callback = [this](const UpdateFirmwareRequest& request) {
+        this->firmware_update_with_availability->on_firmware_update_status_notification(
+            request.requestId, FirmwareStatusEnum::Downloading);
+        UpdateFirmwareResponse response;
+        response.status = UpdateFirmwareStatusEnum::Accepted;
+        return response;
+    };
+
+    EXPECT_CALL(all_connectors_unavailable, Call()).Times(1);
+    firmware_update_with_availability->on_firmware_update_status_notification(1, FirmwareStatusEnum::InstallScheduled,
+                                                                              true);
+    testing::Mock::VerifyAndClearExpectations(&all_connectors_unavailable);
+
+    firmware_update_with_availability->handle_message(make_update_firmware_message(2));
+    EXPECT_CALL(all_connectors_unavailable, Call()).Times(1);
+    firmware_update_with_availability->on_firmware_update_status_notification(2, FirmwareStatusEnum::Downloaded);
+}
+
+TEST_F(FirmwareUpdateConnectorAvailabilityTest, AcceptedRequestRestoresConnectorsOfUnfinishedUpdate) {
+    auto& evse = evse_manager->get_mock(1);
+    EXPECT_CALL(all_connectors_unavailable, Call()).Times(testing::AnyNumber());
+    firmware_update_with_availability->on_firmware_update_status_notification(1, FirmwareStatusEnum::InstallScheduled,
+                                                                              true);
+
+    EXPECT_CALL(evse, restore_connector_operative_status(1));
+    firmware_update_with_availability->handle_message(make_update_firmware_message(2));
+}
+
+TEST_F(FirmwareUpdateConnectorAvailabilityTest, StatusPublishedFromUpdateCallbackIsClassifiedByItsRequest) {
+    auto& evse = evse_manager->get_mock(1);
+    EXPECT_CALL(all_connectors_unavailable, Call()).Times(testing::AnyNumber());
+    update_callback = [this](const UpdateFirmwareRequest& request) {
+        this->firmware_update_with_availability->on_firmware_update_status_notification(request.requestId,
+                                                                                        FirmwareStatusEnum::Downloaded);
+        UpdateFirmwareResponse response;
+        response.status = UpdateFirmwareStatusEnum::Accepted;
+        return response;
+    };
+
+    EXPECT_CALL(evse, set_connector_operative_status(1, OperationalStatusEnum::Inoperative, false));
+    firmware_update_with_availability->handle_message(make_update_firmware_message(7));
+}
+
+TEST_F(FirmwareUpdateConnectorAvailabilityTest, StatusPublishedFromUpdateCallbackIsKept) {
+    update_callback = [this](const UpdateFirmwareRequest& request) {
+        this->firmware_update_with_availability->on_firmware_update_status_notification(
+            request.requestId, FirmwareStatusEnum::Downloading);
+        UpdateFirmwareResponse response;
+        response.status = UpdateFirmwareStatusEnum::Accepted;
+        return response;
+    };
+
+    firmware_update_with_availability->handle_message(make_update_firmware_message(7));
+    dispatched_calls.clear();
+    firmware_update_with_availability->on_firmware_status_notification_request();
+
+    const auto notifications = firmware_status_notifications();
+    ASSERT_EQ(notifications.size(), 1);
+    EXPECT_EQ(notifications.front().at("status"), "Downloading");
+}
+
 } // namespace

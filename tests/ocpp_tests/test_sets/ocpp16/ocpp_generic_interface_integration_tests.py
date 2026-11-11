@@ -222,6 +222,7 @@ class TestOCPP16GenericInterfaceIntegration:
         publish_firmware_status(_env.probe_module, "Idle", request_id=42)
         for mock in availability_mocks:
             await wait_for_firmware_availability_state(mock, "Enable")
+            mock.reset_mock()
 
         publish_firmware_status(
             _env.probe_module,
@@ -229,10 +230,14 @@ class TestOCPP16GenericInterfaceIntegration:
             request_id=42,
             disable_connectors=True,
         )
+        for mock in availability_mocks:
+            await wait_for_firmware_availability_state(mock, "Disable")
+        await wait_for_mock_call_count(installation_mock, 3)
+
         publish_firmware_status(_env.probe_module, "Installed", request_id=42)
         for mock in availability_mocks:
             await wait_for_firmware_availability_state(mock, "Enable")
-        assert installation_mock.call_count == 2
+        assert installation_mock.call_count == 3
 
     async def test_firmware_install_scheduled_explicit_false_keeps_connectors_available(
         self, _env
