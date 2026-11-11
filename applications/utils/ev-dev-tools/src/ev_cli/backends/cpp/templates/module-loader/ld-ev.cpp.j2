@@ -1,3 +1,14 @@
+{% macro config_change_handler(owner, target, item) %}
+        config_client->register_config_change_handler("{{ owner }}", "{{ item.name }}",
+            [](const std::string& new_value) -> Everest::config::ConfigChangeResult {
+{% if is_string_config(item) %}
+                return {{ target }}->on_{{ item.name }}_changed(new_value);
+{% else %}
+                const auto typed_value = Everest::config::conversions::ConfigFromString<{{ config_type(item) }}>(new_value);
+                return {{ target }}->on_{{ item.name }}_changed(typed_value);
+{% endif %}
+            });
+{%- endmacro %}
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
 //
@@ -100,15 +111,7 @@ void LdEverest::init(ModuleConfigs module_configs, const ModuleInfo& mod_info) {
     if (config_client) {
 {% for impl in u.provides %}
 {% for item in impl.rwconfig %}
-        config_client->register_config_change_handler("{{ impl.id }}", "{{ item.name }}",
-            [](const std::string& new_value) -> Everest::config::ConfigChangeResult {
-{% if config_type(item) == 'std::string' %}
-                return {{ impl.id }}_impl_p->on_{{ item.name }}_changed(new_value);
-{% else %}
-                const auto typed_value = Everest::config::conversions::ConfigFromString<{{ config_type(item) }}>(new_value);
-                return {{ impl.id }}_impl_p->on_{{ item.name }}_changed(typed_value);
-{% endif %}
-            });
+{{ config_change_handler(impl.id, impl.id ~ '_impl_p', item) }}
 {% endfor %}
 {% endfor %}
     }
@@ -120,15 +123,7 @@ void LdEverest::init(ModuleConfigs module_configs, const ModuleInfo& mod_info) {
 {% endif %}
     if (config_client) {
 {% for item in u.rwconfig %}
-        config_client->register_config_change_handler("!module", "{{ item.name }}",
-            [](const std::string& new_value) -> Everest::config::ConfigChangeResult {
-{% if config_type(item) == 'std::string' %}
-                return mod_ptr->on_{{ item.name }}_changed(new_value);
-{% else %}
-                const auto typed_value = Everest::config::conversions::ConfigFromString<{{ config_type(item) }}>(new_value);
-                return mod_ptr->on_{{ item.name }}_changed(typed_value);
-{% endif %}
-            });
+{{ config_change_handler('!module', 'mod_ptr', item) }}
 {% endfor %}
     }
 {% endif %}

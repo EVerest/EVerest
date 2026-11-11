@@ -134,7 +134,7 @@ private:
 {% endif %}
 {% endfor %}
 
-            {{ 'auto result = ' if cmd.result }}this->handle_{{ cmd.name }}({% for argument in cmd.arguments %}{{ argument.name }}{{ ', ' if not loop.last }}{% endfor %});
+            {{ 'auto result = ' if cmd.result is not none }}this->handle_{{ cmd.name }}({% for argument in cmd.arguments %}{{ argument.name }}{{ ', ' if not loop.last }}{% endfor %});
 {% if cmd.result is none %}
             return nullptr;
 {% elif u.kind(cmd.result) == PayloadKind.VARIANT %}

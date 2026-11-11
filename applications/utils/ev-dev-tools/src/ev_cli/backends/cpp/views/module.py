@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from functools import cached_property
 
 from ....ir.modules import ConfigEntry, ModuleDef, Mutability, ProvidesDef, RequiresDef
-from ....ir.types import Primitive
+from ....ir.types import JsonType, Primitive
 from .. import naming
 from ..cpp_type import Flavour, to_cpp_type
 
@@ -79,6 +79,11 @@ class RequiredView:
 def config_type(entry: ConfigEntry) -> str:
     """The C++ type of a configuration value, wherever it is declared."""
     return to_cpp_type(Primitive(entry.type), Flavour.PAYLOAD)
+
+
+def is_string_config(entry: ConfigEntry) -> bool:
+    """Whether a configuration value reaches its change handler without conversion."""
+    return entry.type is JsonType.STRING
 
 
 def select_static_config(entries) -> tuple[ConfigEntry, ...]:

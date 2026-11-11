@@ -31,7 +31,7 @@ from .views import (
     TypeUnitView,
 )
 from .views.common import TEMPLATE_VERSION
-from .views.module import ProvidedView, config_type
+from .views.module import ProvidedView, config_type, is_string_config
 
 TEMPLATE_DIR = Path(__file__).parent / 'templates'
 
@@ -58,6 +58,7 @@ class Template(Enum):
     IMPLEMENTATION_HPP = 'module-files/implementation.hpp.j2'
     IMPLEMENTATION_CPP = 'module-files/implementation.cpp.j2'
     CMAKELISTS = 'module-files/CMakeLists.txt.j2'
+    CONFIG_STRUCTS = 'module-files/_config-structs.hpp.j2'
     DOCS_INDEX = 'module-files/docs/index.rst.j2'
 
     @property
@@ -108,6 +109,7 @@ class CppBackend:
         self._env.globals['PayloadKind'] = PayloadKind
         self._env.globals['template_version'] = TEMPLATE_VERSION
         self._env.globals['config_type'] = config_type
+        self._env.globals['is_string_config'] = is_string_config
 
     def _postprocess(self, files: list[GeneratedFile]) -> list[GeneratedFile]:
         """Format what was rendered, unless ``--disable-clang-format`` says not to."""
