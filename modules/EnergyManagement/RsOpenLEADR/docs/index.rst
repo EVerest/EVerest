@@ -115,6 +115,12 @@ Automated tests
   cd tests
   ./run-tests.sh openadr
 
+``tests/ocpp_tests/test_sets/ocpp21/openadr_limits.py`` combines this module
+with OCPP 2.1 smart charging, each on its own EnergyNode as recommended above,
+and checks that the most restrictive limit is enforced at the EVSE::
+
+  ./run-tests.sh ocpp21 -k openadr_limits
+
 Testing with the openleadr-rs VTN
 ---------------------------------
 
