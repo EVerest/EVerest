@@ -116,7 +116,7 @@ public:
     std::optional<std::string> last_set_value;
 };
 
-ocpp::v2::VariableMetaData make_meta(const std::optional<std::string>& owner) {
+ocpp::v2::VariableMetaData make_meta(const std::string& owner) {
     ocpp::v2::VariableMetaData meta;
     meta.characteristics.dataType = ocpp::v2::DataEnum::string;
     meta.characteristics.supportsMonitoring = false;
@@ -125,7 +125,7 @@ ocpp::v2::VariableMetaData make_meta(const std::optional<std::string>& owner) {
 }
 
 ocpp::v2::DeviceModelMap make_device_model_map(const std::string& component_name, const std::string& variable_name,
-                                               const std::optional<std::string>& owner) {
+                                               const std::string& owner) {
     ocpp::v2::DeviceModelMap map;
     map[make_component(component_name)][make_variable(variable_name)] = make_meta(owner);
     return map;
@@ -133,9 +133,10 @@ ocpp::v2::DeviceModelMap make_device_model_map(const std::string& component_name
 
 class ComposedDeviceModelStorageFactoryTest : public ::testing::Test {
 protected:
-    // OCPP-side variable has no owner (defaults to "OCPP"); EVerest-side variable is owned by "EVEREST".
+    // The OCPP-side variable is owned by "COMPONENT_CONFIG", the EVerest-side variable by "EVEREST".
     std::shared_ptr<FakeDeviceModelStorage> ocpp_storage = std::make_shared<FakeDeviceModelStorage>(
-        make_device_model_map("OCPPCommCtrlr", "HeartbeatInterval", std::nullopt), "ocpp-value");
+        make_device_model_map("OCPPCommCtrlr", "HeartbeatInterval", ocpp::v2::VARIABLE_OWNER_COMPONENT_CONFIG),
+        "ocpp-value");
     std::shared_ptr<FakeDeviceModelStorage> everest_storage = std::make_shared<FakeDeviceModelStorage>(
         make_device_model_map("ConnectedEV", "VehicleId", "EVEREST"), "everest-value");
 };
@@ -184,8 +185,9 @@ TEST_F(ComposedDeviceModelStorageFactoryTest, GetDeviceModelMergesBothStorages) 
 
 TEST_F(ComposedDeviceModelStorageFactoryTest, OverlappingVariablePrefersEverestOwner) {
     // The EVSE component exists in both storages: "Power" overlaps, "AllowReset" is OCPP-only.
-    auto ocpp_map = make_device_model_map("EVSE", "Power", std::nullopt);
-    ocpp_map[make_component("EVSE")][make_variable("AllowReset")] = make_meta(std::nullopt);
+    auto ocpp_map = make_device_model_map("EVSE", "Power", ocpp::v2::VARIABLE_OWNER_COMPONENT_CONFIG);
+    ocpp_map[make_component("EVSE")][make_variable("AllowReset")] =
+        make_meta(ocpp::v2::VARIABLE_OWNER_COMPONENT_CONFIG);
     const auto overlapping_ocpp_storage = std::make_shared<FakeDeviceModelStorage>(std::move(ocpp_map), "ocpp-value");
     const auto overlapping_everest_storage =
         std::make_shared<FakeDeviceModelStorage>(make_device_model_map("EVSE", "Power", "EVEREST"), "everest-value");

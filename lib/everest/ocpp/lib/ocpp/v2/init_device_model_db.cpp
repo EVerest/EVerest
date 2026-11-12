@@ -610,8 +610,7 @@ void InitDeviceModelDb::delete_variable(const DeviceModelVariable& variable) {
         return;
     }
 
-    delete_monitors("v.ID = @id", variable.db_id.value());
-
+    // The monitors are name-keyed and stay: they apply again when an owner registers the variable at runtime
     static const std::string delete_variable_statement = "DELETE FROM VARIABLE WHERE ID=@variable_id";
 
     std::unique_ptr<StatementInterface> delete_statement;
@@ -957,22 +956,6 @@ void InitDeviceModelDb::delete_variable_monitor(const VariableMonitoringMeta& mo
     }
 }
 
-void InitDeviceModelDb::delete_monitors(const std::string& variable_condition, const std::uint64_t id) {
-    const std::string delete_query =
-        std::string("DELETE FROM VARIABLE_MONITORING WHERE ID IN (SELECT vm.ID FROM VARIABLE_MONITORING vm ") +
-        MONITOR_VARIABLE_JOIN + " WHERE " + variable_condition + ")";
-    try {
-        auto delete_stmt = this->database->new_statement(delete_query);
-        delete_stmt->bind_int("@id", static_cast<int>(id));
-        if (delete_stmt->step() != SQLITE_DONE) {
-            throw InitDeviceModelDbError("Can not delete monitors: " +
-                                         std::string(this->database->get_error_message()));
-        }
-    } catch (const QueryExecutionException& e) {
-        throw InitDeviceModelDbError("Delete monitors error: " + std::string(e.what()));
-    }
-}
-
 std::map<ComponentKey, std::vector<DeviceModelVariable>> InitDeviceModelDb::get_all_components_from_db() {
     /* clang-format off */
     const std::string statement =
@@ -1122,8 +1105,7 @@ bool InitDeviceModelDb::remove_component_from_db(const ComponentKey& component) 
         return false;
     }
 
-    delete_monitors("c.ID = @id", component.db_id.value());
-
+    // The monitors are name-keyed and stay, as in delete_variable
     delete_statement->bind_int("@component_id", static_cast<int>(component.db_id.value()));
 
     if (delete_statement->step() != SQLITE_DONE) {

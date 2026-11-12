@@ -8,6 +8,8 @@
 
 #include <device_model_storage_interface_mock.hpp>
 
+#include <everest/database/exceptions.hpp>
+
 #include <ocpp/v2/device_model.hpp>
 
 namespace ocpp::v2 {
@@ -50,7 +52,7 @@ protected:
     const Component component = make_component();
     const Variable persisted = make_variable("Persisted");
     const Variable volatile_variable = make_variable("Volatile");
-    const Variable ocpp_owned = make_variable("OcppOwned");
+    const Variable config_owned = make_variable("ConfigOwned");
     DeviceModelStorageMock* storage = nullptr;
     std::unique_ptr<DeviceModel> device_model;
     std::vector<VariableChange> changes;
@@ -67,9 +69,9 @@ protected:
         map[component][persisted].attributes = {make_attribute("10", true)};
         map[component][volatile_variable] = meta_data;
         map[component][volatile_variable].attributes = {make_attribute("20", false)};
-        map[component][ocpp_owned] = meta_data;
-        map[component][ocpp_owned].owner = "OCPP";
-        map[component][ocpp_owned].attributes = {make_attribute("30", false)};
+        map[component][config_owned] = meta_data;
+        map[component][config_owned].owner = VARIABLE_OWNER_COMPONENT_CONFIG;
+        map[component][config_owned].attributes = {make_attribute("30", false)};
 
         EXPECT_CALL(*storage, get_device_model()).WillOnce(Return(map));
         EXPECT_CALL(*storage, get_variable_attributes(_, _, _)).Times(0);
@@ -124,6 +126,43 @@ TEST_F(DeviceModelInMemoryTest, failed_storage_write_leaves_memory_unchanged) {
 
     EXPECT_EQ(device_model->set_value(component, persisted, AttributeEnum::Actual, "11", "csms"),
               SetVariableStatusEnum::Rejected);
+    EXPECT_EQ(get(persisted), "10");
+    EXPECT_TRUE(changes.empty());
+}
+
+TEST_F(DeviceModelInMemoryTest, storage_exception_rejects_the_write_and_leaves_memory_unchanged) {
+    EXPECT_CALL(*storage, set_variable_attribute_value(component, persisted, AttributeEnum::Actual, "11", "csms"))
+        .WillOnce(::testing::Throw(everest::db::Exception("database is locked")));
+
+    EXPECT_EQ(device_model->set_value(component, persisted, AttributeEnum::Actual, "11", "csms"),
+              SetVariableStatusEnum::Rejected);
+    EXPECT_EQ(get(persisted), "10");
+    EXPECT_TRUE(changes.empty());
+}
+
+TEST_F(DeviceModelInMemoryTest, reboot_required_storage_write_leaves_memory_unchanged) {
+    EXPECT_CALL(*storage, set_variable_attribute_value(component, persisted, AttributeEnum::Actual, "11", "csms"))
+        .WillOnce(Return(SetVariableStatusEnum::RebootRequired));
+
+    EXPECT_EQ(device_model->set_value(component, persisted, AttributeEnum::Actual, "11", "csms"),
+              SetVariableStatusEnum::RebootRequired);
+    EXPECT_EQ(get(persisted), "10");
+    EXPECT_TRUE(changes.empty());
+}
+
+TEST_F(DeviceModelInMemoryTest, value_in_effect_written_after_reboot_required_reaches_storage) {
+    {
+        ::testing::InSequence in_sequence;
+        EXPECT_CALL(*storage, set_variable_attribute_value(component, persisted, AttributeEnum::Actual, "11", "csms"))
+            .WillOnce(Return(SetVariableStatusEnum::RebootRequired));
+        EXPECT_CALL(*storage, set_variable_attribute_value(component, persisted, AttributeEnum::Actual, "10", "csms"))
+            .WillOnce(Return(SetVariableStatusEnum::Accepted));
+    }
+
+    EXPECT_EQ(device_model->set_value(component, persisted, AttributeEnum::Actual, "11", "csms"),
+              SetVariableStatusEnum::RebootRequired);
+    EXPECT_EQ(device_model->set_value(component, persisted, AttributeEnum::Actual, "10", "csms"),
+              SetVariableStatusEnum::Accepted);
     EXPECT_EQ(get(persisted), "10");
     EXPECT_TRUE(changes.empty());
 }
@@ -194,17 +233,17 @@ TEST_F(DeviceModelInMemoryTest, delta_monitor_takes_its_reference_from_memory) {
     EXPECT_EQ(meta_data->monitors.at(7).reference_value, "25");
 }
 
-TEST_F(DeviceModelInMemoryTest, variable_with_owner_ocpp_is_served_from_memory) {
-    EXPECT_EQ(get(ocpp_owned), "30");
-    EXPECT_EQ(device_model->get_value<int>(component, ocpp_owned), 30);
+TEST_F(DeviceModelInMemoryTest, variable_of_the_component_config_is_served_from_memory) {
+    EXPECT_EQ(get(config_owned), "30");
+    EXPECT_EQ(device_model->get_value<int>(component, config_owned), 30);
 }
 
-TEST_F(DeviceModelInMemoryTest, non_persistent_write_to_variable_with_owner_ocpp_stays_in_memory) {
+TEST_F(DeviceModelInMemoryTest, non_persistent_write_to_variable_of_the_component_config_stays_in_memory) {
     EXPECT_CALL(*storage, set_variable_attribute_value(_, _, _, _, _)).Times(0);
 
-    EXPECT_EQ(device_model->set_value(component, ocpp_owned, AttributeEnum::Actual, "31", "csms"),
+    EXPECT_EQ(device_model->set_value(component, config_owned, AttributeEnum::Actual, "31", "csms"),
               SetVariableStatusEnum::Accepted);
-    EXPECT_EQ(get(ocpp_owned), "31");
+    EXPECT_EQ(get(config_owned), "31");
 }
 
 TEST_F(DeviceModelInMemoryTest, creating_a_network_configuration_slot_keeps_the_values_in_memory) {
@@ -244,7 +283,7 @@ TEST_F(DeviceModelInMemoryTest, reports_contain_the_values_in_memory) {
     ASSERT_EQ(device_model->set_value(component, volatile_variable, AttributeEnum::Actual, "42", "csms"),
               SetVariableStatusEnum::Accepted);
 
-    const std::map<Variable, std::string> expected{{persisted, "10"}, {volatile_variable, "42"}, {ocpp_owned, "30"}};
+    const std::map<Variable, std::string> expected{{persisted, "10"}, {volatile_variable, "42"}, {config_owned, "30"}};
     const auto report = device_model->get_base_report_data(ReportBaseEnum::FullInventory);
     ASSERT_EQ(report.size(), expected.size());
     for (const auto& data : report) {
@@ -326,6 +365,39 @@ TEST_F(DeviceModelStorageHeldVariableTest, reports_take_a_variable_with_an_owner
         const auto expected = data.variable == in_memory ? "10" : "21";
         EXPECT_EQ(data.variableAttribute.at(0).value.value().get(), expected);
     }
+}
+
+TEST(DeviceModelStoredMonitorTest, monitor_of_a_variable_with_an_owner_is_active_after_a_restart) {
+    auto storage_mock = std::make_unique<DeviceModelStorageMock>();
+    auto* storage = storage_mock.get();
+    const auto component = make_component();
+    const auto variable = make_variable("StorageHeld");
+
+    DeviceModelMap map;
+    auto& meta_data = map[component][variable];
+    meta_data.characteristics.dataType = DataEnum::integer;
+    meta_data.characteristics.supportsMonitoring = true;
+    meta_data.owner = "EVEREST";
+    meta_data.attributes = {make_attribute("20", true)};
+
+    StoredMonitor stored;
+    stored.component = component;
+    stored.variable = variable;
+    stored.monitor.monitor.id = 5;
+    stored.monitor.monitor.type = MonitorEnum::UpperThreshold;
+    stored.monitor.monitor.value = 30;
+    stored.monitor.monitor.severity = 1;
+    stored.monitor.type = VariableMonitorType::CustomMonitor;
+
+    EXPECT_CALL(*storage, get_device_model()).WillOnce(Return(map));
+    EXPECT_CALL(*storage, get_all_monitors()).WillOnce(Return(std::vector<StoredMonitor>{stored}));
+    DeviceModel device_model{std::move(storage_mock)};
+
+    const auto monitors = device_model.get_monitors({}, {});
+    ASSERT_EQ(monitors.size(), 1);
+    EXPECT_EQ(monitors.at(0).variable, variable);
+    ASSERT_EQ(monitors.at(0).variableMonitoring.size(), 1);
+    EXPECT_EQ(monitors.at(0).variableMonitoring.at(0).id, 5);
 }
 
 } // namespace ocpp::v2

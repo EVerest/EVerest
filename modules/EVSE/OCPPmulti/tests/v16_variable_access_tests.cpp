@@ -342,7 +342,7 @@ TEST_F(V16VariableAccess, freeCvWithoutValueReadsEmptyAndIsWritable) {
     EXPECT_EQ(m_device_model.entry(make_component("VendorCtrlr"), make_variable("UnsetSetting")).value, "first");
 }
 
-// Mirrors the 2.x consumer path (Provisioning::set_variables, allow_read_only=true): this API is a
+// Mirrors the 2.x consumer path (Provisioning::set_variables, allow_read_only_update=true): this API is a
 // trusted local channel, so ReadOnly mutability does not reject writes in either mode.
 TEST_F(V16VariableAccess, freeCvReadOnlyMutabilityIsWritableLikeThe2xConsumerPath) {
     m_device_model.add(make_component("VendorCtrlr"), make_variable("FrozenSetting"), "fixed",
@@ -355,7 +355,7 @@ TEST_F(V16VariableAccess, freeCvReadOnlyMutabilityIsWritableLikeThe2xConsumerPat
     ASSERT_TRUE(results[0].monitor_value.has_value());
     EXPECT_EQ(results[0].monitor_value.value(), "thawed");
     EXPECT_EQ(m_device_model.entry(make_component("VendorCtrlr"), make_variable("FrozenSetting")).value, "thawed");
-    // still routed through set_value (with allow_read_only), never set_read_only_value
+    // still routed through set_value (with allow_read_only_update), never set_read_only_value
     EXPECT_EQ(m_device_model.set_read_only_calls(), 0);
 }
 
