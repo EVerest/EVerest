@@ -34,38 +34,100 @@ changed a value, it will not be updated to the value from the component config f
 
 ## Values in memory
 
-`DeviceModel` reads the whole device model, including the values of all attributes, from the database when it is
-created, and serves every read from memory. A write goes to the database first and to memory only after the database
-accepted it; if the database rejects the write, the request is rejected and memory keeps the old value. Attributes that
-are not persistent are held in memory only: a write to such an attribute is not stored, and the attribute starts with
-the value the database holds at the next start. That is the value of the component config, unless another source wrote
-the attribute while it was persistent: such a value is kept, because the component config only replaces values whose
-source is `default`.
+When `DeviceModel` is created, it loads the device model from its storage, including the values of all attributes.
+Not every variable comes from the database: variables held by another storage, such as the EVerest storage, are
+described below. After loading, every read is answered from memory.
 
-As a consequence, the database must only be edited while the charging station software is stopped. Changes made to the
-database while it runs are not seen until the next start.
+A write goes to the database first. Memory is only updated once the database has accepted the write. If the database
+rejects it, the request is rejected and memory keeps the old value.
 
-The exception is a variable that the storage reports with a `source` other than `OCPP`: it is held by the storage of
-that source, which changes its value without `DeviceModel`, so its values are read from the storage and every write
-goes to the storage. A variable without a `source`, or with the source `OCPP`, belongs to the OCPP storage and is held
-in memory. The EVerest device model storage of the OCPP modules marks every variable it creates with the source
-`EVEREST`, and the composed storage of those modules routes the reads and writes of such a variable to it.
+Attributes that are not persistent are the exception. A write to such an attribute only changes the value in memory
+and is lost on restart. At the next start, the attribute gets the value stored in the database again. That is usually
+the value from the component config. If something else wrote the value while the attribute was still persistent, that
+value is kept, because the component config only overwrites values whose source is `default`. An attribute counts as
+persistent unless its `persistent` flag is set to false.
+
+Because values are loaded only once, edit the database only while the charging station software is stopped. Changes
+made while it runs are not seen until the next start.
+
+### Variables held by another storage
+
+Variables whose `VariableMetaData::owner` is something other than `OCPP` are not held in memory. They belong to the
+storage of that owner, which can change their values without going through `DeviceModel`. For these variables,
+`DeviceModel` reads every value from that storage and sends every write to it. Variables without an owner, or with the
+owner `OCPP`, belong to the OCPP storage and are held in memory as described above.
+
+In the OCPP modules:
+
+- The EVerest device model storage reports all of its variables with the owner `EVEREST`.
+- The composed storage sends reads and writes of those variables to the EVerest storage.
+- Monitors are handled differently: the composed storage keeps all monitors in the OCPP storage, whichever storage
+  owns the variable.
+
+The database does not record a variable's owner. Migration 4 removed the `VARIABLE.SOURCE` column.
 
 ## Update component config
 
 To update a component, just place the correct json component config in the `component_config/custom` or 
 `component_config/standardized` folder. When restarting the software, it will:
-- Check if there are Components in the database that are not in the component config's. Those will be removed.
+- Check if there are Components in the database that are not in the component config's. Those are kept in the
+  database, together with their variables and monitors, and a warning is logged for each of them.
 - Check if there are Components in the component config's that are not in the database. Those will be added.
 - Check if anything has changed inside the Component (`Variable`, `Characteristics` or `Attributes`). 
   Those will be removed, changed or added to the database as well. 
   
-Note: When the `evse_id` or `connector_id` of a component is changed, this is seen as the removal of a Component and 
-addition of a new one. 
+Note: When the `evse_id` or `connector_id` of a component is changed, the component with the new key is added. The
+component with the old key, including its monitors, stays in the database and is reported by the warning above.
 
 Note: OCPP requires EVSE and Connector numbering starting from 1 counting upwards.
 
-Note: There should be no duplicate components or variables in the component config files.
+Note: There should be no duplicate components or variables in the component config files. Duplicates that differ
+only in case are rejected.
+
+## Database schema
+
+The device model database (schema version 4) has two kinds of tables.
+
+The component tables `COMPONENT`, `VARIABLE`, `VARIABLE_CHARACTERISTICS` and `VARIABLE_ATTRIBUTE` hold the structure
+from the component config and the values of its variables. They are linked by foreign keys, and removing a component
+or variable removes its characteristics and attributes with it.
+
+Two tables are keyed by the identity of a component and variable instead of a foreign key, so they can hold data on
+variables that have no row in the component tables:
+
+| Table | Holds |
+|---|---|
+| `VARIABLE_MONITORING` | every monitor. `ID` is `AUTOINCREMENT`, so monitor ids stay unique and are never reused. |
+| `VARIABLE_ATTRIBUTE_VALUE` | attribute values of variables without a row in the component tables, written by `DeviceModelStorageSqlite::set_stored_value`. `set_variable_attribute_value` rejects a variable without a row. The primary key is the name key plus the attribute type. `OWNER` records the owner of the variable when the value was stored. |
+
+The name key consists of the columns `COMPONENT_NAME`, `COMPONENT_INSTANCE`, `EVSE_ID`, `CONNECTOR_ID`,
+`VARIABLE_NAME` and `VARIABLE_INSTANCE`. Names and instances compare case-insensitively, like OCPP identifiers. SQLite
+treats NULLs as distinct in keys, so an absent instance is stored as `''` and an absent EVSE or connector id as `0`. A
+component config with an empty component or variable instance, or with an EVSE or connector id of `0`, therefore stops
+the initialization with an error that names the file. Two variables of one component whose names or instances differ
+only in case would share monitors and stored values, so they stop the initialization as well, as do two files of one
+directory that define the same component, whatever their case. Component and variable names and instances are also
+matched case-insensitively against the database and between the custom and standardized directories: a custom config
+replaces the standardized config of a component it spells differently, and a spelling change updates the rows in the
+database and keeps their monitors and values. The migration to schema version 4 stores an EVSE or connector id of `0`
+as absent and removes component and variable rows that share a name key with a row of a lower id, since lookups that
+ignore case used the row with the lowest id. Variables that only a removed component had are created again from the
+component config with their default value.
+Any other invalid component config, for example a monitor on a variable without `supportsMonitoring`, stops the
+initialization too. No file is skipped: the standardized config of the same component would replace a skipped custom
+config, and the variables only the custom config defines would be removed with their monitors.
+
+Monitors are not linked to variable rows. Removing a variable from the component config of a component that is still
+configured removes all of its monitors, custom monitors included. Components that are no longer configured are kept
+with their monitors, see [Update component config](#update-component-config).
+`DeviceModelStorageSqlite::get_device_model` attaches monitors to the variables of the component tables, and
+`get_all_monitors` returns all of them.
+
+Migration 4 moves the monitors of schema 3 into the name-keyed table. Monitors keep their ids, and the id sequence is
+kept, so ids of monitors deleted before the migration are not handed out again. It also drops `VARIABLE.SOURCE`: the
+component tables hold only the component config, and the `source` key of a component config variable is not read. The
+down migration keeps only the monitors whose variable has a row in the component tables, drops the values in
+`VARIABLE_ATTRIBUTE_VALUE` and restores `VARIABLE.SOURCE` empty.
 
 ## Required variables
 

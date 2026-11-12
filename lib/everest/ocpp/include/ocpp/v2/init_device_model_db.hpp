@@ -53,6 +53,9 @@ struct ComponentKey {
 
     ///
     /// \brief operator <, needed to add this class as key in a map.
+    ///
+    /// Orders by the name key of monitors and stored values: names and instances ignore case, an absent instance
+    /// equals an empty one and an absent EVSE or connector id equals 0.
     /// \param l ComponentKey to compare with another ComponentKey
     /// \param r Second componentKey to compare with the other ComponentKey
     /// \return True if 'l' is 'smaller' than r (should be placed before 'r').
@@ -89,9 +92,12 @@ struct DeviceModelVariable {
     std::optional<std::string> default_actual_value;
     /// \brief Config monitors, if any
     std::vector<VariableMonitoringMeta> monitors;
-    /// \brief Source of the variable.
-    std::optional<std::string> source;
 };
+
+///
+/// \brief Check if the two variables are the same given their unique properties (name and instance, ignoring case).
+///
+bool is_same_variable(const DeviceModelVariable& v1, const DeviceModelVariable& v2);
 
 /// \brief Convert from json to a ComponentKey struct.
 /// The to_json is not implemented as we don't need to write the component config to a json file.
@@ -123,19 +129,36 @@ private:
 };
 
 ///
+/// \brief A component config uses a name key that monitors and stored values cannot represent: an empty component
+/// or variable instance, or an EVSE or connector id of 0, and when two components or two variables of one component
+/// share a name key, which compares names and instances case-insensitively.
+///
+class ComponentConfigNameKeyError : public InitDeviceModelDbError {
+public:
+    using InitDeviceModelDbError::InitDeviceModelDbError;
+};
+
+///
 /// \brief Read all component config files from the given directory and create a map holding the structure.
 /// \param directory    The parent directory containing the standardized and custom component config files.
 /// \return A map with the device model components, variables, characteristics and attributes.
 ///
+/// \throws InitDeviceModelDbError if a component config is invalid, for example invalid JSON, a missing key, a wrong
+/// type or an unknown enum value, with the path of the file. No file is skipped:
+/// the standardized config of the same component would replace a skipped custom config, and the variables only the
+/// custom config defines would be removed with their monitors.
+/// \throws ComponentConfigNameKeyError if a component config uses a name key that monitors cannot represent
 std::map<ComponentKey, std::vector<DeviceModelVariable>>
 get_all_component_configs(const std::filesystem::path& directory);
 
 /// \brief Parse a component config JSON document into ComponentKey + variables.
-/// \throws InitDeviceModelDbError if "properties" missing.
+/// \throws InitDeviceModelDbError if "properties" missing; ComponentConfigNameKeyError for an empty instance or an
+/// EVSE or connector id of 0.
 std::pair<ComponentKey, std::vector<DeviceModelVariable>> parse_component_config_from_json(const json& data);
 
 /// \brief Parse a component config JSON document from a string.
-/// \throws nlohmann::json::parse_error on invalid JSON; InitDeviceModelDbError if "properties" missing.
+/// \throws nlohmann::json::parse_error on invalid JSON; InitDeviceModelDbError if "properties" missing;
+/// ComponentConfigNameKeyError for an empty instance or an EVSE or connector id of 0.
 std::pair<ComponentKey, std::vector<DeviceModelVariable>>
 parse_component_config_from_string(const std::string& json_content);
 
@@ -184,6 +207,7 @@ public:
     /// \throws InitDeviceModelDbError  - When database could not be initialized or
     ///                                 - Foreign keys could not be turned on or
     ///                                 - Something could not be added to, retrieved or removed from the database
+    /// \throws ComponentConfigNameKeyError When two variables of one component share a name key
     /// \throws MigrationException  If something went wrong during migration
     /// \throws ConnectionException If the database could not be opened
     ///
@@ -228,6 +252,15 @@ private: // Functions
     ///
     void insert_component(const ComponentKey& component_key,
                           const std::vector<DeviceModelVariable>& component_variables);
+
+    ///
+    /// \brief Write the spelling of the name and instance of a component to its database row.
+    /// \param component_key        The component as the component config spells it.
+    /// \param db_component_key     The component as the database holds it, including its database id.
+    ///
+    /// \throws InitDeviceModelDbError When the component could not be updated
+    ///
+    void update_component_spelling(const ComponentKey& component_key, const ComponentKey& db_component_key);
 
     ///
     /// \brief Insert variable characteristics
@@ -383,6 +416,15 @@ private: // Functions
     void delete_variable_monitor(const VariableMonitoringMeta& monitor, const std::int64_t& variable_id);
 
     ///
+    /// \brief Deletes the monitors of the component config variables matching \p variable_condition, custom
+    /// monitors included. Monitors are keyed by name, so they are not removed together with their variable rows, and
+    /// every monitor with the name key of a matching variable is deleted, also one on a variable registered at runtime.
+    /// \param variable_condition   SQL condition on the variable (alias v) or component (alias c), using \@id
+    /// \param id                   The value bound to \@id
+    ///
+    void delete_monitors(const std::string& variable_condition, const std::uint64_t id);
+
+    ///
     /// \brief Get all components with its variables (and characteristics / attributes) from the database.
     /// \return A map of Components with it Variables.
     ///
@@ -416,9 +458,9 @@ private: // Functions
     /// \param db_component_variables         The component that currently exists in the database and needs updating.
     /// \param component_variables            The component_variables of the component.
     ///
-    void
-    update_component_variables(const std::pair<ComponentKey, std::vector<DeviceModelVariable>>& db_component_variables,
-                               const std::vector<DeviceModelVariable>& variables);
+    void update_component_variables(
+        const std::pair<const ComponentKey, std::vector<DeviceModelVariable>>& db_component_variables,
+        const std::vector<DeviceModelVariable>& variables);
 
     ///
     /// \brief Get variable attributes belonging to a specific variable from the database.

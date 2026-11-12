@@ -9,12 +9,12 @@
 
 namespace ocpp_module_common::device_model {
 
-using ComponentVariableSourceMap = std::map<ocpp::v2::Component, std::map<ocpp::v2::Variable, std::string>>;
+using ComponentVariableOwnerMap = std::map<ocpp::v2::Component, std::map<ocpp::v2::Variable, std::string>>;
 class ComposedDeviceModelStorage : public ocpp::v2::DeviceModelStorageInterface {
 private:
     std::map<std::string, std::shared_ptr<ocpp::v2::DeviceModelStorageInterface>>
         device_model_storages; // key is identifier for the device model storage
-    ComponentVariableSourceMap component_variable_source_map;
+    ComponentVariableOwnerMap component_variable_owner_map;
 
 public:
     ComposedDeviceModelStorage() = default;
@@ -45,33 +45,39 @@ public:
     virtual std::optional<ocpp::v2::VariableMonitoringMeta>
     set_monitoring_data(const ocpp::v2::SetMonitoringData& data, const ocpp::v2::VariableMonitorType type) override;
     virtual bool update_monitoring_reference(const int32_t monitor_id, const std::string& reference_value) override;
-    virtual std::vector<ocpp::v2::VariableMonitoringMeta>
-    get_monitoring_data(const std::vector<ocpp::v2::MonitoringCriterionEnum>& criteria,
-                        const ocpp::v2::Component& component_id, const ocpp::v2::Variable& variable_id) override;
     virtual ocpp::v2::ClearMonitoringStatusEnum clear_variable_monitor(int monitor_id, bool allow_protected) override;
     virtual int32_t clear_custom_variable_monitors() override;
+    virtual std::vector<ocpp::v2::StoredMonitor> get_all_monitors() override;
+    virtual std::vector<ocpp::v2::StoredVariableValue> get_stored_values() override;
+    virtual ocpp::v2::SetVariableStatusEnum set_stored_value(const ocpp::v2::StoredVariableValue& value) override;
+    virtual bool remove_stored_value(const ocpp::v2::Component& component, const ocpp::v2::Variable& variable,
+                                     const ocpp::v2::AttributeEnum& attribute_enum) override;
     virtual void check_integrity() override;
     virtual bool create_network_configuration_slot_from_default_schema(std::int32_t new_slot) override;
 
 private:
     ///
-    /// \brief Get variable source of given variable.
+    /// \brief Get the owner of the given variable.
     /// \param component    Component the variable belongs to.
-    /// \param variable     The variable to get the source from.
-    /// \return The variable source. Defaults to 'OCPP'.
+    /// \param variable     The variable to get the owner of.
+    /// \return The owner of the variable. Defaults to 'OCPP'.
     ///
-    std::string get_variable_source(const ocpp::v2::Component& component, const ocpp::v2::Variable& variable);
+    std::string get_variable_owner(const ocpp::v2::Component& component, const ocpp::v2::Variable& variable);
+
+    /// \return The storage of the owner 'OCPP', which holds all monitors and stored values, or nullptr with an error
+    /// logged if it is not registered
+    ocpp::v2::DeviceModelStorageInterface* ocpp_storage();
 };
 
 /// \brief Builds the module-standard composed device model storage: \p ocpp_storage registered under
-/// source id "OCPP" (the default source) and \p everest_storage under "EVEREST". For component/variable
+/// owner "OCPP" (the default owner) and \p everest_storage under "EVEREST". For component/variable
 /// combinations defined in both storages, the EVerest device model takes precedence and a warning is
 /// logged; the integrator is responsible for avoiding overlaps.
 /// \param ocpp_storage     Must have a fully seeded backing database, because registration snapshots
-///                         get_device_model() to build the per-variable source map. A null pointer
+///                         get_device_model() to build the per-variable owner map. A null pointer
 ///                         raises std::invalid_argument.
 /// \param everest_storage  Registered under "EVEREST"; a null pointer is skipped with a warning.
-/// \return The composed storage with both sources registered.
+/// \return The composed storage with both owners registered.
 std::unique_ptr<ComposedDeviceModelStorage>
 make_composed_device_model_storage(std::shared_ptr<ocpp::v2::DeviceModelStorageInterface> ocpp_storage,
                                    std::shared_ptr<ocpp::v2::DeviceModelStorageInterface> everest_storage);

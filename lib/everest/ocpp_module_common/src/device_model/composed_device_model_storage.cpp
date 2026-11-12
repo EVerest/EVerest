@@ -2,11 +2,9 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 
 #include <everest/ocpp_module_common/device_model/composed_device_model_storage.hpp>
+#include <everest/ocpp_module_common/device_model/definitions.hpp>
 
 #include <stdexcept>
-
-static constexpr auto VARIABLE_SOURCE_OCPP = "OCPP";
-static constexpr auto VARIABLE_SOURCE_EVEREST = "EVEREST";
 
 namespace ocpp_module_common::device_model {
 
@@ -17,24 +15,23 @@ bool ComposedDeviceModelStorage::register_device_model_storage(
     }
 
     const auto device_model_map = device_model_storage->get_device_model();
-    // store the sources of each variable to be able to lookup requests to the device model storage
+    // store the owner of each variable to route requests to its device model storage
     for (const auto& [component, variable_map] : device_model_map) {
         for (const auto& [variable, variable_meta] : variable_map) {
-            // Note: Source should not be optional, should be changed in libocpp
-            const auto source = variable_meta.source.value_or(VARIABLE_SOURCE_OCPP);
+            const auto owner = variable_meta.owner.value_or(VARIABLE_OWNER_OCPP);
 
             // On overlap, the storage registered last takes precedence. The integrator is responsible for
             // avoiding overlaps.
-            const auto component_it = this->component_variable_source_map.find(component);
-            if (component_it != this->component_variable_source_map.end() &&
+            const auto component_it = this->component_variable_owner_map.find(component);
+            if (component_it != this->component_variable_owner_map.end() &&
                 component_it->second.find(variable) != component_it->second.end()) {
                 EVLOG_warning << "Variable " << variable.name << " of component " << component.name
-                              << " is defined in multiple device model storages; source " << source
+                              << " is defined in multiple device model storages; owner " << owner
                               << " takes precedence. The integrator is responsible for avoiding overlapping "
                                  "device model definitions.";
             }
 
-            this->component_variable_source_map[component][variable] = source;
+            this->component_variable_owner_map[component][variable] = owner;
         }
     }
 
@@ -45,12 +42,12 @@ bool ComposedDeviceModelStorage::register_device_model_storage(
 ocpp::v2::DeviceModelMap ComposedDeviceModelStorage::get_device_model() {
     ocpp::v2::DeviceModelMap device_model_map;
     // Merge per variable, not per component: each variable is contributed only by the storage that owns it
-    // according to the source map, so the merged model is consistent with request routing when storages
+    // according to the owner map, so the merged model is consistent with request routing when storages
     // define overlapping components or variables.
     for (const auto& [storage_id, device_model_storage] : this->device_model_storages) {
         for (auto& [component, variable_map] : device_model_storage->get_device_model()) {
             for (auto& [variable, variable_meta] : variable_map) {
-                if (get_variable_source(component, variable) == storage_id) {
+                if (get_variable_owner(component, variable) == storage_id) {
                     device_model_map[component].insert_or_assign(variable, std::move(variable_meta));
                 }
             }
@@ -63,11 +60,11 @@ std::optional<ocpp::v2::VariableAttribute>
 ComposedDeviceModelStorage::get_variable_attribute(const ocpp::v2::Component& component_id,
                                                    const ocpp::v2::Variable& variable_id,
                                                    const ocpp::v2::AttributeEnum& attribute_enum) {
-    const auto variable_source = get_variable_source(component_id, variable_id);
-    if (this->device_model_storages.find(variable_source) == this->device_model_storages.end()) {
+    const auto variable_owner = get_variable_owner(component_id, variable_id);
+    if (this->device_model_storages.find(variable_owner) == this->device_model_storages.end()) {
         return std::nullopt;
     }
-    return this->device_model_storages.at(variable_source)
+    return this->device_model_storages.at(variable_owner)
         ->get_variable_attribute(component_id, variable_id, attribute_enum);
 }
 
@@ -75,72 +72,96 @@ std::vector<ocpp::v2::VariableAttribute>
 ComposedDeviceModelStorage::get_variable_attributes(const ocpp::v2::Component& component_id,
                                                     const ocpp::v2::Variable& variable_id,
                                                     const std::optional<ocpp::v2::AttributeEnum>& attribute_enum) {
-    const auto variable_source = get_variable_source(component_id, variable_id);
-    if (this->device_model_storages.find(variable_source) == this->device_model_storages.end()) {
+    const auto variable_owner = get_variable_owner(component_id, variable_id);
+    if (this->device_model_storages.find(variable_owner) == this->device_model_storages.end()) {
         return {};
     }
-    return this->device_model_storages.at(variable_source)
+    return this->device_model_storages.at(variable_owner)
         ->get_variable_attributes(component_id, variable_id, attribute_enum);
 }
 
 ocpp::v2::SetVariableStatusEnum ComposedDeviceModelStorage::set_variable_attribute_value(
     const ocpp::v2::Component& component_id, const ocpp::v2::Variable& variable_id,
     const ocpp::v2::AttributeEnum& attribute_enum, const std::string& value, const std::string& source) {
-    // the "source" parameter is the VALUE_SOURCE
-    const auto variable_source = get_variable_source(component_id, variable_id);
-    if (this->device_model_storages.find(variable_source) == this->device_model_storages.end()) {
+    const auto variable_owner = get_variable_owner(component_id, variable_id);
+    if (this->device_model_storages.find(variable_owner) == this->device_model_storages.end()) {
         return ocpp::v2::SetVariableStatusEnum::Rejected;
     }
-    return this->device_model_storages.at(variable_source)
+    return this->device_model_storages.at(variable_owner)
         ->set_variable_attribute_value(component_id, variable_id, attribute_enum, value, source);
 }
 
 std::optional<ocpp::v2::VariableMonitoringMeta>
 ComposedDeviceModelStorage::set_monitoring_data(const ocpp::v2::SetMonitoringData& data,
                                                 const ocpp::v2::VariableMonitorType type) {
-    if (this->device_model_storages.find(VARIABLE_SOURCE_OCPP) == this->device_model_storages.end()) {
-        EVLOG_error << "OCPP device model storage not registered, cannot set monitoring data";
+    auto* storage = this->ocpp_storage();
+    if (storage == nullptr) {
         return std::nullopt;
     }
-    return this->device_model_storages.at(VARIABLE_SOURCE_OCPP)->set_monitoring_data(data, type);
+    return storage->set_monitoring_data(data, type);
 }
 
 bool ComposedDeviceModelStorage::update_monitoring_reference(const int32_t monitor_id,
                                                              const std::string& reference_value) {
-    if (this->device_model_storages.find(VARIABLE_SOURCE_OCPP) == this->device_model_storages.end()) {
-        EVLOG_error << "OCPP device model storage not registered, cannot update monitoring reference";
+    auto* storage = this->ocpp_storage();
+    if (storage == nullptr) {
         return false;
     }
-    return this->device_model_storages.at(VARIABLE_SOURCE_OCPP)
-        ->update_monitoring_reference(monitor_id, reference_value);
-}
-
-std::vector<ocpp::v2::VariableMonitoringMeta>
-ComposedDeviceModelStorage::get_monitoring_data(const std::vector<ocpp::v2::MonitoringCriterionEnum>& criteria,
-                                                const ocpp::v2::Component& component_id,
-                                                const ocpp::v2::Variable& variable_id) {
-    const auto variable_source = get_variable_source(component_id, variable_id);
-    if (this->device_model_storages.find(variable_source) == this->device_model_storages.end()) {
-        return {};
-    }
-    return this->device_model_storages.at(variable_source)->get_monitoring_data(criteria, component_id, variable_id);
+    return storage->update_monitoring_reference(monitor_id, reference_value);
 }
 
 ocpp::v2::ClearMonitoringStatusEnum ComposedDeviceModelStorage::clear_variable_monitor(int monitor_id,
                                                                                        bool allow_protected) {
-    if (this->device_model_storages.find(VARIABLE_SOURCE_OCPP) == this->device_model_storages.end()) {
-        EVLOG_error << "OCPP device model storage not registered, cannot clear variable monitor";
+    auto* storage = this->ocpp_storage();
+    if (storage == nullptr) {
         return ocpp::v2::ClearMonitoringStatusEnum::Rejected;
     }
-    return this->device_model_storages.at(VARIABLE_SOURCE_OCPP)->clear_variable_monitor(monitor_id, allow_protected);
+    return storage->clear_variable_monitor(monitor_id, allow_protected);
 }
 
 int32_t ComposedDeviceModelStorage::clear_custom_variable_monitors() {
-    if (this->device_model_storages.find(VARIABLE_SOURCE_OCPP) == this->device_model_storages.end()) {
-        EVLOG_error << "OCPP device model storage not registered, cannot clear custom variable monitors";
+    auto* storage = this->ocpp_storage();
+    if (storage == nullptr) {
         return 0;
     }
-    return this->device_model_storages.at(VARIABLE_SOURCE_OCPP)->clear_custom_variable_monitors();
+    return storage->clear_custom_variable_monitors();
+}
+
+// Monitors and stored values are keyed by name and need no row in the component tables, so they all live in
+// the OCPP storage, whichever storage holds the variable.
+std::vector<ocpp::v2::StoredMonitor> ComposedDeviceModelStorage::get_all_monitors() {
+    auto* storage = this->ocpp_storage();
+    if (storage == nullptr) {
+        return {};
+    }
+    return storage->get_all_monitors();
+}
+
+std::vector<ocpp::v2::StoredVariableValue> ComposedDeviceModelStorage::get_stored_values() {
+    auto* storage = this->ocpp_storage();
+    if (storage == nullptr) {
+        return {};
+    }
+    return storage->get_stored_values();
+}
+
+ocpp::v2::SetVariableStatusEnum
+ComposedDeviceModelStorage::set_stored_value(const ocpp::v2::StoredVariableValue& value) {
+    auto* storage = this->ocpp_storage();
+    if (storage == nullptr) {
+        return ocpp::v2::SetVariableStatusEnum::Rejected;
+    }
+    return storage->set_stored_value(value);
+}
+
+bool ComposedDeviceModelStorage::remove_stored_value(const ocpp::v2::Component& component,
+                                                     const ocpp::v2::Variable& variable,
+                                                     const ocpp::v2::AttributeEnum& attribute_enum) {
+    auto* storage = this->ocpp_storage();
+    if (storage == nullptr) {
+        return false;
+    }
+    return storage->remove_stored_value(component, variable, attribute_enum);
 }
 
 void ComposedDeviceModelStorage::check_integrity() {
@@ -150,28 +171,36 @@ void ComposedDeviceModelStorage::check_integrity() {
 }
 
 bool ComposedDeviceModelStorage::create_network_configuration_slot_from_default_schema(std::int32_t new_slot) {
-    // NetworkConfiguration_<N> components live in the OCPP-source storage (the SQLite-backed
-    // EverestDeviceModelStorage). Without this dispatch, libocpp's blob-migration fallback hits
+    // NetworkConfiguration_<N> components live in the OCPP storage (DeviceModelStorageSqlite).
+    // Without this dispatch, libocpp's blob-migration fallback hits
     // DeviceModelStorageInterface's default virtual (returns false) and the operator's
     // NetworkConnectionProfiles blob ends up cleared without ever populating the per-slot
     // device-model rows on targets that ship no NetworkConfiguration_<N>.json.
-    const auto it = this->device_model_storages.find(VARIABLE_SOURCE_OCPP);
-    if (it == this->device_model_storages.end()) {
-        EVLOG_error << "OCPP device model storage not registered, cannot create NetworkConfiguration_" << new_slot;
+    auto* storage = this->ocpp_storage();
+    if (storage == nullptr) {
         return false;
     }
-    return it->second->create_network_configuration_slot_from_default_schema(new_slot);
+    return storage->create_network_configuration_slot_from_default_schema(new_slot);
+}
+
+ocpp::v2::DeviceModelStorageInterface* ComposedDeviceModelStorage::ocpp_storage() {
+    const auto it = this->device_model_storages.find(VARIABLE_OWNER_OCPP);
+    if (it == this->device_model_storages.end()) {
+        EVLOG_error << "No OCPP device model storage registered";
+        return nullptr;
+    }
+    return it->second.get();
 }
 
 std::string
-ocpp_module_common::device_model::ComposedDeviceModelStorage::get_variable_source(const ocpp::v2::Component& component,
-                                                                                  const ocpp::v2::Variable& variable) {
-    if (this->component_variable_source_map.find(component) == this->component_variable_source_map.end()) {
-        return VARIABLE_SOURCE_OCPP; // default source
+ocpp_module_common::device_model::ComposedDeviceModelStorage::get_variable_owner(const ocpp::v2::Component& component,
+                                                                                 const ocpp::v2::Variable& variable) {
+    if (this->component_variable_owner_map.find(component) == this->component_variable_owner_map.end()) {
+        return VARIABLE_OWNER_OCPP;
     }
-    const auto& variable_map = this->component_variable_source_map.at(component);
+    const auto& variable_map = this->component_variable_owner_map.at(component);
     if (variable_map.find(variable) == variable_map.end()) {
-        return VARIABLE_SOURCE_OCPP; // default source
+        return VARIABLE_OWNER_OCPP;
     }
     return variable_map.at(variable);
 }
@@ -185,13 +214,13 @@ make_composed_device_model_storage(std::shared_ptr<ocpp::v2::DeviceModelStorageI
 
     auto composed_device_model_storage = std::make_unique<ComposedDeviceModelStorage>();
     // note - registration snapshots get_device_model(), which causes a slight delay; scope for performance tuning
-    composed_device_model_storage->register_device_model_storage(VARIABLE_SOURCE_OCPP, std::move(ocpp_storage));
+    composed_device_model_storage->register_device_model_storage(VARIABLE_OWNER_OCPP, std::move(ocpp_storage));
     if (everest_storage != nullptr) {
-        composed_device_model_storage->register_device_model_storage(VARIABLE_SOURCE_EVEREST,
+        composed_device_model_storage->register_device_model_storage(VARIABLE_OWNER_EVEREST,
                                                                      std::move(everest_storage));
     } else {
         EVLOG_warning << "No EVerest device model storage provided; composed device model contains only the "
-                         "OCPP source";
+                         "OCPP storage";
     }
     return composed_device_model_storage;
 }

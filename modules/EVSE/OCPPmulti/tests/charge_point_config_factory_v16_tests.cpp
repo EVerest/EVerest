@@ -3,8 +3,8 @@
 
 /// \file charge_point_config_factory_v16_tests.cpp
 /// \brief Tests that the OCPP 1.6 config factory backs the configuration with the composed device model
-/// storage: variables supplied by an EVerest device model storage (source "EVEREST") are readable and
-/// writable through the returned configuration, next to the SQLite-backed OCPP source — the same
+/// storage: variables supplied by an EVerest device model storage (owner "EVEREST") are readable and
+/// writable through the returned configuration, next to the SQLite-backed OCPP storage — the same
 /// composition the OCPP 2.x path provides to its ChargePoint.
 
 #include <gtest/gtest.h>
@@ -51,7 +51,7 @@ public:
         ocpp::v2::VariableMetaData meta;
         meta.characteristics.dataType = ocpp::v2::DataEnum::string;
         meta.characteristics.supportsMonitoring = false;
-        meta.source = "EVEREST";
+        meta.owner = "EVEREST";
         ocpp::v2::DeviceModelMap map;
         map[this->component][this->variable] = meta;
         return map;
@@ -102,18 +102,16 @@ public:
         return false;
     }
 
-    std::vector<ocpp::v2::VariableMonitoringMeta>
-    get_monitoring_data(const std::vector<ocpp::v2::MonitoringCriterionEnum>&, const ocpp::v2::Component&,
-                        const ocpp::v2::Variable&) override {
-        return {};
-    }
-
     ocpp::v2::ClearMonitoringStatusEnum clear_variable_monitor(int, bool) override {
         return ocpp::v2::ClearMonitoringStatusEnum::NotFound;
     }
 
     std::int32_t clear_custom_variable_monitors() override {
         return 0;
+    }
+
+    std::vector<ocpp::v2::StoredMonitor> get_all_monitors() override {
+        return {};
     }
 
     void check_integrity() override {

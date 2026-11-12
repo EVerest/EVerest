@@ -3,13 +3,16 @@
 
 #include <ocpp/v2/init_device_model_db.hpp>
 
+#include <algorithm>
 #include <cstdint>
 #include <fstream>
 #include <map>
+#include <set>
 #include <sstream>
 #include <string>
 
 #include <everest/logging.hpp>
+#include <ocpp/common/utils.hpp>
 #include <ocpp/v2/enums.hpp>
 #include <ocpp/v2/ocpp16_legacy_ctrlr_default_schema.hpp>
 
@@ -21,6 +24,15 @@ const static std::string DEFAULT_SOURCE = "default";
 constexpr bool DEFAULT_PERSISTENT = true;
 constexpr bool DEFAULT_CONSTANT = false;
 
+// Joins the monitors (alias vm) to the variables (alias v) and components (alias c) of their name key. Names and
+// instances are case-insensitive, like OCPP identifiers.
+constexpr auto MONITOR_VARIABLE_JOIN =
+    "JOIN VARIABLE v ON v.NAME = vm.VARIABLE_NAME COLLATE NOCASE AND "
+    "IFNULL(v.INSTANCE, '') = vm.VARIABLE_INSTANCE COLLATE NOCASE "
+    "JOIN COMPONENT c ON c.ID = v.COMPONENT_ID AND c.NAME = vm.COMPONENT_NAME COLLATE NOCASE AND "
+    "IFNULL(c.INSTANCE, '') = vm.COMPONENT_INSTANCE COLLATE NOCASE AND IFNULL(c.EVSE_ID, 0) = vm.EVSE_ID AND "
+    "IFNULL(c.CONNECTOR_ID, 0) = vm.CONNECTOR_ID";
+
 using namespace everest::db;
 using namespace everest::db::sqlite;
 
@@ -29,9 +41,9 @@ namespace ocpp::v2 {
 namespace {
 // Forward declarations.
 void check_integrity(const std::map<ComponentKey, std::vector<DeviceModelVariable>>& component_configs);
+void check_name_keys_are_unique(const std::map<ComponentKey, std::vector<DeviceModelVariable>>& component_configs);
 std::vector<std::string> check_integrity_value_type(const DeviceModelVariable& variable);
 bool value_is_of_type(const std::string& value, const DataEnum& type);
-bool is_same_component_key(const ComponentKey& component_key1, const ComponentKey& component_key2);
 bool is_same_attribute_type(const VariableAttribute attribute1, const VariableAttribute& attribute2);
 bool is_attribute_different(const VariableAttribute& attribute1, const VariableAttribute& attribute2);
 bool variable_has_same_attributes(const std::vector<DbVariableAttribute>& attributes1,
@@ -39,7 +51,6 @@ bool variable_has_same_attributes(const std::vector<DbVariableAttribute>& attrib
 bool variable_has_same_monitors(const std::vector<VariableMonitoringMeta>& monitors1,
                                 const std::vector<VariableMonitoringMeta>& monitors2);
 bool is_characteristics_different(const VariableCharacteristics& c1, const VariableCharacteristics& c2);
-bool is_same_variable(const DeviceModelVariable& v1, const DeviceModelVariable& v2);
 bool is_variable_different(const DeviceModelVariable& v1, const DeviceModelVariable& v2);
 bool is_monitor_different(const VariableMonitoringMeta& meta1, const VariableMonitoringMeta& meta2);
 // Spec based monitor duplicate detection
@@ -49,24 +60,10 @@ bool has_attribute_actual_value(const VariableAttribute& attribute,
 std::string get_string_value_from_json(const json& value);
 std::string get_component_name_for_logging(const ComponentKey& component);
 std::string get_variable_name_for_logging(const DeviceModelVariable& variable);
-///
-/// \brief Check if a specific component exists in the databsae.
-/// \param db_components    The current components in the database.
-/// \param component        The component to check against.
-/// \return The component from the database if it exists.
-///
-std::optional<std::pair<ComponentKey, std::vector<DeviceModelVariable>>>
-component_exists_in_db(const std::map<ComponentKey, std::vector<DeviceModelVariable>>& db_components,
-                       const ComponentKey& component);
 
-///
-/// \brief Check if a component exist in the component config.
-/// \param component_config The map of component / variables read from the json component config.
-/// \param component    The component to check.
-/// \return True when the component exists in the config.
-///
-bool component_exists_in_config(const std::map<ComponentKey, std::vector<DeviceModelVariable>>& component_config,
-                                const ComponentKey& component);
+bool is_ocpp16_legacy_ctrlr(const ComponentKey& component) {
+    return iequals(component.name, OCPP16_LEGACY_CTRLR_COMPONENT_CONFIG);
+}
 
 ///
 /// \brief Get all component properties (variables) from the given (component) json.
@@ -128,10 +125,10 @@ void InitDeviceModelDb::initialize_database(
     // bridge working with a custom DeviceModelConfigPath that does not include the file.
     const bool config_files_contain_ocpp16_legacy_ctrlr =
         std::any_of(component_configs.begin(), component_configs.end(),
-                    [](const auto& c) { return c.first.name == OCPP16_LEGACY_CTRLR_COMPONENT_CONFIG; });
+                    [](const auto& c) { return is_ocpp16_legacy_ctrlr(c.first); });
     const bool db_contains_ocpp16_legacy_ctrlr =
         std::any_of(existing_components.begin(), existing_components.end(),
-                    [](const auto& c) { return c.first.name == OCPP16_LEGACY_CTRLR_COMPONENT_CONFIG; });
+                    [](const auto& c) { return is_ocpp16_legacy_ctrlr(c.first); });
 
     // Only allocate an augmented copy when the fallback component is actually missing from the config.
     std::optional<std::map<ComponentKey, std::vector<DeviceModelVariable>>> augmented;
@@ -156,6 +153,7 @@ void InitDeviceModelDb::initialize_database(
     }
 
     // Check if the config is consistent.
+    check_name_keys_are_unique(configs);
     check_integrity(configs);
 
     // Starting a transaction makes this a lot faster (inserting all components takes a few seconds without it and a
@@ -167,9 +165,8 @@ void InitDeviceModelDb::initialize_database(
     // been injected by an older version of this function.
     if (!inject_ocpp16_legacy_ctrlr_fallback && !config_files_contain_ocpp16_legacy_ctrlr &&
         db_contains_ocpp16_legacy_ctrlr) {
-        const auto it = std::find_if(existing_components.begin(), existing_components.end(), [](const auto& c) {
-            return c.first.name == OCPP16_LEGACY_CTRLR_COMPONENT_CONFIG;
-        });
+        const auto it = std::find_if(existing_components.begin(), existing_components.end(),
+                                     [](const auto& c) { return is_ocpp16_legacy_ctrlr(c.first); });
         if (it != existing_components.end()) {
             remove_component_from_db(it->first);
         }
@@ -220,6 +217,22 @@ std::vector<std::filesystem::path> get_component_config_from_directory(const std
     return component_config_files;
 }
 
+void warn_about_source_keys(const std::filesystem::path& path, const json& data) {
+    if (!data.contains("properties")) {
+        return;
+    }
+    std::string variables;
+    for (const auto& [key, variable] : data.at("properties").items()) {
+        if (variable.contains("source")) {
+            variables += (variables.empty() ? "" : ", ") + variable.value("variable_name", key);
+        }
+    }
+    if (!variables.empty()) {
+        EVLOG_warning << path.string() << ": the component config key \"source\" is no longer supported and is ignored "
+                      << "(variables: " << variables << ")";
+    }
+}
+
 ///
 /// \brief Read component config from given files.
 /// \param components_config_path   The paths to the component config files.
@@ -228,18 +241,26 @@ std::vector<std::filesystem::path> get_component_config_from_directory(const std
 std::map<ComponentKey, std::vector<DeviceModelVariable>>
 read_component_config(const std::vector<std::filesystem::path>& components_config_path) {
     std::map<ComponentKey, std::vector<DeviceModelVariable>> components;
+    std::map<ComponentKey, std::filesystem::path> component_paths;
     for (const auto& path : components_config_path) {
         std::ifstream config_file(path);
+        std::pair<ComponentKey, std::vector<DeviceModelVariable>> parsed;
         try {
-            auto parsed = parse_component_config_from_json(json::parse(config_file));
-            components.insert({parsed.first, std::move(parsed.second)});
-        } catch (const json::parse_error& e) {
-            EVLOG_error << "Error while parsing config file: " << path;
-            throw;
-        } catch (const InitDeviceModelDbError& e) {
-            EVLOG_warning << "Skipping component config " << path << ": " << e.what();
-            continue;
+            const auto data = json::parse(config_file);
+            warn_about_source_keys(path, data);
+            parsed = parse_component_config_from_json(data);
+        } catch (const ComponentConfigNameKeyError& e) {
+            throw ComponentConfigNameKeyError("Invalid component config " + path.string() + ": " + e.what());
+        } catch (const std::exception& e) {
+            throw InitDeviceModelDbError("Invalid component config " + path.string() + ": " + e.what());
         }
+        const auto [path_it, inserted] = component_paths.emplace(parsed.first, path);
+        if (!inserted) {
+            throw ComponentConfigNameKeyError("Component configs " + path_it->second.string() + " and " +
+                                              path.string() + " both define component " +
+                                              get_component_name_for_logging(parsed.first));
+        }
+        components.emplace(std::move(parsed));
     }
 
     return components;
@@ -289,9 +310,8 @@ get_all_component_configs(const std::filesystem::path& directory) {
 }
 
 void ensure_ocpp16_legacy_ctrlr(std::map<ComponentKey, std::vector<DeviceModelVariable>>& component_configs) {
-    const bool already_present = std::any_of(component_configs.begin(), component_configs.end(), [](const auto& c) {
-        return c.first.name == OCPP16_LEGACY_CTRLR_COMPONENT_CONFIG;
-    });
+    const bool already_present = std::any_of(component_configs.begin(), component_configs.end(),
+                                             [](const auto& c) { return is_ocpp16_legacy_ctrlr(c.first); });
     if (already_present) {
         return;
     }
@@ -307,17 +327,17 @@ void ensure_ocpp16_legacy_ctrlr(std::map<ComponentKey, std::vector<DeviceModelVa
 void InitDeviceModelDb::insert_components(
     const std::map<ComponentKey, std::vector<DeviceModelVariable>>& components,
     const std::map<ComponentKey, std::vector<DeviceModelVariable>>& existing_components) {
-    for (auto& component : components) {
-        // Check if component already exists in the database.
-        std::optional<std::pair<ComponentKey, std::vector<DeviceModelVariable>>> component_db;
-        if (this->database_exists &&
-            (component_db = component_exists_in_db(existing_components, component.first)).has_value()) {
-            // Component exists in the database, update component if necessary.
-            update_component_variables(component_db.value(), component.second);
-        } else {
-            // Database is new or component does not exist. Insert component.
-            insert_component(component.first, component.second);
+    for (const auto& [component_key, variables] : components) {
+        const auto db_component =
+            this->database_exists ? existing_components.find(component_key) : existing_components.end();
+        if (db_component == existing_components.end()) {
+            insert_component(component_key, variables);
+            continue;
         }
+        if (db_component->first.name != component_key.name || db_component->first.instance != component_key.instance) {
+            update_component_spelling(component_key, db_component->first);
+        }
+        update_component_variables(*db_component, variables);
     }
 }
 
@@ -367,6 +387,31 @@ void InitDeviceModelDb::insert_component(const ComponentKey& component_key,
 
         // Add variable
         insert_variable(variable, static_cast<std::uint64_t>(component_id));
+    }
+}
+
+void InitDeviceModelDb::update_component_spelling(const ComponentKey& component_key,
+                                                  const ComponentKey& db_component_key) {
+    static const std::string statement = "UPDATE COMPONENT SET NAME=@name, INSTANCE=@instance WHERE ID=@component_id";
+
+    std::unique_ptr<StatementInterface> update_statement;
+    try {
+        update_statement = this->database->new_statement(statement);
+    } catch (const QueryExecutionException&) {
+        throw InitDeviceModelDbError("Could not create statement " + statement);
+    }
+
+    update_statement->bind_text("@name", component_key.name, SQLiteString::Transient);
+    if (component_key.instance.has_value() && !component_key.instance.value().empty()) {
+        update_statement->bind_text("@instance", component_key.instance.value(), SQLiteString::Transient);
+    } else {
+        update_statement->bind_null("@instance");
+    }
+    update_statement->bind_int("@component_id", static_cast<int>(db_component_key.db_id.value()));
+
+    if (update_statement->step() != SQLITE_DONE) {
+        throw InitDeviceModelDbError("Could not update component " + component_key.name + ": " +
+                                     std::string(this->database->get_error_message()));
     }
 }
 
@@ -478,9 +523,8 @@ void InitDeviceModelDb::update_variable_characteristics(const VariableCharacteri
 }
 
 void InitDeviceModelDb::insert_variable(const DeviceModelVariable& variable, const std::uint64_t& component_id) {
-    static const std::string statement =
-        "INSERT OR REPLACE INTO VARIABLE (NAME, INSTANCE, COMPONENT_ID, SOURCE) VALUES "
-        "(@name, @instance, @component_id, @source)";
+    static const std::string statement = "INSERT OR REPLACE INTO VARIABLE (NAME, INSTANCE, COMPONENT_ID) VALUES "
+                                         "(@name, @instance, @component_id)";
 
     std::unique_ptr<StatementInterface> insert_variable_statement;
     try {
@@ -496,12 +540,6 @@ void InitDeviceModelDb::insert_variable(const DeviceModelVariable& variable, con
         insert_variable_statement->bind_text("@instance", variable.instance.value(), SQLiteString::Transient);
     } else {
         insert_variable_statement->bind_null("@instance");
-    }
-
-    if (variable.source.has_value()) {
-        insert_variable_statement->bind_text("@source", variable.source.value());
-    } else {
-        insert_variable_statement->bind_null("@source");
     }
 
     if (insert_variable_statement->step() != SQLITE_DONE) {
@@ -524,8 +562,7 @@ void InitDeviceModelDb::update_variable(const DeviceModelVariable& variable, con
     }
 
     static const std::string update_variable_statement =
-        "UPDATE VARIABLE SET NAME=@name, INSTANCE=@instance, COMPONENT_ID=@component_id, "
-        "SOURCE=@source WHERE ID=@variable_id";
+        "UPDATE VARIABLE SET NAME=@name, INSTANCE=@instance, COMPONENT_ID=@component_id WHERE ID=@variable_id";
 
     std::unique_ptr<StatementInterface> update_statement;
     try {
@@ -542,12 +579,6 @@ void InitDeviceModelDb::update_variable(const DeviceModelVariable& variable, con
         update_statement->bind_text("@instance", variable.instance.value(), SQLiteString::Transient);
     } else {
         update_statement->bind_null("@instance");
-    }
-
-    if (variable.source.has_value()) {
-        update_statement->bind_text("@source", variable.source.value(), SQLiteString::Transient);
-    } else {
-        update_statement->bind_null("@source");
     }
 
     if (update_statement->step() != SQLITE_DONE) {
@@ -578,6 +609,8 @@ void InitDeviceModelDb::delete_variable(const DeviceModelVariable& variable) {
         EVLOG_error << "Can not remove variable " << variable.name << " from db: id unknown";
         return;
     }
+
+    delete_monitors("v.ID = @id", variable.db_id.value());
 
     static const std::string delete_variable_statement = "DELETE FROM VARIABLE WHERE ID=@variable_id";
 
@@ -802,30 +835,32 @@ bool InitDeviceModelDb::insert_variable_attribute_value(const std::int64_t& vari
 void InitDeviceModelDb::insert_variable_monitor(const VariableMonitoringMeta& monitor,
                                                 const std::int64_t& variable_id) {
     const std::string insert_statement =
-        "INSERT OR REPLACE INTO VARIABLE_MONITORING (VARIABLE_ID, SEVERITY, 'TRANSACTION', TYPE_ID, "
-        "CONFIG_TYPE_ID, VALUE, REFERENCE_VALUE) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?)";
+        "INSERT INTO VARIABLE_MONITORING (COMPONENT_NAME, COMPONENT_INSTANCE, EVSE_ID, CONNECTOR_ID, VARIABLE_NAME, "
+        "VARIABLE_INSTANCE, SEVERITY, 'TRANSACTION', TYPE_ID, CONFIG_TYPE_ID, VALUE, REFERENCE_VALUE) "
+        "SELECT c.NAME, IFNULL(c.INSTANCE, ''), IFNULL(c.EVSE_ID, 0), IFNULL(c.CONNECTOR_ID, 0), v.NAME, "
+        "IFNULL(v.INSTANCE, ''), ?, ?, ?, ?, ?, ? "
+        "FROM VARIABLE v JOIN COMPONENT c ON c.ID = v.COMPONENT_ID WHERE v.ID = ?";
 
     auto insert_stmt = this->database->new_statement(insert_statement);
 
-    insert_stmt->bind_int(1, clamp_to<int>(variable_id));
-    insert_stmt->bind_int(2, monitor.monitor.severity);
-    insert_stmt->bind_int(3, static_cast<int>(monitor.monitor.transaction));
-    insert_stmt->bind_int(4, static_cast<int>(monitor.monitor.type));
-    insert_stmt->bind_int(5, static_cast<int>(monitor.type));
-    insert_stmt->bind_double(6, monitor.monitor.value);
+    insert_stmt->bind_int(1, monitor.monitor.severity);
+    insert_stmt->bind_int(2, static_cast<int>(monitor.monitor.transaction));
+    insert_stmt->bind_int(3, static_cast<int>(monitor.monitor.type));
+    insert_stmt->bind_int(4, static_cast<int>(monitor.type));
+    insert_stmt->bind_double(5, monitor.monitor.value);
 
     if (monitor.monitor.type == MonitorEnum::Delta && !monitor.reference_value.has_value()) {
         throw InitDeviceModelDbError("Delta monitors must have a reference value set:" + std::to_string(variable_id));
     }
 
     if (monitor.reference_value.has_value()) {
-        insert_stmt->bind_text(7, monitor.reference_value.value(), SQLiteString::Transient);
+        insert_stmt->bind_text(6, monitor.reference_value.value(), SQLiteString::Transient);
     } else {
-        insert_stmt->bind_null(7);
+        insert_stmt->bind_null(6);
     }
+    insert_stmt->bind_int(7, clamp_to<int>(variable_id));
 
-    if (insert_stmt->step() != SQLITE_DONE) {
+    if (insert_stmt->step() != SQLITE_DONE || insert_stmt->changes() != 1) {
         throw InitDeviceModelDbError("Can not insert monitor for variable id:" + std::to_string(variable_id));
     }
 }
@@ -921,6 +956,23 @@ void InitDeviceModelDb::delete_variable_monitor(const VariableMonitoringMeta& mo
         throw InitDeviceModelDbError("Delete monitor error: " + std::string(e.what()));
     }
 }
+
+void InitDeviceModelDb::delete_monitors(const std::string& variable_condition, const std::uint64_t id) {
+    const std::string delete_query =
+        std::string("DELETE FROM VARIABLE_MONITORING WHERE ID IN (SELECT vm.ID FROM VARIABLE_MONITORING vm ") +
+        MONITOR_VARIABLE_JOIN + " WHERE " + variable_condition + ")";
+    try {
+        auto delete_stmt = this->database->new_statement(delete_query);
+        delete_stmt->bind_int("@id", static_cast<int>(id));
+        if (delete_stmt->step() != SQLITE_DONE) {
+            throw InitDeviceModelDbError("Can not delete monitors: " +
+                                         std::string(this->database->get_error_message()));
+        }
+    } catch (const QueryExecutionException& e) {
+        throw InitDeviceModelDbError("Delete monitors error: " + std::string(e.what()));
+    }
+}
+
 std::map<ComponentKey, std::vector<DeviceModelVariable>> InitDeviceModelDb::get_all_components_from_db() {
     /* clang-format off */
     const std::string statement =
@@ -928,8 +980,7 @@ std::map<ComponentKey, std::vector<DeviceModelVariable>> InitDeviceModelDb::get_
             "c.ID, c.NAME, c.INSTANCE, c.EVSE_ID, c.CONNECTOR_ID, "
             "v.ID, v.NAME, v.INSTANCE, "
             "vc.ID, vc.DATATYPE_ID, vc.MAX_LIMIT, vc.MIN_LIMIT, vc.SUPPORTS_MONITORING, vc.UNIT, vc.VALUES_LIST, "
-            "va.ID, va.MUTABILITY_ID, va.PERSISTENT, va.CONSTANT, va.TYPE_ID, va.VALUE, va.VALUE_SOURCE,"
-            "v.SOURCE "
+            "va.ID, va.MUTABILITY_ID, va.PERSISTENT, va.CONSTANT, va.TYPE_ID, va.VALUE, va.VALUE_SOURCE "
         "FROM "
             "COMPONENT c "
             "JOIN VARIABLE v ON v.COMPONENT_ID = c.ID "
@@ -1017,35 +1068,10 @@ std::map<ComponentKey, std::vector<DeviceModelVariable>> InitDeviceModelDb::get_
         attribute.variable_attribute.value = select_statement->column_text_nullable(20);
         attribute.value_source = select_statement->column_text_nullable(21);
 
-        if (select_statement->column_type(22) != SQLITE_NULL) {
-            try {
-                variable->source = select_statement->column_text(22);
-            } catch (const std::out_of_range& e) {
-                EVLOG_error << e.what() << ": Variable Source will not be set (so default will be used)";
-            }
-        }
-
         variable->attributes.push_back(attribute);
 
-        // Query all monitors
-        if (variable->db_id.has_value()) {
-            auto monitors = get_variable_monitors_from_db(variable->db_id.value());
-
-            for (auto& monitor_meta : monitors) {
-                // If monitor is not already contained in the list
-                const bool contained =
-                    std::find_if(std::begin(variable->monitors), std::end(variable->monitors),
-                                 [&monitor_meta](const auto& contained_monitor) {
-                                     return (contained_monitor.monitor.id == monitor_meta.monitor.id);
-                                 }) != std::end(variable->monitors);
-
-                if (!contained) {
-                    variable->monitors.push_back(std::move(monitor_meta));
-                }
-            }
-        }
-
         if (!variable_exists) {
+            variable->monitors = get_variable_monitors_from_db(variable->db_id.value());
             components[component_key].push_back(*variable);
         }
     }
@@ -1058,36 +1084,11 @@ std::map<ComponentKey, std::vector<DeviceModelVariable>> InitDeviceModelDb::get_
     return components;
 }
 
-namespace {
-std::optional<std::pair<ComponentKey, std::vector<DeviceModelVariable>>>
-component_exists_in_db(const std::map<ComponentKey, std::vector<DeviceModelVariable>>& db_components,
-                       const ComponentKey& component) {
-    for (const auto& db_component : db_components) {
-        if (is_same_component_key(db_component.first, component)) {
-            return db_component;
-        }
-    }
-
-    return std::nullopt;
-}
-
-bool component_exists_in_config(const std::map<ComponentKey, std::vector<DeviceModelVariable>>& component_config,
-                                const ComponentKey& component) {
-    for (const auto& component_in_config : component_config) {
-        if (is_same_component_key(component, component_in_config.first)) {
-            return true;
-        }
-    }
-
-    return false;
-}
-} // namespace
-
 void InitDeviceModelDb::warn_about_components_missing_from_config(
     const std::map<ComponentKey, std::vector<DeviceModelVariable>>& component_config,
     const std::map<ComponentKey, std::vector<DeviceModelVariable>>& db_components) {
     for (const auto& component : db_components) {
-        if (!component_exists_in_config(component_config, component.first)) {
+        if (component_config.count(component.first) == 0) {
             std::ostringstream identifier;
             identifier << component.first.name;
             if (component.first.instance.has_value() && !component.first.instance.value().empty()) {
@@ -1121,6 +1122,8 @@ bool InitDeviceModelDb::remove_component_from_db(const ComponentKey& component) 
         return false;
     }
 
+    delete_monitors("c.ID = @id", component.db_id.value());
+
     delete_statement->bind_int("@component_id", static_cast<int>(component.db_id.value()));
 
     if (delete_statement->step() != SQLITE_DONE) {
@@ -1131,7 +1134,7 @@ bool InitDeviceModelDb::remove_component_from_db(const ComponentKey& component) 
 }
 
 void InitDeviceModelDb::update_component_variables(
-    const std::pair<ComponentKey, std::vector<DeviceModelVariable>>& db_component_variables,
+    const std::pair<const ComponentKey, std::vector<DeviceModelVariable>>& db_component_variables,
     const std::vector<DeviceModelVariable>& variables) {
     const std::vector<DeviceModelVariable>& db_variables = db_component_variables.second;
     const ComponentKey& db_component = db_component_variables.first;
@@ -1222,9 +1225,9 @@ std::vector<VariableMonitoringMeta> InitDeviceModelDb::get_variable_monitors_fro
     std::vector<VariableMonitoringMeta> monitors{};
 
     const std::string select_query =
-        "SELECT vm.TYPE_ID, vm.ID, vm.SEVERITY, vm.'TRANSACTION', vm.VALUE, vm.CONFIG_TYPE_ID, vm.REFERENCE_VALUE "
-        "FROM VARIABLE_MONITORING vm "
-        "WHERE vm.VARIABLE_ID = @variable_id";
+        std::string("SELECT vm.TYPE_ID, vm.ID, vm.SEVERITY, vm.'TRANSACTION', vm.VALUE, vm.CONFIG_TYPE_ID, "
+                    "vm.REFERENCE_VALUE FROM VARIABLE_MONITORING vm ") +
+        MONITOR_VARIABLE_JOIN + " WHERE v.ID = @variable_id";
 
     auto select_stmt = this->database->new_statement(select_query);
     select_stmt->bind_int(1, clamp_to<int>(variable_id));
@@ -1285,23 +1288,41 @@ void InitDeviceModelDb::init_sql() {
 }
 
 bool operator<(const ComponentKey& l, const ComponentKey& r) {
-    return std::tie(l.name, l.evse_id, l.connector_id, l.instance) <
-           std::tie(r.name, r.evse_id, r.connector_id, r.instance);
+    if (!iequals(l.name, r.name)) {
+        return iless(l.name, r.name);
+    }
+    if (l.evse_id.value_or(0) != r.evse_id.value_or(0)) {
+        return l.evse_id.value_or(0) < r.evse_id.value_or(0);
+    }
+    if (l.connector_id.value_or(0) != r.connector_id.value_or(0)) {
+        return l.connector_id.value_or(0) < r.connector_id.value_or(0);
+    }
+    return iless(l.instance.value_or(""), r.instance.value_or(""));
 }
 
 void from_json(const json& j, ComponentKey& c) {
     c.name = j.at("name");
 
+    // Monitors and stored values key an absent instance as '' and an absent id as 0
     if (j.contains("evse_id")) {
         c.evse_id = j.at("evse_id");
+        if (c.evse_id.value() == 0) {
+            throw ComponentConfigNameKeyError("Component " + c.name + " has evse_id 0");
+        }
     }
 
     if (j.contains("connector_id")) {
         c.connector_id = j.at("connector_id");
+        if (c.connector_id.value() == 0) {
+            throw ComponentConfigNameKeyError("Component " + c.name + " has connector_id 0");
+        }
     }
 
     if (j.contains("instance")) {
         c.instance = j.at("instance");
+        if (c.instance->empty()) {
+            throw ComponentConfigNameKeyError("Component " + c.name + " has an empty instance");
+        }
     }
 }
 
@@ -1335,16 +1356,15 @@ void from_json(const json& j, DeviceModelVariable& c) {
 
     if (j.contains("instance")) {
         c.instance = j.at("instance");
+        if (c.instance->empty()) {
+            throw ComponentConfigNameKeyError("Variable " + c.name + " has an empty instance");
+        }
     }
 
     if (j.contains(DEFAULT_SOURCE)) {
         // I want the default value as string here as it is stored in the db as a string as well.
         const json& default_value = j.at(DEFAULT_SOURCE);
         c.default_actual_value = get_string_value_from_json(default_value);
-    }
-
-    if (j.contains("source")) {
-        c.source = j.at("source");
     }
 
     if (j.contains("monitors")) {
@@ -1408,6 +1428,34 @@ void check_integrity(const std::map<ComponentKey, std::vector<DeviceModelVariabl
 
     if (has_error) {
         EVLOG_AND_THROW(InitDeviceModelDbError(final_error_message));
+    }
+}
+
+///
+/// \brief Check that no two variables of one component share a name key.
+///
+/// Monitors and stored values compare names and instances case-insensitively, so variables that differ only in case
+/// would share them. Components are keyed by ComponentKey, which compares them the same way.
+///
+/// \throws ComponentConfigNameKeyError for the first pair that shares a name key.
+///
+void check_name_keys_are_unique(const std::map<ComponentKey, std::vector<DeviceModelVariable>>& component_configs) {
+    const auto name_key_less = [](const DeviceModelVariable* l, const DeviceModelVariable* r) {
+        if (!iequals(l->name, r->name)) {
+            return iless(l->name, r->name);
+        }
+        return iless(l->instance.value_or(""), r->instance.value_or(""));
+    };
+    for (const auto& [component_key, variables] : component_configs) {
+        std::set<const DeviceModelVariable*, decltype(name_key_less)> name_keys(name_key_less);
+        for (const auto& variable : variables) {
+            const auto [earlier, inserted] = name_keys.insert(&variable);
+            if (!inserted) {
+                throw ComponentConfigNameKeyError("Variables " + get_variable_name_for_logging(**earlier) + " and " +
+                                                  get_variable_name_for_logging(variable) + " of component " +
+                                                  get_component_name_for_logging(component_key) + " share a name key");
+            }
+        }
     }
 }
 
@@ -1479,23 +1527,6 @@ bool value_is_of_type(const std::string& value, const DataEnum& type) {
  * is_..._different functions check if the objects properties are different (and as a result should be changed in
  * the database).
  */
-
-///
-/// \brief Check if the component keys are the same given their unique properties (name, evse id, connector id and
-///        instance)
-/// \param component_key1   Component key 1
-/// \param component_key2   Component key 2
-/// \return True if those are the same components.
-///
-bool is_same_component_key(const ComponentKey& component_key1, const ComponentKey& component_key2) {
-    if ((component_key1.name == component_key2.name) && (component_key1.evse_id == component_key2.evse_id) &&
-        (component_key1.connector_id == component_key2.connector_id) &&
-        (component_key1.instance == component_key2.instance)) {
-        return true;
-    }
-
-    return false;
-}
 
 ///
 /// \brief Check if the two given attributes are the same  given their unique properties (type)
@@ -1625,23 +1656,15 @@ bool is_characteristics_different(const VariableCharacteristics& c1, const Varia
 }
 
 ///
-/// \brief Check if the two variables are the same given their unique properties (name and instance).
-/// \param v1   Variable 1
-/// \param v2   Variable 2
-/// \return True if they are the same variable.
-///
-bool is_same_variable(const DeviceModelVariable& v1, const DeviceModelVariable& v2) {
-    return ((v1.name == v2.name) && (v1.instance == v2.instance));
-}
-
-///
 /// \brief Check if the two given variables are different from eachother.
 /// \param v1   Variable 1
 /// \param v2   Variable 2
 /// \return True if they are different.
 ///
 bool is_variable_different(const DeviceModelVariable& v1, const DeviceModelVariable& v2) {
-    if (is_same_variable(v1, v2) && !is_characteristics_different(v1.characteristics, v2.characteristics) &&
+    // A spelling change of the name or instance is written to the database as well
+    if (v1.name == v2.name && v1.instance == v2.instance &&
+        !is_characteristics_different(v1.characteristics, v2.characteristics) &&
         variable_has_same_monitors(v1.monitors, v2.monitors) &&
         variable_has_same_attributes(v1.attributes, v2.attributes)) {
         return false;
@@ -1721,5 +1744,9 @@ std::string get_variable_name_for_logging(const DeviceModelVariable& variable) {
     return variable_name;
 }
 } // namespace
+
+bool is_same_variable(const DeviceModelVariable& v1, const DeviceModelVariable& v2) {
+    return iequals(v1.name, v2.name) && iequals(v1.instance.value_or(""), v2.instance.value_or(""));
+}
 
 } // namespace ocpp::v2

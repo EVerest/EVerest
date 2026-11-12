@@ -9,7 +9,6 @@
   "properties": {
     "UnitTestPropertyA": {
       "variable_name": "UnitTestPropertyAName",
-      "source": "OCPP",
       "characteristics": {
         "supportsMonitoring": true,
         "dataType": "boolean"
@@ -25,7 +24,6 @@
     },
     "UnitTestPropertyB": {
       "variable_name": "UnitTestPropertyBName",
-      "source": "OCPP",
       "instance": "UnitTestInstance",
       "characteristics": {
         "supportsMonitoring": true,

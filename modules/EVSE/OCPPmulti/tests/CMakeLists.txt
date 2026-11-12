@@ -108,6 +108,8 @@ set(TEST_FILES_SQL
     2_up-variable_source.sql
     3_down-variable_required.sql
     3_up-variable_required.sql
+    4_down-device_model_ownership.sql
+    4_up-device_model_ownership.sql
 )
 set(TEST_FILES_JSON
     default_store.json

@@ -13,6 +13,7 @@
 
 #include <everest/ocpp_module_common/device_model/composed_device_model_storage.hpp>
 
+#include <ocpp/common/utils.hpp>
 #include <ocpp/v16/charge_point_configuration.hpp>
 #include <ocpp/v16/charge_point_configuration_devicemodel.hpp>
 #include <ocpp/v2/ctrlr_component_variables.hpp>
@@ -113,9 +114,9 @@ void patch_number_of_connectors(
     constexpr auto number_of_connectors_var = "NumberOfConnectors";
 
     for (auto& [component_key, variables] : component_configs) {
-        if (component_key.name == legacy_ctrlr_name) {
+        if (ocpp::iequals(component_key.name, legacy_ctrlr_name)) {
             for (auto& variable : variables) {
-                if (variable.name == number_of_connectors_var) {
+                if (ocpp::iequals(variable.name, number_of_connectors_var)) {
                     for (auto& attribute : variable.attributes) {
                         if (attribute.variable_attribute.type == ocpp::v2::AttributeEnum::Actual) {
                             attribute.value_source = "OCPP16Config";

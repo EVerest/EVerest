@@ -4,12 +4,19 @@
 #pragma once
 
 #include <ocpp/v2/ctrlr_component_variables.hpp>
+#include <ocpp/v2/device_model_interface.hpp>
 
 #include <string>
 #include <vector>
 
 using ocpp::v2::EVSE;
 using ocpp::v2::VariableCharacteristics;
+
+namespace ocpp_module_common::device_model {
+using ocpp::v2::VARIABLE_OWNER_OCPP;
+/// \brief Owner of the variables of the EverestDeviceModelStorage
+inline constexpr auto VARIABLE_OWNER_EVEREST = "EVEREST";
+} // namespace ocpp_module_common::device_model
 
 namespace EvseDefinitions {
 

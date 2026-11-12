@@ -44,12 +44,8 @@ bool is_persistent(const VariableAttribute& attribute) {
     return attribute.persistent.value_or(true);
 }
 
-/// Source of the variables whose values DeviceModel holds in memory. A variable of another source is held by the
-/// storage of that source, which changes its value without DeviceModel.
-constexpr auto OCPP_SOURCE = "OCPP";
-
 bool is_held_in_memory(const VariableMetaData& meta_data) {
-    return not meta_data.source.has_value() or meta_data.source.value() == OCPP_SOURCE;
+    return not meta_data.owner.has_value() or meta_data.owner.value() == VARIABLE_OWNER_OCPP;
 }
 
 bool allow_set_read_only_value(const Component& component, const Variable& variable,

@@ -8,7 +8,6 @@
   "properties": {
     "UnitTestPropertyA": {
       "variable_name": "UnitTestPropertyAName",
-      "source": "OCPP",
       "characteristics": {
         "supportsMonitoring": true,
         "dataType": "boolean"

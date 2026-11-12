@@ -15,6 +15,24 @@
 namespace ocpp {
 namespace v2 {
 
+/// \brief A monitor as stored, together with the identity of the variable it belongs to
+struct StoredMonitor {
+    Component component;
+    Variable variable;
+    VariableMonitoringMeta monitor;
+};
+
+/// \brief A stored attribute value of a variable that has no row in the component tables
+struct StoredVariableValue {
+    Component component;
+    Variable variable;
+    AttributeEnum attribute;
+    std::string value;
+    std::optional<std::string> value_source;
+    /// \brief The owner of the variable when the value was stored, if known
+    std::optional<std::string> owner;
+};
+
 /// \brief Abstract base class for device model interface. This class provides an interface for accessing and modifying
 /// device model data. Implementations of this class should provide concrete implementations for the virtual methods
 /// declared here.
@@ -60,9 +78,12 @@ public:
                                                                const AttributeEnum& attribute_enum,
                                                                const std::string& value, const std::string& source) = 0;
 
-    /// \brief Inserts or replaces a variable monitor in the database
+    /// \brief Inserts or replaces a variable monitor in the database. The storage does not check that the variable
+    /// exists, so a monitor of a variable without a row in the component tables is stored but not attached by
+    /// get_device_model; the caller validates the variable against its device model. The monitor is stored without
+    /// an owner.
     /// \param data Monitor data to set
-    /// \return true if the value could be inserted, or valse otherwise
+    /// \return the stored monitor, or std::nullopt if it could not be stored
     virtual std::optional<VariableMonitoringMeta> set_monitoring_data(const SetMonitoringData& data,
                                                                       const VariableMonitorType type) = 0;
 
@@ -72,16 +93,6 @@ public:
     /// \param reference_value Value to replace the reference with
     /// \return true if the reference value could be updated, false otherwise
     virtual bool update_monitoring_reference(const std::int32_t monitor_id, const std::string& reference_value) = 0;
-
-    /// \brief Returns all the monitors currently in the database based
-    /// on the provided filtering criteria
-    /// \param criteria
-    /// \param component_id
-    /// \param variable_id
-    /// \return the monitoring data if it could be found or an empty vector
-    virtual std::vector<VariableMonitoringMeta>
-    get_monitoring_data(const std::vector<MonitoringCriterionEnum>& criteria, const Component& component_id,
-                        const Variable& variable_id) = 0;
 
     /// \brief Clears a single monitor based on the ID from the database
     /// \param monitor_id Monitor ID
@@ -94,6 +105,29 @@ public:
     /// from the database
     /// \return count of monitors deleted, or 0 if none were deleted
     virtual std::int32_t clear_custom_variable_monitors() = 0;
+
+    /// \brief Returns every stored monitor, including monitors of variables that have no row in the component tables
+    virtual std::vector<StoredMonitor> get_all_monitors() = 0;
+
+    /// \brief Returns the attribute values that are stored by component and variable identity, because their
+    /// variables have no row in the component tables
+    virtual std::vector<StoredVariableValue> get_stored_values() {
+        return {};
+    }
+
+    /// \brief Stores \p value by component and variable identity, together with the owner of the variable. The
+    /// storage does not check that the variable has no row in the component tables; the caller stores values of
+    /// registered variables only.
+    virtual SetVariableStatusEnum set_stored_value(const StoredVariableValue& /*value*/) {
+        return SetVariableStatusEnum::Rejected;
+    }
+
+    /// \brief Removes a value returned by get_stored_values
+    /// \return true if a value was removed
+    virtual bool remove_stored_value(const Component& /*component_id*/, const Variable& /*variable_id*/,
+                                     const AttributeEnum& /*attribute_enum*/) {
+        return false;
+    }
 
     /// \brief Check data integrity of the stored data:
     /// For "required" variables, assert values exist. Checks might be extended in the future.
