@@ -77,6 +77,7 @@ void evse_manager_consumer_API::init() {
     generate_api_var_selected_protocol();
     generate_api_var_powermeter_public_key_ocmf();
     generate_api_var_supported_energy_transfer_modes();
+    generate_api_var_all_errors_cleared();
 
     generate_api_var_ac_nr_of_phases_available();
     generate_api_var_ac_pp_ampacity();
@@ -282,6 +283,10 @@ void evse_manager_consumer_API::generate_api_var_supported_energy_transfer_modes
 
 void evse_manager_consumer_API::generate_api_var_powermeter_public_key_ocmf() {
     r_evse_manager->subscribe_powermeter_public_key_ocmf(forward_and_cache_api_var("powermeter_public_key_ocmf"));
+}
+
+void evse_manager_consumer_API::generate_api_var_all_errors_cleared() {
+    r_evse_manager->subscribe_all_errors_cleared(forward_api_var("all_errors_cleared"));
 }
 
 void evse_manager_consumer_API::generate_api_var_ac_nr_of_phases_available() {
