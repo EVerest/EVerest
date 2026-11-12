@@ -9,7 +9,6 @@ inherit python_setuptools_build_meta
 PEP517_SOURCE_PATH = "${S}/applications/utils/ev-dev-tools"
 
 RDEPENDS:${PN} = " \
-    pip-stringcase \
     python3-jsonschema \
     python3-pyyaml \
     python3-jinja2 \
