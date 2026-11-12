@@ -3016,6 +3016,8 @@ void Charger::emergency_shutdown() {
 
     // open contactors
     bsp->allow_power_on(false, types::evse_board_support::Reason::PowerOff);
+    // X1 ends the HLC session, and with it its permission to close: a resume needs a new session.
+    shared_context.hlc_allow_close_contactor = false;
     this->signal_hlc_error(types::iso15118::EvseError::Error_EmergencyShutdown);
 }
 
@@ -3024,9 +3026,11 @@ void Charger::error_shutdown() {
     EVLOG_info << "Initiating error shutdown";
     // we keep the PWM on. This allows us to keep the HLC session active and send the error to the EV
 
-    // Shutdown DC power supplies
+    // Shutdown DC power supplies. A DC resume runs a new cable check, which grants the HLC permission to close
+    // again; until then the one from before the error must not close the contactors.
     if (config_context.charge_mode == ChargeMode::DC) {
         signal_dc_supply_off();
+        shared_context.hlc_allow_close_contactor = false;
     }
 
     // open contactors
