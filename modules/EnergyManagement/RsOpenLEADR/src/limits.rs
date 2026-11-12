@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright Pionix GmbH and Contributors to EVerest
 //! Conversion of OpenADR 3 events into EVerest external energy limits.
 //!
 //! `IMPORT_CAPACITY_LIMIT` payloads become `schedule_import` entries and

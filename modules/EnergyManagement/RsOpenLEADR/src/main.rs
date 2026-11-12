@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright Pionix GmbH and Contributors to EVerest
 // EVerest expects binaries to be CamelCased, and Rust wants them to be snake_case. We yield to
 // EVerest and shut up the compiler warning.
 #![allow(non_snake_case)]

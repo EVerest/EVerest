@@ -44,4 +44,5 @@ metadata:
   license: https://opensource.org/licenses/Apache-2.0
   authors:
     - Ruben Nijveld
+    - Kai-Uwe Hermann
 enable_external_mqtt: false
