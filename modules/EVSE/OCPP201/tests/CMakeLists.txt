@@ -13,6 +13,7 @@ target_include_directories(${TEST_TARGET_NAME} PUBLIC
 target_sources(${TEST_TARGET_NAME}
     PRIVATE
     ocpp_conversions_test.cpp
+    transaction_id_tags_test.cpp
 )
 
 target_link_libraries(${TEST_TARGET_NAME}
