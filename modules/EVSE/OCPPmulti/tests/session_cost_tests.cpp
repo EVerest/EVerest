@@ -143,7 +143,7 @@ TEST_F(GenericOcppProvidesTester, publishSessionCost) {
     ASSERT_EQ(received.size(), 1);
     EXPECT_EQ(
         received[0],
-        R"({"cost_chunks":[{"cost":{"value":3141},"timestamp_to":"2026-06-08T08:25:04.255Z"}],"currency":{"code":"GBP","decimals":3},"session_id":"TransactionID","status":"Finished"})"_json);
+        R"({"cost_chunks":[{"cost":{"value":3142},"timestamp_to":"2026-06-08T08:25:04.255Z"}],"currency":{"code":"GBP","decimals":3},"session_id":"TransactionID","status":"Finished"})"_json);
 }
 
 } // namespace

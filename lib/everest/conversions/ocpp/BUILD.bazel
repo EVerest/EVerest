@@ -1,4 +1,5 @@
-load("@rules_cc//cc:defs.bzl", "cc_library")
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("//third-party/bazel/toolchains:defs.bzl", "CROSS_TEST_INCOMPATIBLE")
 
 cc_library(
     name = "ocpp_evse_security",
@@ -41,5 +42,16 @@ cc_library(
         "//lib/everest/framework:framework",
         "//lib/everest/ocpp:libocpp",
         "//types:types_lib",
+    ],
+)
+
+cc_test(
+    name = "ocpp_conversions_tests",
+    srcs = ["tests/ocpp_conversions_test.cpp"],
+    linkstatic = True,
+    target_compatible_with = CROSS_TEST_INCOMPATIBLE,
+    deps = [
+        ":ocpp_conversions",
+        "@googletest//:gtest_main",
     ],
 )
