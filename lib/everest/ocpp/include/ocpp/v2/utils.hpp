@@ -95,12 +95,6 @@ std::vector<OcppProtocolVersion> get_ocpp_protocol_versions(const std::string& c
 bool filter_criteria_monitor(const std::vector<MonitoringCriterionEnum>& criteria,
                              const VariableMonitoringMeta& monitor);
 
-/// \brief Filters the given monitors based on the given criteria
-/// \param criteria applied criteria
-/// \param monitors monitors to filter, will be modified in place
-void filter_criteria_monitors(const std::vector<MonitoringCriterionEnum>& criteria,
-                              std::vector<VariableMonitoringMeta>& monitors);
-
 } // namespace utils
 } // namespace v2
 } // namespace ocpp

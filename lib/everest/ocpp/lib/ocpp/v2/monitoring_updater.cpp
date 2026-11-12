@@ -13,24 +13,44 @@
 namespace ocpp::v2 {
 
 namespace {
+/// \returns the reference of a Delta monitor, none when it is unset or cannot be evaluated
+template <DataEnum T>
+std::optional<decltype(to_specific_type_auto<T>(std::string{}))>
+get_delta_reference(const VariableMonitoringMeta& monitor_meta) {
+    if (!monitor_meta.reference_value.has_value() || monitor_meta.reference_value->empty()) {
+        return std::nullopt;
+    }
+    try {
+        return to_specific_type_auto<T>(monitor_meta.reference_value.value());
+    } catch (const std::exception& e) {
+        EVLOG_warning << "Reference [" << monitor_meta.reference_value.value() << "] of delta monitor "
+                      << monitor_meta.monitor.id << " cannot be evaluated and is ignored: " << e.what();
+        return std::nullopt;
+    }
+}
+
 template <DataEnum T>
 bool triggers_monitor(const VariableMonitoringMeta& monitor_meta, const std::string& value_old,
                       const std::string& value_new) {
     if constexpr (T == DataEnum::boolean) {
         return (value_old != value_new);
     } else {
-        auto raw_val_current = to_specific_type_auto<T>(value_new);
-
         if (monitor_meta.monitor.type == MonitorEnum::Delta) {
-            if (monitor_meta.reference_value.has_value()) {
-                auto raw_val_reference = to_specific_type_auto<T>(monitor_meta.reference_value.value());
-                auto delta = std::abs(raw_val_reference - raw_val_current);
-
-                return (delta > monitor_meta.monitor.value);
+            const auto raw_val_reference = get_delta_reference<T>(monitor_meta);
+            // N07.FR.18: a monitor without a reference triggers on the first value, which becomes the reference
+            if (!raw_val_reference.has_value()) {
+                if (value_new.empty()) {
+                    return false;
+                }
+                // An unparsable value throws here, so it never becomes the reference
+                static_cast<void>(to_specific_type_auto<T>(value_new));
+                return true;
             }
-            EVLOG_error << "Invalid reference value for monitor: " << monitor_meta.monitor;
-            return false;
+            auto delta = std::abs(raw_val_reference.value() - to_specific_type_auto<T>(value_new));
+            return (delta > monitor_meta.monitor.value);
         }
+
+        auto raw_val_current = to_specific_type_auto<T>(value_new);
         if (monitor_meta.monitor.type == MonitorEnum::LowerThreshold) {
             return (raw_val_current < monitor_meta.monitor.value);
         }
@@ -241,39 +261,52 @@ void MonitoringUpdater::evaluate_monitor(State& state, const VariableMonitoringM
         return;
     }
 
-    bool monitor_triggered = false;
-
-    // N07.FR.19 - Based on this it seems that OptionList, SequenceList, MemberList will
-    // cause a trigger if the value is changed regardless of the content (or monitor delta)
-    if ((characteristics.dataType == DataEnum::boolean) || (characteristics.dataType == DataEnum::string) ||
-        (characteristics.dataType == DataEnum::dateTime) || (characteristics.dataType == DataEnum::OptionList) ||
-        (characteristics.dataType == DataEnum::MemberList) || (characteristics.dataType == DataEnum::SequenceList)) {
-        monitor_triggered = triggers_monitor<DataEnum::boolean>(monitor_meta, value_previous, value_current);
-    } else if (characteristics.dataType == DataEnum::decimal) {
-        monitor_triggered = triggers_monitor<DataEnum::decimal>(monitor_meta, value_previous, value_current);
-    } else if (characteristics.dataType == DataEnum::integer) {
-        monitor_triggered = triggers_monitor<DataEnum::integer>(monitor_meta, value_previous, value_current);
-    } else {
-        EVLOG_error << "Requested unsupported 'DataEnum' type: "
-                    << conversions::data_enum_to_string(characteristics.dataType);
-        return;
-    }
-
-    EVLOG_debug << "Monitor: " << monitor_meta.monitor << " was triggered on var change: [" << monitor_triggered
-                << "] with previous value: [" << loggable_value(attribute, value_previous) << "] and current: ["
-                << loggable_value(attribute, value_current) << "]";
-
-    auto monitor_id = monitor_meta.monitor.id;
     auto& updater_monitors_meta = state.updater_monitors_meta;
-    auto it = updater_monitors_meta.find(monitor_id);
+    auto it = updater_monitors_meta.find(monitor_meta.monitor.id);
 
-    // Always update the current values is the trigger is found
+    // Always update the current values if the trigger is found, also when the value cannot be evaluated: a pending
+    // event reports the current value
     if (it != std::end(updater_monitors_meta)) {
         auto& triggered_meta = it->second;
 
         triggered_meta.value_previous = value_previous;
         triggered_meta.value_current = value_current;
+        triggered_meta.delta_reference.clear();
     }
+
+    bool monitor_triggered = false;
+
+    try {
+        // N07.FR.19 - Based on this it seems that OptionList, SequenceList, MemberList will
+        // cause a trigger if the value is changed regardless of the content (or monitor delta)
+        if ((characteristics.dataType == DataEnum::boolean) || (characteristics.dataType == DataEnum::string) ||
+            (characteristics.dataType == DataEnum::dateTime) || (characteristics.dataType == DataEnum::OptionList) ||
+            (characteristics.dataType == DataEnum::MemberList) ||
+            (characteristics.dataType == DataEnum::SequenceList)) {
+            monitor_triggered = triggers_monitor<DataEnum::boolean>(monitor_meta, value_previous, value_current);
+        } else if (characteristics.dataType == DataEnum::decimal) {
+            monitor_triggered = triggers_monitor<DataEnum::decimal>(monitor_meta, value_previous, value_current);
+        } else if (characteristics.dataType == DataEnum::integer) {
+            monitor_triggered = triggers_monitor<DataEnum::integer>(monitor_meta, value_previous, value_current);
+        } else {
+            EVLOG_error << "Requested unsupported 'DataEnum' type: "
+                        << conversions::data_enum_to_string(characteristics.dataType);
+            return;
+        }
+    } catch (const std::exception& e) {
+        EVLOG_warning << "Could not evaluate monitor " << monitor_meta.monitor.id << " on variable "
+                      << variable.name.get() << " with value [" << loggable_value(attribute, value_current)
+                      << "]: " << e.what();
+        return;
+    }
+
+    if (it != std::end(updater_monitors_meta)) {
+        it->second.delta_reference = value_current;
+    }
+
+    EVLOG_debug << "Monitor: " << monitor_meta.monitor << " was triggered on var change: [" << monitor_triggered
+                << "] with previous value: [" << loggable_value(attribute, value_previous) << "] and current: ["
+                << loggable_value(attribute, value_current) << "]";
 
     if (monitor_triggered) {
         if (it == std::end(updater_monitors_meta)) {
@@ -289,6 +322,7 @@ void MonitoringUpdater::evaluate_monitor(State& state, const VariableMonitoringM
             // Update new current values
             triggered_meta.value_previous = value_previous;
             triggered_meta.value_current = value_current;
+            triggered_meta.delta_reference = value_current;
 
             TriggerMetadata metadata;
             metadata.is_csms_sent = 0;
@@ -539,9 +573,11 @@ void MonitoringUpdater::process_monitor_meta_internal(State& state, UpdaterMonit
                 std::move(create_notify_event(state.unique_id++, reported_value, updater_meta_data.component,
                                               updater_meta_data.variable, updater_meta_data.monitor_meta));
 
-            // N07.FR.18, N07.FR.19 - the cleared attribute does not apply to deltas
+            // N07.FR.18, N07.FR.19 - the cleared attribute does not apply to deltas. The reference is the value at the
+            // time of the event when it can be evaluated, otherwise none. A WriteOnly variable reports '' but keeps
+            // its value as the reference, since the reference must be the real value
             if (monitor.type == MonitorEnum::Delta) {
-                update_delta_reference(monitor.id, updater_meta_data.value_current);
+                update_delta_reference(monitor.id, updater_meta_data.delta_reference);
             } else {
                 // Mark if the event is cleared (returned to normal) if that is the case
                 notify_event.cleared = (updater_meta_data.meta_trigger.is_cleared == 1);

@@ -30,10 +30,6 @@ bool is_special_case_key(const std::string& key) {
     return keys.count(key) || key.rfind("DefaultPriceText,", 0) == 0;
 }
 
-bool is_same_variable(const DeviceModelVariable& v1, const DeviceModelVariable& v2) {
-    return ((v1.name == v2.name) && (v1.instance == v2.instance));
-}
-
 // Convert a ChargingScheduleAllowedChargingRateUnit CSL from OCPP 1.6 notation ("Current", "Power")
 // to OCPP 2.x SmartChargingCtrlr.RateUnit notation ("A", "W"). Unknown tokens pass through unchanged.
 std::string charging_rate_unit_csl_v16_to_v2(const std::string& v16_csl) {

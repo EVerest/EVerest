@@ -289,24 +289,6 @@ bool filter_criteria_monitor(const std::vector<MonitoringCriterionEnum>& criteri
     return any_filter_match;
 }
 
-void filter_criteria_monitors(const std::vector<MonitoringCriterionEnum>& criteria,
-                              std::vector<VariableMonitoringMeta>& monitors) {
-    // N02.FR.11 - if no criteria is provided, all monitors are left
-    if (criteria.empty()) {
-        return;
-    }
-
-    for (auto it = std::begin(monitors); it != std::end(monitors);) {
-        const bool any_filter_match = filter_criteria_monitor(criteria, *it);
-
-        if (any_filter_match == false) {
-            it = monitors.erase(it);
-        } else {
-            ++it;
-        }
-    }
-}
-
 } // namespace utils
 } // namespace v2
 } // namespace ocpp

@@ -2,6 +2,7 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 
 #include <algorithm>
+#include <stdexcept>
 #include <string_view>
 
 #include <everest/logging.hpp>
@@ -22,7 +23,8 @@ using ocpp::v2::VariableCharacteristics;
 using ocpp::v2::VariableMap;
 using ocpp::v2::VariableMetaData;
 
-static constexpr auto VARIABLE_SOURCE_EVEREST = "EVEREST";
+// The value source of every value this storage writes
+static constexpr auto VALUE_SOURCE_EVEREST = "EVEREST";
 static constexpr auto NUMBER_OF_CONNECTED_EV_PROTOCOLS = 20;
 
 using ocpp::v2::ComponentKey;
@@ -152,7 +154,6 @@ DeviceModelVariable make_variable(const std::string& name, const ocpp::v2::Varia
     DeviceModelVariable var_data;
     var_data.name = name;
     var_data.characteristics = characteristics;
-    var_data.source = VARIABLE_SOURCE_EVEREST;
 
     DbVariableAttribute db_attr;
     VariableAttribute attr;
@@ -174,7 +175,6 @@ make_variable_with_instance(const std::string& name, const std::string& instance
     var_data.name = name;
     var_data.instance = instance;
     var_data.characteristics = characteristics;
-    var_data.source = VARIABLE_SOURCE_EVEREST;
 
     DbVariableAttribute db_attr;
     VariableAttribute attr;
@@ -257,16 +257,19 @@ std::vector<DeviceModelVariable> build_connected_ev_variables() {
                       ConnectedEVDefinitions::Characteristics::VehicleId, ""),
         make_variable(ocpp::v2::ConnectedEvComponentVariables::ProtocolAgreed.name,
                       ConnectedEVDefinitions::Characteristics::ProtocolAgreed, ""),
-        make_variable(ocpp::v2::ConnectedEvComponentVariables::VehicleCertificateLeaf.name,
-                      ConnectedEVDefinitions::Characteristics::VehicleCertificateLeaf, ""),
-        make_variable(ocpp::v2::ConnectedEvComponentVariables::VehicleCertificateSubCa1.name,
-                      ConnectedEVDefinitions::Characteristics::VehicleCertificateSubCa1, ""),
-        make_variable(ocpp::v2::ConnectedEvComponentVariables::VehicleCertificateSubCa2.name,
-                      ConnectedEVDefinitions::Characteristics::VehicleCertificateSubCa2, ""),
-        make_variable(ocpp::v2::ConnectedEvComponentVariables::VehicleCertificateRoot.name,
-                      ConnectedEVDefinitions::Characteristics::VehicleCertificateRoot, "")};
-    const int number_of_variables = NUMBER_OF_CONNECTED_EV_PROTOCOLS + connected_ev_variables.size();
-    connected_ev_variables.resize(number_of_variables);
+        make_variable_with_instance(ocpp::v2::ConnectedEvComponentVariables::VehicleCertificateLeaf.name,
+                                    ocpp::v2::ConnectedEvComponentVariables::VehicleCertificateLeaf.instance->get(),
+                                    ConnectedEVDefinitions::Characteristics::VehicleCertificateLeaf, ""),
+        make_variable_with_instance(ocpp::v2::ConnectedEvComponentVariables::VehicleCertificateSubCa1.name,
+                                    ocpp::v2::ConnectedEvComponentVariables::VehicleCertificateSubCa1.instance->get(),
+                                    ConnectedEVDefinitions::Characteristics::VehicleCertificateSubCa1, ""),
+        make_variable_with_instance(ocpp::v2::ConnectedEvComponentVariables::VehicleCertificateSubCa2.name,
+                                    ocpp::v2::ConnectedEvComponentVariables::VehicleCertificateSubCa2.instance->get(),
+                                    ConnectedEVDefinitions::Characteristics::VehicleCertificateSubCa2, ""),
+        make_variable_with_instance(ocpp::v2::ConnectedEvComponentVariables::VehicleCertificateRoot.name,
+                                    ocpp::v2::ConnectedEvComponentVariables::VehicleCertificateRoot.instance->get(),
+                                    ConnectedEVDefinitions::Characteristics::VehicleCertificateRoot, "")};
+    connected_ev_variables.reserve(connected_ev_variables.size() + NUMBER_OF_CONNECTED_EV_PROTOCOLS);
 
     std::string variable_name = ocpp::v2::ConnectedEvComponentVariables::get_protocol_supported_by_ev(1).name;
     for (int i = 1; i <= NUMBER_OF_CONNECTED_EV_PROTOCOLS; ++i) {
@@ -653,7 +656,7 @@ void force_false(ocpp::v2::DeviceModelStorageInterface& storage,
         return;
     }
     storage.set_variable_attribute_value(component_variable.component, variable, ocpp::v2::AttributeEnum::Actual,
-                                         "false", VARIABLE_SOURCE_EVEREST);
+                                         "false", VALUE_SOURCE_EVEREST);
 }
 
 } // namespace
@@ -779,7 +782,14 @@ EverestDeviceModelStorage::EverestDeviceModelStorage(
             }
         }
 
-        component_configs[component_key] = build_everest_config_variables(module_config);
+        // Component names and instances are case-insensitive, so module ids that differ only in case collide
+        const auto [existing, inserted] =
+            component_configs.emplace(component_key, build_everest_config_variables(module_config));
+        if (!inserted) {
+            throw std::runtime_error("Module " + module_id_type.module_id + " of type " + module_id_type.module_type +
+                                     " maps to the same device model component as module " +
+                                     existing->first.instance.value_or("") + " of type " + existing->first.name);
+        }
     }
 
     ocpp::v2::InitDeviceModelDb init_device_model_db(db_path, migration_files_path);
@@ -837,8 +847,7 @@ void EverestDeviceModelStorage::init_evse_components_and_variables(
                 std::lock_guard<std::mutex> lock(device_model_mutex);
                 this->device_model_storage->set_variable_attribute_value(
                     component, ocpp::v2::ConnectorComponentVariables::Type, ocpp::v2::AttributeEnum::Actual,
-                    types::evse_manager::connector_type_enum_to_string(connector.type.value()),
-                    VARIABLE_SOURCE_EVEREST);
+                    types::evse_manager::connector_type_enum_to_string(connector.type.value()), VALUE_SOURCE_EVEREST);
             }
         }
     }
@@ -888,7 +897,7 @@ void EverestDeviceModelStorage::init_everest_config() {
                     std::lock_guard<std::mutex> lock(device_model_mutex);
                     this->device_model_storage->set_variable_attribute_value(
                         component, variable, ocpp::v2::AttributeEnum::Actual,
-                        get_everest_config_value(module_config, impl, config_param.name), VARIABLE_SOURCE_EVEREST);
+                        get_everest_config_value(module_config, impl, config_param.name), VALUE_SOURCE_EVEREST);
                 } catch (const std::exception& e) {
                     EVLOG_error << "Could not initialize EVerest config entry in OCPP device model: " << e.what();
                 }
@@ -902,7 +911,7 @@ void EverestDeviceModelStorage::update_hw_capabilities(
     std::lock_guard<std::mutex> lock(device_model_mutex);
     this->device_model_storage->set_variable_attribute_value(
         evse_component, ocpp::v2::EvseComponentVariables::SupplyPhases, ocpp::v2::AttributeEnum::Actual,
-        std::to_string(hw_capabilities.max_phase_count_import), VARIABLE_SOURCE_EVEREST);
+        std::to_string(hw_capabilities.max_phase_count_import), VALUE_SOURCE_EVEREST);
     // TODO: update EVSE.Power maxLimit value once device model storage interface supports it
 }
 
@@ -913,7 +922,7 @@ void EverestDeviceModelStorage::update_supported_energy_transfers(
     std::lock_guard<std::mutex> lock(device_model_mutex);
     this->device_model_storage->set_variable_attribute_value(
         evse_component, ocpp::v2::V2xComponentVariables::SupportedEnergyTransferModes, ocpp::v2::AttributeEnum::Actual,
-        supported_string, VARIABLE_SOURCE_EVEREST);
+        supported_string, VALUE_SOURCE_EVEREST);
 }
 
 void EverestDeviceModelStorage::update_supported_operation_modes(
@@ -923,7 +932,7 @@ void EverestDeviceModelStorage::update_supported_operation_modes(
     std::lock_guard<std::mutex> lock(device_model_mutex);
     this->device_model_storage->set_variable_attribute_value(
         evse_component, ocpp::v2::V2xComponentVariables::SupportedOperationModes, ocpp::v2::AttributeEnum::Actual,
-        supported_string, VARIABLE_SOURCE_EVEREST);
+        supported_string, VALUE_SOURCE_EVEREST);
 }
 
 void EverestDeviceModelStorage::update_service_renegotiation_supported(const ocpp::v2::Component& iso15118_component,
@@ -931,7 +940,7 @@ void EverestDeviceModelStorage::update_service_renegotiation_supported(const ocp
     std::lock_guard<std::mutex> lock(device_model_mutex);
     this->device_model_storage->set_variable_attribute_value(
         iso15118_component, ocpp::v2::ISO15118ComponentVariables::ServiceRenegotiationSupport,
-        ocpp::v2::AttributeEnum::Actual, service_renegotiation_supported ? "true" : "false", VARIABLE_SOURCE_EVEREST);
+        ocpp::v2::AttributeEnum::Actual, service_renegotiation_supported ? "true" : "false", VALUE_SOURCE_EVEREST);
 }
 
 void EverestDeviceModelStorage::update_connected_ev_information(const ocpp::v2::Component& connected_ev_component,
@@ -940,37 +949,37 @@ void EverestDeviceModelStorage::update_connected_ev_information(const ocpp::v2::
     // We update to true even though it should already be true as a precaution
     this->device_model_storage->set_variable_attribute_value(
         connected_ev_component, ocpp::v2::ConnectedEvComponentVariables::Available, ocpp::v2::AttributeEnum::Actual,
-        "true", VARIABLE_SOURCE_EVEREST);
+        "true", VALUE_SOURCE_EVEREST);
     this->device_model_storage->set_variable_attribute_value(
         connected_ev_component, ocpp::v2::ConnectedEvComponentVariables::VehicleId, ocpp::v2::AttributeEnum::Actual,
-        ev_information.evcc_id, VARIABLE_SOURCE_EVEREST);
+        ev_information.evcc_id, VALUE_SOURCE_EVEREST);
     this->device_model_storage->set_variable_attribute_value(
         connected_ev_component, ocpp::v2::ConnectedEvComponentVariables::ProtocolAgreed,
         ocpp::v2::AttributeEnum::Actual,
         build_supported_protocol_string(ev_information.selected_protocol.protocol_namespace,
                                         ev_information.selected_protocol.version_number_major,
                                         ev_information.selected_protocol.version_number_minor),
-        VARIABLE_SOURCE_EVEREST);
+        VALUE_SOURCE_EVEREST);
     this->device_model_storage->set_variable_attribute_value(
         connected_ev_component, ocpp::v2::ConnectedEvComponentVariables::VehicleCertificateLeaf,
         ocpp::v2::AttributeEnum::Actual,
         ev_information.tls_leaf_certificate.has_value() ? ev_information.tls_leaf_certificate.value() : "",
-        VARIABLE_SOURCE_EVEREST);
+        VALUE_SOURCE_EVEREST);
     this->device_model_storage->set_variable_attribute_value(
         connected_ev_component, ocpp::v2::ConnectedEvComponentVariables::VehicleCertificateSubCa1,
         ocpp::v2::AttributeEnum::Actual,
         ev_information.tls_sub_ca_1_certificate.has_value() ? ev_information.tls_sub_ca_1_certificate.value() : "",
-        VARIABLE_SOURCE_EVEREST);
+        VALUE_SOURCE_EVEREST);
     this->device_model_storage->set_variable_attribute_value(
         connected_ev_component, ocpp::v2::ConnectedEvComponentVariables::VehicleCertificateSubCa2,
         ocpp::v2::AttributeEnum::Actual,
         ev_information.tls_sub_ca_2_certificate.has_value() ? ev_information.tls_sub_ca_2_certificate.value() : "",
-        VARIABLE_SOURCE_EVEREST);
+        VALUE_SOURCE_EVEREST);
     this->device_model_storage->set_variable_attribute_value(
         connected_ev_component, ocpp::v2::ConnectedEvComponentVariables::VehicleCertificateRoot,
         ocpp::v2::AttributeEnum::Actual,
         ev_information.tls_root_certificate.has_value() ? ev_information.tls_root_certificate.value() : "",
-        VARIABLE_SOURCE_EVEREST);
+        VALUE_SOURCE_EVEREST);
     for (const auto& protocol : ev_information.supported_protocols.Protocols) {
         this->device_model_storage->set_variable_attribute_value(
             connected_ev_component,
@@ -978,7 +987,7 @@ void EverestDeviceModelStorage::update_connected_ev_information(const ocpp::v2::
             ocpp::v2::AttributeEnum::Actual,
             build_supported_protocol_string(protocol.protocol_namespace, protocol.version_number_major,
                                             protocol.version_number_minor),
-            VARIABLE_SOURCE_EVEREST);
+            VALUE_SOURCE_EVEREST);
     }
 }
 
@@ -987,30 +996,30 @@ void EverestDeviceModelStorage::update_connected_ev_available(const int32_t evse
     std::lock_guard<std::mutex> lock(device_model_mutex);
     this->device_model_storage->set_variable_attribute_value(
         connected_ev_component, ocpp::v2::ConnectedEvComponentVariables::Available, ocpp::v2::AttributeEnum::Actual,
-        connected ? "true" : "false", VARIABLE_SOURCE_EVEREST);
+        connected ? "true" : "false", VALUE_SOURCE_EVEREST);
     if (!connected) {
         this->device_model_storage->set_variable_attribute_value(
             connected_ev_component, ocpp::v2::ConnectedEvComponentVariables::VehicleId, ocpp::v2::AttributeEnum::Actual,
-            "", VARIABLE_SOURCE_EVEREST);
+            "", VALUE_SOURCE_EVEREST);
         this->device_model_storage->set_variable_attribute_value(
             connected_ev_component, ocpp::v2::ConnectedEvComponentVariables::ProtocolAgreed,
-            ocpp::v2::AttributeEnum::Actual, "", VARIABLE_SOURCE_EVEREST);
+            ocpp::v2::AttributeEnum::Actual, "", VALUE_SOURCE_EVEREST);
         this->device_model_storage->set_variable_attribute_value(
             connected_ev_component, ocpp::v2::ConnectedEvComponentVariables::VehicleCertificateLeaf,
-            ocpp::v2::AttributeEnum::Actual, "", VARIABLE_SOURCE_EVEREST);
+            ocpp::v2::AttributeEnum::Actual, "", VALUE_SOURCE_EVEREST);
         this->device_model_storage->set_variable_attribute_value(
             connected_ev_component, ocpp::v2::ConnectedEvComponentVariables::VehicleCertificateSubCa1,
-            ocpp::v2::AttributeEnum::Actual, "", VARIABLE_SOURCE_EVEREST);
+            ocpp::v2::AttributeEnum::Actual, "", VALUE_SOURCE_EVEREST);
         this->device_model_storage->set_variable_attribute_value(
             connected_ev_component, ocpp::v2::ConnectedEvComponentVariables::VehicleCertificateSubCa2,
-            ocpp::v2::AttributeEnum::Actual, "", VARIABLE_SOURCE_EVEREST);
+            ocpp::v2::AttributeEnum::Actual, "", VALUE_SOURCE_EVEREST);
         this->device_model_storage->set_variable_attribute_value(
             connected_ev_component, ocpp::v2::ConnectedEvComponentVariables::VehicleCertificateRoot,
-            ocpp::v2::AttributeEnum::Actual, "", VARIABLE_SOURCE_EVEREST);
+            ocpp::v2::AttributeEnum::Actual, "", VALUE_SOURCE_EVEREST);
         for (int i = 1; i <= NUMBER_OF_CONNECTED_EV_PROTOCOLS; ++i) {
             this->device_model_storage->set_variable_attribute_value(
                 connected_ev_component, ocpp::v2::ConnectedEvComponentVariables::get_protocol_supported_by_ev(i),
-                ocpp::v2::AttributeEnum::Actual, "", VARIABLE_SOURCE_EVEREST);
+                ocpp::v2::AttributeEnum::Actual, "", VALUE_SOURCE_EVEREST);
         }
     }
 }
@@ -1020,7 +1029,7 @@ void EverestDeviceModelStorage::update_connected_ev_vehicle_id(const int32_t evs
     std::lock_guard<std::mutex> lock(device_model_mutex);
     this->device_model_storage->set_variable_attribute_value(
         connected_ev_component, ocpp::v2::ConnectedEvComponentVariables::VehicleId, ocpp::v2::AttributeEnum::Actual,
-        vehicle_id, VARIABLE_SOURCE_EVEREST);
+        vehicle_id, VALUE_SOURCE_EVEREST);
 }
 
 void EverestDeviceModelStorage::update_power(const int32_t evse_id, const float total_power_active_import) {
@@ -1028,12 +1037,20 @@ void EverestDeviceModelStorage::update_power(const int32_t evse_id, const float 
     Component evse_component = get_evse_component(evse_id);
     this->device_model_storage->set_variable_attribute_value(
         evse_component, ocpp::v2::EvseComponentVariables::Power, ocpp::v2::AttributeEnum::Actual,
-        std::to_string(total_power_active_import), VARIABLE_SOURCE_EVEREST);
+        std::to_string(total_power_active_import), VALUE_SOURCE_EVEREST);
 }
 
 ocpp::v2::DeviceModelMap EverestDeviceModelStorage::get_device_model() {
     std::lock_guard<std::mutex> lock(device_model_mutex);
-    return this->device_model_storage->get_device_model();
+    auto device_model_map = this->device_model_storage->get_device_model();
+    // This storage changes the values of its variables behind the DeviceModel, which reads a variable with an
+    // owner other than OCPP through the storage. The composed storage routes requests by the same owner.
+    for (auto& [component, variable_map] : device_model_map) {
+        for (auto& [variable, variable_meta] : variable_map) {
+            variable_meta.owner = VARIABLE_OWNER_EVEREST;
+        }
+    }
+    return device_model_map;
 }
 
 std::optional<ocpp::v2::VariableAttribute>
@@ -1125,14 +1142,6 @@ bool EverestDeviceModelStorage::update_monitoring_reference(const int32_t monito
     return this->device_model_storage->update_monitoring_reference(monitor_id, reference_value);
 }
 
-std::vector<ocpp::v2::VariableMonitoringMeta>
-EverestDeviceModelStorage::get_monitoring_data(const std::vector<ocpp::v2::MonitoringCriterionEnum>& criteria,
-                                               const ocpp::v2::Component& component_id,
-                                               const ocpp::v2::Variable& variable_id) {
-    std::lock_guard<std::mutex> lock(device_model_mutex);
-    return this->device_model_storage->get_monitoring_data(criteria, component_id, variable_id);
-}
-
 ocpp::v2::ClearMonitoringStatusEnum EverestDeviceModelStorage::clear_variable_monitor(int monitor_id,
                                                                                       bool allow_protected) {
     std::lock_guard<std::mutex> lock(device_model_mutex);
@@ -1142,6 +1151,11 @@ ocpp::v2::ClearMonitoringStatusEnum EverestDeviceModelStorage::clear_variable_mo
 int32_t EverestDeviceModelStorage::clear_custom_variable_monitors() {
     std::lock_guard<std::mutex> lock(device_model_mutex);
     return this->device_model_storage->clear_custom_variable_monitors();
+}
+
+std::vector<ocpp::v2::StoredMonitor> EverestDeviceModelStorage::get_all_monitors() {
+    std::lock_guard<std::mutex> lock(device_model_mutex);
+    return this->device_model_storage->get_all_monitors();
 }
 
 void EverestDeviceModelStorage::check_integrity() {
