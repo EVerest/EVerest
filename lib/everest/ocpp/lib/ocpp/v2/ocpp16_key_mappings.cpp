@@ -4,6 +4,7 @@
 #include <ocpp/v2/ocpp16_key_mappings.hpp>
 
 #include <fstream>
+#include <map>
 #include <sstream>
 
 #include <nlohmann/json-schema.hpp>
@@ -41,21 +42,20 @@ namespace {
     throw Ocpp16KeyMappingsError(error_message.str());
 }
 
-/// Entries for known OCPP 1.6 keys override the built-in mapping. Only OCPP16LegacyCtrlr keys may be overridden,
-/// and an override must not share its target with another key, since the target is the key's only storage. A
-/// target whose value the OCPP 1.6 stack computes, such as the maxLimit CV of a max-limit key, is not storage.
-void validate_overrides(const Ocpp16KeyMappings& mappings, const std::filesystem::path& mapping_file_path) {
+/// Entries for known OCPP 1.6 keys override the built-in mapping; only OCPP16LegacyCtrlr keys may be overridden.
+/// Every target is the storage of exactly one key, so no entry may target the built-in mapping of another key or
+/// the target of another entry. A target whose value the OCPP 1.6 stack computes, such as the maxLimit CV of a
+/// max-limit key, is not storage.
+void validate_targets(const Ocpp16KeyMappings& mappings, const std::filesystem::path& mapping_file_path) {
     const auto error_prefix = "Invalid custom mapping in '" + mapping_file_path.string() + "': key '";
 
+    std::map<std::pair<Component, Variable>, std::string> key_by_target;
     for (const auto& [ocpp16_key, cv] : mappings) {
-        const auto key = v16::keys::convert(ocpp16_key);
-        if (!key.has_value()) {
-            continue;
-        }
         const auto& [component, variable] = cv;
-        const auto builtin = v16::keys::convert_v2(key.value());
 
-        if (!v16::is_overridable_key(key.value())) {
+        // a key that cannot be overridden is the more useful error than a problem with its target
+        if (const auto key = v16::keys::convert(ocpp16_key); key.has_value() && !v16::is_overridable_key(key.value())) {
+            const auto builtin = v16::keys::convert_v2(key.value());
             const auto builtin_target = builtin.has_value() ? describe_mapping_target(builtin->first, builtin->second)
                                                             : std::string{"no variable"};
             throw Ocpp16KeyMappingsError(
@@ -78,12 +78,10 @@ void validate_overrides(const Ocpp16KeyMappings& mappings, const std::filesystem
                                          ", which is the built-in mapping of OCPP 1.6 key '" + owner.value() + "'");
         }
 
-        for (const auto& [other_key, other_cv] : mappings) {
-            if (other_key != ocpp16_key && other_cv == cv) {
-                throw Ocpp16KeyMappingsError(error_prefix + ocpp16_key + "' targets " +
-                                             describe_mapping_target(component, variable) +
-                                             ", which is also the target of key '" + other_key + "'");
-            }
+        if (const auto [it, inserted] = key_by_target.emplace(cv, ocpp16_key); !inserted) {
+            throw Ocpp16KeyMappingsError(error_prefix + ocpp16_key + "' targets " +
+                                         describe_mapping_target(component, variable) +
+                                         ", which is also the target of key '" + it->second + "'");
         }
     }
 }
@@ -297,6 +295,12 @@ Ocpp16KeyMappings load_ocpp16_key_mappings_from_yaml(const std::filesystem::path
             variable.instance = entry.at("variable").at("instance").get<std::string>();
         }
 
+        // a duplicate key is the more useful error than a problem with its target
+        if (mappings.find(ocpp16_key) != mappings.end()) {
+            throw Ocpp16KeyMappingsError("Duplicate ocpp16_key in key mapping file '" + mapping_file_path.string() +
+                                         "': " + ocpp16_key);
+        }
+
         // Connection config is managed by the standardized OCPP 1.6 keys (with their reboot/reconnect
         // semantics) or direct canonical CV access; a custom key would write it without either.
         if (v16::is_connection_config_cv(component, variable)) {
@@ -307,13 +311,10 @@ Ocpp16KeyMappings load_ocpp16_key_mappings_from_yaml(const std::filesystem::path
                 "custom-mapped");
         }
 
-        if (!mappings.emplace(ocpp16_key, std::make_pair(component, variable)).second) {
-            throw Ocpp16KeyMappingsError("Duplicate ocpp16_key in key mapping file '" + mapping_file_path.string() +
-                                         "': " + ocpp16_key);
-        }
+        mappings.emplace(ocpp16_key, std::make_pair(component, variable));
     }
 
-    validate_overrides(mappings, mapping_file_path);
+    validate_targets(mappings, mapping_file_path);
     return mappings;
 }
 

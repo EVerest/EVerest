@@ -116,6 +116,30 @@ mappings:
     EXPECT_THROW((void)load_ocpp16_key_mappings_from_yaml(yaml_file), Ocpp16KeyMappingsError);
 }
 
+TEST_F(Ocpp16KeyMappingsTest, duplicate_key_is_reported_before_its_target) {
+    const auto yaml_file = write_yaml_file("duplicate_connection_config.yaml", R"yaml(
+mappings:
+  - ocpp16_key: VendorUrl
+    component:
+      name: VendorCtrlr
+    variable:
+      name: Url
+  - ocpp16_key: VendorUrl
+    component:
+      name: NetworkConfiguration
+      instance: "1"
+    variable:
+      name: OcppCsmsUrl
+)yaml");
+
+    try {
+        (void)load_ocpp16_key_mappings_from_yaml(yaml_file);
+        FAIL() << "expected Ocpp16KeyMappingsError";
+    } catch (const Ocpp16KeyMappingsError& e) {
+        EXPECT_NE(std::string{e.what()}.find("Duplicate ocpp16_key"), std::string::npos) << e.what();
+    }
+}
+
 TEST_F(Ocpp16KeyMappingsTest, missing_file_throws) {
     const auto missing_file = test_dir / "does_not_exist.yaml";
     EXPECT_THROW((void)load_ocpp16_key_mappings_from_yaml(missing_file), Ocpp16KeyMappingsError);
@@ -166,16 +190,16 @@ TEST_F(Ocpp16KeyMappingsTest, non_connection_security_ctrlr_target_is_allowed) {
     // the ban covers the connection fallback CVs, not the whole SecurityCtrlr component
     const auto yaml_file = write_yaml_file("security_other.yaml", R"yaml(
 mappings:
-  - ocpp16_key: MyCertificateEntries
+  - ocpp16_key: MyVendorSecuritySetting
     component:
       name: SecurityCtrlr
     variable:
-      name: CertificateEntries
+      name: VendorSecuritySetting
 )yaml");
 
     const auto mappings = load_ocpp16_key_mappings_from_yaml(yaml_file);
     ASSERT_EQ(mappings.size(), 1);
-    ASSERT_TRUE(mappings.find("MyCertificateEntries") != mappings.end());
+    ASSERT_TRUE(mappings.find("MyVendorSecuritySetting") != mappings.end());
 }
 
 TEST_F(Ocpp16KeyMappingsTest, override_of_ocpp16_legacy_ctrlr_key_is_accepted) {
@@ -224,6 +248,26 @@ mappings:
     }
 }
 
+TEST_F(Ocpp16KeyMappingsTest, not_overridable_key_is_reported_before_its_target) {
+    const auto yaml_file = write_yaml_file("not_overridable_builtin_target.yaml", R"yaml(
+mappings:
+  - ocpp16_key: NumberOfConnectors
+    component:
+      name: OCPPCommCtrlr
+    variable:
+      name: HeartbeatInterval
+)yaml");
+
+    try {
+        (void)load_ocpp16_key_mappings_from_yaml(yaml_file);
+        FAIL() << "expected Ocpp16KeyMappingsError";
+    } catch (const Ocpp16KeyMappingsError& e) {
+        EXPECT_NE(std::string{e.what()}.find("only built-in keys mapped to OCPP16LegacyCtrlr can be custom-mapped"),
+                  std::string::npos)
+            << e.what();
+    }
+}
+
 TEST_F(Ocpp16KeyMappingsTest, override_targeting_builtin_mapping_of_other_key_throws) {
     const auto yaml_file = write_yaml_file("builtin_target.yaml", R"yaml(
 mappings:
@@ -267,6 +311,97 @@ mappings:
 )yaml");
 
     EXPECT_THROW((void)load_ocpp16_key_mappings_from_yaml(yaml_file), Ocpp16KeyMappingsError);
+}
+
+TEST_F(Ocpp16KeyMappingsTest, custom_keys_sharing_target_throw) {
+    const auto yaml_file = write_yaml_file("custom_shared_target.yaml", R"yaml(
+mappings:
+  - ocpp16_key: VendorFoo
+    component:
+      name: VendorCtrlr
+    variable:
+      name: FooSetting
+  - ocpp16_key: VendorFooAlias
+    component:
+      name: VendorCtrlr
+    variable:
+      name: FooSetting
+)yaml");
+
+    EXPECT_THROW((void)load_ocpp16_key_mappings_from_yaml(yaml_file), Ocpp16KeyMappingsError);
+}
+
+TEST_F(Ocpp16KeyMappingsTest, custom_key_targeting_builtin_mapping_throws) {
+    const auto yaml_file = write_yaml_file("custom_builtin_target.yaml", R"yaml(
+mappings:
+  - ocpp16_key: MyHeartbeat
+    component:
+      name: OCPPCommCtrlr
+    variable:
+      name: HeartbeatInterval
+)yaml");
+
+    EXPECT_THROW((void)load_ocpp16_key_mappings_from_yaml(yaml_file), Ocpp16KeyMappingsError);
+}
+
+TEST_F(Ocpp16KeyMappingsTest, custom_key_targeting_read_only_derived_cv_throws) {
+    const auto yaml_file = write_yaml_file("custom_read_only_derived_target.yaml", R"yaml(
+mappings:
+  - ocpp16_key: VendorEntries
+    component:
+      name: LocalAuthListCtrlr
+    variable:
+      name: Entries
+)yaml");
+
+    EXPECT_THROW((void)load_ocpp16_key_mappings_from_yaml(yaml_file), Ocpp16KeyMappingsError);
+}
+
+TEST_F(Ocpp16KeyMappingsTest, evse_variant_of_builtin_target_is_accepted) {
+    // OCPPCommCtrlr on EVSE 1 is another component than the OCPPCommCtrlr of the HeartbeatInterval key
+    const auto yaml_file = write_yaml_file("evse_builtin_target.yaml", R"yaml(
+mappings:
+  - ocpp16_key: VendorEvseHeartbeat
+    component:
+      name: OCPPCommCtrlr
+      evse:
+        id: 1
+    variable:
+      name: HeartbeatInterval
+  - ocpp16_key: LightIntensity
+    component:
+      name: OCPPCommCtrlr
+      evse:
+        id: 2
+    variable:
+      name: HeartbeatInterval
+)yaml");
+
+    const auto mappings = load_ocpp16_key_mappings_from_yaml(yaml_file);
+    EXPECT_EQ(mappings.size(), 2);
+}
+
+TEST_F(Ocpp16KeyMappingsTest, custom_keys_with_targets_differing_by_evse_are_accepted) {
+    const auto yaml_file = write_yaml_file("custom_evse_targets.yaml", R"yaml(
+mappings:
+  - ocpp16_key: VendorEvse1
+    component:
+      name: VendorCtrlr
+      evse:
+        id: 1
+    variable:
+      name: PerEvseSetting
+  - ocpp16_key: VendorEvse2
+    component:
+      name: VendorCtrlr
+      evse:
+        id: 2
+    variable:
+      name: PerEvseSetting
+)yaml");
+
+    const auto mappings = load_ocpp16_key_mappings_from_yaml(yaml_file);
+    EXPECT_EQ(mappings.size(), 2);
 }
 
 } // namespace ocpp::v2

@@ -46,10 +46,10 @@ ocpp::v2::Ocpp16KeyMappings custom_mappings_fixture() {
     ocpp::v2::Ocpp16KeyMappings mappings;
     // unambiguous custom mapping
     mappings.emplace("VendorBar", std::make_pair(make_component("VendorCtrlr"), make_variable("BarSetting")));
-    // two custom keys mapping to the same CV -> ambiguous reverse
+    // two custom keys mapping to the same CV -> the first in key order is kept
     mappings.emplace("VendorFoo", std::make_pair(make_component("VendorCtrlr"), make_variable("FooSetting")));
     mappings.emplace("VendorFooAlias", std::make_pair(make_component("VendorCtrlr"), make_variable("FooSetting")));
-    // custom mapping colliding with the standard reverse entry for HeartbeatInterval
+    // custom mapping onto the built-in target of HeartbeatInterval -> ignored
     mappings.emplace("MyHeartbeat",
                      std::make_pair(make_component("OCPPCommCtrlr"), make_variable("HeartbeatInterval")));
     // custom mapping shadowing a derived key must not be reachable via key_to_cv
@@ -78,9 +78,8 @@ TEST(VariableResolver, RoundTripStandardKeys) {
             return; // derived / unmapped / max-limit keys
         }
         const auto reverse = resolver.cv_to_key(cv->first, cv->second);
-        ASSERT_TRUE(reverse.key.has_value()) << "no reverse mapping for " << name;
-        EXPECT_EQ(reverse.key.value(), name);
-        EXPECT_FALSE(reverse.ambiguous) << "unexpected ambiguity for " << name;
+        ASSERT_TRUE(reverse.has_value()) << "no reverse mapping for " << name;
+        EXPECT_EQ(reverse.value(), name);
         ++checked;
     });
     EXPECT_GT(checked, 0);
@@ -142,19 +141,19 @@ TEST(VariableResolver, CustomMappingForward) {
 TEST(VariableResolver, CustomMappingReverse) {
     const VariableResolver resolver{custom_mappings_fixture()};
     const auto reverse = resolver.cv_to_key(make_component("VendorCtrlr"), make_variable("BarSetting"));
-    ASSERT_TRUE(reverse.key.has_value());
-    EXPECT_EQ(reverse.key.value(), "VendorBar");
-    EXPECT_FALSE(reverse.ambiguous);
+    ASSERT_TRUE(reverse.has_value());
+    EXPECT_EQ(reverse.value(), "VendorBar");
 }
 
-TEST(VariableResolver, CustomMappingReverseAmbiguousTwoKeysOneCv) {
+TEST(VariableResolver, CustomKeysSharingCvKeepFirstKey) {
     const VariableResolver resolver{custom_mappings_fixture()};
-    const auto reverse = resolver.cv_to_key(make_component("VendorCtrlr"), make_variable("FooSetting"));
-    EXPECT_TRUE(reverse.ambiguous);
+    EXPECT_EQ(resolver.cv_to_key(make_component("VendorCtrlr"), make_variable("FooSetting")), "VendorFoo");
+    EXPECT_TRUE(resolver.key_to_cv("VendorFoo").has_value());
+    EXPECT_FALSE(resolver.key_to_cv("VendorFooAlias").has_value());
 }
 
 TEST(VariableResolver, CustomMappingsDifferingByEvseAreDistinct) {
-    // mappings that differ only in Component::evse must not collide into an ambiguous reverse entry
+    // mappings that differ only in Component::evse must not collide
     const auto evse_component = [](std::int32_t id) {
         ocpp::v2::Component component = make_component("VendorCtrlr");
         ocpp::v2::EVSE evse;
@@ -168,14 +167,12 @@ TEST(VariableResolver, CustomMappingsDifferingByEvseAreDistinct) {
     const VariableResolver resolver{mappings};
 
     const auto reverse1 = resolver.cv_to_key(evse_component(1), make_variable("PerEvseSetting"));
-    ASSERT_TRUE(reverse1.key.has_value());
-    EXPECT_EQ(reverse1.key.value(), "VendorEvse1");
-    EXPECT_FALSE(reverse1.ambiguous);
+    ASSERT_TRUE(reverse1.has_value());
+    EXPECT_EQ(reverse1.value(), "VendorEvse1");
 
     const auto reverse2 = resolver.cv_to_key(evse_component(2), make_variable("PerEvseSetting"));
-    ASSERT_TRUE(reverse2.key.has_value());
-    EXPECT_EQ(reverse2.key.value(), "VendorEvse2");
-    EXPECT_FALSE(reverse2.ambiguous);
+    ASSERT_TRUE(reverse2.has_value());
+    EXPECT_EQ(reverse2.value(), "VendorEvse2");
 }
 
 TEST(VariableResolver, EvseVariantOfBuiltinTargetHasNoKey) {
@@ -188,23 +185,21 @@ TEST(VariableResolver, EvseVariantOfBuiltinTargetHasNoKey) {
     const VariableResolver resolver{{}};
 
     const auto reverse = resolver.cv_to_key(evse_comm_ctrlr, make_variable("HeartbeatInterval"));
-    EXPECT_FALSE(reverse.key.has_value());
+    EXPECT_FALSE(reverse.has_value());
     EXPECT_EQ(resolver.classify(evse_comm_ctrlr, make_variable("HeartbeatInterval")), CVClass::Free);
 
     const auto builtin = resolver.cv_to_key(make_component("OCPPCommCtrlr"), make_variable("HeartbeatInterval"));
-    ASSERT_TRUE(builtin.key.has_value());
-    EXPECT_EQ(builtin.key.value(), "HeartbeatInterval");
+    ASSERT_TRUE(builtin.has_value());
+    EXPECT_EQ(builtin.value(), "HeartbeatInterval");
     EXPECT_EQ(resolver.classify(make_component("OCPPCommCtrlr"), make_variable("HeartbeatInterval")),
               CVClass::KeyBacked);
 }
 
-TEST(VariableResolver, CustomMappingReverseAmbiguousCollidesWithStandard) {
+TEST(VariableResolver, CustomKeyOnBuiltinTargetIsIgnored) {
     const VariableResolver resolver{custom_mappings_fixture()};
-    const auto reverse = resolver.cv_to_key(make_component("OCPPCommCtrlr"), make_variable("HeartbeatInterval"));
-    EXPECT_TRUE(reverse.ambiguous);
-    // the standard key remains reported
-    ASSERT_TRUE(reverse.key.has_value());
-    EXPECT_EQ(reverse.key.value(), "HeartbeatInterval");
+    EXPECT_EQ(resolver.cv_to_key(make_component("OCPPCommCtrlr"), make_variable("HeartbeatInterval")),
+              "HeartbeatInterval");
+    EXPECT_FALSE(resolver.key_to_cv("MyHeartbeat").has_value());
 }
 
 TEST(VariableResolver, IsConnectionConfigCvPredicate) {
@@ -267,8 +262,6 @@ TEST(VariableResolver, ClassifyKeyBacked) {
 TEST(VariableResolver, ClassifyFree) {
     const VariableResolver resolver{custom_mappings_fixture()};
     EXPECT_EQ(resolver.classify(make_component("VendorCtrlr"), make_variable("Foo")), CVClass::Free);
-    // ambiguous custom CV is not key-backed
-    EXPECT_EQ(resolver.classify(make_component("VendorCtrlr"), make_variable("FooSetting")), CVClass::Free);
 }
 
 TEST(VariableResolver, LegacyKeyOverride) {
@@ -282,12 +275,11 @@ TEST(VariableResolver, LegacyKeyOverride) {
     EXPECT_TRUE(same_cv(cv.value(), {make_component("VendorStation"), make_variable("LightIntensity")}));
 
     const auto reverse = resolver.cv_to_key(make_component("VendorStation"), make_variable("LightIntensity"));
-    EXPECT_TRUE(reverse.usable());
-    EXPECT_EQ(reverse.key, "LightIntensity");
+    EXPECT_EQ(reverse, "LightIntensity");
     EXPECT_EQ(resolver.classify(make_component("VendorStation"), make_variable("LightIntensity")), CVClass::KeyBacked);
 
     // the built-in OCPP16LegacyCtrlr variable is no longer backed by the key
-    EXPECT_FALSE(resolver.cv_to_key(make_component("OCPP16LegacyCtrlr"), make_variable("LightIntensity")).key);
+    EXPECT_FALSE(resolver.cv_to_key(make_component("OCPP16LegacyCtrlr"), make_variable("LightIntensity")));
     EXPECT_EQ(resolver.classify(make_component("OCPP16LegacyCtrlr"), make_variable("LightIntensity")), CVClass::Free);
 }
 

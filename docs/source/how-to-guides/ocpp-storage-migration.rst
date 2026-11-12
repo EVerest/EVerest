@@ -227,6 +227,24 @@ The referenced component and variable must already exist in the component
 configuration at ``DeviceModelConfigPath``. The mapping file tells the
 migration where to write the value — it does not create the target variable.
 
+An entry stores its key in the ``Actual`` attribute of the variable, and each
+attribute stores exactly one OCPP 1.6 key. Built-in keys can share a variable
+through different attributes: ``MeterValuesAlignedData`` is stored in the
+``Actual`` attribute of ``AlignedDataCtrlr`` ``Measurands``, and
+``MeterValuesAlignedDataMaxLength`` in its ``maxLimit``. The module does not
+start when two entries in the file target the same component and variable, or
+when an entry targets a variable whose ``Actual`` attribute stores a built-in
+key, for example ``OCPPCommCtrlr`` ``HeartbeatInterval``. It also does not
+start when an entry targets a variable whose value the OCPP 1.6 stack
+computes: the ``SupportedFeatureProfiles`` variable and the variables that
+hold the limit of a max-length key, for example ``LocalAuthListCtrlr``
+``Entries``.
+
+A built-in mapping stays reserved for its key even when the file replaces it:
+the freed ``OCPP16LegacyCtrlr`` variable cannot be used by another entry, and
+two keys cannot swap variables. An entry may map a built-in key to its own
+``OCPP16LegacyCtrlr`` variable, which has no effect.
+
 .. _howto-ocpp-storage-migration-share-legacy-key:
 
 Share an OCPP 1.6 key with your own OCPP 2.x variable
@@ -264,15 +282,6 @@ The module does not start when the mapping file:
 * replaces the mapping of ``NumberOfConnectors``, ``SupportedFeatureProfiles``,
   ``MeterPublicKeys`` or ``DefaultPriceText``, which the OCPP 1.6 stack derives
   or expands itself.
-* maps a built-in key to a variable that is the built-in mapping of another key
-  or the target of another entry in the file. A built-in mapping stays reserved
-  for its key even when the file replaces it: the freed ``OCPP16LegacyCtrlr``
-  variable cannot be used by another entry, and two keys cannot swap variables.
-  An entry may map a key to its own ``OCPP16LegacyCtrlr`` variable, which has no
-  effect.
-* maps a built-in key to a variable whose value the OCPP 1.6 stack computes:
-  the ``SupportedFeatureProfiles`` variable and the variables that hold the
-  limit of a max-length key, for example ``LocalAuthListCtrlr`` ``Entries``.
 * maps a built-in key to a variable that does not exist in the component
   configuration.
 * maps a built-in key to a variable without an ``Actual`` attribute. The key's

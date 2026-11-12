@@ -16,19 +16,11 @@
 namespace {
 
 constexpr auto READ_ONLY_DERIVED_INFO = "Managed by the OCPP1.6 stack; read-only via this API";
-constexpr auto AMBIGUOUS_MAPPING_INFO = "Ambiguous custom key mapping; fix Ocpp16KeyMappingsPath";
 
 std::string cv_to_string(const ocpp::v2::Component& component, const ocpp::v2::Variable& variable) {
     const auto instance = [](const auto& opt) { return opt.has_value() ? fmt::format("({})", opt->get()) : ""; };
     return fmt::format("{}{}/{}{}", component.name.get(), instance(component.instance), variable.name.get(),
                        instance(variable.instance));
-}
-
-ocpp::v2::StatusInfo ambiguous_status_info() {
-    ocpp::v2::StatusInfo info;
-    info.reasonCode = "AmbiguousMapping";
-    info.additionalInfo = ocpp::CiString<1024>(AMBIGUOUS_MAPPING_INFO);
-    return info;
 }
 
 ocpp::v2::StatusInfo read_only_derived_status_info() {
@@ -42,11 +34,6 @@ ocpp::v2::StatusInfo reason_code_status_info(const std::string& reason_code) {
     ocpp::v2::StatusInfo info;
     info.reasonCode = reason_code;
     return info;
-}
-
-void log_ambiguous(const ocpp::v2::Component& component, const ocpp::v2::Variable& variable) {
-    EVLOG_error << "Ambiguous custom key mapping for " << cv_to_string(component, variable)
-                << "; fix Ocpp16KeyMappingsPath";
 }
 
 // mirrors ChargePointV16::set_variables' ConfigurationStatus mapping
@@ -97,12 +84,11 @@ void V16VariableAccess::warn_deprecated_key(const std::string& key) {
                   << "); use canonical ComponentVariable addressing";
 }
 
-// get() and set() route each request through exactly one of four paths:
+// get() and set() route each request through exactly one of three paths:
 //   path 1, legacy:     component.name empty, variable.name is a 1.6 key -> key routing, legacy result shape
-//   path 2, key-backed: CV reverse-resolves to one 1.6 key -> key routing, result echoes the canonical CV
+//   path 2, key-backed: CV reverse-resolves to a 1.6 key -> key routing, result echoes the canonical CV
 //   path 3, direct:     no 1.6 key -> device-model access; writes moderated by CVClass
-//   path 4, ambiguous:  CV mapped by several custom keys -> Rejected, never a silent pick
-// Checked in order 1, 4, 2, 3: ambiguity must be ruled out before a key counts as usable.
+// The resolver maps every CV back to at most one key, so path 2 never has to pick between keys.
 // Connection config (CVClass::ConnectionConfig) is only reachable via path 3 or a standard key whose
 // reboot/reconnect semantics live in the 1.6 stack: custom mappings targeting connection-config CVs
 // are rejected when the mapping file is loaded, so a custom key on paths 1/2 can never carry one.
@@ -132,18 +118,7 @@ V16VariableAccess::get(const std::vector<ocpp::v2::GetVariableData>& requests) {
         }
 
         const auto reverse = m_resolver.cv_to_key(request.component, request.variable);
-        if (reverse.ambiguous) {
-            // path 4, ambiguous custom mapping
-            log_ambiguous(request.component, request.variable);
-            ocpp::v2::GetVariableResult result;
-            result.attributeStatus = ocpp::v2::GetVariableStatusEnum::Rejected;
-            result.component = request.component;
-            result.variable = request.variable;
-            result.attributeStatusInfo = ambiguous_status_info();
-            results.push_back(std::move(result));
-            continue;
-        }
-        if (reverse.usable()) {
+        if (reverse.has_value()) {
             // path 2, key-backed canonical CV: key routing, canonical echo; key path is Actual-only
             ocpp::v2::GetVariableResult result;
             result.component = request.component;
@@ -155,7 +130,7 @@ V16VariableAccess::get(const std::vector<ocpp::v2::GetVariableData>& requests) {
             }
             result.attributeStatus = ocpp::v2::GetVariableStatusEnum::UnknownVariable; // placeholder, see backfill
             results.push_back(std::move(result));
-            pending.push_back({index, reverse.key.value(), false});
+            pending.push_back({index, reverse.value(), false});
             continue;
         }
 
@@ -252,15 +227,7 @@ std::vector<SetVariableOutcome> V16VariableAccess::set(const std::vector<ocpp::v
         }
 
         const auto reverse = m_resolver.cv_to_key(request.component, request.variable);
-        if (reverse.ambiguous) {
-            // path 4, ambiguous custom mapping
-            log_ambiguous(request.component, request.variable);
-            outcome.result.attributeStatus = ocpp::v2::SetVariableStatusEnum::Rejected;
-            outcome.result.attributeStatusInfo = ambiguous_status_info();
-            outcomes.push_back(std::move(outcome));
-            continue;
-        }
-        if (reverse.usable()) {
+        if (reverse.has_value()) {
             // path 2, key-backed canonical CV: key routing, canonical echo; key path is Actual-only
             if (!is_actual(request.attributeType)) {
                 outcome.result.attributeStatus = ocpp::v2::SetVariableStatusEnum::NotSupportedAttributeType;
@@ -279,7 +246,7 @@ std::vector<SetVariableOutcome> V16VariableAccess::set(const std::vector<ocpp::v
                 }
             }
             const ocpp::CiString<500> value = static_cast<std::string>(request.attributeValue);
-            outcome.result.attributeStatus = convert(m_set_key(reverse.key.value(), value));
+            outcome.result.attributeStatus = convert(m_set_key(reverse.value(), value));
             if (connection_config && is_committed(outcome.result.attributeStatus)) {
                 connection_config_changed = true;
             }
