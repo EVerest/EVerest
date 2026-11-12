@@ -5,8 +5,8 @@ include!(concat!(env!("OUT_DIR"), "/generated.rs"));
 
 use chrono::{TimeDelta, Utc};
 use cron::Schedule;
-use generated::{get_config, Context, EmptyServiceSubscriber, ExternalEnergyLimitsClientSubscriber, Module, ModuleConfig, ModulePublisher, OnReadySubscriber};
-use generated::types::energy::EnforcedLimits;
+use generated::{Context, EmptyServiceSubscriber, ExternalEnergyLimitsClientSubscriber, Module, ModuleConfig, ModulePublisher, OnReadySubscriber};
+use generated::types::energy::CapabilityLimits;
 use generated::types::energy::ExternalLimits;
 use openleadr_wire::program::ProgramId;
 use openleadr_wire::target::TargetType;
@@ -92,8 +92,8 @@ impl OnReadySubscriber for OpenleadrClient {
 }
 
 impl ExternalEnergyLimitsClientSubscriber for OpenleadrClient {
-    fn on_enforced_limits(&self, _context: &Context, _value: EnforcedLimits) {
-        // do nothing
+    fn on_capabilities(&self, _context: &Context, value: CapabilityLimits) {
+        log::debug!("Received capabilities: {:?}", value);
     }
 }
 
@@ -127,8 +127,9 @@ fn get_filter_from_config(config: &ModuleConfig) -> Option<(TargetType, Vec<Stri
     }
 }
 
-fn main() {
-    let config = get_config();
+#[everestrs::main]
+fn main(module: &Module) {
+    let config = module.get_config();
     let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
 
     // create openleadr-client
@@ -146,8 +147,8 @@ fn main() {
         rt: Arc::new(rt),
     });
 
-    // construct the module
-    let _module = Module::new(
+    // start the module
+    let _publishers = module.start(
         adr_client.clone(),
         adr_client.clone(),
         adr_client.clone(),
