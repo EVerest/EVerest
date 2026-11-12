@@ -103,9 +103,13 @@ jobs:
   ev-cli-tests:
     name: tests
     runs-on: ${{ inputs.runner }}
+    permissions:
+      contents: read
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - name: Set up Python
         # the floor ev-dev-tools declares in requires-python, so a break that
         # only shows on the oldest supported interpreter is caught here
