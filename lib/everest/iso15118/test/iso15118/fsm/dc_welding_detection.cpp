@@ -96,6 +96,9 @@ SCENARIO("ISO15118-20 DC welding detection phase") {
     push(d20::PresentVoltageCurrent{20.0f, 0.0f});
     state_helper.handle_request(make_power_delivery_stop(ctx.session));
     fsm.feed(d20::Event::V2GTP_MESSAGE);
+    // The PowerDeliveryRes is held until the contactor is reported open.
+    state_helper.set_active_control_event(d20::ClosedContactor{false});
+    fsm.feed(d20::Event::CONTROL_MESSAGE);
     REQUIRE(fsm.get_current_state_id() == d20::StateID::DC_WeldingDetection);
     // Drop the PowerDeliveryRes, as the session does once it is sent.
     state_helper.get_message_exchange().check_and_clear_response();

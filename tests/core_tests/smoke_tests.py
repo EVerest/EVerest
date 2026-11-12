@@ -157,6 +157,15 @@ async def assert_energy_delivery(mock, energy_threshold_wh, verify_mode: EnergyV
             f"Timeout waiting for energy delivered to exceed {energy_threshold_wh}Wh. Last known: {energy_wh}Wh."
         )
 
+async def wait_for_mock_called(mock, timeout=30):
+    """Wait until the mock has been called at least once."""
+    start_time = asyncio.get_event_loop().time()
+    while asyncio.get_event_loop().time() - start_time < timeout:
+        if mock.called:
+            return
+        await asyncio.sleep(0.1)
+    raise TimeoutError(f"Timeout waiting for {mock} to be called")
+
 async def assert_no_events(mock, excluded_events, wait_time=2, reset_after_check=True):
     """Wait for a period and verify that certain events do NOT occur.
     
@@ -1138,6 +1147,7 @@ async def test_iso15118_ac_session_paused_by_ev(
     connections={
         "evse_manager": [Requirement("evse_manager", "evse")],
         "gcp": [Requirement("grid_connection_point", "external_limits")],
+        "iso15118": [Requirement("iso15118_charger", "charger")],
     }
 )
 @pytest.mark.xdist_group(name="ISO15118")
@@ -1151,9 +1161,12 @@ async def test_iso15118_dc_session_paused_by_ev(
     Test session events of a basic ISO 15118 DC charging session with session paused by EV.
     """
 
-    _, session_event_mock, powermeter_mock, _ = await setup_session_mocks(
+    probe_module, session_event_mock, powermeter_mock, _ = await setup_session_mocks(
         test_controller, everest_core
     )
+
+    dlink_pause_mock = Mock()
+    probe_module.subscribe_variable("iso15118", "dlink_pause", dlink_pause_mock)
 
     await start_session(test_controller, session_event_mock, test_controller.plug_in_dc_iso)
     await assert_energy_exceeds(powermeter_mock, energy_threshold_wh=10, timeout=15)
@@ -1161,6 +1174,10 @@ async def test_iso15118_dc_session_paused_by_ev(
     await wait_for_session_events(session_event_mock, ["ChargingPausedEV"])
     await assert_energy_below(powermeter_mock, energy_threshold_wh=20, timeout=5)
     await assert_no_events(session_event_mock, ["ChargingStarted", "ChargingStarted"], wait_time=5)
+    # The EVSE counts BCB toggles only once the PWM is off, which follows D-LINK_PAUSE. Welding detection
+    # and the TCP close after SessionStop take longer than the waits above, so wait for the signal itself.
+    await wait_for_mock_called(dlink_pause_mock, timeout=20)
+    await asyncio.sleep(1)
     test_controller.resume_iso_session_dc()
     await wait_for_session_events(session_event_mock, ["ChargingStarted"])
     await assert_energy_exceeds(powermeter_mock, energy_threshold_wh=20, timeout=45)

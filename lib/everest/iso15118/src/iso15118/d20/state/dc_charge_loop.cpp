@@ -257,7 +257,9 @@ Result DC_ChargeLoop::feed(Event ev) {
             m_ctx.feedback.signal(session::feedback::Signal::DC_OPEN_CONTACTOR);
             m_ctx.welding_detection.start(m_ctx.feedback);
             pending_stop_res = res;
-            if (not contactor_closed.has_value() or not *contactor_closed) {
+            // Only a contactor known to be open skips the wait. The contactor closes before this state is
+            // entered, so its closing is never seen here and an unknown state means closed.
+            if (contactor_closed.has_value() and not *contactor_closed) {
                 return send_pending_stop_res();
             }
             m_ctx.start_timeout(d20::TimeoutType::CONTACTOR, DC_OPEN_CONTACTOR_TIMEOUT);
