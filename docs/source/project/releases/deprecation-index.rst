@@ -161,3 +161,11 @@ to the corresponding migration guide.
      - Remove the option. The built-in session logger is removed and the
        option has no effect; capture sessions with PacketSniffer, tcpdump or
        Wireshark instead.
+   * - :ref:`OCPPmulti <everest_modules_OCPPmulti>` configuration option
+       ``EverestDeviceModelDatabasePath``
+     - 2027.04.0
+     - 2027.10.0
+     - Nothing to migrate by hand. At the first start the module takes the
+       database over into ``DeviceModelDatabasePath`` and renames it to
+       ``*.migrated``, see :ref:`howto-ocpp-storage-migration`. Remove the
+       option from the configuration afterwards.

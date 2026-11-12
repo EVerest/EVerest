@@ -60,7 +60,11 @@ private:
     /// \brief Listener for the internal update of a monitor
     on_monitor_updated monitor_update_listener;
 
-    /// \brief register_components without the check for the reserved owner
+    friend std::size_t
+    register_availability_states(DeviceModel& device_model,
+                                 const std::map<std::int32_t, std::int32_t>& evse_connector_structure);
+
+    /// \brief register_components without the check for reserved owners
     ComponentRegistrationResult register_components_of(const std::string& owner,
                                                        const std::vector<RegisteredComponent>& components,
                                                        std::shared_ptr<VariableValueProvider> provider);
@@ -100,16 +104,6 @@ private:
     /// \brief Removes the monitors and stored values of the variables that \p owner no longer registers
     void remove_monitors_and_values_of_dropped_variables(const std::string& owner,
                                                          const std::set<std::pair<Component, Variable>>& dropped);
-
-    /// \brief The attribute of a variable with its current value, read from the storage for a variable that its
-    /// backing keeps there
-    std::optional<VariableAttribute> read_attribute(const Component& component, const Variable& variable,
-                                                    const ComposedVariable& composed,
-                                                    const AttributeEnum& attribute_enum) const;
-
-    /// \brief All attributes of a variable with their current values, see read_attribute
-    std::vector<VariableAttribute> read_attributes(const Component& component, const Variable& variable,
-                                                   const ComposedVariable& composed) const;
 
     /// \brief A changed Actual value with everything the variable listeners receive, copied under the mutex
     struct ValueChange {

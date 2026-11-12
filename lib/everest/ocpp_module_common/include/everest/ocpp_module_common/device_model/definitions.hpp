@@ -14,7 +14,7 @@ using ocpp::v2::VariableCharacteristics;
 
 namespace ocpp_module_common::device_model {
 using ocpp::v2::VARIABLE_OWNER_COMPONENT_CONFIG;
-/// \brief Owner of the variables of the EverestDeviceModelStorage
+/// \brief Owner of the components that EverestDeviceModel registers
 inline constexpr auto VARIABLE_OWNER_EVEREST = "EVEREST";
 } // namespace ocpp_module_common::device_model
 
@@ -24,7 +24,6 @@ EVSE get_evse(const int32_t evse_id, const std::optional<int32_t>& connector_id 
 
 namespace Characteristics {
 extern const VariableCharacteristics AllowReset;
-extern const VariableCharacteristics AvailabilityState;
 extern const VariableCharacteristics Available;
 extern const VariableCharacteristics EvseId;
 extern VariableCharacteristics EVSEPower;
@@ -35,7 +34,6 @@ extern const VariableCharacteristics ISO15118EvseId;
 
 namespace ConnectorDefinitions {
 namespace Characteristics {
-extern const VariableCharacteristics AvailabilityState;
 extern const VariableCharacteristics Available;
 extern const VariableCharacteristics ConnectorType;
 extern const VariableCharacteristics SupplyPhases;

@@ -7,8 +7,10 @@
 #include "ocpp_module_common_aliases.hpp"
 
 #include <everest/conversions/ocpp/evse_security_ocpp.hpp>
+#include <everest/ocpp_module_common/device_model/device_model_registrations.hpp>
 #include <everest/ocpp_module_common/transaction_handler.hpp>
 #include <everest/util/async/monitor.hpp>
+#include <ocpp/v2/device_model.hpp>
 
 namespace ocpp_multi {
 
@@ -18,12 +20,23 @@ private:
 
     std::shared_ptr<EvseSecurity> m_evse_security;
     ocpp_multi::GenericChargePointCallbacks* m_callbacks_ptr{nullptr};
+    std::shared_ptr<ocpp::v2::DeviceModel> m_device_model;
+    // With m_device_model: end_device_model_registrations() ends them before that device model is replaced or
+    // destroyed
+    ocpp_module_common::device_model::DeviceModelRegistrations m_device_model_registrations;
     // interface type so unit tests can inject a mock; init() creates the real ocpp::v2::ChargePoint
     std::unique_ptr<ocpp::v2::ChargePointInterface> m_charge_point;
     // written from command threads (register_variable_listener), read from libocpp callback thread
     everest::lib::util::monitor<listener_t> m_variable_listener;
 
     void check_configured(const std::string_view& fn);
+    /// \brief Ends the registrations with the device model and destroys the charge point, before the device model is
+    /// replaced or destroyed. The registrations end first: the device model keeps the variable listeners of the charge
+    /// point, which a value reported afterwards would reach after its destruction.
+    void end_device_model_registrations() {
+        m_device_model_registrations.end();
+        m_charge_point.reset();
+    }
 
     void cb_default_price(const std::vector<ocpp::DisplayMessageContent>& messages);
     ocpp::v2::GetLogResponse cb_get_log_request(const ocpp::v2::GetLogRequest& request);
@@ -56,6 +69,13 @@ public:
     explicit ChargePointV2(ocpp_multi::GenericChargePointCallbacks& callbacks, evse_securityIntf& security) :
         m_evse_security(std::make_unique<EvseSecurity>(security)), m_callbacks_ptr(&callbacks) {
     }
+    ~ChargePointV2() {
+        end_device_model_registrations();
+    }
+    ChargePointV2(const ChargePointV2&) = delete;
+    ChargePointV2& operator=(const ChargePointV2&) = delete;
+    ChargePointV2(ChargePointV2&&) = delete;
+    ChargePointV2& operator=(ChargePointV2&&) = delete;
 
     // ------------------------------------------------------------------------
     // GenericChargePointConfiguration

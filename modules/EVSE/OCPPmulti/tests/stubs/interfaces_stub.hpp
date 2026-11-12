@@ -89,6 +89,11 @@ public:
     using var_cb_t =
         std::function<void(const std::string_view& interface, const std::string_view& variable, const json& data)>;
 
+    /// \brief Whether the connectors that get_evse reports are hlc_capable
+    void set_evse_hlc_capable(const bool hlc_capable) {
+        m_evse_hlc_capable = hlc_capable;
+    }
+
 private:
     using var_cb_list_t = std::list<std::pair<std::string, var_cb_t>>;
     using call_function_t = std::optional<json> (ModuleAdapter::*)(const Requirement&, const json& args);
@@ -132,6 +137,7 @@ private:
     // guarded by m_cmd_response_mutex: commands may be invoked from module threads concurrently
     std::mutex m_cmd_response_mutex;
     std::list<json> m_cmd_response_list;
+    bool m_evse_hlc_capable{false};
 
 protected:
     // ------------------------------------------------------------------------
@@ -286,6 +292,11 @@ public:
     using provides_t = ocpp_multi::GenericOcppInterface::provides_t;
     using requires_t = ocpp_multi::GenericOcppInterface::requires_t;
     using var_cb_t = ModuleAdapter::var_cb_t;
+
+    /// \brief Whether the EVSEs the evse_manager stubs report speak ISO 15118
+    void set_evse_hlc_capable(const bool hlc_capable) {
+        m_adapter.set_evse_hlc_capable(hlc_capable);
+    }
 
     auth_token_validatorImplStub p_auth_validator{&m_adapter, "auth_validator"};
     auth_token_providerImplStub p_auth_provider{&m_adapter, "auth_provider"};

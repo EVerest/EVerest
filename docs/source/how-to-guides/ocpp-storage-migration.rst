@@ -31,7 +31,7 @@ Coming from OCPP201
 
 These ``OCPP201`` config keys exist unchanged in OCPPmulti:
 ``MessageLogPath``, ``CoreDatabasePath``, ``DeviceModelDatabasePath``,
-``EverestDeviceModelDatabasePath``, ``DeviceModelDatabaseMigrationPath``,
+``DeviceModelDatabaseMigrationPath``,
 ``DeviceModelConfigPath``, ``EnableExternalWebsocketControl``,
 ``MessageQueueResumeDelay``, ``CompositeScheduleIntervalS``,
 ``RequestCompositeScheduleDurationS``, ``RequestCompositeScheduleUnit``,
@@ -53,6 +53,35 @@ controlled by the device model variable ``SupportedOcppVersions`` of the
 ``InternalCtrlr`` component (a comma-separated preference list, e.g.
 ``ocpp2.1,ocpp2.0.1``). Apart from the custom error mapping, everything else
 in an existing ``OCPP201`` configuration carries over without changes.
+
+``EverestDeviceModelDatabasePath`` is deprecated. OCPPmulti keeps the whole
+device model in the database at ``DeviceModelDatabasePath``. At the first
+start, it takes over the database at ``EverestDeviceModelDatabasePath``: the
+``Enabled`` values of the DER controllers that the CSMS set are imported, and
+the file is renamed to ``*.migrated``. Its other values are not carried over.
+OCPP 1.6 has no DER controllers, so in OCPP 1.6 mode the imported values are
+kept in the database unused, and they apply at a later start in OCPP 2.x mode.
+If the database at ``EverestDeviceModelDatabasePath`` cannot be read, or the
+device model database cannot store a value, it keeps its name and the import
+is repeated at the next start. The components EVerest provides (``EVSE``, ``Connector``, ``ConnectedEV`` and
+others) are registered at every start, and module configuration values are
+read from the configuration service. Monitors the CSMS set are kept, since the
+old module stored them in the database at ``DeviceModelDatabasePath``. Once
+the module has started, the ``*.migrated`` file can be deleted and the key
+removed from the configuration.
+
+A component configuration at ``DeviceModelConfigPath`` must not define the
+variables EVerest registers, such as ``EVSE`` / ``Power`` or ``Connector`` /
+``Available``. Such a variable is a conflict: it keeps its component
+configuration definition, and the module logs every conflict as an error at
+each start, naming what to remove. Set ``FailOnDeviceModelConflicts`` to stop
+the module instead. Variables of these components that EVerest does not
+register may stay in the component configuration. Removing a variable from a
+file, or the whole file, takes it out of the database at the next start; the
+monitors the CSMS set on it are kept and apply to the variable EVerest
+registers. A component configuration of an EVSE or connector that does not
+exist stops the start, since the number of EVSEs and connectors in the device
+model no longer matches the station.
 
 Coming from OCPP (1.6)
 ----------------------

@@ -110,6 +110,7 @@ TEST(GridSupportDer, LiveCapabilityHonorsPersistedDisabled) {
     interfaces.add_extensions_15118("evsev2g");
     interfaces.add_grid_support("grid_support_1", 1);
     interfaces.add_reservation("reservation");
+    interfaces.set_evse_hlc_capable(true); // an AC DER controller needs an EVSE that speaks ISO 15118
 
     chargepoint.load_store("default_store.json");
     expect_init_and_ready(chargepoint, config);
@@ -161,6 +162,7 @@ TEST(GridSupportDer, LiveCapabilityHonorsPersistedEnabled) {
     interfaces.add_extensions_15118("evsev2g");
     interfaces.add_grid_support("grid_support_1", 1);
     interfaces.add_reservation("reservation");
+    interfaces.set_evse_hlc_capable(true); // an AC DER controller needs an EVSE that speaks ISO 15118
 
     chargepoint.load_store("default_store.json");
     expect_init_and_ready(chargepoint, config);
@@ -208,6 +210,7 @@ TEST(GridSupportDer, BufferedCapabilityHonorsPersistedDisabledOnFlush) {
     interfaces.add_extensions_15118("evsev2g");
     interfaces.add_grid_support("grid_support_1", 1);
     interfaces.add_reservation("reservation");
+    interfaces.set_evse_hlc_capable(true); // an AC DER controller needs an EVSE that speaks ISO 15118
 
     chargepoint.load_store("default_store.json");
     expect_init_and_ready(chargepoint, config);
@@ -234,6 +237,106 @@ TEST(GridSupportDer, BufferedCapabilityHonorsPersistedDisabledOnFlush) {
     const auto active = handle->build_active_set(1);
     EXPECT_TRUE(active.directives.empty()) << "buffered capability must inherit persisted Enabled=false at flush";
     EXPECT_TRUE(handle->capability_for(1).has_value());
+}
+
+std::string registered_value(const std::vector<ocpp::v2::RegisteredComponent>& components,
+                             const std::string& component_name, const std::int32_t evse_id,
+                             const std::string& variable_name) {
+    for (const auto& component : components) {
+        if (component.component.name.get() != component_name or not component.component.evse.has_value() or
+            component.component.evse->id != evse_id) {
+            continue;
+        }
+        for (const auto& variable : component.variables) {
+            if (variable.variable.name.get() == variable_name and not variable.attributes.empty() and
+                variable.attributes.front().value.has_value()) {
+                return variable.attributes.front().value->get();
+            }
+        }
+    }
+    return {};
+}
+
+// The capability is reported through EverestDeviceModel, which owns the DER controller variables; the charge
+// point's local write channel is not used for them.
+TEST(GridSupportDer, CapabilityIsReportedThroughTheEverestDeviceModel) {
+    ChargePointStub chargepoint;
+    ConfigStub config;
+    config.GridSupportHeartbeatS = 0;
+    ModuleInterfaces interfaces;
+
+    interfaces.add_charger_information("info");
+    interfaces.add_data_transfer("data_transfer");
+    interfaces.add_display_message("display");
+    interfaces.add_evse_energy_sink("energy_node", 1);
+    interfaces.add_evse_manager("evse_manager_1");
+    interfaces.add_evse_manager("evse_manager_2");
+    interfaces.add_extensions_15118("evsev2g");
+    interfaces.add_grid_support("grid_support_1", 1);
+    interfaces.add_reservation("reservation");
+    interfaces.set_evse_hlc_capable(true);
+
+    chargepoint.load_store("default_store.json");
+    expect_init_and_ready(chargepoint, config);
+    EXPECT_CALL(chargepoint, set_variables(_, _)).Times(0);
+    EXPECT_CALL(chargepoint, get_variables(_)).Times(AnyNumber()).WillRepeatedly([](const auto& in) {
+        return persisted_ac_enabled(in, true);
+    });
+
+    GenericOcppTester ocpp(chargepoint, interfaces.get_module_info(), config, interfaces.get_provides(),
+                           interfaces.get_requires());
+    ocpp.init();
+    interfaces.publish_ready(0, true);
+    interfaces.publish_ready(1, true);
+    ocpp.ready(interfaces.get_config_service_client());
+    EXPECT_EQ(registered_value(ocpp.everest_device_model_components(), "ACDERCtrlr", 1, "ModesSupported"), "");
+
+    gs::EVSECapability evse_capability;
+    evse_capability.evse_id = 1;
+    evse_capability.capability = make_capability({gs::DirectiveType::VoltVar, gs::DirectiveType::FreqDroop});
+    ocpp.on_grid_support_capability(evse_capability);
+
+    EXPECT_EQ(registered_value(ocpp.everest_device_model_components(), "ACDERCtrlr", 1, "ModesSupported"),
+              "VoltVar,FreqDroop");
+    EXPECT_TRUE(ocpp.grid_support_state().handle()->capability_for(1).has_value());
+}
+
+// EVSE 2 has no grid_support connection and therefore no DER controller: the capability is rejected by the
+// device model and not kept
+TEST(GridSupportDer, CapabilityOfAnEvseWithoutDerControllerIsRejected) {
+    ChargePointStub chargepoint;
+    ConfigStub config;
+    config.GridSupportHeartbeatS = 0;
+    ModuleInterfaces interfaces;
+
+    interfaces.add_charger_information("info");
+    interfaces.add_data_transfer("data_transfer");
+    interfaces.add_display_message("display");
+    interfaces.add_evse_energy_sink("energy_node", 1);
+    interfaces.add_evse_manager("evse_manager_1");
+    interfaces.add_evse_manager("evse_manager_2");
+    interfaces.add_extensions_15118("evsev2g");
+    interfaces.add_grid_support("grid_support_1", 1);
+    interfaces.add_reservation("reservation");
+    interfaces.set_evse_hlc_capable(true);
+
+    chargepoint.load_store("default_store.json");
+    expect_init_and_ready(chargepoint, config);
+    EXPECT_CALL(chargepoint, get_variables(_)).Times(AnyNumber()).WillRepeatedly([](const auto& in) {
+        return persisted_ac_enabled(in, true);
+    });
+
+    GenericOcppTester ocpp(chargepoint, interfaces.get_module_info(), config, interfaces.get_provides(),
+                           interfaces.get_requires());
+    ocpp.init();
+    interfaces.publish_ready(0, true);
+    interfaces.publish_ready(1, true);
+    ocpp.ready(interfaces.get_config_service_client());
+
+    const auto result = ocpp.apply_der_capability(2, make_capability({gs::DirectiveType::VoltVar}));
+    EXPECT_FALSE(result.accepted);
+    EXPECT_NE(result.rejected_details.find("UnknownComponent"), std::string::npos) << result.rejected_details;
+    EXPECT_FALSE(ocpp.grid_support_state().handle()->capability_for(2).has_value());
 }
 
 } // namespace

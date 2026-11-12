@@ -82,11 +82,11 @@ bool has_storable_name_key(const Component& component, const Variable& variable)
 }
 
 bool is_reserved_owner(const std::string& owner) {
-    return owner == VARIABLE_OWNER_COMPONENT_CONFIG;
+    return owner == VARIABLE_OWNER_COMPONENT_CONFIG or owner == VARIABLE_OWNER_OCPP_STACK;
 }
 
 /// \brief The variables libocpp writes from its own state through set_read_only_value, which rejects a variable of a
-/// runtime owner
+/// runtime owner other than VARIABLE_OWNER_OCPP_STACK
 bool is_reserved_variable(const Component& component, const Variable& variable) {
     // B09: the network connection profiles of every slot, which SetNetworkProfile writes
     if (component.name == "NetworkConfiguration") {
@@ -464,9 +464,9 @@ GetVariableStatusEnum DeviceModel::get_variable(const Component& component_id, c
         return status;
     }
 
-    const auto attribute = this->read_attribute(component_id, variable_id, *composed, attribute_enum);
+    const auto* attribute = find_attribute(*composed->meta_data, attribute_enum);
 
-    if (not attribute.has_value()) {
+    if (attribute == nullptr) {
         return GetVariableStatusEnum::NotSupportedAttributeType;
     }
 
@@ -485,27 +485,6 @@ GetVariableStatusEnum DeviceModel::get_variable(const Component& component_id, c
 
     value = attribute->value->get();
     return GetVariableStatusEnum::Accepted;
-}
-
-std::optional<VariableAttribute> DeviceModel::read_attribute(const Component& component, const Variable& variable,
-                                                             const ComposedVariable& composed,
-                                                             const AttributeEnum& attribute_enum) const {
-    if (composed.backing == ValueBacking::OwnerStorage) {
-        return this->storage->get_variable_attribute(component, variable, attribute_enum);
-    }
-    const auto* attribute = find_attribute(*composed.meta_data, attribute_enum);
-    if (attribute == nullptr) {
-        return std::nullopt;
-    }
-    return *attribute;
-}
-
-std::vector<VariableAttribute> DeviceModel::read_attributes(const Component& component, const Variable& variable,
-                                                            const ComposedVariable& composed) const {
-    if (composed.backing == ValueBacking::OwnerStorage) {
-        return this->storage->get_variable_attributes(component, variable);
-    }
-    return composed.meta_data->attributes;
 }
 
 std::optional<MutabilityEnum> DeviceModel::get_mutability(const Component& component, const Variable& variable,
@@ -544,11 +523,11 @@ SetVariableStatusEnum DeviceModel::set_read_only_value(const Component& componen
                                                        const std::string& source) {
     Lock lock(this->mutex);
     const auto owner = this->runtime_owner(component, variable);
-    if (owner.has_value()) {
+    if (owner.has_value() and owner.value() != VARIABLE_OWNER_OCPP_STACK) {
         EVLOG_debug << "Not setting " << component << "." << variable << ": it is owned by " << owner.value();
         return SetVariableStatusEnum::Rejected;
     }
-    if (not allow_set_read_only_value(component, variable, attribute_enum)) {
+    if (not owner.has_value() and not allow_set_read_only_value(component, variable, attribute_enum)) {
         throw std::invalid_argument("Not allowed to set read only value for component " + component.name.get() +
                                     " and variable " + variable.name.get());
     }
@@ -563,7 +542,7 @@ SetVariableStatusEnum DeviceModel::clear_value(const Component& component, const
     if (composed == nullptr) {
         return status;
     }
-    if (not this->read_attribute(component, variable, *composed, attribute_enum).has_value()) {
+    if (find_attribute(*composed->meta_data, attribute_enum) == nullptr) {
         return SetVariableStatusEnum::NotSupportedAttributeType;
     }
     if (composed->registration != nullptr) {
@@ -595,8 +574,8 @@ const ComposedVariable* DeviceModel::check_write(const Component& component, con
         return nullptr;
     }
 
-    const auto attribute = this->read_attribute(component, variable, *composed, attribute_enum);
-    if (not attribute.has_value()) {
+    const auto* attribute = find_attribute(*composed->meta_data, attribute_enum);
+    if (attribute == nullptr) {
         status = SetVariableStatusEnum::NotSupportedAttributeType;
         return nullptr;
     }
@@ -674,9 +653,9 @@ DeviceModel::AppliedWrite DeviceModel::apply(const ComposedVariable& composed, c
                                              const Variable& variable, const AttributeEnum& attribute_enum,
                                              const std::string& value, const std::string& source) {
     AppliedWrite applied;
-    // A variable held by the storage may have no attribute in memory; the storage copy is authoritative for it
-    auto attribute = this->read_attribute(component, variable, composed, attribute_enum);
-    if (not attribute.has_value()) {
+    auto& meta_data = *composed.meta_data;
+    auto* attribute = find_attribute(meta_data, attribute_enum);
+    if (attribute == nullptr) {
         applied.status = SetVariableStatusEnum::NotSupportedAttributeType;
         return applied;
     }
@@ -692,17 +671,13 @@ DeviceModel::AppliedWrite DeviceModel::apply(const ComposedVariable& composed, c
 
     std::string value_previous = attribute->value.has_value() ? attribute->value->get() : std::string{};
     attribute->value = value;
-    auto& meta_data = *composed.meta_data;
-    if (auto* in_memory = find_attribute(meta_data, attribute_enum); in_memory != nullptr) {
-        in_memory->value = value;
-    }
 
     // Only trigger for actual values
     if (attribute_enum != AttributeEnum::Actual or value_previous == value or this->variable_listener.empty()) {
         return applied;
     }
     applied.change.emplace(ValueChange{this->variable_listener, this->monitors.of(component, variable),
-                                       meta_data.characteristics, attribute.value(), std::move(value_previous)});
+                                       meta_data.characteristics, *attribute, std::move(value_previous)});
     return applied;
 }
 
@@ -715,8 +690,6 @@ SetVariableStatusEnum DeviceModel::persist(const ComposedVariable& composed, con
         if (not is_persistent(attribute)) {
             return SetVariableStatusEnum::Accepted;
         }
-        return this->storage->set_variable_attribute_value(component, variable, attribute_enum, value, source);
-    case ValueBacking::OwnerStorage:
         return this->storage->set_variable_attribute_value(component, variable, attribute_enum, value, source);
     case ValueBacking::StoredValue:
         if (not is_persistent(attribute)) {
@@ -850,7 +823,7 @@ ComponentRegistrationResult DeviceModel::register_components_of(const std::strin
                 result.rejected.push_back({component, variable, RegistrationRejectionReason::NoAttributes});
                 continue;
             }
-            if (is_reserved_variable(component, variable)) {
+            if (owner != VARIABLE_OWNER_OCPP_STACK and is_reserved_variable(component, variable)) {
                 EVLOG_error << "Owner " << owner << " registered " << component << "." << variable
                             << ", which libocpp writes itself: the variable is ignored";
                 result.rejected.push_back({component, variable, RegistrationRejectionReason::ReservedVariable});
@@ -1064,7 +1037,7 @@ std::vector<ReportData> DeviceModel::get_base_report_data(const ReportBaseEnum& 
             cv.variable = variable;
 
             // iterate over possibly (Actual, Target, MinSet, MaxSet)
-            for (const auto& variable_attribute : this->read_attributes(component, variable, composed)) {
+            for (const auto& variable_attribute : variable_meta_data.attributes) {
                 if (report_base == ReportBaseEnum::FullInventory or
                     (report_base == ReportBaseEnum::ConfigurationInventory and
                      (variable_attribute.mutability == MutabilityEnum::ReadWrite or
@@ -1106,7 +1079,7 @@ DeviceModel::get_custom_report_data(const std::optional<std::vector<ComponentVar
                     report_data.component = component;
                     report_data.variable = variable;
 
-                    for (const auto& variable_attribute : this->read_attributes(component, variable, composed)) {
+                    for (const auto& variable_attribute : variable_meta_data.attributes) {
                         report_data.variableAttribute.push_back(variable_attribute);
                         if (variable_attribute.mutability == MutabilityEnum::WriteOnly) {
                             report_data.variableAttribute.back().value.reset();
@@ -1322,11 +1295,10 @@ std::vector<SetMonitoringResult> DeviceModel::set_monitors(const std::vector<Set
             }
         }
 
-        const auto attribute =
-            this->read_attribute(request.component, request.variable, composed, AttributeEnum::Actual);
+        const auto* attribute = find_attribute(meta_data, AttributeEnum::Actual);
         static const std::string empty_value{};
         const std::string current_value =
-            (attribute.has_value() and attribute->value.has_value()) ? attribute->value->get() : empty_value;
+            (attribute != nullptr and attribute->value.has_value()) ? attribute->value->get() : empty_value;
         try {
             const auto monitor_meta = this->monitors.set(request, type, current_value);
             if (!monitor_meta.has_value()) {
@@ -1338,11 +1310,11 @@ std::vector<SetMonitoringResult> DeviceModel::set_monitors(const std::vector<Set
             // N07.FR.11
             // In case of an existing monitor update
             if (request_has_id && monitor_update_listener) {
-                if (attribute.has_value()) {
+                if (attribute != nullptr) {
                     pending_notifications.push_back(
                         [listener = monitor_update_listener, monitor_meta = monitor_meta.value(),
                          component = request.component, variable = request.variable,
-                         characteristics = meta_data.characteristics, attribute = attribute.value(), current_value]() {
+                         characteristics = meta_data.characteristics, attribute = *attribute, current_value]() {
                             listener(monitor_meta, component, variable, characteristics, attribute, current_value);
                         });
                 } else {

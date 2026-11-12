@@ -9,6 +9,7 @@
 #define private public
 // database_exists must be set with this test, but std::filesystem::exists is hard to stub, so this way we can set it
 // in the test.
+#include <ocpp/v2/ctrlr_component_variables.hpp>
 #include <ocpp/v2/init_device_model_db.hpp>
 #include <ocpp/v2/ocpp16_component_config_patcher.hpp>
 #undef private
@@ -360,24 +361,14 @@ TEST_F(InitDeviceModelDbTest, init_db) {
     // Component added
     EXPECT_TRUE(component_exists("EVSE", std::nullopt, 3, std::nullopt));
     EXPECT_TRUE(component_exists("Connector", std::nullopt, 2, 2));
-    // Component is missing from the changed config but must NOT be removed on reinit.
-    // Pruning was replaced with a warning so per-slot components (NetworkConfiguration_<N>)
-    // survive missing JSON files and blob migration retries can still complete.
-    EXPECT_TRUE(component_exists("Connector", std::nullopt, 2, 1));
-    EXPECT_TRUE(variable_exists("Connector", std::nullopt, 2, 1, "AvailabilityState", std::nullopt));
-    EXPECT_TRUE(variable_exists("Connector", std::nullopt, 2, 1, "Available", std::nullopt));
-    EXPECT_TRUE(variable_exists("Connector", std::nullopt, 2, 1, "ChargeProtocol", std::nullopt));
-    EXPECT_TRUE(variable_exists("Connector", std::nullopt, 2, 1, "ConnectorType", std::nullopt));
-    EXPECT_TRUE(variable_exists("Connector", std::nullopt, 2, 1, "SupplyPhases", std::nullopt));
-    EXPECT_TRUE(attribute_exists("Connector", std::nullopt, 2, 1, "ChargeProtocol", std::nullopt, std::nullopt,
-                                 AttributeEnum::Actual));
-    EXPECT_TRUE(attribute_exists("Connector", std::nullopt, 2, 1, "ConnectorType", std::nullopt,
-                                 MutabilityEnum::ReadOnly, AttributeEnum::Actual));
-    EXPECT_TRUE(characteristics_exists("Connector", std::nullopt, 2, 1, "Available", std::nullopt, DataEnum::boolean,
-                                       std::nullopt, std::nullopt, true, std::nullopt, std::nullopt));
-    EXPECT_TRUE(characteristics_exists("Connector", std::nullopt, 2, 1, "AvailabilityState", std::nullopt,
-                                       DataEnum::OptionList, std::nullopt, std::nullopt, true, std::nullopt,
-                                       "Available,Occupied,Reserved,Unavailable,Faulted"));
+    // Component removed from the config: removed with its variables
+    EXPECT_FALSE(component_exists("Connector", std::nullopt, 2, 1));
+    EXPECT_FALSE(variable_exists("Connector", std::nullopt, 2, 1, "AvailabilityState", std::nullopt));
+    EXPECT_FALSE(variable_exists("Connector", std::nullopt, 2, 1, "Available", std::nullopt));
+    EXPECT_FALSE(attribute_exists("Connector", std::nullopt, 2, 1, "ChargeProtocol", std::nullopt, std::nullopt,
+                                  AttributeEnum::Actual));
+    EXPECT_FALSE(characteristics_exists("Connector", std::nullopt, 2, 1, "Available", std::nullopt, DataEnum::boolean,
+                                        std::nullopt, std::nullopt, true, std::nullopt, std::nullopt));
 
     // Changed supports monitoring and datatype
     EXPECT_FALSE(characteristics_exists("EVSE", std::nullopt, 2, std::nullopt, "AvailabilityState", std::nullopt,
@@ -1437,18 +1428,26 @@ TEST_F(InitDeviceModelDbTest, ocpp16_values_protected_from_default_overwrite) {
 }
 
 namespace {
-void set_aligned_data_interval_monitors(std::map<ComponentKey, std::vector<DeviceModelVariable>>& component_configs,
-                                        const std::vector<VariableMonitoringMeta>& monitors) {
+void set_monitors(std::map<ComponentKey, std::vector<DeviceModelVariable>>& component_configs,
+                  const std::string& component_name, const std::optional<int32_t> evse_id,
+                  const std::optional<int32_t> connector_id, const std::string& variable_name,
+                  const std::vector<VariableMonitoringMeta>& monitors) {
     for (auto& [component, variables] : component_configs) {
-        if (component.name != "AlignedDataCtrlr") {
+        if (component.name != component_name or component.evse_id != evse_id or
+            component.connector_id != connector_id) {
             continue;
         }
         for (auto& variable : variables) {
-            if (variable.name == "Interval") {
+            if (variable.name == variable_name) {
                 variable.monitors = monitors;
             }
         }
     }
+}
+
+void set_aligned_data_interval_monitors(std::map<ComponentKey, std::vector<DeviceModelVariable>>& component_configs,
+                                        const std::vector<VariableMonitoringMeta>& monitors) {
+    set_monitors(component_configs, "AlignedDataCtrlr", std::nullopt, std::nullopt, "Interval", monitors);
 }
 
 VariableMonitoringMeta make_preconfigured_delta_monitor(const float value, const std::string& reference_value) {
@@ -1540,6 +1539,88 @@ TEST_F(InitDeviceModelDbTest, monitors_of_the_removed_ocpp16_legacy_ctrlr_are_ke
 
     EXPECT_FALSE(component_exists("OCPP16LegacyCtrlr", std::nullopt, std::nullopt, std::nullopt));
     EXPECT_EQ(stored_monitors(), 1);
+}
+
+/// A component whose config file is gone is removed from the database; its monitors stay, keyed by name, so they
+/// apply when an owner registers the variable at runtime. A NetworkConfiguration slot is kept, since the migration of
+/// the network connection profiles creates it without a config file.
+TEST_F(InitDeviceModelDbTest, component_without_config_file_is_removed_except_a_network_configuration_slot) {
+    const auto connector_monitors = [&]() {
+        auto statement = this->database->new_statement(
+            "SELECT COUNT(*) FROM VARIABLE_MONITORING WHERE COMPONENT_NAME = 'Connector' AND EVSE_ID = 2 AND "
+            "CONNECTOR_ID = 1 AND VARIABLE_NAME = 'SupplyPhases'");
+        EXPECT_EQ(statement->step(), SQLITE_ROW);
+        return statement->column_int(0);
+    };
+
+    InitDeviceModelDb db(DATABASE_PATH, MIGRATION_FILES_PATH);
+    db.database_exists = false;
+    auto component_configs = get_all_component_configs(CONFIGS_PATH);
+    set_monitors(component_configs, "Connector", 2, 1, "SupplyPhases", {make_preconfigured_delta_monitor(1.0F, "0")});
+    // The variables of a network connection profile slot do not matter here, any component's serve
+    ASSERT_FALSE(component_configs.empty());
+    const auto slot_variables = component_configs.begin()->second;
+    ComponentKey slot;
+    slot.name = "NetworkConfiguration";
+    slot.instance = "1";
+    component_configs[slot] = slot_variables;
+    db.initialize_database(component_configs, true);
+    ASSERT_TRUE(component_exists("Connector", std::nullopt, 2, 1));
+    ASSERT_TRUE(component_exists("NetworkConfiguration", "1", std::nullopt, std::nullopt));
+    ASSERT_EQ(connector_monitors(), 1);
+
+    // Restart with a config without Connector 2/1 and without the slot
+    db.database_exists = true;
+    db.initialize_database(get_all_component_configs(CONFIGS_PATH_CHANGED), false);
+    EXPECT_FALSE(component_exists("Connector", std::nullopt, 2, 1));
+    EXPECT_FALSE(variable_exists("Connector", std::nullopt, 2, 1, "SupplyPhases", std::nullopt));
+    EXPECT_EQ(connector_monitors(), 1);
+    EXPECT_TRUE(component_exists("NetworkConfiguration", "1", std::nullopt, std::nullopt));
+}
+
+/// A component config that lacks a component with a required variable is taken as incomplete: no component is
+/// removed, so the stored values survive until the config is fixed.
+TEST_F(InitDeviceModelDbTest, no_component_is_removed_when_the_config_lacks_a_required_component) {
+    InitDeviceModelDb db(DATABASE_PATH, MIGRATION_FILES_PATH);
+    db.database_exists = false;
+    auto component_configs = get_all_component_configs(CONFIGS_PATH);
+    // The variables of the required component do not matter here, any component's serve
+    ASSERT_FALSE(component_configs.empty());
+    ComponentKey security_ctrlr;
+    security_ctrlr.name = ControllerComponentVariables::SecurityProfile.component.name.get();
+    component_configs[security_ctrlr] = component_configs.begin()->second;
+    db.initialize_database(component_configs, true);
+    ASSERT_TRUE(component_exists(security_ctrlr.name, std::nullopt, std::nullopt, std::nullopt));
+    ASSERT_TRUE(component_exists("Connector", std::nullopt, 2, 1));
+
+    // Restart with a config without the required component and without Connector 2/1
+    db.database_exists = true;
+    db.initialize_database(get_all_component_configs(CONFIGS_PATH_CHANGED), false);
+    EXPECT_TRUE(component_exists(security_ctrlr.name, std::nullopt, std::nullopt, std::nullopt));
+    EXPECT_TRUE(component_exists("Connector", std::nullopt, 2, 1));
+    EXPECT_TRUE(variable_exists("Connector", std::nullopt, 2, 1, "SupplyPhases", std::nullopt));
+    // The components of the config are still added
+    EXPECT_TRUE(component_exists("Connector", std::nullopt, 2, 2));
+}
+
+/// Only the component that holds a required variable counts: an instance of a component with the same name is
+/// removed like any other component without a config file.
+TEST_F(InitDeviceModelDbTest, instance_of_a_required_component_is_removed_without_a_config_file) {
+    InitDeviceModelDb db(DATABASE_PATH, MIGRATION_FILES_PATH);
+    db.database_exists = false;
+    auto component_configs = get_all_component_configs(CONFIGS_PATH);
+    ASSERT_FALSE(component_configs.empty());
+    ComponentKey security_ctrlr_instance;
+    security_ctrlr_instance.name = ControllerComponentVariables::SecurityProfile.component.name.get();
+    security_ctrlr_instance.instance = "extra";
+    component_configs[security_ctrlr_instance] = component_configs.begin()->second;
+    db.initialize_database(component_configs, true);
+    ASSERT_TRUE(component_exists(security_ctrlr_instance.name, "extra", std::nullopt, std::nullopt));
+
+    db.database_exists = true;
+    db.initialize_database(get_all_component_configs(CONFIGS_PATH_CHANGED), false);
+    EXPECT_FALSE(component_exists(security_ctrlr_instance.name, "extra", std::nullopt, std::nullopt));
+    EXPECT_FALSE(component_exists("Connector", std::nullopt, 2, 1));
 }
 
 } // namespace ocpp::v2
