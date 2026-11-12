@@ -31,8 +31,6 @@
 #define SSL_CTX_new_ex(LIB, PROP, METHOD) SSL_CTX_new(METHOD)
 #endif
 
-using namespace std::chrono_literals;
-
 namespace {
 std::optional<std::filesystem::path> keylog_file;
 
@@ -121,11 +119,11 @@ struct ConnectionData {
 
     /// \brief Requests an active connection to awake from 'poll' and process again
     void request_awake() {
+        const std::lock_guard lock(this->mutex);
+
         if (std::this_thread::get_id() == this->websocket_client_thread_id) {
             EVLOG_AND_THROW(std::runtime_error("Attempted to awake connection from websocket thread!"));
         }
-
-        const std::lock_guard lock(this->mutex);
 
         if (lws_ctx) {
             lws_cancel_service(lws_ctx.get());
@@ -133,20 +131,17 @@ struct ConnectionData {
     }
 
     /// \brief Requests the threads that are processing to exit as soon as possible
-    /// in a ordered manner.
-    /// Note: this only flips is_running (behind this->mutex); it does not wake the recv thread,
-    /// which waits on the recv_message_queue condition variable behind a different lock. Callers
-    /// must follow this with recv_message_queue notification (safe_close_threads() does so via
-    /// clear_all_queues()) or the recv thread only observes the interrupt on its next poll timeout.
+    /// in an orderly manner. Stops the received message queue, which wakes the recv thread.
     void do_interrupt_and_exit() {
+        const std::lock_guard lock(this->mutex);
+
         if (std::this_thread::get_id() == this->websocket_client_thread_id) {
             EVLOG_AND_THROW(std::runtime_error("Attempted to interrupt connection from websocket thread!"));
         }
 
-        const std::lock_guard lock(this->mutex);
-
         if (is_running) {
             is_running = false;
+            m_recv_message_queue.stop();
 
             // Notify if we are on a different thread
             if (lws_ctx) {
@@ -260,9 +255,13 @@ private:
 
     std::mutex mutex;
 
-    /// \brief Websocket client thread ID
+    // Owned per connection: once stopped on interrupt it is never reused, and a detached recv
+    // thread keeps it alive through its shared ConnectionData
+    everest::lib::util::thread_safe_queue<std::string> m_recv_message_queue;
+
+    /// \brief Websocket client and received message thread IDs. Each thread binds its own ID while it runs
+    /// and resets it on exit, since the IDs of exited threads are reused
     std::thread::id websocket_client_thread_id;
-    /// \brief Websocket received message thread ID
     std::thread::id websocket_recv_thread_id;
 
     // Required for access of state
@@ -283,6 +282,8 @@ public:
     size_t sent_bytes;
     // If libwebsockets has sent all the bytes through the wire
     std::atomic_bool message_sent;
+    // Dropped from the send queue before it was sent, guarded by the send queue lock
+    bool m_aborted{false};
 };
 
 namespace {
@@ -354,7 +355,6 @@ WebsocketLibwebsockets::WebsocketLibwebsockets(const WebsocketConnectionOptions&
                                                std::shared_ptr<EvseSecurity> evse_security) :
     WebsocketBase(), // NOLINT(readability-redundant-member-init): explicitly call base class ctor here for readability
     evse_security(evse_security),
-    stop_deferred_handler(false),
     connected_ocpp_version{OcppProtocolVersion::Unknown} {
 
     set_connection_options(connection_options);
@@ -383,9 +383,7 @@ WebsocketLibwebsockets::~WebsocketLibwebsockets() {
         // In the dtor we must make sure the deferred callback thread
         // finishes since the callbacks capture a reference to 'this'
         if (this->deferred_callback_thread != nullptr && this->deferred_callback_thread->joinable()) {
-            this->stop_deferred_handler.store(true);
-            this->deferred_callback_queue.notify_waiting_thread();
-
+            this->m_deferred_callback_queue.stop();
             this->deferred_callback_thread->join();
         }
     } catch (...) {
@@ -600,40 +598,24 @@ void WebsocketLibwebsockets::thread_websocket_message_recv_loop(std::shared_ptr<
         EVLOG_AND_THROW(std::runtime_error("Null 'ConnectionData' in message thread, fatal error!"));
     }
 
+    local_data->bind_thread_message(std::this_thread::get_id());
     EVLOG_debug << "Init recv loop with ID: " << std::hex << std::this_thread::get_id();
 
-    while (!local_data->is_interupted()) {
-        // Process all messages
-        while (true) {
-            std::string message{};
-
-            {
-                if (recv_message_queue.empty()) {
-                    break;
-                }
-
-                message = recv_message_queue.pop();
-            }
-
-            // Invoke our processing callback, that might trigger a send back that
-            // can cause a deadlock if is not managed on a different thread
-            this->message_callback(message);
+    // The interrupt stops the queue, which ends the wait. The message callback can cause the interrupt
+    // itself when a message makes the charge point reconnect (BasicAuthPass for example), so messages
+    // still queued after an interrupt are dropped.
+    while (auto message = local_data->m_recv_message_queue.wait_and_pop()) {
+        if (local_data->is_interupted()) {
+            break;
         }
 
-        // While we are empty, sleep, only if we have not been interrupted in the
-        // message_callback. An interrupt can be caused in the message callback
-        // if we receive a certain message type that will cause the implementation
-        // in the charge point to attempt a reconnect (BasicAuthPass for example)
-        if (!local_data->is_interupted()) {
-            // Wake immediately when interrupted: the interrupt flag lives behind a different lock, so
-            // without this predicate a teardown that races the thread into the wait is only observed
-            // when the poll times out, stalling disconnect() for the poll interval.
-            recv_message_queue.wait_on_queue_element_or_predicate([&local_data] { return local_data->is_interupted(); },
-                                                                  1s);
-        }
+        // Invoke our processing callback, that might trigger a send back that
+        // can cause a deadlock if is not managed on a different thread
+        this->message_callback(message.value());
     }
 
     EVLOG_debug << "Exit recv loop with ID: " << std::hex << std::this_thread::get_id();
+    local_data->bind_thread_message(std::thread::id{});
 }
 
 bool WebsocketLibwebsockets::initialize_connection_options(std::shared_ptr<ConnectionData>& new_connection_data) {
@@ -738,6 +720,7 @@ void WebsocketLibwebsockets::thread_websocket_client_loop(std::shared_ptr<Connec
         EVLOG_AND_THROW(std::runtime_error("Null 'ConnectionData' in client thread, fatal error!"));
     }
 
+    local_data->bind_thread_client(std::this_thread::get_id());
     EVLOG_debug << "Init client loop with ID: " << std::hex << std::this_thread::get_id();
     bool try_reconnect = true;
 
@@ -828,7 +811,7 @@ void WebsocketLibwebsockets::thread_websocket_client_loop(std::shared_ptr<Connec
                     processing = (!local_data->is_interupted()) &&
                                  (state != EConnectionState::FINALIZED && state != EConnectionState::ERROR);
 
-                    if (processing && !send_message_queue.empty()) {
+                    if (processing && !m_send_message_queue.handle()->empty()) {
                         lws_callback_on_writable(local_data->get_conn());
                     }
                 } while (n >= 0 && processing);
@@ -910,12 +893,24 @@ void WebsocketLibwebsockets::thread_websocket_client_loop(std::shared_ptr<Connec
 
     // Client loop finished for our tid
     EVLOG_info << "Exit websocket client loop with ID: " << std::hex << std::this_thread::get_id();
+    local_data->bind_thread_client(std::thread::id{});
 }
 
-void WebsocketLibwebsockets::clear_all_queues() {
-    this->send_message_queue.clear();
+void WebsocketLibwebsockets::clear_all_queues(ConnectionData* data) {
+    {
+        auto send_queue = this->m_send_message_queue.handle();
+        for (; not send_queue->empty(); send_queue->pop()) {
+            send_queue->front()->m_aborted = true;
+        }
+    }
+    this->m_send_message_queue.notify_all();
+
     this->recv_buffered_message.clear();
-    this->recv_message_queue.clear();
+
+    if (data != nullptr) {
+        while (data->m_recv_message_queue.try_pop()) {
+        }
+    }
 }
 
 void WebsocketLibwebsockets::safe_close_threads() {
@@ -946,7 +941,7 @@ void WebsocketLibwebsockets::safe_close_threads() {
     }
 
     // Clear any pending outgoing/incoming messages on a new connection
-    clear_all_queues();
+    clear_all_queues(local_conn_data.get());
 
     // Wait old thread for a clean state
     if (this->websocket_thread && this->websocket_thread->joinable()) {
@@ -1035,10 +1030,6 @@ bool WebsocketLibwebsockets::start_connecting() {
     // advance we will have a dead-lock
     this->recv_message_thread = std::make_unique<std::thread>(
         &WebsocketLibwebsockets::thread_websocket_message_recv_loop, this, this->conn_data);
-
-    // Bind threads for various checks
-    this->conn_data->bind_thread_client(this->websocket_thread->get_id());
-    this->conn_data->bind_thread_message(this->recv_message_thread->get_id());
 
     return true;
 }
@@ -1192,13 +1183,13 @@ void WebsocketLibwebsockets::poll_message(const std::shared_ptr<WebsocketMessage
     }
 
     EVLOG_debug << "Queueing message with length: " << msg->payload.size();
-    send_message_queue.push(msg);
+    m_send_message_queue.handle()->push(msg);
 
     // Request a write callback
     request_write();
 
-    send_message_queue.wait_on_custom_event([&] { return (true == msg->message_sent); },
-                                            this->connection_options.message_timeout);
+    m_send_message_queue.handle().wait_for([&msg] { return msg->message_sent.load() or msg->m_aborted; },
+                                           this->connection_options.message_timeout);
 
     if (msg->message_sent) {
         EVLOG_debug << "Successfully sent last message!";
@@ -1434,7 +1425,7 @@ int WebsocketLibwebsockets::process_callback(void* wsi_ptr, int callback_reason,
 
     case LWS_CALLBACK_CLIENT_WRITEABLE:
         on_conn_writable();
-        if (false == send_message_queue.empty()) {
+        if (not m_send_message_queue.handle()->empty()) {
             lws_callback_on_writable(wsi);
         }
         break;
@@ -1443,7 +1434,7 @@ int WebsocketLibwebsockets::process_callback(void* wsi_ptr, int callback_reason,
         // Clear the ping when we receive the pong
         ping_cleared.store(true);
 
-        if (false == send_message_queue.empty()) {
+        if (not m_send_message_queue.handle()->empty()) {
             lws_callback_on_writable(data->get_conn());
         }
     } break;
@@ -1469,17 +1460,17 @@ int WebsocketLibwebsockets::process_callback(void* wsi_ptr, int callback_reason,
 
         // A message can span several frames, only the final one completes it
         if (remaining == 0 and lws_is_final_fragment(wsi) != 0) {
-            on_conn_message(std::move(recv_buffered_message));
+            on_conn_message(data, std::move(recv_buffered_message));
             recv_buffered_message.clear();
         }
 
-        if (false == send_message_queue.empty()) {
+        if (not m_send_message_queue.handle()->empty()) {
             lws_callback_on_writable(data->get_conn());
         }
     } break;
 
     case LWS_CALLBACK_EVENT_WAIT_CANCELLED: {
-        if (false == send_message_queue.empty()) {
+        if (not m_send_message_queue.handle()->empty()) {
             lws_callback_on_writable(data->get_conn());
         }
     } break;
@@ -1606,7 +1597,7 @@ int WebsocketLibwebsockets::process_callback(void* wsi_ptr, int callback_reason,
     return 0;
 }
 
-void WebsocketLibwebsockets::on_conn_connected(ConnectionData* /*conn_data*/) {
+void WebsocketLibwebsockets::on_conn_connected(ConnectionData* conn_data) {
     // Called on the websocket client thread
     EVLOG_info << "OCPP client successfully connected to server with version: " << this->connected_ocpp_version;
 
@@ -1623,7 +1614,7 @@ void WebsocketLibwebsockets::on_conn_connected(ConnectionData* /*conn_data*/) {
     }
 
     // Clear any irrelevant data after a DC
-    clear_all_queues();
+    clear_all_queues(conn_data);
 
     this->push_deferred_callback([this]() {
         if (connected_callback) {
@@ -1651,7 +1642,7 @@ void WebsocketLibwebsockets::on_conn_close(ConnectionData* conn_data) {
     }
 
     // Clear any irrelevant data after a DC
-    clear_all_queues();
+    clear_all_queues(conn_data);
 
     this->push_deferred_callback([this]() {
         if (this->stopped_connecting_callback) {
@@ -1671,7 +1662,7 @@ void WebsocketLibwebsockets::on_conn_close(ConnectionData* conn_data) {
     conn_data->mark_stop_executed();
 }
 
-void WebsocketLibwebsockets::on_conn_fail(ConnectionData* /*conn_data*/) {
+void WebsocketLibwebsockets::on_conn_fail(ConnectionData* conn_data) {
     // Called on the websocket client thread
     EVLOG_error << "OCPP client connection to server failed";
 
@@ -1693,20 +1684,22 @@ void WebsocketLibwebsockets::on_conn_fail(ConnectionData* /*conn_data*/) {
     this->m_is_connected = false;
 
     // Clear any irrelevant data after a DC
-    clear_all_queues();
+    clear_all_queues(conn_data);
 
     // TODO: See if this is required for a faster fail
     // lws_set_timeout(conn_data->get_conn(), (enum pending_timeout)1, LWS_TO_KILL_ASYNC);
 }
 
-void WebsocketLibwebsockets::on_conn_message(std::string&& message) {
+void WebsocketLibwebsockets::on_conn_message(ConnectionData* conn_data, std::string&& message) {
     // Called on the websocket client thread
     if (!this->initialized()) {
         EVLOG_error << "Message received but TLS websocket has not been correctly initialized. Discarding message.";
         return;
     }
 
-    recv_message_queue.push(std::move(message));
+    if (conn_data->m_recv_message_queue.push(std::move(message)) == 0) {
+        EVLOG_debug << "Connection interrupted, dropping received message";
+    }
 }
 
 void WebsocketLibwebsockets::on_conn_writable() {
@@ -1728,56 +1721,54 @@ void WebsocketLibwebsockets::on_conn_writable() {
         return;
     }
 
-    // Execute while we have messages that were polled
-    while (true) {
-        // Break if we have en empty queue
-        if (send_message_queue.empty()) {
-            break;
-        }
+    std::shared_ptr<WebsocketMessage> next_unsent;
+    bool any_sent = false;
 
-        auto message = send_message_queue.front();
+    {
+        auto queue = m_send_message_queue.handle();
 
-        if (message == nullptr) {
-            EVLOG_AND_THROW(std::runtime_error("Null message in queue, fatal error!"));
-        }
+        // Execute while we have messages that were polled
+        while (not queue->empty()) {
+            const auto& message = queue->front();
 
-        // This message was polled in a previous iteration
-        if (message->sent_bytes >= message->payload.length()) {
+            if (message == nullptr) {
+                EVLOG_AND_THROW(std::runtime_error("Null message in queue, fatal error!"));
+            }
+
+            // This message was polled in a previous iteration
+            if (message->sent_bytes < message->payload.length()) {
+                // If the message was not polled, we reached the first unpolled and break
+                next_unsent = message;
+                break;
+            }
+
             EVLOG_debug << "Websocket message fully written, popping processing thread from queue!";
 
             // If we have written all bytes to libwebsockets it means that if we received
             // this writable callback everything is sent over the wire, mark it as sent and remove
             message->message_sent = true;
-            send_message_queue.pop();
-        } else {
-            // If the message was not polled, we reached the first unpolled and break
-            break;
+            any_sent = true;
+            queue->pop();
         }
+    }
+
+    if (any_sent) {
+        m_send_message_queue.notify_all();
     }
 
     // If we still have message ONLY poll a single one that can be processed in the invoke of the function
     // libwebsockets is designed so that when a message is sent to the wire from the internal buffer it
     // will invoke 'on_conn_writable' again and we can execute the code above
-    if (!send_message_queue.empty()) {
+    if (next_unsent != nullptr) {
         // Poll a single message
         EVLOG_debug << "Client writable, sending message part!";
 
-        auto message = send_message_queue.front();
-
-        if (message == nullptr) {
-            EVLOG_AND_THROW(std::runtime_error("Null message in queue, fatal error!"));
-        }
-
-        if (message->sent_bytes >= message->payload.length()) {
-            EVLOG_AND_THROW(std::runtime_error("Already polled message should be handled above, fatal error!"));
-        }
-
         // Continue sending message part, for a single message only
-        const bool sent = send_internal(local_data->get_conn(), message.get());
+        const bool sent = send_internal(local_data->get_conn(), next_unsent.get());
 
         // If we failed, attempt again later
         if (!sent) {
-            message->sent_bytes = 0;
+            next_unsent->sent_bytes = 0;
         }
     }
 }
@@ -1788,35 +1779,15 @@ void WebsocketLibwebsockets::push_deferred_callback(const std::function<void()>&
         return;
     }
 
-    if (this->stop_deferred_handler.load()) {
+    if (this->m_deferred_callback_queue.push(callback) == 0) {
         EVLOG_debug << "Deferred handler is stopping, dropping callback";
-        return;
     }
-
-    this->deferred_callback_queue.push(callback);
 }
 
 void WebsocketLibwebsockets::thread_deferred_callback_queue() {
-    while (true) {
-        std::function<void()> callback;
-        {
-            this->deferred_callback_queue.wait_on_queue_element_or_predicate(
-                [this]() { return this->stop_deferred_handler.load(); });
-
-            if (stop_deferred_handler and this->deferred_callback_queue.empty()) {
-                break;
-            }
-
-            callback = this->deferred_callback_queue.pop();
-        }
-
-        // This needs to be out of lock scope otherwise we still keep the mutex locked while executing the callback.
-        // This would block the callers of push_deferred_callback()
-        if (callback) {
-            callback();
-        } else {
-            EVLOG_error << "Stale callback in deferred queue!";
-        }
+    // Drains the callbacks queued before stop() and then exits
+    while (auto callback = this->m_deferred_callback_queue.wait_and_pop()) {
+        callback.value()();
     }
 }
 

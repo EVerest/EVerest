@@ -4,11 +4,15 @@
 #define OCPP_WEBSOCKET_TLS_TPM_HPP
 
 #include <ocpp/common/evse_security.hpp>
-#include <ocpp/common/safe_queue.hpp>
 #include <ocpp/common/websocket/websocket_base.hpp>
 
+#include <everest/util/async/monitor.hpp>
+#include <everest/util/queue/thread_safe_queue.hpp>
+
+#include <functional>
 #include <memory>
 #include <optional>
+#include <queue>
 #include <string>
 
 struct ssl_ctx_st;
@@ -80,7 +84,7 @@ private:
     void on_conn_writable();
 
     /// \brief Called when a message is received over the TLS websocket, calls the message callback
-    void on_conn_message(std::string&& message);
+    void on_conn_message(ConnectionData* conn_data, std::string&& message);
 
     /// \brief Requests a message write, awakes the websocket loop from 'poll'
     void request_write();
@@ -94,7 +98,7 @@ private:
     void safe_close_threads();
 
     /// \brief Clears all messages and message queues both incoming and outgoing
-    void clear_all_queues();
+    void clear_all_queues(ConnectionData* data);
 
     std::shared_ptr<EvseSecurity> evse_security;
 
@@ -103,16 +107,14 @@ private:
     std::unique_ptr<std::thread> websocket_thread;
     std::shared_ptr<ConnectionData> conn_data;
 
-    // Queue of outgoing messages, notify thread only when we remove messages
-    SafeQueue<std::shared_ptr<WebsocketMessage>> send_message_queue;
+    // Queue of outgoing messages, notified when a message is sent or aborted
+    everest::lib::util::monitor<std::queue<std::shared_ptr<WebsocketMessage>>> m_send_message_queue;
 
     std::unique_ptr<std::thread> recv_message_thread;
-    SafeQueue<std::string> recv_message_queue;
     std::string recv_buffered_message;
 
     std::unique_ptr<std::thread> deferred_callback_thread;
-    SafeQueue<std::function<void()>> deferred_callback_queue;
-    std::atomic_bool stop_deferred_handler;
+    everest::lib::util::thread_safe_queue<std::function<void()>> m_deferred_callback_queue;
 
     OcppProtocolVersion connected_ocpp_version;
 };

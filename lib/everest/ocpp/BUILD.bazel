@@ -91,6 +91,7 @@ cc_library(
         "@com_github_pboettch_json-schema-validator//:json-schema-validator",
         "@com_github_warmcatt_libwebsockets//:libwebsockets",
         "//lib/everest/sqlite:everest-sqlite",
+        "//lib/everest/util:util",
     ],
     copts = [
         "-std=c++17",
