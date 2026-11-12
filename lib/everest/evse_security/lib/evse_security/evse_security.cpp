@@ -408,6 +408,11 @@ InstallCertificateResult EvseSecurity::install_ca_certificate(const std::string&
             return InstallCertificateResult::Expired;
         }
 
+        if (!new_cert.is_ca()) {
+            EVLOG_error << "Refusing to install a certificate that is not a CA certificate";
+            return InstallCertificateResult::InvalidCertificateChain;
+        }
+
         // Load existing
         const auto ca_bundle_path = this->ca_bundle_path_map.at(certificate_type);
 
@@ -417,6 +422,18 @@ InstallCertificateResult EvseSecurity::install_ca_certificate(const std::string&
         }
 
         X509CertificateBundle existing_certs(ca_bundle_path, EncodingFormat::PEM);
+
+        // Without its issuer in the bundle, a certificate can not be identified by its issuerKeyHash
+        if (!new_cert.is_selfsigned()) {
+            const auto installed_certs = existing_certs.split();
+            const bool issuer_installed =
+                std::any_of(installed_certs.begin(), installed_certs.end(),
+                            [&new_cert](const X509Wrapper& installed) { return new_cert.is_child(installed); });
+            if (!issuer_installed) {
+                EVLOG_error << "Refusing to install a CA certificate whose issuer is not installed";
+                return InstallCertificateResult::NoRootCertificateInstalled;
+            }
+        }
 
         std::uintmax_t total_v2g_mo_ca_count = 0;
         for (const auto ca_type : {CaCertificateType::V2G, CaCertificateType::MO}) {

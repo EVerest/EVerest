@@ -104,7 +104,8 @@ public:
     ~EvseSecurity();
 
     /// @brief Installs the given \p certificate within the specified CA bundle file or directory if directories are
-    /// used. If the certificate already exists it will only be updated
+    /// used. If the certificate already exists it will only be updated. Certificates that are not CA certificates
+    /// and CA certificates whose issuer is not in the bundle are rejected
     /// @param certificate PEM formatted CA certificate
     /// @param certificate_type specifies the CA certificate type
     /// @return result of the operation

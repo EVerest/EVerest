@@ -41,6 +41,9 @@ public:
     /// @brief Returns true if this certificate is self-signed
     bool is_selfsigned() const;
 
+    /// @brief Returns true if this certificate may be used to issue other certificates
+    bool is_ca() const;
+
     /// @brief Gets x509 raw handle
     inline X509Handle* get() const {
         return x509.get();

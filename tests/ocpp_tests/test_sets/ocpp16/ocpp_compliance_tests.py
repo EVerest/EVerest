@@ -6777,9 +6777,7 @@ async def test_chargepoint_install_certificate(
 ):
     logging.info("######### test_chargepoint_install_certificate #########")
 
-    certificate = open(
-        Path(__file__).parent.parent / test_config.certificate_info.csms_cert
-    ).read()
+    certificate = open(test_config.certificate_info.csms_root_ca).read()
 
     await charge_point_v16.install_certificate_req(
         certificate_type=CertificateUse.central_system_root_certificate,
