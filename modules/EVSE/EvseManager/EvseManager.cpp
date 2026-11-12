@@ -55,6 +55,18 @@ bool almost_eq(double a, double b) {
     return std::fabs(a - b) <= eps;
 }
 
+bool provided_limit_changed(std::optional<float> const& current_value, std::optional<float> const& received_value) {
+    return received_value.has_value() and
+           (not current_value.has_value() or not almost_eq(current_value.value(), received_value.value()));
+}
+
+bool dc_ev_maximum_limits_changed(types::evse_manager::EVInfo const& ev_info,
+                                  types::iso15118::DcEvMaximumLimits const& limits) {
+    return provided_limit_changed(ev_info.maximum_current_limit, limits.dc_ev_maximum_current_limit) or
+           provided_limit_changed(ev_info.maximum_power_limit, limits.dc_ev_maximum_power_limit) or
+           provided_limit_changed(ev_info.maximum_voltage_limit, limits.dc_ev_maximum_voltage_limit);
+}
+
 std::optional<float> min_optional(std::optional<float> const& a, std::optional<float> const& b) {
     // if both a and b have values, return the smaller one.
     if (a.has_value() and b.has_value()) {
@@ -950,9 +962,12 @@ void EvseManager::ready() {
             r_hlc[0]->subscribe_current_demand_finished([this] { powersupply_DC_off(); });
 
             r_hlc[0]->subscribe_dc_ev_maximum_limits([this](types::iso15118::DcEvMaximumLimits const& l) {
-                EVLOG_info << "Received EV maximum limits: " << l;
                 Everest::scoped_lock_timeout lock(ev_info_mutex,
                                                   Everest::MutexDescription::EVSE_subscribe_dc_ev_maximum_limits);
+
+                if (dc_ev_maximum_limits_changed(ev_info, l)) {
+                    EVLOG_info << "Received EV maximum limits: " << l;
+                }
 
                 // Optional in CurrentDemandReq (ISO 15118-2 Table 55, DIN SPEC 70121): an omitted limit keeps the
                 // one negotiated in ChargeParameterDiscovery.
