@@ -13,15 +13,6 @@ enum class CertPart {
     Issuer
 };
 
-struct CertRule {
-    int nid;
-    bool mustExist;
-    bool critical;
-    CertPart target;
-    std::string val;
-    int data;
-};
-
 void set_certificate_profiles_dir(const std::string& dir);
 
 int enforce_certificate_rules(const evse_security::X509Wrapper& wrapper,
