@@ -80,7 +80,8 @@ VTN without authentication.
 Limitations
 -----------
 
-- Only OpenADR 3.0 is supported, using openleadr-rs 0.0.4
+- Only OpenADR 3.0 is supported, using openleadr-rs 0.1.0 (the newest 3.0
+  release that builds with EVerest's Rust 1.86 toolchain)
 - ``randomizeStart`` of intervals is ignored
 - Events are polled, notifications from the VTN are not supported
 - No reports are sent back to the VTN
@@ -107,7 +108,7 @@ credentials ``ven-1``/``ven-1`` and program ``program-1`` targeting group
 #. Build and run the VTN (the database must be reachable at build time)::
 
      export DATABASE_URL=postgres://openadr:openadr@127.0.0.1:5432/openadr
-     cargo install openleadr-vtn --version 0.0.4 --locked
+     cargo install openleadr-vtn --version 0.1.0 --locked
      OAUTH_BASE64_SECRET=$(head -c 48 /dev/urandom | base64 -w0) openleadr-vtn
 
 #. Create an event with the ``any-business``/``any-business`` credentials::
