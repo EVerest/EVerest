@@ -609,11 +609,11 @@ int enforce_certificate_rules(const evse_security::X509Wrapper& wrapper, const s
     }
 
     {
-        static const char* ku_names[] = {"digitalSignature", "nonRepudiation", "keyEncipherment",
-                                         "dataEncipherment", "keyAgreement",   "keyCertSign",
-                                         "cRLSign",          "encipherOnly",   "decipherOnly"};
         ryml::NodeRef kuNode = profileNode.find_child("key_usage");
         if (kuNode.readable()) {
+            static const char* ku_names[] = {"digitalSignature", "nonRepudiation", "keyEncipherment",
+                                             "dataEncipherment", "keyAgreement",   "keyCertSign",
+                                             "cRLSign",          "encipherOnly",   "decipherOnly"};
             const std::string ku_value = wrapper.get_key_usage();
 
             std::vector<std::string> ku_tokens;
