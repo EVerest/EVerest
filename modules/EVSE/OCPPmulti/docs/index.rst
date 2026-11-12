@@ -152,8 +152,8 @@ combinations are documented in
 the legacy JSON into the device model and when serving the device-model-backed configuration at runtime. Custom
 mappings must not target the connection configuration (the ``NetworkConfiguration`` slots, the ``OCPPCommCtrlr``
 network profile selectors, or the ``SecurityCtrlr`` connection fallbacks ``Identity`` and ``BasicAuthPassword``):
-those are managed via the standardized OCPP 1.6 keys with their reboot/reconnect semantics, and a mapping file
-containing such a target is rejected at startup. OCPP 1.6
+those are managed via the standardized OCPP 1.6 keys with their reboot/reconnect semantics, and an entry with such
+a target is ignored with an error log. OCPP 1.6
 keys without a standardized device model counterpart are kept in a dedicated ``OCPP16LegacyCtrlr`` component, whose
 ``NumberOfConnectors`` value is automatically patched to the actual number of connected EVSEs. An entry in the mapping
 file for such a key, for example ``LightIntensity``, replaces its ``OCPP16LegacyCtrlr`` variable with a variable of

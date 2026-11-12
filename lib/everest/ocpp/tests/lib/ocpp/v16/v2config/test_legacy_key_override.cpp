@@ -310,36 +310,68 @@ TEST_F(LegacyKeyOverride, IntegrityCheckPassesWithExistingTarget) {
     EXPECT_NO_THROW(config->check_integrity(NUMBER_OF_CONNECTORS));
 }
 
-TEST_F(LegacyKeyOverride, IntegrityCheckFailsWhenTargetMissing) {
+TEST_F(LegacyKeyOverride, CustomKeyWithMissingTargetIsNotAvailable) {
+    migrate({});
+    reopen({{"VendorFanSpeed", {ocpp::v2::Component{"DoesNotExist"}, ocpp::v2::Variable{"FanSpeed"}}}});
+    EXPECT_NO_THROW(config->check_integrity(NUMBER_OF_CONNECTORS));
+    EXPECT_FALSE(config->get("VendorFanSpeed").has_value());
+
+    const auto all = config->get_all_key_value();
+    EXPECT_TRUE(std::none_of(all.begin(), all.end(), [](const auto& kv) { return kv.key == "VendorFanSpeed"; }));
+}
+
+TEST_F(LegacyKeyOverride, MissingTargetFallsBackToBuiltinMapping) {
     migrate(light_intensity_override("DoesNotExist"));
-    EXPECT_THROW(config->check_integrity(NUMBER_OF_CONNECTORS), std::runtime_error);
+    EXPECT_NO_THROW(config->check_integrity(NUMBER_OF_CONNECTORS));
+    EXPECT_FALSE(config->get_variable_resolver().is_overridden(ocpp::v16::keys::valid_keys::LightIntensity));
+
+    EXPECT_EQ(device_model_value("OCPP16LegacyCtrlr", "LightIntensity"), MIGRATED_LIGHT_INTENSITY);
+    const auto kv = config->get("LightIntensity");
+    ASSERT_TRUE(kv.has_value());
+    EXPECT_EQ(kv->value, MIGRATED_LIGHT_INTENSITY);
 }
 
-TEST_F(LegacyKeyOverride, MigrationRejectsTargetWithOtherDataType) {
-    EXPECT_THROW(migrate(light_intensity_override("LightsOn")), ocpp::v2::Ocpp16KeyMappingsError);
+TEST_F(LegacyKeyOverride, TargetWithOtherDataTypeFallsBackToBuiltinMapping) {
+    migrate(light_intensity_override("LightsOn"));
+    EXPECT_NO_THROW(config->check_integrity(NUMBER_OF_CONNECTORS));
+    EXPECT_FALSE(config->get_variable_resolver().is_overridden(ocpp::v16::keys::valid_keys::LightIntensity));
+
+    EXPECT_EQ(device_model_value("OCPP16LegacyCtrlr", "LightIntensity"), MIGRATED_LIGHT_INTENSITY);
+    const auto kv = config->get("LightIntensity");
+    ASSERT_TRUE(kv.has_value());
+    EXPECT_EQ(kv->value, MIGRATED_LIGHT_INTENSITY);
 }
 
-TEST_F(LegacyKeyOverride, IntegrityCheckFailsForTargetWithOtherDataType) {
+TEST_F(LegacyKeyOverride, TargetWithOtherDataTypeIsDroppedWithoutMigration) {
     migrate({});
-    ASSERT_NO_THROW(config->check_integrity(NUMBER_OF_CONNECTORS));
     reopen(light_intensity_override("LightsOn"));
-    EXPECT_THROW(config->check_integrity(NUMBER_OF_CONNECTORS), std::runtime_error);
+    EXPECT_NO_THROW(config->check_integrity(NUMBER_OF_CONNECTORS));
+    EXPECT_FALSE(config->get_variable_resolver().is_overridden(ocpp::v16::keys::valid_keys::LightIntensity));
 }
 
-TEST_F(LegacyKeyOverride, UpdateRejectsTargetWithOtherDataType) {
+TEST_F(LegacyKeyOverride, UpdateKeepsBuiltInVariableForTargetWithOtherDataType) {
     migrate({});
-    EXPECT_THROW(update(light_intensity_override("LightsOn")), ocpp::v2::Ocpp16KeyMappingsError);
+    update(light_intensity_override("LightsOn"));
+    EXPECT_TRUE(in_device_model("OCPP16LegacyCtrlr", "LightIntensity"));
+    EXPECT_FALSE(config->get_variable_resolver().is_overridden(ocpp::v16::keys::valid_keys::LightIntensity));
 }
 
-TEST_F(LegacyKeyOverride, MigrationRejectsTargetWithoutActualAttribute) {
-    EXPECT_THROW(migrate(light_intensity_override("LightLevel")), ocpp::v2::Ocpp16KeyMappingsError);
+TEST_F(LegacyKeyOverride, TargetWithoutActualAttributeFallsBackToBuiltinMapping) {
+    migrate(light_intensity_override("LightLevel"));
+    EXPECT_NO_THROW(config->check_integrity(NUMBER_OF_CONNECTORS));
+    EXPECT_FALSE(config->get_variable_resolver().is_overridden(ocpp::v16::keys::valid_keys::LightIntensity));
+
+    EXPECT_EQ(device_model_value("OCPP16LegacyCtrlr", "LightIntensity"), MIGRATED_LIGHT_INTENSITY);
+    const auto kv = config->get("LightIntensity");
+    ASSERT_TRUE(kv.has_value());
+    EXPECT_EQ(kv->value, MIGRATED_LIGHT_INTENSITY);
 }
 
-TEST_F(LegacyKeyOverride, IntegrityCheckFailsForTargetWithoutActualAttribute) {
+TEST_F(LegacyKeyOverride, TargetWithoutActualAttributeIsDroppedWithoutMigration) {
     migrate({});
-    ASSERT_NO_THROW(config->check_integrity(NUMBER_OF_CONNECTORS));
     reopen(light_intensity_override("LightLevel"));
-    EXPECT_THROW(config->check_integrity(NUMBER_OF_CONNECTORS), std::runtime_error);
+    EXPECT_NO_THROW(config->check_integrity(NUMBER_OF_CONNECTORS));
+    EXPECT_FALSE(config->get_variable_resolver().is_overridden(ocpp::v16::keys::valid_keys::LightIntensity));
 }
 
 } // namespace

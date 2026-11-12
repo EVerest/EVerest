@@ -397,7 +397,7 @@ void ChargePointV16::cb_variable_listener(const ocpp::v16::KeyValue& key_value) 
     // copy under lock, invoke outside
     const listener_t listener = *m_variable_listener.handle();
     // fired key -> canonical CV
-    const auto mapping = m_variable_resolver->key_to_cv(key_value.key.get());
+    const auto mapping = m_charge_point_configuration->get_variable_resolver().key_to_cv(key_value.key.get());
     if (listener == nullptr) {
         EVLOG_warning << "cb_variable_listener: no listener configured";
     } else if (!mapping.has_value()) {
@@ -535,17 +535,15 @@ void ChargePointV16::configure_data_model(const config_info_t& config) {
         config.user_config_path,                     // UserConfigPath
     };
 
-    auto factory_result = module::config_factory_v16::create_charge_point_configuration(
+    // m_variable_access references the resolver of the configuration it replaces
+    m_variable_access.reset();
+    m_charge_point_configuration = module::config_factory_v16::create_charge_point_configuration(
         ocpp_share_path, params, static_cast<int32_t>(config.number_of_connectors), config.everest_device_model);
-    m_charge_point_configuration = std::move(factory_result.configuration);
-    m_custom_mappings = std::move(factory_result.custom_mappings);
 
     // m_charge_point is constructed later in init(); the lambdas resolve it at call time.
     // check_configured() guards get/set_variables until then.
-    m_variable_access.reset();
-    m_variable_resolver.emplace(m_custom_mappings);
     m_variable_access.emplace(
-        m_variable_resolver.value(), m_charge_point_configuration->get_device_model(),
+        m_charge_point_configuration->get_variable_resolver(), m_charge_point_configuration->get_device_model(),
         [this](const std::vector<ocpp::CiString<50>>& keys) {
             ocpp::v16::GetConfigurationRequest request;
             if (!keys.empty()) {
@@ -1006,7 +1004,7 @@ void ChargePointV16::register_variable_listener(const ocpp::v2::Component& compo
             *handle = std::move(listener);
         }
     }
-    const auto reverse = m_variable_resolver->cv_to_key(component, variable);
+    const auto reverse = m_charge_point_configuration->get_variable_resolver().cv_to_key(component, variable);
     if (reverse.has_value()) {
         // register outside the lock: libocpp may fire the callback synchronously
         m_charge_point->register_configuration_key_changed_callback(
@@ -1020,7 +1018,7 @@ std::optional<ocpp::v2::ComponentVariable> ChargePointV16::resolve_to_canonical(
     check_configured("resolve_to_canonical");
     if (component.name.get().empty()) {
         // legacy key-only form: canonical form is the mapped CV, if any
-        const auto mapping = m_variable_resolver->key_to_cv(variable.name.get());
+        const auto mapping = m_charge_point_configuration->get_variable_resolver().key_to_cv(variable.name.get());
         if (!mapping.has_value()) {
             return std::nullopt;
         }
