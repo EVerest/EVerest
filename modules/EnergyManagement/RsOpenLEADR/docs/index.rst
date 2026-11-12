@@ -106,6 +106,15 @@ Limitations
 - Events are polled, notifications from the VTN are not supported
 - No reports are sent back to the VTN
 
+Automated tests
+---------------
+
+``tests/openadr_tests`` runs the module against a mock VTN, see
+``tests/README.md`` for the setup::
+
+  cd tests
+  ./run-tests.sh openadr
+
 Testing with the openleadr-rs VTN
 ---------------------------------
 
