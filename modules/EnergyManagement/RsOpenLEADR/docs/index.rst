@@ -28,19 +28,26 @@ Requirements
 Supported events
 ----------------
 
-======================= ================================================
-OpenADR payload type    EVerest limit
-======================= ================================================
-IMPORT_CAPACITY_LIMIT   ``schedule_import``, ``total_power_W``
-EXPORT_CAPACITY_LIMIT   ``schedule_export``, ``total_power_W``
-======================= ================================================
+======================= ======================
+OpenADR payload type    EVerest schedule
+======================= ======================
+IMPORT_CAPACITY_LIMIT   ``schedule_import``
+EXPORT_CAPACITY_LIMIT   ``schedule_export``
+======================= ======================
 
-The limit is applied to both ``limits_to_root`` and ``limits_to_leaves`` with
-source ``OpenADR``. Other payload types are ignored.
+The ``units`` declared in the event's payload descriptor determine the limit:
 
-Values must be in kW, as declared by ``units: KW`` in the event's payload
-descriptor. Payloads without a declared unit are interpreted as kW as well.
-Payloads in any other unit are ignored with a warning.
+=================== ==================================================
+Unit                EVerest limit
+=================== ==================================================
+``KW``              ``total_power_W`` (value × 1000)
+``AMPS``            ``ac_max_current_A``, current per phase
+=================== ==================================================
+
+If the payload descriptor declares no unit, the value is interpreted as kW.
+Payloads in any other unit are ignored with a warning. The limit is applied to
+both ``limits_to_root`` and ``limits_to_leaves`` with source ``OpenADR``. Other
+payload types are ignored.
 
 How events become limits
 ------------------------
