@@ -6,7 +6,9 @@
 //! with empty limits, which lets the EnergyNode fall back to its own
 //! configured limits.
 
-use crate::generated::types::energy::{ExternalLimits, LimitsReq, NumberWithSource, ScheduleReqEntry};
+use crate::generated::types::energy::{
+    ExternalLimits, LimitsReq, NumberWithSource, ScheduleReqEntry,
+};
 use chrono::{DateTime, SecondsFormat, Utc};
 use openleadr_client::Timeline;
 use openleadr_wire::event::{EventContent, EventType, EventValuesMap};
@@ -16,7 +18,10 @@ use std::ops::Range;
 
 const SOURCE: &str = "OpenADR";
 
-const LIMIT_TYPES: [EventType; 2] = [EventType::ImportCapacityLimit, EventType::ExportCapacityLimit];
+const LIMIT_TYPES: [EventType; 2] = [
+    EventType::ImportCapacityLimit,
+    EventType::ExportCapacityLimit,
+];
 
 /// Converts capacity limit payloads of `events` into Watts, so the values in
 /// the resulting [`Timeline`] are unit-free. The timeline only keeps the
@@ -48,7 +53,11 @@ pub fn normalize_events(mut events: Vec<EventContent>) -> Vec<EventContent> {
             for interval in &mut event.intervals {
                 match factor {
                     Some(factor) => {
-                        for payload in interval.payloads.iter_mut().filter(|p| &p.value_type == limit_type) {
+                        for payload in interval
+                            .payloads
+                            .iter_mut()
+                            .filter(|p| &p.value_type == limit_type)
+                        {
                             for value in &mut payload.values {
                                 if let Some(v) = value_as_f64(value) {
                                     *value = Value::Number(v * factor);
@@ -67,9 +76,12 @@ pub fn normalize_events(mut events: Vec<EventContent>) -> Vec<EventContent> {
 /// Builds the import and export schedules for everything in `timeline` from `now` on.
 pub fn timeline_to_external_limits(timeline: &Timeline, now: DateTime<Utc>) -> ExternalLimits {
     let schedule_for = |limit_type: &EventType| {
-        let segments = timeline
-            .iter()
-            .map(|(range, interval)| (range.clone(), power_limit_w(interval.value_map(), limit_type)));
+        let segments = timeline.iter().map(|(range, interval)| {
+            (
+                range.clone(),
+                power_limit_w(interval.value_map(), limit_type),
+            )
+        });
         build_schedule(segments, now)
     };
 
@@ -112,7 +124,10 @@ fn build_schedule(
 
     points.dedup_by(|current, previous| current.1 == previous.1);
 
-    points.into_iter().map(|(time, limit)| schedule_entry(time, limit)).collect()
+    points
+        .into_iter()
+        .map(|(time, limit)| schedule_entry(time, limit))
+        .collect()
 }
 
 /// Short, human readable form of a schedule for logging, e.g.
@@ -134,7 +149,10 @@ fn power_limit_w(value_map: &[EventValuesMap], limit_type: &EventType) -> Option
     match value {
         Some(v) if v >= 0.0 => Some(v),
         _ => {
-            log::warn!("Ignoring invalid {limit_type:?} payload values: {:?}", payload.values);
+            log::warn!(
+                "Ignoring invalid {limit_type:?} payload values: {:?}",
+                payload.values
+            );
             None
         }
     }
@@ -184,7 +202,12 @@ mod tests {
     fn summary(schedule: &[ScheduleReqEntry]) -> Vec<(String, Option<f64>)> {
         schedule
             .iter()
-            .map(|e| (e.timestamp.clone(), e.limits_to_root.total_power_w.as_ref().map(|p| p.value)))
+            .map(|e| {
+                (
+                    e.timestamp.clone(),
+                    e.limits_to_root.total_power_w.as_ref().map(|p| p.value),
+                )
+            })
             .collect()
     }
 
@@ -201,34 +224,56 @@ mod tests {
     #[test]
     fn future_interval_is_opened_and_closed() {
         let schedule = build_schedule([(t(12)..t(14), Some(5000.0))].into_iter(), t(10));
-        assert_eq!(summary(&schedule), vec![(ts(10), None), (ts(12), Some(5000.0)), (ts(14), None)]);
+        assert_eq!(
+            summary(&schedule),
+            vec![(ts(10), None), (ts(12), Some(5000.0)), (ts(14), None)]
+        );
     }
 
     #[test]
     fn active_interval_starts_now_and_past_intervals_are_skipped() {
         let segments = [(t(6)..t(8), Some(1000.0)), (t(9)..t(11), Some(2000.0))];
         let schedule = build_schedule(segments.into_iter(), t(10));
-        assert_eq!(summary(&schedule), vec![(ts(10), Some(2000.0)), (ts(11), None)]);
+        assert_eq!(
+            summary(&schedule),
+            vec![(ts(10), Some(2000.0)), (ts(11), None)]
+        );
     }
 
     #[test]
     fn adjacent_intervals_have_no_gap_entry() {
         let segments = [(t(10)..t(11), Some(1000.0)), (t(11)..t(12), Some(2000.0))];
         let schedule = build_schedule(segments.into_iter(), t(10));
-        assert_eq!(summary(&schedule), vec![(ts(10), Some(1000.0)), (ts(11), Some(2000.0)), (ts(12), None)]);
+        assert_eq!(
+            summary(&schedule),
+            vec![
+                (ts(10), Some(1000.0)),
+                (ts(11), Some(2000.0)),
+                (ts(12), None)
+            ]
+        );
     }
 
     #[test]
     fn equal_consecutive_limits_are_merged() {
         let segments = [(t(10)..t(11), Some(1000.0)), (t(11)..t(12), Some(1000.0))];
         let schedule = build_schedule(segments.into_iter(), t(10));
-        assert_eq!(summary(&schedule), vec![(ts(10), Some(1000.0)), (ts(12), None)]);
+        assert_eq!(
+            summary(&schedule),
+            vec![(ts(10), Some(1000.0)), (ts(12), None)]
+        );
     }
 
     #[test]
     fn open_ended_interval_has_no_closing_entry() {
-        let schedule = build_schedule([(t(11)..DateTime::<Utc>::MAX_UTC, Some(1000.0))].into_iter(), t(10));
-        assert_eq!(summary(&schedule), vec![(ts(10), None), (ts(11), Some(1000.0))]);
+        let schedule = build_schedule(
+            [(t(11)..DateTime::<Utc>::MAX_UTC, Some(1000.0))].into_iter(),
+            t(10),
+        );
+        assert_eq!(
+            summary(&schedule),
+            vec![(ts(10), None), (ts(11), Some(1000.0))]
+        );
     }
 
     #[test]
@@ -248,7 +293,10 @@ mod tests {
     }
 
     fn event(unit: Option<Unit>, payloads: Vec<EventValuesMap>) -> EventContent {
-        let mut event = EventContent::new(ProgramId::new("program-1").unwrap(), vec![EventInterval::new(0, payloads)]);
+        let mut event = EventContent::new(
+            ProgramId::new("program-1").unwrap(),
+            vec![EventInterval::new(0, payloads)],
+        );
         event.payload_descriptors = unit.map(|unit| {
             vec![EventPayloadDescriptor {
                 payload_type: EventType::ImportCapacityLimit,
@@ -269,11 +317,18 @@ mod tests {
     #[test]
     fn kw_and_missing_units_are_converted_to_watts() {
         for unit in [None, Some(Unit::KW)] {
-            let events = normalize_events(vec![event(unit, vec![import_limit(Value::Number(2.5))])]);
-            assert_eq!(events[0].intervals[0].payloads[0].values, vec![Value::Number(2500.0)]);
+            let events =
+                normalize_events(vec![event(unit, vec![import_limit(Value::Number(2.5))])]);
+            assert_eq!(
+                events[0].intervals[0].payloads[0].values,
+                vec![Value::Number(2500.0)]
+            );
         }
         let events = normalize_events(vec![event(None, vec![import_limit(Value::Integer(3))])]);
-        assert_eq!(events[0].intervals[0].payloads[0].values, vec![Value::Number(3000.0)]);
+        assert_eq!(
+            events[0].intervals[0].payloads[0].values,
+            vec![Value::Number(3000.0)]
+        );
     }
 
     #[test]
@@ -282,13 +337,28 @@ mod tests {
             value_type: EventType::Price,
             values: vec![Value::Number(0.3)],
         };
-        let events = normalize_events(vec![event(Some(Unit::Amps), vec![import_limit(Value::Number(16.0)), other.clone()])]);
+        let events = normalize_events(vec![event(
+            Some(Unit::Amps),
+            vec![import_limit(Value::Number(16.0)), other.clone()],
+        )]);
         assert_eq!(events[0].intervals[0].payloads, vec![other]);
     }
 
     #[test]
     fn negative_limits_are_ignored() {
-        assert_eq!(power_limit_w(&[import_limit(Value::Number(-1.0))], &EventType::ImportCapacityLimit), None);
-        assert_eq!(power_limit_w(&[import_limit(Value::Number(1.0))], &EventType::ImportCapacityLimit), Some(1.0));
+        assert_eq!(
+            power_limit_w(
+                &[import_limit(Value::Number(-1.0))],
+                &EventType::ImportCapacityLimit
+            ),
+            None
+        );
+        assert_eq!(
+            power_limit_w(
+                &[import_limit(Value::Number(1.0))],
+                &EventType::ImportCapacityLimit
+            ),
+            Some(1.0)
+        );
     }
 }

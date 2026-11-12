@@ -9,13 +9,13 @@ use chrono::Utc;
 use cron::Schedule;
 use generated::types::energy::CapabilityLimits;
 use generated::{
-    Context, EmptyServiceSubscriber, ExternalEnergyLimitsClientPublisher, ExternalEnergyLimitsClientSubscriber,
-    Module, ModuleConfig, ModulePublisher, OnReadySubscriber,
+    Context, EmptyServiceSubscriber, ExternalEnergyLimitsClientPublisher,
+    ExternalEnergyLimitsClientSubscriber, Module, ModuleConfig, ModulePublisher, OnReadySubscriber,
 };
 use openleadr_client::{Client, ClientCredentials, Filter, ProgramClient, Timeline};
 use openleadr_wire::program::ProgramId;
-use openleadr_wire::Program;
 use openleadr_wire::target::TargetType;
+use openleadr_wire::Program;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
@@ -106,7 +106,9 @@ async fn retrieve_timeline(
     filter: &Option<(TargetType, Vec<String>)>,
 ) -> Result<Timeline, openleadr_client::Error> {
     let filter = match filter {
-        Some((target_type, target_values)) => Filter::By(target_type.clone(), target_values.as_slice()),
+        Some((target_type, target_values)) => {
+            Filter::By(target_type.clone(), target_values.as_slice())
+        }
         None => Filter::None,
     };
     let events = program.get_event_list(filter).await?;
@@ -120,7 +122,8 @@ async fn retrieve_timeline(
         modification_date_time: program.modification_date_time(),
         content: program.content().clone(),
     };
-    Timeline::from_events(&program, events.iter().collect()).ok_or(openleadr_client::Error::InvalidInterval)
+    Timeline::from_events(&program, events.iter().collect())
+        .ok_or(openleadr_client::Error::InvalidInterval)
 }
 
 fn get_credentials_from_config(config: &ModuleConfig) -> Option<ClientCredentials> {
@@ -135,8 +138,15 @@ fn get_credentials_from_config(config: &ModuleConfig) -> Option<ClientCredential
 }
 
 fn get_filter_from_config(config: &ModuleConfig) -> Option<(TargetType, Vec<String>)> {
-    if !config.openadr_vtn_event_target_type.is_empty() && !config.openadr_vtn_event_target_values.is_empty() {
-        let target_type = match config.openadr_vtn_event_target_type.to_uppercase().replace("-", "_").as_str() {
+    if !config.openadr_vtn_event_target_type.is_empty()
+        && !config.openadr_vtn_event_target_values.is_empty()
+    {
+        let target_type = match config
+            .openadr_vtn_event_target_type
+            .to_uppercase()
+            .replace("-", "_")
+            .as_str()
+        {
             "POWER_SERVICE_LOCATION" => TargetType::PowerServiceLocation,
             "SERVICE_AREA" => TargetType::ServiceArea,
             "GROUP" => TargetType::Group,
@@ -149,7 +159,14 @@ fn get_filter_from_config(config: &ModuleConfig) -> Option<(TargetType, Vec<Stri
                 return None;
             }
         };
-        Some((target_type, config.openadr_vtn_event_target_values.split(',').map(|s| s.trim().to_string()).collect()))
+        Some((
+            target_type,
+            config
+                .openadr_vtn_event_target_values
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .collect(),
+        ))
     } else {
         None
     }
@@ -160,11 +177,18 @@ fn main(module: &Module) {
     let config = module.get_config();
     // Multi-threaded so tasks spawned from EVerest callbacks are driven by the
     // runtime's own worker threads; main only sleeps after start-up.
-    let rt = tokio::runtime::Builder::new_multi_thread().enable_all().build().unwrap();
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .unwrap();
 
-    let url = config.openadr_vtn_url.parse().expect("openadr_vtn_url is not a valid URL");
+    let url = config
+        .openadr_vtn_url
+        .parse()
+        .expect("openadr_vtn_url is not a valid URL");
     let client = Client::with_url(url, get_credentials_from_config(&config));
-    let program_id = ProgramId::new(&config.openadr_vtn_program_id).expect("openadr_vtn_program_id is not a valid program id");
+    let program_id = ProgramId::new(&config.openadr_vtn_program_id)
+        .expect("openadr_vtn_program_id is not a valid program id");
     let schedule = Schedule::from_str(&config.openadr_vtn_retrieve_schedule)
         .expect("openadr_vtn_retrieve_schedule is not a valid cron expression");
 
