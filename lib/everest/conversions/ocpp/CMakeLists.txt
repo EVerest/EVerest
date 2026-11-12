@@ -60,3 +60,7 @@ target_link_libraries(ocpp_conversions
         everest::ocpp
         everest::framework
 )
+
+if(BUILD_TESTING)
+    add_subdirectory(tests)
+endif()
