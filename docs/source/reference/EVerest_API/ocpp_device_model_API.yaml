@@ -200,9 +200,9 @@ components:
       title: 'Request to set a value'
       summary: >-
         A write to an attribute of a registered variable, from the CSMS or from the OCPP service itself. The OCPP
-        service checked the value against the characteristics and the mutability of the variable already. Requests
-        may overlap, also for one variable. Reply within cfg_request_reply_to_s, 10 seconds by default: without a
-        reply in time, the write is answered Rejected.
+        service checked the value against the characteristics and the mutability of the variable already. Writes to
+        WriteOnly attributes are forwarded the same way. Requests may overlap, also for one variable. Reply within
+        cfg_request_reply_to_s, 10 seconds by default: without a reply in time, the write is answered Rejected.
       contentType: application/json
       payload:
         type: object

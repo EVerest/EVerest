@@ -37,6 +37,21 @@ every client can subscribe to, and ``m2e/communication_check`` feeds one timer:
 - ``false`` from any client switches the supervision off for all of them, until the module restarts.
 - The error does not name a client or an owner.
 
+.. mermaid::
+
+   sequenceDiagram
+       participant App as Client
+       participant API as ocpp_device_model_API
+       API-)App: e2m/heartbeat
+       App-)API: m2e/communication_check true
+       Note over App,API: the client stays silent<br/>for cfg_communication_check_to_s
+       Note over API: raises generic/CommunicationFault
+       App-)API: m2e/communication_check true
+       Note over API: clears generic/CommunicationFault
+
+A ``CommunicationFault`` does not touch the registrations: the variables stay registered with their last values, and
+writes are answered ``Rejected`` after ``cfg_request_reply_to_s``.
+
 To supervise clients separately, configure one module instance per client. The topics contain the module id, so
 each instance has its own heartbeat, timer and error.
 

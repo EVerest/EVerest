@@ -49,29 +49,8 @@ A registration is held in memory only and is repeated at every start of the OCPP
 the custom monitors of the CSMS included, are stored by component and variable name, and are applied again when the
 variable is registered again. Its values are not stored by the OCPP service: the application keeps them.
 
-.. mermaid::
-
-   sequenceDiagram
-       participant App as Application
-       participant API as ocpp_device_model_API
-       participant OCPP as OCPP module
-       participant CSMS
-       OCPP->>API: get_registrations
-       API-)App: e2m/get_registrations
-       App-)API: m2e/registration
-       API-->>OCPP: registrations of all owners
-       OCPP->>API: set_registration_result
-       API-)App: e2m/set_registration_result
-       Note over OCPP: the OCPP service starts
-       CSMS->>OCPP: SetVariables.req
-       OCPP->>API: set_value
-       API->>App: e2m/set_value
-       App-->>API: Accepted, on the replyTo topic
-       API-->>OCPP: Accepted
-       OCPP-->>CSMS: SetVariables.conf
-       Note over App: the device changes a value
-       App-)API: m2e/value_changed
-       API-)OCPP: value_changed
+The diagrams in this guide show the application, the API module, the OCPP module and, where it takes part, the
+CSMS. Solid arrows are commands and publishes, dashed arrows answers.
 
 Configure the API module
 ========================
@@ -100,6 +79,65 @@ the CSMS. Each of them is at most 240 s, below the 300 s after which EVerest abo
 The first start of the OCPP service removes the monitors of the variables that nobody registered. An owner that
 registers later is still accepted, but the monitors of its variables from earlier boots are gone by then. List
 **every** owner in ``cfg_expected_owners``, also those whose devices are not always available.
+
+A gateway with ``cfg_expected_owners: "meter-1, meter-2"`` that is already running publishes ``meter-1`` before the OCPP
+module asks. The module keeps it, prompts the application when the OCPP module asks, and answers as soon as both
+owners registered:
+
+.. mermaid::
+
+   sequenceDiagram
+       participant App as Application
+       participant API as ocpp_device_model_API
+       participant OCPP as OCPP module
+       App-)API: m2e/registration (meter-1)
+       Note over API: kept, not passed on yet
+       OCPP->>API: get_registrations()
+       API-)App: e2m/get_registrations
+       App-)API: m2e/registration (meter-1, again)
+       App-)API: m2e/registration (meter-2)
+       Note over API: every expected owner registered
+       API-->>OCPP: registrations of meter-1 and meter-2
+       Note over OCPP: the OCPP service starts
+       OCPP->>API: set_registration_result() per owner
+       API-)App: e2m/set_registration_result per owner
+
+When ``meter-2`` does not register in time, the module answers without it at the deadline. ``meter-2`` can still
+register later, but the monitors of its variables from earlier boots are gone:
+
+.. mermaid::
+
+   sequenceDiagram
+       participant App as Application
+       participant API as ocpp_device_model_API
+       participant OCPP as OCPP module
+       OCPP->>API: get_registrations()
+       API-)App: e2m/get_registrations
+       App-)API: m2e/registration (meter-1)
+       Note over API: cfg_expected_owners_timeout_s expires,<br/>meter-2 is logged as missing
+       API-->>OCPP: registrations of meter-1
+       Note over OCPP: the OCPP service starts and removes<br/>the stored monitors of meter-2
+       App-)API: m2e/registration (meter-2), later
+       API-)OCPP: registration
+       OCPP->>API: set_registration_result(meter-2)
+       API-)App: e2m/set_registration_result
+
+Without ``cfg_expected_owners``, the module waits the full ``cfg_registration_timeout_s`` after the prompt and answers
+with everything it collected:
+
+.. mermaid::
+
+   sequenceDiagram
+       participant App as Application
+       participant API as ocpp_device_model_API
+       participant OCPP as OCPP module
+       OCPP->>API: get_registrations()
+       API-)App: e2m/get_registrations, no expected owners
+       App-)API: m2e/registration (meter-1)
+       App-)API: m2e/registration (meter-2)
+       Note over API: cfg_registration_timeout_s expires
+       API-->>OCPP: registrations of meter-1 and meter-2
+       Note over OCPP: the OCPP service starts
 
 The module also supervises the communication with its clients, see the
 :ref:`module documentation <everest_modules_handwritten_ocpp_device_model_API>`.
@@ -186,7 +224,22 @@ Keep these rules in mind when choosing names:
 Check the result
 ================
 
-The OCPP module answers each registration on ``e2m/set_registration_result``. In the usual case nothing is rejected:
+The OCPP module answers each registration on ``e2m/set_registration_result``, at startup and at runtime. The
+application does not reply. Here ``cooling_unit`` is accepted, and ``meter-1`` is refused because another module
+instance holds that owner name, see `Register several owners`_:
+
+.. mermaid::
+
+   sequenceDiagram
+       participant App as Application
+       participant API as ocpp_device_model_API
+       participant OCPP as OCPP module
+       OCPP->>API: set_registration_result(cooling_unit)
+       API-)App: e2m/set_registration_result, Accepted
+       OCPP->>API: set_registration_result(meter-1)
+       API-)App: e2m/set_registration_result, OwnerInUse
+
+In the usual case nothing is rejected:
 
 .. code-block:: json
 
@@ -218,21 +271,21 @@ component name of more than 50 for example. Such a registration gets no result.
 Register several owners
 =======================
 
-An application that fronts several devices, a Modbus gateway for two coolant pumps for example, names one owner per
+An application that fronts several devices, a Modbus gateway for two auxiliary meters for example, names one owner per
 device and publishes one registration for each. Each device then has its own registration, which the application can
 replace or remove on its own:
 
 .. code-block:: json
 
    {
-     "owner": "pump-1",
+     "owner": "meter-1",
      "components": [
        {
-         "component": { "name": "CoolantPump", "instance": "1" },
+         "component": { "name": "AuxiliaryMeter", "instance": "1" },
          "variables": [
            {
-             "variable": { "name": "Speed" },
-             "characteristics": { "data_type": "integer", "unit": "RPM", "supports_monitoring": true },
+             "variable": { "name": "Power" },
+             "characteristics": { "data_type": "decimal", "unit": "W", "supports_monitoring": true },
              "attributes": [{ "value": "1450", "mutability": "ReadOnly" }]
            }
          ]
@@ -243,14 +296,14 @@ replace or remove on its own:
 .. code-block:: json
 
    {
-     "owner": "pump-2",
+     "owner": "meter-2",
      "components": [
        {
-         "component": { "name": "CoolantPump", "instance": "2" },
+         "component": { "name": "AuxiliaryMeter", "instance": "2" },
          "variables": [
            {
-             "variable": { "name": "Speed" },
-             "characteristics": { "data_type": "integer", "unit": "RPM", "supports_monitoring": true },
+             "variable": { "name": "Power" },
+             "characteristics": { "data_type": "decimal", "unit": "W", "supports_monitoring": true },
              "attributes": [{ "value": "0", "mutability": "ReadOnly" }]
            }
          ]
@@ -258,14 +311,14 @@ replace or remove on its own:
      ]
    }
 
-Both owners belong in ``cfg_expected_owners``, here ``"pump-1, pump-2"``.
+Both owners belong in ``cfg_expected_owners``, here ``"meter-1, meter-2"``.
 
 An owner name belongs to the module instance that registered it first, until it is released. When a second instance
-registers ``pump-1``, nothing of that registration reaches the device model:
+registers ``meter-1``, nothing of that registration reaches the device model:
 
 .. code-block:: json
 
-   { "owner": "pump-1", "status": "OwnerInUse", "rejected": [] }
+   { "owner": "meter-1", "status": "OwnerInUse", "rejected": [] }
 
 Apply writes
 ============
@@ -291,6 +344,44 @@ a request on ``e2m/set_value``. The request names its owner, so a gateway knows 
 
 Publish the status on the ``replyTo`` topic, ``"Accepted"`` for example. It goes to the CSMS as it is:
 
+.. mermaid::
+
+   sequenceDiagram
+       participant App as Application
+       participant API as ocpp_device_model_API
+       participant OCPP as OCPP module
+       participant CSMS
+       CSMS->>OCPP: SetVariables.req
+       OCPP->>API: set_value(request)
+       API->>App: e2m/set_value with replyTo
+       App-->>API: "Accepted" on replyTo
+       API-->>OCPP: Accepted
+       OCPP-->>CSMS: SetVariables.conf Accepted
+       Note over App,CSMS: a write the owner rejects
+       CSMS->>OCPP: SetVariables.req
+       OCPP->>API: set_value(request)
+       API->>App: e2m/set_value with replyTo
+       App-->>API: "Rejected" on replyTo
+       API-->>OCPP: Rejected
+       OCPP-->>CSMS: SetVariables.conf Rejected
+       Note over App,CSMS: a write that applies at the next start
+       CSMS->>OCPP: SetVariables.req
+       OCPP->>API: set_value(request)
+       API->>App: e2m/set_value with replyTo
+       App-->>API: "RebootRequired" on replyTo
+       API-->>OCPP: RebootRequired
+       OCPP-->>CSMS: SetVariables.conf RebootRequired
+       Note over App,CSMS: a write the application does not answer in time
+       CSMS->>OCPP: SetVariables.req
+       OCPP->>API: set_value(request)
+       API->>App: e2m/set_value with replyTo
+       Note over API: cfg_request_reply_to_s expires
+       API-->>OCPP: Rejected
+       OCPP-->>CSMS: SetVariables.conf Rejected
+       App-->>API: late reply on replyTo
+       Note over API: ignored and logged
+
+
 - ``Accepted``: the owner applied exactly ``60``. The OCPP service stores the value in memory, so the application
   does **not** report it again on ``m2e/value_changed``.
 - ``RebootRequired``: the owner kept exactly ``60``, but the value takes effect only at the next start. The OCPP
@@ -299,6 +390,9 @@ Publish the status on the ``replyTo`` topic, ``"Accepted"`` for example. It goes
   takes effect.
 - ``Rejected``: the owner did not apply the value. This includes a value it would only apply in a changed form. A fan
   that runs at most at 55 % rejects the write rather than accepting it and clamping it.
+
+A write to a ``WriteOnly`` attribute reaches the application in the same way. The CSMS cannot read the value back:
+GetVariables.req is answered ``Rejected``, and reports leave the value out.
 
 Without a reply within ``cfg_request_reply_to_s``, 10 s by default, the write is ``Rejected``. Keep that timeout
 below the message timeout of the CSMS, which waits for its SetVariables.conf meanwhile, and reject a write that the
@@ -311,6 +405,19 @@ Report changes
 
 Publish each value the device changes itself on ``m2e/value_changed``. The OCPP service answers reads from the
 values it holds, so a change that is not reported does not reach the CSMS, unless a monitor is registered for it.
+
+.. mermaid::
+
+   sequenceDiagram
+       participant App as Application
+       participant API as ocpp_device_model_API
+       participant OCPP as OCPP module
+       participant CSMS
+       Note over App: the temperature rises
+       App-)API: m2e/value_changed
+       API-)OCPP: value_changed
+       Note over OCPP: stores the value and<br/>evaluates the monitors
+       OCPP-)CSMS: NotifyEvent.req, when a monitor triggers
 
 .. code-block:: json
 
@@ -338,7 +445,26 @@ registration with an empty ``components`` list removes the variables of the owne
 
 .. code-block:: json
 
-   { "owner": "pump-2", "components": [] }
+   { "owner": "meter-2", "components": [] }
+
+Here the gateway adds ``meter-3`` for a device connected at runtime, then releases ``meter-2``. ``meter-3`` was not
+part of the startup answer, so the monitors of its variables from earlier boots are gone:
+
+.. mermaid::
+
+   sequenceDiagram
+       participant App as Application
+       participant API as ocpp_device_model_API
+       participant OCPP as OCPP module
+       App-)API: m2e/registration (meter-3, a new device)
+       API-)OCPP: registration
+       OCPP->>API: set_registration_result(meter-3)
+       API-)App: e2m/set_registration_result
+       App-)API: m2e/registration (meter-2, no components)
+       API-)OCPP: registration
+       OCPP->>API: set_registration_result(meter-2)
+       API-)App: e2m/set_registration_result
+       Note over App,OCPP: the owner name meter-2 is free again
 
 Once the module handed the collected registrations on, it passes each further registration on at once. That
 registration is not ordered against the collected ones and may reach the OCPP module first: a release would then be
