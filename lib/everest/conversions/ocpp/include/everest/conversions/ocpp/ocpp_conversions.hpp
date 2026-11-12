@@ -32,6 +32,8 @@ types::session_cost::DefaultPrice to_everest_default_price(const std::vector<ocp
 
 types::session_cost::SessionStatus to_everest_running_cost_state(const ocpp::RunningCostState& state);
 
+int to_minor_units(const double& price, const uint32_t& number_of_decimals);
+
 types::session_cost::SessionCostChunk create_session_cost_chunk(const double& price, const uint32_t& number_of_decimals,
                                                                 const std::optional<ocpp::DateTime>& timestamp,
                                                                 const std::optional<uint32_t>& meter_value);
