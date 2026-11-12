@@ -439,7 +439,7 @@ std::optional<json> ModuleAdapter::evse_manager_call_get_evse(const Requirement&
     types::evse_manager::Connector connector;
     connector.id = 1;
     connector.charge_mode = types::evse_manager::ChargeMode::AC;
-    connector.hlc_capable = false;
+    connector.hlc_capable = m_evse_hlc_capable;
 
     types::evse_manager::Evse evse;
     evse.id = req.index + 1;

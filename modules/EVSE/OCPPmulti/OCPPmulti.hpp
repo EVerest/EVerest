@@ -61,6 +61,7 @@ public:
     [[nodiscard]] bool getEnableLegacyConfigMigration() const override;
     [[nodiscard]] int getOcpp16NetworkConfigSlot() const override;
     [[nodiscard]] std::string getEverestDeviceModelDatabasePath() const override;
+    [[nodiscard]] bool getFailOnDeviceModelConflicts() const override;
     [[nodiscard]] int getGridSupportHeartbeatS() const override;
     [[nodiscard]] std::string getMessageLogPath() const override;
     [[nodiscard]] int getMessageQueueResumeDelay() const override;
@@ -90,6 +91,7 @@ struct Conf {
     std::string Ocpp16KeyMappingsPath;
     bool EnableExternalWebsocketControl;
     std::string EverestDeviceModelDatabasePath;
+    bool FailOnDeviceModelConflicts;
     int GridSupportHeartbeatS;
     std::string MessageLogPath;
     int MessageQueueResumeDelay;
@@ -165,6 +167,8 @@ public:
     ~OCPPmulti();
 
     ConfigAccess m_config{config};
+    // the charge points refer to these, so they are declared before m_charge_point
+    ocpp_multi::DeviceModelSources m_device_model_sources;
     ocpp_multi::GenericChargePoint m_charge_point{*r_security};
     ocpp_multi::GenericOcpp m_ocpp{
         m_charge_point,
@@ -172,7 +176,8 @@ public:
         m_config,
         {*p_auth_validator, *p_auth_provider, *p_data_transfer, *p_ocpp_generic, *p_session_cost},
         {*r_auth, r_charger_information, r_data_transfer, r_display_message, r_evse_energy_sink, r_evse_manager,
-         r_extensions_15118, r_grid_support, r_reservation, *r_security, *r_system}};
+         r_extensions_15118, r_grid_support, r_reservation, *r_security, *r_system},
+        m_device_model_sources};
     // ev@1fce4c5e-0ab8-41bb-90f7-14277703d2ac:v1
 
 protected:

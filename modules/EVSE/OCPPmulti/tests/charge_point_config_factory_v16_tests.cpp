@@ -2,29 +2,46 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 
 /// \file charge_point_config_factory_v16_tests.cpp
-/// \brief Tests that the OCPP 1.6 config factory backs the configuration with the composed device model
-/// storage: variables supplied by an EVerest device model storage (owner "EVEREST") are readable and
-/// writable through the returned configuration, next to the SQLite-backed OCPP storage — the same
-/// composition the OCPP 2.x path provides to its ChargePoint.
+/// \brief Tests that the OCPP 1.6 config factory backs the configuration with the device model database and takes
+/// over the EVerest device model database of earlier versions.
 
 #include <gtest/gtest.h>
 
+#include <cstdlib>
 #include <filesystem>
+#include <functional>
 #include <map>
 #include <memory>
 #include <optional>
+#include <set>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
+#include <everest/ocpp_module_common/device_model/config_service_binding.hpp>
+#include <everest/ocpp_module_common/device_model/definitions.hpp>
+#include <everest/ocpp_module_common/device_model/everest_device_model.hpp>
 #include <ocpp/v2/comparators.hpp>
 #include <ocpp/v2/ctrlr_component_variables.hpp>
 #include <ocpp/v2/device_model_storage_interface.hpp>
+#include <ocpp/v2/device_model_storage_sqlite.hpp>
+#include <ocpp/v2/init_device_model_db.hpp>
 
 #include "charge_point_config_factory_v16.hpp"
+#include "stubs/interfaces_stub.hpp"
 
 namespace {
 
 namespace fs = std::filesystem;
+
+/// \brief An empty directory below the temporary directory that no other test binary or checkout shares
+fs::path create_unique_directory(const std::string& prefix) {
+    std::string pattern = (fs::temp_directory_path() / (prefix + "_XXXXXX")).string();
+    if (mkdtemp(pattern.data()) == nullptr) {
+        throw std::runtime_error("Could not create a temporary directory from " + pattern);
+    }
+    return pattern;
+}
 
 ocpp::v2::Component make_component(const std::string& name) {
     ocpp::v2::Component component;
@@ -38,98 +55,66 @@ ocpp::v2::Variable make_variable(const std::string& name) {
     return variable;
 }
 
-// In-memory stand-in for the EVerest device model storage: one ReadWrite string variable tagged with
-// source "EVEREST"; records writes so tests can assert routing.
-class FakeEverestDeviceModelStorage : public ocpp::v2::DeviceModelStorageInterface {
+std::optional<std::string> evse_power_of(ocpp_module_common::device_model::EverestDeviceModel& everest_device_model,
+                                         std::int32_t evse_id) {
+    for (const auto& component : everest_device_model.get_components()) {
+        if (component.component.name.get() != "EVSE" || !component.component.evse.has_value() ||
+            component.component.evse->id != evse_id) {
+            continue;
+        }
+        for (const auto& variable : component.variables) {
+            if (variable.variable == ocpp::v2::EvseComponentVariables::Power) {
+                const auto& value = variable.attributes.front().value;
+                return value.has_value() ? std::optional<std::string>{value->get()} : std::nullopt;
+            }
+        }
+    }
+    return std::nullopt;
+}
+
+/// \brief One module configuration, "auth" of type "Auth" with the parameter connection_timeout
+class FakeConfigService : public ocpp_module_common::device_model::ConfigServiceAccess {
 public:
-    FakeEverestDeviceModelStorage(const std::string& component_name, const std::string& variable_name,
-                                  const std::string& value) :
-        component(make_component(component_name)), variable(make_variable(variable_name)), value(value) {
+    FakeConfigService() {
+        everest::config::ConfigurationParameter parameter;
+        parameter.name = "connection_timeout";
+        parameter.value = 60;
+        parameter.characteristics.datatype = everest::config::Datatype::Integer;
+        parameter.characteristics.mutability = everest::config::Mutability::ReadWrite;
+        this->configs[{"auth", "Auth"}][Everest::config::MODULE_IMPLEMENTATION_ID].push_back(parameter);
+        this->mappings["auth"] = ModuleTierMappings{};
     }
 
-    ocpp::v2::DeviceModelMap get_device_model() override {
-        ocpp::v2::VariableMetaData meta;
-        meta.characteristics.dataType = ocpp::v2::DataEnum::string;
-        meta.characteristics.supportsMonitoring = false;
-        meta.owner = "EVEREST";
-        ocpp::v2::DeviceModelMap map;
-        map[this->component][this->variable] = meta;
-        return map;
+    std::map<Everest::config::ModuleIdType, everest::config::ModuleConfigurationParameters>
+    get_module_configs() override {
+        return this->configs;
     }
 
-    std::optional<ocpp::v2::VariableAttribute> get_variable_attribute(const ocpp::v2::Component& component_id,
-                                                                      const ocpp::v2::Variable& variable_id,
-                                                                      const ocpp::v2::AttributeEnum&) override {
-        if (!(component_id == this->component) || !(variable_id == this->variable)) {
-            return std::nullopt;
-        }
-        ocpp::v2::VariableAttribute attribute;
-        attribute.value = this->value;
-        attribute.mutability = ocpp::v2::MutabilityEnum::ReadWrite;
-        return attribute;
+    std::map<std::string, ModuleTierMappings> get_mappings() override {
+        return this->mappings;
     }
 
-    std::vector<ocpp::v2::VariableAttribute>
-    get_variable_attributes(const ocpp::v2::Component& component_id, const ocpp::v2::Variable& variable_id,
-                            const std::optional<ocpp::v2::AttributeEnum>& attribute_enum) override {
-        const auto attribute =
-            get_variable_attribute(component_id, variable_id, attribute_enum.value_or(ocpp::v2::AttributeEnum::Actual));
-        if (!attribute.has_value()) {
-            return {};
-        }
-        return {attribute.value()};
+    Everest::config::SetConfigResult set_config_value(const everest::config::ConfigurationParameterIdentifier&,
+                                                      const std::string&) override {
+        return {Everest::config::ResponseStatus::Ok, {}, everest::config::SetConfigStatus::Accepted};
     }
 
-    ocpp::v2::SetVariableStatusEnum set_variable_attribute_value(const ocpp::v2::Component& component_id,
-                                                                 const ocpp::v2::Variable& variable_id,
-                                                                 const ocpp::v2::AttributeEnum&,
-                                                                 const std::string& new_value,
-                                                                 const std::string&) override {
-        if (!(component_id == this->component) || !(variable_id == this->variable)) {
-            return ocpp::v2::SetVariableStatusEnum::Rejected;
-        }
-        this->value = new_value;
-        this->last_set_value = new_value;
-        return ocpp::v2::SetVariableStatusEnum::Accepted;
+    std::optional<std::function<void()>>
+    register_config_update_handler(const std::string& /*module_id*/,
+                                   Everest::config::ConfigServiceClient::ConfigUpdateHandler /*handler*/) override {
+        this->handlers++;
+        return [this]() { this->handlers--; };
     }
 
-    std::optional<ocpp::v2::VariableMonitoringMeta> set_monitoring_data(const ocpp::v2::SetMonitoringData&,
-                                                                        const ocpp::v2::VariableMonitorType) override {
-        return std::nullopt;
-    }
-
-    bool update_monitoring_reference(const std::int32_t, const std::string&) override {
-        return false;
-    }
-
-    ocpp::v2::ClearMonitoringStatusEnum clear_variable_monitor(int, bool) override {
-        return ocpp::v2::ClearMonitoringStatusEnum::NotFound;
-    }
-
-    std::int32_t clear_custom_variable_monitors() override {
-        return 0;
-    }
-
-    std::vector<ocpp::v2::StoredMonitor> get_all_monitors() override {
-        return {};
-    }
-
-    void check_integrity() override {
-    }
-
-    ocpp::v2::Component component;
-    ocpp::v2::Variable variable;
-    std::string value;
-    std::optional<std::string> last_set_value;
+    std::map<Everest::config::ModuleIdType, everest::config::ModuleConfigurationParameters> configs;
+    std::map<std::string, ModuleTierMappings> mappings;
+    int handlers{0};
 };
 
 class ChargePointConfigFactoryV16Test : public ::testing::Test {
 protected:
     void SetUp() override {
-        work_dir = fs::temp_directory_path() / "ocppmulti_factory_v16_tests" /
-                   ::testing::UnitTest::GetInstance()->current_test_info()->name();
-        fs::remove_all(work_dir);
-        fs::create_directories(work_dir);
+        work_dir = create_unique_directory("ocppmulti_factory_v16_tests");
     }
 
     void TearDown() override {
@@ -147,6 +132,7 @@ protected:
             false,                                                      // EnableLegacyConfigMigration
             "",                                                         // ChargePointConfigPath
             "",                                                         // UserConfigPath
+            false,                                                      // FailOnDeviceModelConflicts
         };
     }
 
@@ -156,68 +142,141 @@ protected:
     fs::path work_dir;
 };
 
-TEST_F(ChargePointConfigFactoryV16Test, EverestSourcedVariableIsReadableAndWritable) {
-    auto everest_storage = std::make_shared<FakeEverestDeviceModelStorage>("ConnectedEV", "VehicleId", "everest-value");
-
-    auto result =
-        module::config_factory_v16::create_charge_point_configuration(work_dir, make_params(), n_evse, everest_storage);
-    ASSERT_NE(result.configuration, nullptr);
-    auto& device_model = result.configuration->get_device_model();
-
-    std::string value;
-    const auto get_status =
-        device_model.get_variable(make_component("ConnectedEV"), make_variable("VehicleId"),
-                                  ocpp::v2::AttributeEnum::Actual, value, false, ocpp::v2::UnsetValue::NotSupported);
-    EXPECT_EQ(get_status, ocpp::v2::GetVariableStatusEnum::Accepted);
-    EXPECT_EQ(value, "everest-value");
-
-    const auto set_status = device_model.set_value(make_component("ConnectedEV"), make_variable("VehicleId"),
-                                                   ocpp::v2::AttributeEnum::Actual, "WMI999", "test");
-    EXPECT_EQ(set_status, ocpp::v2::SetVariableStatusEnum::Accepted);
-    EXPECT_EQ(everest_storage->last_set_value, "WMI999");
-}
-
-TEST_F(ChargePointConfigFactoryV16Test, OcppSourcedVariableStillResolves) {
-    auto everest_storage = std::make_shared<FakeEverestDeviceModelStorage>("ConnectedEV", "VehicleId", "everest-value");
-
-    auto result =
-        module::config_factory_v16::create_charge_point_configuration(work_dir, make_params(), n_evse, everest_storage);
+TEST_F(ChargePointConfigFactoryV16Test, OcppVariableResolves) {
+    auto result = module::config_factory_v16::create_charge_point_configuration(work_dir, make_params(), n_evse, {});
     ASSERT_NE(result.configuration, nullptr);
     auto& device_model = result.configuration->get_device_model();
 
     const auto& heartbeat_interval = ocpp::v2::ControllerComponentVariables::HeartbeatInterval;
     ASSERT_TRUE(heartbeat_interval.variable.has_value());
     std::string value;
-    const auto get_status =
-        device_model.get_variable(heartbeat_interval.component, heartbeat_interval.variable.value(),
-                                  ocpp::v2::AttributeEnum::Actual, value, false, ocpp::v2::UnsetValue::NotSupported);
-    EXPECT_EQ(get_status, ocpp::v2::GetVariableStatusEnum::Accepted);
-    EXPECT_FALSE(value.empty());
-
-    // The write must not leak into the EVerest storage.
-    EXPECT_FALSE(everest_storage->last_set_value.has_value());
-}
-
-// The factory is also used in setups without an EVerest device model storage (e.g. tests); it must
-// degrade to the OCPP-only device model instead of crashing.
-TEST_F(ChargePointConfigFactoryV16Test, NullEverestStorageDegradesToOcppOnly) {
-    auto result =
-        module::config_factory_v16::create_charge_point_configuration(work_dir, make_params(), n_evse, nullptr);
-    ASSERT_NE(result.configuration, nullptr);
-    auto& device_model = result.configuration->get_device_model();
-
-    std::string value;
-    EXPECT_EQ(device_model.get_variable(make_component("ConnectedEV"), make_variable("VehicleId"),
-                                        ocpp::v2::AttributeEnum::Actual, value, false,
-                                        ocpp::v2::UnsetValue::NotSupported),
-              ocpp::v2::GetVariableStatusEnum::UnknownComponent);
-
-    const auto& heartbeat_interval = ocpp::v2::ControllerComponentVariables::HeartbeatInterval;
-    ASSERT_TRUE(heartbeat_interval.variable.has_value());
     EXPECT_EQ(device_model.get_variable(heartbeat_interval.component, heartbeat_interval.variable.value(),
                                         ocpp::v2::AttributeEnum::Actual, value, false,
                                         ocpp::v2::UnsetValue::NotSupported),
               ocpp::v2::GetVariableStatusEnum::Accepted);
+    EXPECT_FALSE(value.empty());
+}
+
+// The EVerest device model database of earlier versions is taken over at the first start and renamed
+TEST_F(ChargePointConfigFactoryV16Test, EverestDeviceModelDatabaseIsTakenOver) {
+    const auto everest_db_path = work_dir / "everest_device_model_storage.db";
+    {
+        ocpp::v2::InitDeviceModelDb init(everest_db_path, fs::absolute(LIBOCPP_DEVICE_MODEL_MIGRATIONS_DIR));
+        init.initialize_database({}, false, false);
+        init.close_connection();
+    }
+
+    auto result =
+        module::config_factory_v16::create_charge_point_configuration(work_dir, make_params(), n_evse, everest_db_path);
+    ASSERT_NE(result.configuration, nullptr);
+    EXPECT_FALSE(fs::exists(everest_db_path));
+    EXPECT_TRUE(fs::exists(work_dir / "everest_device_model_storage.db.migrated"));
+}
+
+// The shipped component configs define EVSE 1, which EVerest registers as well
+TEST_F(ChargePointConfigFactoryV16Test, FailedStartDetachesEverestDeviceModel) {
+    stubs::ModuleInterfaces interfaces;
+    interfaces.add_evse_manager("evse_manager_1");
+    ocpp_module_common::device_model::EverestDeviceModel everest_device_model(
+        interfaces.r_evse_manager, interfaces.r_extensions_15118,
+        std::map<int32_t, types::evse_board_support::HardwareCapabilities>{},
+        std::map<int32_t, std::vector<types::iso15118::EnergyTransferMode>>{}, std::map<int32_t, bool>{}, false,
+        std::set<int32_t>{});
+    auto params = make_params();
+    params.FailOnDeviceModelConflicts = true;
+
+    try {
+        module::config_factory_v16::create_charge_point_configuration(work_dir, params, n_evse, {},
+                                                                      &everest_device_model);
+        FAIL() << "The conflict did not stop the start";
+    } catch (const std::runtime_error& e) {
+        EXPECT_NE(std::string(e.what()).find("FailOnDeviceModelConflicts"), std::string::npos) << e.what();
+    }
+
+    // A detached EVerest device model keeps the value without reporting it
+    everest_device_model.update_power(1, 11000.0F);
+    EXPECT_EQ(evse_power_of(everest_device_model, 1), std::to_string(11000.0F));
+}
+
+TEST_F(ChargePointConfigFactoryV16Test, ConfigurationViewsAreRegistered) {
+    FakeConfigService config_service;
+    auto result = module::config_factory_v16::create_charge_point_configuration(work_dir, make_params(), n_evse, {},
+                                                                                nullptr, &config_service);
+    ASSERT_EQ(result.registrations.results().size(), 1u);
+    EXPECT_EQ(result.registrations.results().front().owner,
+              ocpp_module_common::device_model::VARIABLE_OWNER_EVEREST_CONFIG);
+    EXPECT_EQ(config_service.handlers, 1);
+
+    ocpp::v2::Component component = make_component("Auth");
+    component.instance = "auth";
+    std::string value;
+    EXPECT_EQ(result.configuration->get_device_model().get_variable(component, make_variable("connection_timeout"),
+                                                                    ocpp::v2::AttributeEnum::Actual, value, false,
+                                                                    ocpp::v2::UnsetValue::NotSupported),
+              ocpp::v2::GetVariableStatusEnum::Accepted);
+    EXPECT_EQ(value, "60");
+
+    result.registrations.end();
+    EXPECT_EQ(config_service.handlers, 0);
+}
+
+// The configuration views are stopped before the device model that holds them is destroyed
+TEST_F(ChargePointConfigFactoryV16Test, FailedStartStopsConfigurationViews) {
+    stubs::ModuleInterfaces interfaces;
+    interfaces.add_evse_manager("evse_manager_1");
+    ocpp_module_common::device_model::EverestDeviceModel everest_device_model(
+        interfaces.r_evse_manager, interfaces.r_extensions_15118,
+        std::map<int32_t, types::evse_board_support::HardwareCapabilities>{},
+        std::map<int32_t, std::vector<types::iso15118::EnergyTransferMode>>{}, std::map<int32_t, bool>{}, false,
+        std::set<int32_t>{});
+    FakeConfigService config_service;
+    auto params = make_params();
+    params.FailOnDeviceModelConflicts = true;
+
+    EXPECT_THROW(module::config_factory_v16::create_charge_point_configuration(work_dir, params, n_evse, {},
+                                                                               &everest_device_model, &config_service),
+                 std::runtime_error);
+    EXPECT_EQ(config_service.handlers, 0);
+}
+
+// DER is not supported in OCPP 1.6 mode: the start removes what a CSMS set on the DER controllers in OCPP 2.x mode
+TEST_F(ChargePointConfigFactoryV16Test, StartRemovesMonitorsAndValuesOfTheDerControllers) {
+    const auto params = make_params();
+    module::config_factory_v16::create_charge_point_configuration(work_dir, params, n_evse, {});
+
+    auto der_ctrlr = make_component("DCDERCtrlr");
+    der_ctrlr.evse = ocpp::v2::EVSE{};
+    der_ctrlr.evse->id = 1;
+    const auto enabled = make_variable("Enabled");
+    const auto& heartbeat_interval = ocpp::v2::ControllerComponentVariables::HeartbeatInterval;
+    {
+        ocpp::v2::DeviceModelStorageSqlite storage(params.DeviceModelDatabasePath);
+        ASSERT_EQ(storage.set_stored_value({der_ctrlr, enabled, ocpp::v2::AttributeEnum::Actual, "false", "csms",
+                                            ocpp_module_common::device_model::VARIABLE_OWNER_EVEREST}),
+                  ocpp::v2::SetVariableStatusEnum::Accepted);
+        ocpp::v2::SetMonitoringData der_monitor{};
+        der_monitor.type = ocpp::v2::MonitorEnum::Delta;
+        der_monitor.value = 1.0F;
+        der_monitor.severity = 5;
+        der_monitor.component = der_ctrlr;
+        der_monitor.variable = enabled;
+        ASSERT_TRUE(storage.set_monitoring_data(der_monitor, ocpp::v2::VariableMonitorType::CustomMonitor));
+        auto heartbeat_monitor = der_monitor;
+        heartbeat_monitor.type = ocpp::v2::MonitorEnum::UpperThreshold;
+        heartbeat_monitor.value = 600.0F;
+        heartbeat_monitor.component = heartbeat_interval.component;
+        heartbeat_monitor.variable = heartbeat_interval.variable.value();
+        ASSERT_TRUE(storage.set_monitoring_data(heartbeat_monitor, ocpp::v2::VariableMonitorType::CustomMonitor));
+    }
+
+    module::config_factory_v16::create_charge_point_configuration(work_dir, params, n_evse, {});
+
+    ocpp::v2::DeviceModelStorageSqlite storage(params.DeviceModelDatabasePath);
+    EXPECT_TRUE(storage.get_stored_values().empty());
+    const auto monitors = storage.get_all_monitors();
+    ASSERT_EQ(monitors.size(), 1u);
+    EXPECT_EQ(monitors.front().component, heartbeat_interval.component);
+    EXPECT_EQ(monitors.front().variable, heartbeat_interval.variable.value());
 }
 
 } // namespace

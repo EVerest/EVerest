@@ -39,9 +39,7 @@ ComposedModel compose_device_model(DeviceModelMap& component_config,
     }
     for (auto& [component, variables] : component_config) {
         for (auto& [variable, meta_data] : variables) {
-            const auto backing =
-                meta_data.owner == VARIABLE_OWNER_COMPONENT_CONFIG ? ValueBacking::Storage : ValueBacking::OwnerStorage;
-            model[component].try_emplace(variable, ComposedVariable{&meta_data, nullptr, backing});
+            model[component].try_emplace(variable, ComposedVariable{&meta_data, nullptr, ValueBacking::Storage});
         }
     }
     return model;

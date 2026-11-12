@@ -20,7 +20,7 @@ module stands in for the DER device. It:
 
 How DER gets enabled
 --------------------
-EverestDeviceModelStorage provisions a DER controller component (DCDERCtrlr for
+OCPPmulti registers a DER controller component (DCDERCtrlr for
 the DER-capable DC EVSE) disabled (Available=false, empty ModesSupported). When
 the device publishes a ``capability`` with a non-empty ``supported_types``,
 OCPPmulti writes Available=true and ModesSupported (the CSV of supported control
@@ -85,7 +85,7 @@ GRID_SUPPORT_IMPL_ID = "grid_support"
 
 # The DER-capable EVSE in the d20 config: a DC EvseManager wired to a bidirectional
 # DCSupplySimulator publishes DC_BPT, which classifies it DER-capable so
-# EverestDeviceModelStorage provisions a DCDERCtrlr component (disabled).
+# OCPPmulti registers a DCDERCtrlr component (disabled).
 DER_EVSE_ID = 1
 
 # Default control types a declared capability advertises as supported.

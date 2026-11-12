@@ -5,7 +5,7 @@
 
 #include <everest/ocpp_module_common/conversions.hpp>
 #include <everest/ocpp_module_common/custom_error_mapping.hpp>
-#include <everest/ocpp_module_common/device_model/everest_device_model_storage.hpp>
+#include <everest/ocpp_module_common/device_model/everest_device_model.hpp>
 #include <everest/ocpp_module_common/error_handling.hpp>
 #include <everest/ocpp_module_common/transaction_handler.hpp>
 

@@ -423,20 +423,23 @@ private: // Functions
     std::map<ComponentKey, std::vector<DeviceModelVariable>> get_all_components_from_db();
 
     ///
-    /// \brief Warn about components that exist in the database but are not declared in the
-    ///        component config (no JSON file present on this install). The orphan rows are
-    ///        intentionally kept so per-slot components such as NetworkConfiguration_<N>
-    ///        survive missing JSON files and the legacy NetworkConnectionProfiles blob can
-    ///        still migrate into them on a later boot.
+    /// \brief Removes the components that exist in the database but not in the component config, with their
+    ///        variables, so that the database mirrors the config files. A NetworkConfiguration component is kept:
+    ///        the migration of the legacy NetworkConnectionProfiles blob creates the slots it needs from the
+    ///        embedded default schema, without a config file. If the component config lacks a component with a
+    ///        required variable that the database contains, the component config is taken as incomplete, for example
+    ///        a wrong or partly deployed config directory, and no component is removed, so that the stored values
+    ///        survive until the config is fixed.
     /// \param component_config  The component config.
     /// \param db_components     The components in the database.
     ///
-    void warn_about_components_missing_from_config(
+    void remove_components_missing_from_config(
         const std::map<ComponentKey, std::vector<DeviceModelVariable>>& component_config,
         const std::map<ComponentKey, std::vector<DeviceModelVariable>>& db_components);
 
     ///
-    /// \brief Remove a component from the database.
+    /// \brief Remove a component from the database, with its variables. Monitors are keyed by name and stay, like
+    ///        when a variable is removed: they apply again when an owner registers the variable at runtime.
     /// \param component    The component to remove.
     /// \return True on success.
     ///

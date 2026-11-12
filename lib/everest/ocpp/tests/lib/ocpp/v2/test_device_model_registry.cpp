@@ -14,6 +14,7 @@
 
 #include <device_model_test_helper.hpp>
 
+#include <ocpp/v2/availability_state_registration.hpp>
 #include <ocpp/v2/ctrlr_component_variables.hpp>
 #include <ocpp/v2/device_model.hpp>
 #include <ocpp/v2/device_model_storage_sqlite.hpp>
@@ -156,6 +157,21 @@ TEST_F(DeviceModelRegistryTest, registered_variable_is_part_of_the_model) {
     const auto report = dm->get_custom_report_data(std::vector<ComponentVariable>{{config_component, timeout}});
     ASSERT_EQ(report.size(), 1);
     EXPECT_EQ(report.at(0).variableAttribute.at(0).value.value().get(), "60");
+}
+
+TEST_F(DeviceModelRegistryTest, custom_report_leaves_out_the_value_of_a_write_only_variable) {
+    const auto password = make_variable("password");
+    RegisteredComponent component;
+    component.component = config_component;
+    component.variables.push_back(
+        make_registered_variable(password.name, "secret", MutabilityEnum::WriteOnly, DataEnum::string));
+    ASSERT_TRUE(dm->register_components(OWNER, {component}, provider).rejected.empty());
+
+    const auto report = dm->get_custom_report_data(std::vector<ComponentVariable>{{config_component, password}});
+    ASSERT_EQ(report.size(), 1);
+    ASSERT_EQ(report.at(0).variableAttribute.size(), 1);
+    EXPECT_EQ(report.at(0).variableAttribute.at(0).mutability, MutabilityEnum::WriteOnly);
+    EXPECT_FALSE(report.at(0).variableAttribute.at(0).value.has_value());
 }
 
 TEST_F(DeviceModelRegistryTest, accepted_write_is_stored_in_memory) {
@@ -387,15 +403,17 @@ TEST_F(DeviceModelRegistryTest, registering_again_notifies_the_listeners_of_chan
     EXPECT_EQ(get(config_component, timeout), "70");
 }
 
-TEST_F(DeviceModelRegistryTest, reserved_owner_is_rejected) {
+TEST_F(DeviceModelRegistryTest, reserved_owners_are_rejected) {
     RegisteredComponent component;
     component.component = config_component;
     component.variables.push_back(make_registered_variable(timeout.name, "60"));
 
-    const auto result = dm->register_components(VARIABLE_OWNER_COMPONENT_CONFIG, {component}, nullptr);
-    ASSERT_EQ(result.rejected.size(), 1);
-    EXPECT_EQ(result.rejected.at(0).reason, RegistrationRejectionReason::ReservedOwner);
-    EXPECT_FALSE(visible(config_component, timeout));
+    for (const std::string owner : {VARIABLE_OWNER_COMPONENT_CONFIG, VARIABLE_OWNER_OCPP_STACK}) {
+        const auto result = dm->register_components(owner, {component}, nullptr);
+        ASSERT_EQ(result.rejected.size(), 1) << owner;
+        EXPECT_EQ(result.rejected.at(0).reason, RegistrationRejectionReason::ReservedOwner) << owner;
+        EXPECT_FALSE(visible(config_component, timeout)) << owner;
+    }
 }
 
 TEST_F(DeviceModelRegistryTest, variables_that_libocpp_writes_are_rejected) {
@@ -475,6 +493,13 @@ TEST_F(DeviceModelRegistryTest, libocpp_cannot_set_read_only_values_of_other_own
     EXPECT_EQ(dm->set_read_only_value(evse, EvseComponentVariables::Power, AttributeEnum::Actual, "100", "internal"),
               SetVariableStatusEnum::Rejected);
     EXPECT_EQ(get(evse, EvseComponentVariables::Power), "0");
+
+    dm->unregister_components(OTHER_OWNER);
+    ASSERT_GE(register_availability_states(*dm, {{3, 0}}), 1);
+    EXPECT_EQ(dm->set_read_only_value(evse, EvseComponentVariables::AvailabilityState, AttributeEnum::Actual,
+                                      "Occupied", "internal"),
+              SetVariableStatusEnum::Accepted);
+    EXPECT_EQ(get(evse, EvseComponentVariables::AvailabilityState), "Occupied");
 }
 
 TEST_F(DeviceModelRegistryTest, local_channel_writes_a_registered_variable_through_its_owner) {

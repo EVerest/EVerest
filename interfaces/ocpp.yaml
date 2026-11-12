@@ -69,6 +69,11 @@ cmds:
       the value is validated and persisted immediately and takes effect on the
       next (re)connect or reboot. Slot-based connection configuration is provided
       by the OCPPmulti module; other modules implementing this interface may differ.
+      A ReadOnly variable can be written only when the component configuration
+      defines it. A variable that a runtime owner registered, such as a module
+      configuration view or DER Enabled, is written through its owner and only
+      when it is ReadWrite; a ReadOnly one, such as EVSE/Power, is a value its
+      owner reports, and writing it is Rejected.
     arguments:
       requests:
         description: List of SetVariableRequests

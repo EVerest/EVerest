@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
 
+#include <ocpp/v2/availability_state_registration.hpp>
 #include <ocpp/v2/charge_point.hpp>
 
 #include <ocpp/common/constants.hpp>
@@ -85,7 +86,9 @@ ChargePoint::ChargePoint(const std::map<std::int32_t, std::int32_t>& evse_connec
                          const std::string& sql_init_path, const std::string& message_log_path,
                          const std::shared_ptr<EvseSecurity> evse_security, const Callbacks& callbacks) :
     ChargePoint(
-        evse_connector_structure, std::make_shared<DeviceModel>(std::move(device_model_storage_interface)),
+        evse_connector_structure,
+        create_device_model_with_availability_states(evse_connector_structure,
+                                                     std::move(device_model_storage_interface)),
         std::make_shared<DatabaseHandler>(
             std::make_unique<everest::db::sqlite::Connection>(fs::path(core_database_path) / "cp.db"), sql_init_path),
         nullptr /* message_queue initialized in this constructor */, message_log_path, evse_security, callbacks,

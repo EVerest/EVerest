@@ -37,7 +37,7 @@ changed a value, it will not be updated to the value from the component config f
 When `DeviceModel` is created, it loads the device model from its storage, including the values of all attributes.
 The values of registered variables are held in memory too, see
 [Components registered at runtime](#components-registered-at-runtime). After loading, every read is answered from
-memory. The only exceptions are the variables of another storage, such as the EVerest storage, described below.
+memory.
 
 A write goes to the database first. Memory is only updated once the database has accepted the write. If the database
 rejects it, the request is rejected and memory keeps the old value.
@@ -53,11 +53,10 @@ made while it runs are not seen until the next start.
 
 ### Writes answered with RebootRequired
 
-Memory always holds the value in effect. A write answered with `RebootRequired`, by a storage or by the owner of a
+Memory always holds the value in effect. A write answered with `RebootRequired`, by the storage or by the owner of a
 registered variable, is held by whoever answered it for the next start. Until then nothing changes: memory keeps the old
-value, no listener is notified and no monitor is triggered. Whoever answered `RebootRequired` must keep to this as well:
-a storage that holds variables of another owner must keep returning the value in effect on reads, and the owner of a
-registered variable must not report the held value with `notify_value_changed`.
+value, no listener is notified and no monitor is triggered. The owner of a registered variable must keep to this as
+well: it must not report the held value with `notify_value_changed`.
 
 A GetVariables.req returns the old value until the charging station restarts, which may be much later, for example once
 no session is in progress; OCPP 2.x leaves open what a read returns in the meantime. A later write reaches the storage
@@ -67,39 +66,23 @@ The SQLite storage of libocpp does not answer `RebootRequired`.
 The OCPP 1.6 key `CentralSystemURI` does not follow this rule: libocpp stores the new value at once and answers
 ChangeConfiguration.req with `RebootRequired`, so GetConfiguration.req returns the new value before the restart.
 
-### Variables held by another storage
-
-Besides the component config, a storage can deliver variables of its own with a `VariableMetaData::owner` other than
-`COMPONENT_CONFIG`, because it changes their values without going through `DeviceModel`. The EVerest storage of the OCPP
-modules is one: it builds its components at startup from the EVSEs and the module configurations. `DeviceModel` keeps
-no copy of their values: it reads every value from that storage and sends every write to it. Such a storage must
-keep reporting the value in effect after a write it answered with `RebootRequired`, see
-[Writes answered with RebootRequired](#writes-answered-with-rebootrequired); the EVerest storage does. The
-`VariableMetaData::owner` of such a variable names its storage, not the owner of a registration: the values of
-registered variables are held in memory and kept current with `notify_value_changed`. Variables with the owner
-`COMPONENT_CONFIG`, the default, belong to the OCPP storage and are held in memory as described above.
-
-In the OCPP modules:
-
-- The EVerest device model storage reports all of its variables with the owner `EVEREST`.
-- The composed storage sends reads and writes of those variables to the EVerest storage.
-- Monitors are handled differently: the composed storage keeps all monitors in the OCPP storage, whichever storage
-  owns the variable.
-
-The database does not record a variable's owner. Migration 4 removed the `VARIABLE.SOURCE` column.
-
 ## Update component config
 
 To update a component, just place the correct json component config in the `component_config/custom` or 
 `component_config/standardized` folder. When restarting the software, it will:
-- Check if there are Components in the database that are not in the component config's. Those are kept in the
-  database, together with their variables and monitors, and a warning is logged for each of them.
+- Check if there are Components in the database that are not in the component config's. Those are removed from the
+  database with their variables, and a warning is logged for each of them. Their monitors are kept, see below. A
+  `NetworkConfiguration` component is kept: the migration of the legacy `NetworkConnectionProfiles` blob creates the
+  slots it needs from an embedded default schema, without a config file. If the database contains a component with a
+  required variable (see `required_variables` in `ctrlr_component_variables.cpp`) that the component config lacks, the
+  config is taken as incomplete, for example a wrong or partly deployed config directory. Then no component is removed
+  and an error is logged, so the stored values survive until the config is fixed.
 - Check if there are Components in the component config's that are not in the database. Those will be added.
 - Check if anything has changed inside the Component (`Variable`, `Characteristics` or `Attributes`). 
   Those will be removed, changed or added to the database as well. 
   
-Note: When the `evse_id` or `connector_id` of a component is changed, the component with the new key is added. The
-component with the old key, including its monitors, stays in the database and is reported by the warning above.
+Note: When the `evse_id` or `connector_id` of a component is changed, the component with the new key is added and
+the component with the old key is removed, like any other component without a config file.
 
 Note: OCPP requires EVSE and Connector numbering starting from 1 counting upwards.
 
@@ -142,8 +125,8 @@ config, and the variables only the custom config defines would be removed with t
 Monitors are not linked to variable rows. Removing a variable from the component config keeps its monitors, custom
 monitors included, so they apply when an owner registers the variable at runtime; the values of the variable are not
 kept. See [Components registered at runtime](#components-registered-at-runtime) for when such monitors are removed.
-Components that are no longer configured are kept with their monitors, see
-[Update component config](#update-component-config).
+Removing a whole component config file removes the component the same way: its variables go, its monitors stay,
+see [Update component config](#update-component-config).
 `DeviceModelStorageSqlite::get_device_model` returns the component tables without monitors, and `get_all_monitors`
 returns all monitors.
 
@@ -166,7 +149,10 @@ Monitors and stored values are kept by component and variable name, so they surv
 registration applies them if they fit its characteristics and removes them otherwise. The first `ChargePoint::start`
 removes the monitors of variables that nobody defines and the stored values of variables that nobody registers (N04,
 remarks). This is why every owner must register before the first `start`. A later `start`, a restart of the charging
-station at runtime, removes nothing, so an owner may unregister and register again in the meantime.
+station at runtime, removes nothing, so an owner may unregister and register again in the meantime. The OCPP 1.6 charge
+point has no such step: an integration that runs it on the device model calls
+`DeviceModel::remove_monitors_and_values_of_absent_variables` itself once every owner has registered, as OCPPmulti does
+in OCPP 1.6 mode.
 
 A registration replaces all previous entries for its owner. A variable the owner no longer registers, because it is left
 out or rejected, loses its monitors and stored values at once, so a configuration change at runtime that drops a
@@ -179,18 +165,24 @@ values is logged and does not fail the registration.
 Every variable has exactly one definition: the component config or one runtime owner. Ownership is per variable, so
 the component config and runtime owners can contribute different variables to the same component. A variable that is
 already defined is rejected, and the result names the owner that defines it; so is a second definition of a variable in
-one registration. The owner `COMPONENT_CONFIG` is reserved for libocpp: `register_components`,
-`unregister_components` and `notify_value_changed` reject it.
+one registration. The owners `COMPONENT_CONFIG` and `OCPP_STACK` are reserved for libocpp: `register_components`,
+`unregister_components` and `notify_value_changed` reject them.
 
 The integrator is responsible for owners not defining the same variable. Otherwise the owner that registers first gets
 it, with its monitors and stored values; owners start in no fixed order, so after a restart that can be another owner.
 
 The variables that libocpp sets from its own state through `set_read_only_value` are defined by the component config
-only, and a registration of one of them is rejected: `AuthCacheCtrlr.Storage`, `LocalAuthListCtrlr.Entries`, the `AvailabilityState` of the
-charging station, the EVSEs and the connectors, `OCPPCommCtrlr.ActiveNetworkProfile`, `OCPPCommCtrlr.MessageTimeout`,
-`SecurityCtrlr.SecurityProfile`, `SecurityCtrlr.Identity` and every variable of a `NetworkConfiguration` slot, which
-`SetNetworkProfile` writes. A component config that leaves out such a variable, for example by leaving out
-`LocalAuthListCtrlr`, leaves out what libocpp maintains in it.
+or by libocpp, and a registration of one of them is rejected: `AuthCacheCtrlr.Storage`, `LocalAuthListCtrlr.Entries`,
+the `AvailabilityState` of the charging station, the EVSEs and the connectors, `OCPPCommCtrlr.ActiveNetworkProfile`,
+`OCPPCommCtrlr.MessageTimeout`, `SecurityCtrlr.SecurityProfile`, `SecurityCtrlr.Identity` and every variable of a
+`NetworkConfiguration` slot, which `SetNetworkProfile` writes. A component config that leaves out such a variable, for
+example by leaving out `LocalAuthListCtrlr`, leaves out what libocpp maintains in it.
+
+libocpp itself registers the `AvailabilityState` of the charging station, the EVSEs and the connectors under
+`OCPP_STACK` where the component config does not define it: the number of EVSEs and connectors is only known at runtime,
+and the `ChargePoint` requires the variable for each of them. The `ChargePoint` constructor that takes a storage does
+so; a caller that builds the `DeviceModel` itself calls `register_availability_states` before constructing the
+`ChargePoint`.
 
 Registered variables follow the name key rules of the component config: a variable with an empty instance, or of a
 component with an empty instance or an EVSE or connector id of `0`, is rejected, because its monitors and stored values
@@ -229,6 +221,10 @@ for example, reach the owner like a SetVariables.req.
 libocpp stores the value of a write once the owner accepted it, so a change that the owner reports with
 `notify_value_changed` while the write is in progress is overwritten by it. An owner whose change must outlast the
 write reports it after `set_value` returned.
+
+How EVerest uses this is described in
+[How the device model is composed](../../../../../modules/EVSE/OCPPmulti/docs/device_model.rst), the documentation
+of the OCPPmulti module.
 
 ## Required variables
 

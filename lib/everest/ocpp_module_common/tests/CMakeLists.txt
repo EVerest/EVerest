@@ -7,14 +7,16 @@ add_executable(${TEST_TARGET_NAME})
 
 target_sources(${TEST_TARGET_NAME}
     PRIVATE
-    composed_device_model_storage_test.cpp
+    config_service_binding_test.cpp
     custom_error_mapping_loader_tests.cpp
     custom_error_mapping_validation_tests.cpp
     custom_file_error_mapping_tests.cpp
     data_transfer_conversions_test.cpp
+    device_model_conflicts_test.cpp
     error_handling_tests.cpp
     error_placeholders_tests.cpp
-    everest_device_model_storage_test.cpp
+    everest_device_model_components_test.cpp
+    everest_device_model_test.cpp
     external_limits_tests.cpp
     grid_support_conversions_test.cpp
     meter_value_conversions_test.cpp
