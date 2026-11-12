@@ -72,8 +72,10 @@ class ChargePointInterface {
 public:
     virtual ~ChargePointInterface() = default;
 
-    /// \brief Starts the ChargePoint, initializes and connects to the Websocket endpoint
-    /// \param bootreason  Optional bootreason (default: PowerUp).
+    /// \brief Starts the ChargePoint, initializes and connects to the Websocket endpoint. Removes the monitors and
+    /// stored values of variables that are absent from the device model, so every runtime owner must have registered
+    /// its components before.
+    /// \param bootreason  Optional bootreason (default: PowerUp)
     /// \param start_connecting Optional, set to false to initialize but not start connecting. Otherwise will connect to
     /// the first network profile. (default: true)
     virtual void start(BootReasonEnum bootreason = BootReasonEnum::PowerUp, bool start_connecting = true) = 0;
@@ -337,7 +339,11 @@ public:
     get_variables(const std::vector<GetVariableData>& get_variable_data_vector) = 0;
 
     /// \brief Sets variables specified within \p set_variable_data_vector in the device model and returns the result.
+    ///        This is the local channel, the integrator's own code rather than the CSMS: a ReadOnly variable of the
+    ///        component config may be written, and a variable that a runtime owner registered is written through its
+    ///        owner and only when it is ReadWrite, see DeviceModelInterface::set_local_value
     /// \param set_variable_data_vector contains data of the variables to set
+    /// \param source who sets the values, 'webinterface' for example
     /// \return Map containing the SetVariableData as a key and the  SetVariableResult as a value for each requested
     /// change
     virtual std::map<SetVariableData, SetVariableResult>
@@ -438,6 +444,9 @@ private:
     std::atomic<UploadLogStatusEnum> upload_log_status{UploadLogStatusEnum::Idle};
     std::atomic<std::int32_t> upload_log_status_id;
     BootReasonEnum bootreason{BootReasonEnum::PowerUp};
+    /// \brief The first start removes the monitors and stored values of absent variables. A later one, a restart,
+    /// does not: an owner may be between unregistering and registering again then.
+    bool absent_variables_removed{false};
     bool skip_invalid_csms_certificate_notifications{false};
 
     /// \brief Component responsible for maintaining and persisting the operational status of CS, EVSEs, and connectors.

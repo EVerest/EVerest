@@ -29,8 +29,8 @@ struct StoredVariableValue {
     AttributeEnum attribute;
     std::string value;
     std::optional<std::string> value_source;
-    /// \brief The owner of the variable when the value was stored, if known
-    std::optional<std::string> owner;
+    /// \brief The owner of the variable when the value was stored, VARIABLE_OWNER_COMPONENT_CONFIG if none was recorded
+    std::string owner{VARIABLE_OWNER_COMPONENT_CONFIG};
 };
 
 /// \brief Abstract base class for device model interface. This class provides an interface for accessing and modifying
@@ -43,7 +43,8 @@ public:
 
     /// \brief Gets the device model from the device model interface
     /// \return std::map<Component, std::map<Variable, VariableMetaData>> that will contain a full representation of the
-    /// device model, including the VariableAttribute(s) of each Variable with their values.
+    /// device model, including the VariableAttribute(s) of each Variable with their values. The monitors are returned
+    /// by get_all_monitors.
     virtual DeviceModelMap get_device_model() = 0;
 
     /// \brief Gets a VariableAttribute from the storage if present
@@ -71,17 +72,17 @@ public:
     /// \param attribute_enum
     /// \param value
     /// \param source           The source of the value.
-    /// \return Accepted if the value could be set in the storage, RebootRequired or Rejected if not (immediately
-    /// possible)
+    /// \return Accepted if the value is set in the storage, RebootRequired if the storage holds it for the next
+    /// start, Rejected if it could not be set. DeviceModel updates its copy in memory on Accepted only. After
+    /// RebootRequired, a storage that DeviceModel reads a variable from, one of another owner, must keep returning
+    /// the value in effect until the next start.
     virtual SetVariableStatusEnum set_variable_attribute_value(const Component& component_id,
                                                                const Variable& variable_id,
                                                                const AttributeEnum& attribute_enum,
                                                                const std::string& value, const std::string& source) = 0;
 
     /// \brief Inserts or replaces a variable monitor in the database. The storage does not check that the variable
-    /// exists, so a monitor of a variable without a row in the component tables is stored but not attached by
-    /// get_device_model; the caller validates the variable against its device model. The monitor is stored without
-    /// an owner.
+    /// exists; the caller validates the variable against its device model.
     /// \param data Monitor data to set
     /// \return the stored monitor, or std::nullopt if it could not be stored
     virtual std::optional<VariableMonitoringMeta> set_monitoring_data(const SetMonitoringData& data,
@@ -123,7 +124,7 @@ public:
     }
 
     /// \brief Removes a value returned by get_stored_values
-    /// \return true if a value was removed
+    /// \return true if the storage holds no such value afterwards, also when it held none
     virtual bool remove_stored_value(const Component& /*component_id*/, const Variable& /*variable_id*/,
                                      const AttributeEnum& /*attribute_enum*/) {
         return false;

@@ -1510,4 +1510,36 @@ TEST_F(InitDeviceModelDbTest, delta_monitor_reference_survives_reinitialization)
     EXPECT_EQ(changed_config.reference_value, "150");
 }
 
+/// Monitors are kept by name, for an owner that registers the variable at runtime
+TEST_F(InitDeviceModelDbTest, monitors_of_the_removed_ocpp16_legacy_ctrlr_are_kept) {
+    const auto stored_monitors = [this]() {
+        auto statement = this->database->new_statement("SELECT COUNT(*) FROM VARIABLE_MONITORING WHERE "
+                                                       "COMPONENT_NAME = 'OCPP16LegacyCtrlr' AND "
+                                                       "VARIABLE_NAME = 'BlinkRepeat'");
+        EXPECT_EQ(statement->step(), SQLITE_ROW);
+        return statement->column_int(0);
+    };
+    const auto is_legacy_ctrlr = [](const auto& component) { return component.first.name == "OCPP16LegacyCtrlr"; };
+
+    InitDeviceModelDb db(DATABASE_PATH, MIGRATION_FILES_PATH);
+    db.database_exists = false;
+    auto component_configs = get_all_component_configs(STANDARD_CONFIGS_PATH);
+    const auto legacy_ctrlr = std::find_if(component_configs.begin(), component_configs.end(), is_legacy_ctrlr);
+    ASSERT_NE(legacy_ctrlr, component_configs.end());
+    for (auto& variable : legacy_ctrlr->second) {
+        if (variable.name == "BlinkRepeat") {
+            variable.monitors = {make_preconfigured_delta_monitor(1.0F, "0")};
+        }
+    }
+    db.initialize_database(component_configs, true);
+    ASSERT_EQ(stored_monitors(), 1);
+
+    component_configs.erase(legacy_ctrlr);
+    db.database_exists = true;
+    db.initialize_database(component_configs, false, false);
+
+    EXPECT_FALSE(component_exists("OCPP16LegacyCtrlr", std::nullopt, std::nullopt, std::nullopt));
+    EXPECT_EQ(stored_monitors(), 1);
+}
+
 } // namespace ocpp::v2

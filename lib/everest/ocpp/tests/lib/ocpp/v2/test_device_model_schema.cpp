@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <filesystem>
 #include <fstream>
+#include <set>
 
 #include <gtest/gtest.h>
 
@@ -12,6 +13,7 @@
 #include <everest/database/sqlite/schema_updater.hpp>
 #include <test_temp_paths.hpp>
 
+#include <ocpp/v2/device_model.hpp>
 #include <ocpp/v2/device_model_storage_sqlite.hpp>
 #include <ocpp/v2/init_device_model_db.hpp>
 
@@ -367,8 +369,15 @@ INSERT INTO VARIABLE_MONITORING (ID, VARIABLE_ID, SEVERITY, "TRANSACTION", TYPE_
     const auto model = storage.get_device_model();
     const auto& heartbeat = model.at(make_component("OCPPCommCtrlr")).at(make_variable("HeartbeatInterval"));
     EXPECT_EQ(heartbeat.attributes.size(), 1);
-    EXPECT_EQ(heartbeat.monitors.size(), 2);
-    EXPECT_EQ(heartbeat.monitors.count(5), 1);
+    std::set<std::int32_t> heartbeat_monitors;
+    for (const auto& monitor : storage.get_all_monitors()) {
+        if (monitor.component == make_component("OCPPCommCtrlr") and
+            monitor.variable == make_variable("HeartbeatInterval")) {
+            heartbeat_monitors.insert(monitor.monitor.monitor.id);
+        }
+    }
+    EXPECT_EQ(heartbeat_monitors.size(), 2);
+    EXPECT_EQ(heartbeat_monitors.count(5), 1);
 }
 
 /// Component and variable rows that differ only in case match the same monitor, which goes to the oldest of them
@@ -404,7 +413,7 @@ protected:
     const Variable runtime_variable = make_variable("Power");
 
     StoredVariableValue make_stored_value(const std::string& value, const std::string& value_source,
-                                          const std::optional<std::string>& owner) const {
+                                          const std::string& owner) const {
         return {runtime_component, runtime_variable, AttributeEnum::Actual, value, value_source, owner};
     }
 };
@@ -455,7 +464,7 @@ TEST_F(DeviceModelStorageSqliteNameKeyTest, monitor_of_an_unknown_variable_is_st
     EXPECT_TRUE(model.at(heartbeat_component).at(heartbeat_variable).monitors.empty());
 }
 
-TEST_F(DeviceModelStorageSqliteNameKeyTest, device_model_attaches_monitors_by_name_key) {
+TEST_F(DeviceModelStorageSqliteNameKeyTest, all_monitors_are_returned_by_name_key) {
     const auto attached = storage.set_monitoring_data(
         make_monitor_request(heartbeat_component, heartbeat_variable, MonitorEnum::UpperThreshold, 100, 5),
         VariableMonitorType::CustomMonitor);
@@ -466,11 +475,19 @@ TEST_F(DeviceModelStorageSqliteNameKeyTest, device_model_attaches_monitors_by_na
     ASSERT_TRUE(detached.has_value());
 
     const auto model = storage.get_device_model();
-
-    const auto& monitors = model.at(heartbeat_component).at(heartbeat_variable).monitors;
-    ASSERT_EQ(monitors.count(attached->monitor.id), 1);
-    EXPECT_EQ(monitors.at(attached->monitor.id).monitor.value, 100);
+    EXPECT_TRUE(model.at(heartbeat_component).at(heartbeat_variable).monitors.empty());
     EXPECT_EQ(model.count(runtime_component), 0);
+
+    const auto all_monitors = storage.get_all_monitors();
+    const auto find = [&all_monitors](const std::int32_t id) {
+        return std::find_if(all_monitors.begin(), all_monitors.end(),
+                            [id](const StoredMonitor& m) { return m.monitor.monitor.id == id; });
+    };
+    ASSERT_NE(find(attached->monitor.id), all_monitors.end());
+    EXPECT_EQ(find(attached->monitor.id)->component, heartbeat_component);
+    EXPECT_EQ(find(attached->monitor.id)->monitor.monitor.value, 100);
+    ASSERT_NE(find(detached->monitor.id), all_monitors.end());
+    EXPECT_EQ(find(detached->monitor.id)->component, runtime_component);
 }
 
 TEST_F(DeviceModelStorageSqliteNameKeyTest, value_of_a_variable_without_row_is_stored_by_name_key) {
@@ -490,14 +507,16 @@ TEST_F(DeviceModelStorageSqliteNameKeyTest, value_of_a_variable_without_row_is_s
     EXPECT_FALSE(storage.get_variable_attribute(runtime_component, runtime_variable, AttributeEnum::Actual));
 
     EXPECT_TRUE(storage.remove_stored_value(runtime_component, runtime_variable, AttributeEnum::Actual));
-    EXPECT_FALSE(storage.remove_stored_value(runtime_component, runtime_variable, AttributeEnum::Actual));
+    EXPECT_TRUE(storage.remove_stored_value(runtime_component, runtime_variable, AttributeEnum::Actual));
     EXPECT_TRUE(storage.get_stored_values().empty());
 }
 
 TEST_F(DeviceModelStorageSqliteNameKeyTest, stored_value_name_key_is_case_insensitive) {
-    ASSERT_EQ(storage.set_stored_value(make_stored_value("1", "csms", std::nullopt)), SetVariableStatusEnum::Accepted);
+    ASSERT_EQ(storage.set_stored_value(make_stored_value("1", "csms", VARIABLE_OWNER_COMPONENT_CONFIG)),
+              SetVariableStatusEnum::Accepted);
     const StoredVariableValue lower_case{
-        make_component("evse", 9), make_variable("power"), AttributeEnum::Actual, "2", "csms", std::nullopt};
+        make_component("evse", 9),      make_variable("power"), AttributeEnum::Actual, "2", "csms",
+        VARIABLE_OWNER_COMPONENT_CONFIG};
     ASSERT_EQ(storage.set_stored_value(lower_case), SetVariableStatusEnum::Accepted);
 
     const auto values = storage.get_stored_values();
@@ -540,7 +559,7 @@ TEST_F(DeviceModelStorageSqliteNameKeyTest, delta_monitor_without_value_has_no_r
 
 TEST_F(DeviceModelStorageSqliteNameKeyTest, delta_monitor_without_row_takes_the_stored_value_as_reference) {
     const auto request = make_monitor_request(runtime_component, runtime_variable, MonitorEnum::Delta, 10, 5);
-    ASSERT_EQ(storage.set_stored_value(make_stored_value("50", "internal", std::nullopt)),
+    ASSERT_EQ(storage.set_stored_value(make_stored_value("50", "internal", VARIABLE_OWNER_COMPONENT_CONFIG)),
               SetVariableStatusEnum::Accepted);
     const auto monitor = storage.set_monitoring_data(request, VariableMonitorType::CustomMonitor);
     ASSERT_TRUE(monitor.has_value());
@@ -644,7 +663,7 @@ TEST_F(InitDeviceModelDbMonitorTest, preconfigured_monitor_is_seeded_by_name_key
     EXPECT_EQ(monitors_after.at(0).monitor.monitor.id, monitors.at(0).monitor.monitor.id);
 }
 
-TEST_F(InitDeviceModelDbMonitorTest, removing_a_variable_removes_its_monitors) {
+TEST_F(InitDeviceModelDbMonitorTest, removing_a_variable_keeps_its_monitors) {
     auto configs = configs_with_heartbeat_monitor();
     initialize(configs);
     {
@@ -665,7 +684,7 @@ TEST_F(InitDeviceModelDbMonitorTest, removing_a_variable_removes_its_monitors) {
     initialize(configs);
 
     DeviceModelStorageSqlite storage(db_path);
-    EXPECT_TRUE(storage.get_all_monitors().empty());
+    EXPECT_EQ(storage.get_all_monitors().size(), 2);
 }
 
 namespace {
@@ -779,19 +798,18 @@ TEST_F(InitDeviceModelDbMonitorTest, variables_that_differ_only_in_case_are_reje
     EXPECT_NO_THROW(initialize(configs));
 }
 
-TEST_F(InitDeviceModelDbMonitorTest, removing_a_variable_removes_its_monitors_regardless_of_case) {
+TEST_F(InitDeviceModelDbMonitorTest, monitor_of_a_removed_variable_applies_when_the_variable_is_registered) {
     auto configs = get_all_component_configs(CONFIG_PATH);
     initialize(configs);
+    std::int32_t monitor_id = 0;
     {
         DeviceModelStorageSqlite storage(db_path);
-        ASSERT_TRUE(storage
-                        .set_monitoring_data(make_monitor_request(make_component("ocppcommctrlr"),
-                                                                  make_variable("heartbeatinterval"),
-                                                                  MonitorEnum::LowerThreshold, 10, 4),
-                                             VariableMonitorType::CustomMonitor)
-                        .has_value());
-        const auto model = storage.get_device_model();
-        EXPECT_EQ(model.at(make_component("OCPPCommCtrlr")).at(make_variable("HeartbeatInterval")).monitors.size(), 1);
+        const auto monitor = storage.set_monitoring_data(make_monitor_request(make_component("ocppcommctrlr"),
+                                                                              make_variable("heartbeatinterval"),
+                                                                              MonitorEnum::LowerThreshold, 10, 4),
+                                                         VariableMonitorType::CustomMonitor);
+        ASSERT_TRUE(monitor.has_value());
+        monitor_id = monitor->monitor.id;
     }
 
     auto& variables = configs.at(heartbeat_component_key);
@@ -800,8 +818,27 @@ TEST_F(InitDeviceModelDbMonitorTest, removing_a_variable_removes_its_monitors_re
                     variables.end());
     initialize(configs);
 
-    DeviceModelStorageSqlite storage(db_path);
-    EXPECT_TRUE(storage.get_all_monitors().empty());
+    DeviceModel device_model(std::make_unique<DeviceModelStorageSqlite>(db_path));
+    EXPECT_FALSE(
+        device_model.get_variable_meta_data(make_component("OCPPCommCtrlr"), make_variable("HeartbeatInterval")));
+
+    RegisteredVariable heartbeat;
+    heartbeat.variable = make_variable("HeartbeatInterval");
+    heartbeat.characteristics.dataType = DataEnum::integer;
+    heartbeat.characteristics.supportsMonitoring = true;
+    VariableAttribute attribute;
+    attribute.mutability = MutabilityEnum::ReadWrite;
+    attribute.value = "60";
+    heartbeat.attributes.push_back(attribute);
+    RegisteredComponent component;
+    component.component = make_component("OCPPCommCtrlr");
+    component.variables.push_back(heartbeat);
+    ASSERT_TRUE(device_model.register_components("RUNTIME_OWNER", {component}, nullptr).rejected.empty());
+
+    const auto meta_data =
+        device_model.get_variable_meta_data(make_component("OCPPCommCtrlr"), make_variable("HeartbeatInterval"));
+    ASSERT_TRUE(meta_data.has_value());
+    EXPECT_EQ(meta_data->monitors.count(monitor_id), 1);
 }
 
 TEST_F(InitDeviceModelDbMonitorTest, component_renamed_by_case_keeps_its_row_and_monitors) {
@@ -905,6 +942,26 @@ TEST(ComponentConfigNameKeyTest, two_configs_of_the_same_component_are_rejected)
     ASSERT_EQ(configs.size(), 1);
     EXPECT_EQ(configs.begin()->second.size(), 2);
     std::filesystem::remove_all(override_directory);
+}
+
+TEST_F(InitDeviceModelDbMonitorTest, value_of_a_removed_variable_is_not_kept) {
+    const auto component = make_component("OCPPCommCtrlr");
+    const auto heartbeat = make_variable("HeartbeatInterval");
+    auto configs = get_all_component_configs(CONFIG_PATH);
+    initialize(configs);
+    {
+        DeviceModelStorageSqlite storage(db_path);
+        ASSERT_EQ(storage.set_variable_attribute_value(component, heartbeat, AttributeEnum::Actual, "1234", "csms"),
+                  SetVariableStatusEnum::Accepted);
+    }
+
+    auto& variables = configs.at(heartbeat_component_key);
+    variables.erase(std::remove_if(variables.begin(), variables.end(),
+                                   [](const DeviceModelVariable& v) { return v.name == "HeartbeatInterval"; }),
+                    variables.end());
+    initialize(configs);
+    DeviceModelStorageSqlite storage(db_path);
+    EXPECT_TRUE(storage.get_stored_values().empty());
 }
 
 } // namespace v2

@@ -70,7 +70,7 @@ private:
 };
 
 /// \brief Builds the module-standard composed device model storage: \p ocpp_storage registered under
-/// owner "OCPP" (the default owner) and \p everest_storage under "EVEREST". For component/variable
+/// owner "COMPONENT_CONFIG" (the default owner) and \p everest_storage under "EVEREST". For component/variable
 /// combinations defined in both storages, the EVerest device model takes precedence and a warning is
 /// logged; the integrator is responsible for avoiding overlaps.
 /// \param ocpp_storage     Must have a fully seeded backing database, because registration snapshots

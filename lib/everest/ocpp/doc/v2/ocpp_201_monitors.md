@@ -86,8 +86,13 @@ In order to set up pre-existing monitors that are not set up by the CSMS, for th
 }
 ```
 
-In the example for the 'EVSEPower' variable that supports monitoring there were attached three hardwired and preconfigured monitors. The monitors will report (based on the setup, see the `Basic Configuration` section) to the CSMS when the power will exceed '21950' W, when the power will fall below '100' W and when there will be a delta difference of more than `100` W from the `reference_value` in the case of the delta monitor. When the delta is exceeded and the event is sent to the CSMS (or queued while offline), the `reference_value` is updated internally, and a new delta will be calculated based on that. An event that is discarded, for example because its severity is above `OfflineQueuingSeverity`, does not update the `reference_value`.
+In the example for the 'EVSEPower' variable that supports monitoring there were attached three hardwired and preconfigured monitors. The monitors will report (based on the setup, see the `Basic Configuration` section) to the CSMS when the power will exceed '21950' W, when the power will fall below '100' W and when there will be a delta difference of more than `100` W from the `reference_value` in the case of the delta monitor. When the delta is exceeded and the event is sent to the CSMS (or queued while offline), the `reference_value` is updated internally, and a new delta will be calculated based on that. An event that is discarded, for example because its severity is above `OfflineQueuingSeverity`, does not update the `reference_value`. A `reference_value` that does not fit the variable, for example an empty one or one of a former data type of the variable, makes the next change trigger the monitor, so the changed value becomes the `reference_value`.
 
 For more information related to the monitor functionality, please refer to the OCPP201 specification.
+
+Variables registered at runtime declare their hardwired and preconfigured monitors in `RegisteredVariable::monitors`.
+How the component config and a registration apply these monitors at a start and at a new registration, and what the
+CSMS can change or clear, is described for integrators in the
+[OCPPmulti device model documentation](https://everest.github.io/nightly/reference/modules/EVSE/OCPPmulti/device_model.html#hardwired-and-preconfigured-monitors).
 
 Note: for a delta monitor, an initial `reference_value` must be provided or the library will fail to initialize. It is only used when the monitor is first added to the database; on later starts the stored `reference_value` is kept, also when other properties of the monitor change in the configuration.

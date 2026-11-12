@@ -13,7 +13,7 @@ using ocpp::v2::EVSE;
 using ocpp::v2::VariableCharacteristics;
 
 namespace ocpp_module_common::device_model {
-using ocpp::v2::VARIABLE_OWNER_OCPP;
+using ocpp::v2::VARIABLE_OWNER_COMPONENT_CONFIG;
 /// \brief Owner of the variables of the EverestDeviceModelStorage
 inline constexpr auto VARIABLE_OWNER_EVEREST = "EVEREST";
 } // namespace ocpp_module_common::device_model

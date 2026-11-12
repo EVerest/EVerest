@@ -75,7 +75,7 @@ public:
     ocpp::v2::SetVariableStatusEnum set_value(const ocpp::v2::Component& component_id,
                                               const ocpp::v2::Variable& variable_id,
                                               const ocpp::v2::AttributeEnum& attribute_enum, const std::string& value,
-                                              const std::string& source, bool allow_read_only = false) override {
+                                              const std::string& source, bool allow_read_only_update = false) override {
         if (m_components.count(component_id) == 0) {
             return ocpp::v2::SetVariableStatusEnum::UnknownComponent;
         }
@@ -86,7 +86,7 @@ public:
         if (attribute_enum != ocpp::v2::AttributeEnum::Actual) {
             return ocpp::v2::SetVariableStatusEnum::NotSupportedAttributeType;
         }
-        if (!allow_read_only && (it->second.mutability == ocpp::v2::MutabilityEnum::ReadOnly)) {
+        if (!allow_read_only_update && (it->second.mutability == ocpp::v2::MutabilityEnum::ReadOnly)) {
             return ocpp::v2::SetVariableStatusEnum::Rejected;
         }
         it->second.value = value;
@@ -183,6 +183,9 @@ public:
     }
 
     void check_integrity(const std::map<std::int32_t, std::int32_t>&) override {
+    }
+
+    void remove_monitors_and_values_of_absent_variables() override {
     }
 
     int set_read_only_calls() const {

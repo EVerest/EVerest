@@ -101,8 +101,8 @@ public:
 
     SetVariableStatusEnum set_value(const Component& component_id, const Variable& variable_id,
                                     const AttributeEnum& attribute_enum, const std::string& value,
-                                    const std::string& source, bool allow_read_only) override {
-        return storage.set_value(component_id, variable_id, attribute_enum, value, source, allow_read_only);
+                                    const std::string& source, bool allow_read_only_update) override {
+        return storage.set_value(component_id, variable_id, attribute_enum, value, source, allow_read_only_update);
     }
 
     SetVariableStatusEnum set_read_only_value(const Component& component_id, const Variable& variable_id,
@@ -181,6 +181,10 @@ public:
 
     void check_integrity(const std::map<std::int32_t, std::int32_t>& evse_connector_structure) override {
         return storage.check_integrity(evse_connector_structure);
+    }
+
+    void remove_monitors_and_values_of_absent_variables() override {
+        storage.remove_monitors_and_values_of_absent_variables();
     }
 
 private:

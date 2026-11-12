@@ -30,21 +30,37 @@ struct VariableMonitoringPeriodic {
     std::vector<VariableMonitoringMeta> monitors;
 };
 
-/// \brief The owner of the variables whose values DeviceModel holds in memory, and of a variable without an owner. A
-/// variable of another owner is held by the storage of that owner, which changes its value without DeviceModel.
-inline constexpr auto VARIABLE_OWNER_OCPP = "OCPP";
+/// \brief The owner of the variables the component config defines, OCPPCommCtrlr.HeartbeatInterval or
+/// SecurityCtrlr.Identity for example. DeviceModel holds their values in memory and persists them itself. A variable of
+/// the component config that the storage reports with another owner, the EVerest device model of the OCPP modules for
+/// example, is held by the storage of that owner, which changes its value without DeviceModel.
+inline constexpr auto VARIABLE_OWNER_COMPONENT_CONFIG = "COMPONENT_CONFIG";
 
 /// \brief Helper struct that combines VariableCharacteristics, VariableMonitoring and the VariableAttribute(s)
 struct VariableMetaData {
     VariableCharacteristics characteristics;
     std::unordered_map<std::int64_t, VariableMonitoringMeta> monitors;
-    std::optional<std::string> owner;
+    /// \brief The owner of the variable: VARIABLE_OWNER_COMPONENT_CONFIG unless the storage or a registration names
+    /// another
+    std::string owner{VARIABLE_OWNER_COMPONENT_CONFIG};
     /// \brief The attributes of the variable with their current values
     std::vector<VariableAttribute> attributes;
 };
 
 using VariableMap = std::map<Variable, VariableMetaData>;
 using DeviceModelMap = std::map<Component, VariableMap>;
+
+/// \brief The entry of \p variable of \p component in a model keyed by component, then by variable, or nullptr
+template <typename Model>
+auto find_in_model(Model& model, const Component& component, const Variable& variable)
+    -> decltype(&model.begin()->second.begin()->second) {
+    const auto component_it = model.find(component);
+    if (component_it == model.end()) {
+        return nullptr;
+    }
+    const auto variable_it = component_it->second.find(variable);
+    return variable_it == component_it->second.end() ? nullptr : &variable_it->second;
+}
 
 class DeviceModelError : public std::exception {
 public:
@@ -98,11 +114,26 @@ public:
     /// \param attribute_enum The attribute
     /// \param value The value to set (as string)
     /// \param source The source of the value (e.g., 'csms', 'default', 'internal')
-    /// \param allow_read_only If true, read-only variables can be changed
-    /// \return Result of the requested operation
+    /// \param allow_read_only_update If true, ReadOnly variables can be changed. A ReadOnly mutability binds
+    ///        SetVariables from the CSMS only: libocpp passes true for its own writes and for CSMS messages whose
+    ///        purpose is to set a ReadOnly variable, such as SetMonitoringBase and SetMonitoringLevel; a write to a
+    ///        variable that a runtime owner registered reaches that owner.
+    /// \return Accepted when the value is applied: DeviceModel stores it in memory and notifies the variable
+    ///         listeners. RebootRequired when the value is held for the next start: until then, the value in effect is
+    ///         kept, so reads return it and no listener is notified, whoever owns the variable. Any other result also
+    ///         leaves the value unchanged.
     virtual SetVariableStatusEnum set_value(const Component& component_id, const Variable& variable_id,
                                             const AttributeEnum& attribute_enum, const std::string& value,
-                                            const std::string& source, bool allow_read_only = false) = 0;
+                                            const std::string& source, bool allow_read_only_update = false) = 0;
+
+    /// \brief set_value for the local channel, ChargePoint::set_variables: a ReadOnly variable of the component config
+    /// may be written, a variable that a runtime owner registered is written like the CSMS writes it, through the
+    /// owner and only when it is ReadWrite
+    virtual SetVariableStatusEnum set_local_value(const Component& component_id, const Variable& variable_id,
+                                                  const AttributeEnum& attribute_enum, const std::string& value,
+                                                  const std::string& source) {
+        return this->set_value(component_id, variable_id, attribute_enum, value, source, true);
+    }
 
     /// \brief Sets a read-only variable attribute value (only works on certain allowed components)
     /// \param component_id The component
@@ -238,6 +269,13 @@ public:
     /// \brief Check data integrity of the device model
     /// \param evse_connector_structure The EVSE connector structure
     virtual void check_integrity(const std::map<std::int32_t, std::int32_t>& evse_connector_structure) = 0;
+
+    /// \brief Removes the monitors of variables that are not part of the device model and the stored values of
+    /// variables that no runtime owner registers. Every runtime owner must have registered before.
+    /// \note N04, remarks: a monitor is persistent after a firmware update if the monitored variable still exists
+    /// and is still monitor-able, otherwise it is removed. Whether a monitor still fits its variable is checked when
+    /// the owner registers the variable.
+    virtual void remove_monitors_and_values_of_absent_variables() = 0;
 };
 
 } // namespace v2

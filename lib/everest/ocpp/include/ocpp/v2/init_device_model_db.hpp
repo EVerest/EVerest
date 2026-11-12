@@ -304,7 +304,8 @@ private: // Functions
                          const std::uint64_t component_id);
 
     ///
-    /// \brief Delete a variable from the database.
+    /// \brief Delete a variable from the database. Its monitors are kept by name key, so they apply when an owner
+    /// registers the variable at runtime; its values are removed with it.
     /// \param variable The variable to delete.
     ///
     /// \throws InitDeviceModelDbError If variable could not be deleted
@@ -414,15 +415,6 @@ private: // Functions
     ///
     /// \brief Deletes a single monitor related to the provided variable_id from the database
     void delete_variable_monitor(const VariableMonitoringMeta& monitor, const std::int64_t& variable_id);
-
-    ///
-    /// \brief Deletes the monitors of the component config variables matching \p variable_condition, custom
-    /// monitors included. Monitors are keyed by name, so they are not removed together with their variable rows, and
-    /// every monitor with the name key of a matching variable is deleted, also one on a variable registered at runtime.
-    /// \param variable_condition   SQL condition on the variable (alias v) or component (alias c), using \@id
-    /// \param id                   The value bound to \@id
-    ///
-    void delete_monitors(const std::string& variable_condition, const std::uint64_t id);
 
     ///
     /// \brief Get all components with its variables (and characteristics / attributes) from the database.
