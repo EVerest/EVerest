@@ -67,6 +67,10 @@ bool AbstractCryptoSupplier::x509_is_selfsigned(X509Handle* /*handle*/) {
     default_crypto_supplier_usage_error() return false;
 }
 
+bool AbstractCryptoSupplier::x509_is_ca(X509Handle* /*handle*/) {
+    default_crypto_supplier_usage_error() return false;
+}
+
 bool AbstractCryptoSupplier::x509_is_child(X509Handle* /*child*/, X509Handle* /*parent*/) {
     default_crypto_supplier_usage_error() return false;
 }

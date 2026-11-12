@@ -132,7 +132,11 @@ More about CSMS, V2G, MO and MF Bundles
 * The ``mf_ca_bundle`` is used to verify firmware update files.
 
 New root certificates can be installed in the specified domain using the
-``install_ca_certificate`` command.
+``install_ca_certificate`` command. A sub-CA certificate is accepted only if
+its issuer is already in the bundle of that domain, so that it can be listed
+and deleted by its hash data. Certificates that are not CA certificates are
+rejected with ``InvalidCertificateChain``, sub-CA certificates without their
+issuer with ``NoRootCertificateInstalled``.
 
 Storage Limits and Garbage Collection
 -------------------------------------

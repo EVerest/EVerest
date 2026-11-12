@@ -831,6 +831,26 @@ TEST_F(EvseSecurityTests, install_root_ca_05) {
     ASSERT_EQ(result, InstallCertificateResult::Expired);
 }
 
+/// \brief test install of a leaf certificate must be rejected, even if its issuer is installed
+TEST_F(EvseSecurityTests, install_root_ca_06) {
+    const auto bundle_before = read_file_to_string("certs/ca/v2g/V2G_CA_BUNDLE.pem");
+    const auto leaf_cert = read_file_to_string(fs::path("certs/client/cso/SECC_LEAF.pem"));
+
+    const auto result = this->evse_security->install_ca_certificate(leaf_cert, CaCertificateType::CSMS);
+    ASSERT_EQ(result, InstallCertificateResult::InvalidCertificateChain);
+    ASSERT_EQ(bundle_before, read_file_to_string("certs/ca/v2g/V2G_CA_BUNDLE.pem"));
+}
+
+/// \brief test install of a sub-CA whose issuer is not installed must be rejected
+TEST_F(EvseSecurityTests, install_root_ca_07) {
+    const auto bundle_before = read_file_to_string("certs/ca/v2g/V2G_CA_BUNDLE.pem");
+    const auto orphan_sub_ca = read_file_to_string(fs::path("certs/to_be_installed/INSTALL_TEST_ROOT_CA3_SUBCA1.pem"));
+
+    const auto result = this->evse_security->install_ca_certificate(orphan_sub_ca, CaCertificateType::CSMS);
+    ASSERT_EQ(result, InstallCertificateResult::NoRootCertificateInstalled);
+    ASSERT_EQ(bundle_before, read_file_to_string("certs/ca/v2g/V2G_CA_BUNDLE.pem"));
+}
+
 TEST_F(EvseSecurityTestsCSMS, delete_csms_provided_certs) {
     auto path = fs::path("csms_certs_temp/client/");
 
