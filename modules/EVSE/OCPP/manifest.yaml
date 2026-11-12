@@ -49,7 +49,8 @@ config:
       Optional path to a YAML file that maps further OCPP 1.6 configuration keys to device model variables.
       Relative paths are resolved against this module's share path.
       If empty, only built-in mappings are used.
-      Only used when ConfigBackend is "device_model_with_migration".
+      Used with ConfigBackend "device_model" and "device_model_with_migration", both for the one-time migration
+      and at runtime.
     type: string
     default: ""
   ConfigBackend:

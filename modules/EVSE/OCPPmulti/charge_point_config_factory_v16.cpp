@@ -133,10 +133,18 @@ void patch_number_of_connectors(
                   << " in component configs; NumberOfConnectors may not match the number of connected EVSEs.";
 }
 
+ocpp::v2::Ocpp16KeyMappings load_custom_mappings(const DeviceModelInitializationContext& context) {
+    if (!context.custom_mappings_path.has_value()) {
+        return {};
+    }
+    return ocpp::v2::load_ocpp16_key_mappings_from_yaml(context.custom_mappings_path.value());
+}
+
 void initialize_device_model_direct(const DeviceModelInitializationContext& context, std::int32_t n_evse) {
     EVLOG_info << "Updating device model database from component configs.";
     auto component_configs = ocpp::v2::get_all_component_configs(context.component_config_path);
     ocpp::v2::ensure_ocpp16_legacy_ctrlr(component_configs);
+    ocpp::v2::remove_overridden_ocpp16_legacy_variables(component_configs, load_custom_mappings(context));
     patch_number_of_connectors(component_configs, n_evse);
     ocpp::v2::InitDeviceModelDb init_device_model_db(context.database_path, context.migration_files_path);
     init_device_model_db.initialize_database(component_configs, false);
@@ -159,14 +167,14 @@ void initialize_device_model_with_migration(const fs::path& ocpp_share_path, con
     auto component_configs = ocpp::v2::get_all_component_configs(context.component_config_path);
     ocpp::v2::ensure_ocpp16_legacy_ctrlr(component_configs);
 
-    ocpp::v2::Ocpp16KeyMappings custom_mappings;
     if (context.custom_mappings_path.has_value()) {
         EVLOG_info << "Custom OCPP 1.6 key mappings provided, loading from " << context.custom_mappings_path.value();
-        custom_mappings = ocpp::v2::load_ocpp16_key_mappings_from_yaml(context.custom_mappings_path.value());
     }
+    const auto custom_mappings = load_custom_mappings(context);
 
     ocpp::v2::patch_component_config_with_ocpp16(component_configs, *legacy_charge_point_config, custom_mappings,
                                                  context.ocpp16_network_config_slot);
+    ocpp::v2::remove_overridden_ocpp16_legacy_variables(component_configs, custom_mappings);
 
     ocpp::v2::InitDeviceModelDb init_device_model_db(context.database_path, context.migration_files_path);
     init_device_model_db.initialize_database(component_configs, false);
@@ -187,10 +195,7 @@ config_factory_result_t create_device_model_charge_point_configuration(
     // One-time migration, mirroring the v2 path (ocpp::v2::ChargePoint::initialize)
     ocpp::v2::NetworkConfigurationComponentVariables::migrate_from_blob_if_needed(*device_model);
 
-    ocpp::v2::Ocpp16KeyMappings custom_mappings;
-    if (context.custom_mappings_path.has_value()) {
-        custom_mappings = ocpp::v2::load_ocpp16_key_mappings_from_yaml(context.custom_mappings_path.value());
-    }
+    auto custom_mappings = load_custom_mappings(context);
 
     // Pass a copy so the returned mappings match the ones the configuration runs with.
     auto configuration = std::make_unique<ocpp::v16::ChargePointConfigurationDeviceModel>(

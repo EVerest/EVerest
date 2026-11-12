@@ -150,6 +150,10 @@ cross-compiling without `CMAKE_CROSSCOMPILING_EMULATOR`.
 
 ## Mavericks Section
 
+The keys in this section are stored in `OCPP16LegacyCtrlr`. An entry for one of them in the custom mapping file
+(`Ocpp16KeyMappingsPath`) replaces its mapping with a variable of the component configuration, except for
+`NumberOfConnectors`, `SupportedFeatureProfiles`, `MeterPublicKeys` and `DefaultPriceText`.
+
 | OCPP1.6 key | Mapping type | Component | Variable | Target field |
 | --- | --- | --- | --- | --- |
 | `BlinkRepeat` | VariableAttribute | `OCPP16LegacyCtrlr` | `BlinkRepeat` | `Actual` |

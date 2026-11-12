@@ -12,6 +12,7 @@
 #include <everest/logging.hpp>
 #include <ocpp/v16/known_keys.hpp>
 #include <ocpp/v16/utils.hpp>
+#include <ocpp/v16/variable_resolver.hpp>
 #include <ocpp/v2/ctrlr_component_variables.hpp>
 #include <ocpp/v2/init_device_model_db.hpp>
 
@@ -51,42 +52,56 @@ std::string charging_rate_unit_csl_v16_to_v2(const std::string& v16_csl) {
     return ocpp::v16::utils::to_csl(result);
 }
 
-std::optional<std::reference_wrapper<DeviceModelVariable>>
-get_variable_to_patch(std::map<ComponentKey, std::vector<DeviceModelVariable>>& component_configs,
-                      const Component& component, const Variable& variable) {
-
-    DeviceModelVariable variable_to_patch;
-    variable_to_patch.name = variable.name.get();
-    if (variable.instance.has_value()) {
-        variable_to_patch.instance = variable.instance->get();
-    }
-
+/// The variable in \p component_configs addressed by \p component and \p variable, including the EVSE and connector
+/// of the component, or nullptr. Shared by checking (const) and patching (non-const) callers.
+ComponentKey to_component_key(const Component& component) {
     ComponentKey component_key;
     component_key.name = component.name.get();
     if (component.instance.has_value()) {
         component_key.instance = component.instance.value().get();
     }
+    if (component.evse.has_value()) {
+        component_key.evse_id = component.evse->id;
+        component_key.connector_id = component.evse->connectorId;
+    }
+    return component_key;
+}
 
-    auto component_it = component_configs.find(component_key);
+DeviceModelVariable to_device_model_variable(const Variable& variable) {
+    DeviceModelVariable result;
+    result.name = variable.name.get();
+    if (variable.instance.has_value()) {
+        result.instance = variable.instance->get();
+    }
+    return result;
+}
+
+template <typename ComponentConfigs>
+auto* find_variable_in(ComponentConfigs& component_configs, const Component& component, const Variable& variable) {
+    using Result = decltype(&*component_configs.begin()->second.begin());
+    const auto component_it = component_configs.find(to_component_key(component));
     if (component_it == component_configs.end()) {
-        EVLOG_warning << "Component " << component_key.name << " not found in component configs, cannot patch variable "
-                      << variable.name.get();
-        return std::nullopt;
+        return static_cast<Result>(nullptr);
     }
 
+    const auto wanted = to_device_model_variable(variable);
     auto& variables = component_it->second;
-    auto variable_it =
-        std::find_if(variables.begin(), variables.end(), [&variable_to_patch](const DeviceModelVariable& var) {
-            return is_same_variable(var, variable_to_patch);
-        });
+    const auto variable_it =
+        std::find_if(variables.begin(), variables.end(),
+                     [&wanted](const DeviceModelVariable& var) { return is_same_variable(var, wanted); });
+    return variable_it == variables.end() ? static_cast<Result>(nullptr) : &*variable_it;
+}
 
-    if (variable_it == variables.end()) {
-        EVLOG_warning << "Variable " << variable.name.get() << " not found in component " << component_key.name
-                      << ", cannot patch variable.";
+std::optional<std::reference_wrapper<DeviceModelVariable>>
+get_variable_to_patch(std::map<ComponentKey, std::vector<DeviceModelVariable>>& component_configs,
+                      const Component& component, const Variable& variable) {
+    auto* variable_to_patch = find_variable_in(component_configs, component, variable);
+    if (variable_to_patch == nullptr) {
+        EVLOG_warning << "Variable " << describe_mapping_target(component, variable)
+                      << " not found in component configs, cannot patch variable.";
         return std::nullopt;
     }
-
-    return std::ref(*variable_it);
+    return std::ref(*variable_to_patch);
 }
 
 std::optional<std::reference_wrapper<DeviceModelVariable>>
@@ -96,6 +111,49 @@ get_variable_to_patch(std::map<ComponentKey, std::vector<DeviceModelVariable>>& 
         return std::nullopt;
     }
     return get_variable_to_patch(component_configs, device_model_cv->first, device_model_cv->second);
+}
+
+const DeviceModelVariable*
+find_variable(const std::map<ComponentKey, std::vector<DeviceModelVariable>>& component_configs,
+              const Component& component, const Variable& variable) {
+    return find_variable_in(component_configs, component, variable);
+}
+
+bool has_actual_attribute(const DeviceModelVariable& variable) {
+    return std::any_of(variable.attributes.begin(), variable.attributes.end(), [](const DbVariableAttribute& attr) {
+        return attr.variable_attribute.type == AttributeEnum::Actual;
+    });
+}
+
+/// The OCPP 1.6 value of an overridden key is written into the Actual attribute of the override target, so the target
+/// must have one and the data type of the key's built-in variable. A missing target is reported by the integrity check.
+void check_override_target(const std::map<ComponentKey, std::vector<DeviceModelVariable>>& component_configs,
+                           ocpp::v16::keys::valid_keys key, const std::pair<Component, Variable>& target) {
+    const auto* target_variable = find_variable(component_configs, target.first, target.second);
+    if (target_variable == nullptr) {
+        return;
+    }
+    const auto error_prefix = "OCPP 1.6 key '" + std::string{ocpp::v16::keys::convert(key)} + "' is custom-mapped to " +
+                              describe_mapping_target(target.first, target.second);
+    if (!has_actual_attribute(*target_variable)) {
+        throw Ocpp16KeyMappingsError(error_prefix + ", which has no Actual attribute");
+    }
+    const auto builtin = ocpp::v16::keys::convert_v2(key);
+    if (!builtin.has_value()) {
+        return;
+    }
+    const auto* builtin_variable = find_variable(component_configs, builtin->first, builtin->second);
+    if (builtin_variable == nullptr) {
+        return;
+    }
+    const auto builtin_type = builtin_variable->characteristics.dataType;
+    const auto target_type = target_variable->characteristics.dataType;
+    if (builtin_type != target_type) {
+        throw Ocpp16KeyMappingsError(error_prefix + " with dataType " + conversions::data_enum_to_string(target_type) +
+                                     ", but its built-in variable " +
+                                     describe_mapping_target(builtin->first, builtin->second) + " has dataType " +
+                                     conversions::data_enum_to_string(builtin_type));
+    }
 }
 
 ocpp::v16::keys::DeviceModel_CV component_variable_to_dm_cv(const ComponentVariable& cv) {
@@ -353,6 +411,7 @@ void patch_component_config_with_ocpp16(std::map<ComponentKey, std::vector<Devic
                                         const Ocpp16KeyMappings& custom_key_mappings, int32_t network_config_slot) {
 
     const auto config_keys = ocpp16_config.get_all_key_value();
+    const ocpp::v16::VariableResolver resolver{custom_key_mappings};
 
     for (const auto& config_key : config_keys) {
         const auto key_enum = ocpp::v16::keys::convert(config_key.key.get());
@@ -360,15 +419,7 @@ void patch_component_config_with_ocpp16(std::map<ComponentKey, std::vector<Devic
             continue;
         }
 
-        auto mapping_opt = ocpp::v16::keys::convert_v2(config_key.key.get());
-
-        if (!mapping_opt.has_value()) {
-            const auto custom_mapping_it = custom_key_mappings.find(config_key.key.get());
-            if (custom_mapping_it != custom_key_mappings.end()) {
-                const auto& [comp, var] = custom_mapping_it->second;
-                mapping_opt = std::make_pair(comp, var);
-            }
-        }
+        const auto mapping_opt = resolver.key_to_cv(config_key.key.get());
 
         if (!mapping_opt.has_value()) {
             if (!is_special_case_key(config_key.key.get())) {
@@ -378,12 +429,19 @@ void patch_component_config_with_ocpp16(std::map<ComponentKey, std::vector<Devic
             continue;
         }
 
+        const bool overridden = key_enum.has_value() && resolver.is_overridden(key_enum.value());
+        if (overridden) {
+            check_override_target(component_configs, key_enum.value(), mapping_opt.value());
+        }
+        // an override target belongs to the station's component config, which defines its mutability
+        const auto readonly = overridden ? std::nullopt : std::optional<bool>{config_key.readonly};
+
         try {
             std::string value = config_key.value.value().get();
             if (key_enum == ocpp::v16::keys::valid_keys::ChargingScheduleAllowedChargingRateUnit) {
                 value = charging_rate_unit_csl_v16_to_v2(value);
             }
-            patch_variable_value(component_configs, mapping_opt, value, config_key.readonly);
+            patch_variable_value(component_configs, mapping_opt, value, readonly);
         } catch (const std::exception& e) {
             EVLOG_error << "Failed to patch OCPP 1.6 config key " << config_key.key.get() << " with value "
                         << config_key.value.value().get() << ": " << e.what();
@@ -426,6 +484,35 @@ void patch_component_config_with_ocpp16(std::map<ComponentKey, std::vector<Devic
     // SupportedMeasurands -> *Measurands.characteristics.valuesList (patches for all aligned and sampled data
     // measurands variables)
     patch_supported_measurands(component_configs, ocpp16_config);
+}
+
+void remove_overridden_ocpp16_legacy_variables(
+    std::map<ComponentKey, std::vector<DeviceModelVariable>>& component_configs,
+    const Ocpp16KeyMappings& custom_key_mappings) {
+    // TODO(dynamic-runtime-dm-updates): only the component configs are seen here, so a target that is added to the
+    // device model at runtime keeps the built-in variable
+    const ocpp::v16::VariableResolver resolver{custom_key_mappings};
+    for (const auto& [key, target] : resolver.overrides()) {
+        const auto builtin = ocpp::v16::keys::convert_v2(key);
+        if (!builtin.has_value() || builtin.value() == target ||
+            find_variable(component_configs, target.first, target.second) == nullptr) {
+            continue;
+        }
+        // checked here, because the data type of the built-in variable is unknown once it is removed
+        check_override_target(component_configs, key, target);
+
+        const auto component_it = component_configs.find(to_component_key(builtin->first));
+        if (component_it == component_configs.end()) {
+            continue;
+        }
+        const auto builtin_variable = to_device_model_variable(builtin->second);
+        auto& variables = component_it->second;
+        variables.erase(std::remove_if(variables.begin(), variables.end(),
+                                       [&builtin_variable](const DeviceModelVariable& variable) {
+                                           return is_same_variable(variable, builtin_variable);
+                                       }),
+                        variables.end());
+    }
 }
 
 } // namespace ocpp::v2
