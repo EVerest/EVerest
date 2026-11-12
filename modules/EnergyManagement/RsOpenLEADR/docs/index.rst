@@ -25,6 +25,12 @@ Requirements
 - One ``external_energy_limits`` consumer, typically the
   :ref:`EnergyNode <everest_modules_EnergyNode>` at the grid connection point
 
+Every ``set_external_limits`` call replaces the external limits of the
+EnergyNode. If other sources such as OCPP or EEBUS also set external limits,
+connect this module to a dedicated EnergyNode in the energy tree, e.g. between
+the grid connection point and the downstream nodes. The EnergyManager then
+applies the most restrictive of all limits.
+
 Supported events
 ----------------
 
@@ -53,9 +59,9 @@ How events become limits
 ------------------------
 
 The events of the configured program, optionally filtered by target, are
-merged into a timeline: where events overlap, the event with the higher
-priority applies. From this timeline the module builds a schedule starting at
-the current time:
+merged into a timeline, separately for import and export limits: where events
+overlap, the event with the higher priority applies. From each timeline the
+module builds a schedule starting at the current time:
 
 - every interval with a limit becomes an entry with that limit
 - every gap between intervals, and the time after the last one, becomes an

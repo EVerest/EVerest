@@ -16,7 +16,7 @@ use chrono::{DateTime, SecondsFormat, Utc};
 use openleadr_client::Timeline;
 use openleadr_wire::event::{EventContent, EventType, EventValuesMap};
 use openleadr_wire::values_map::Value;
-use openleadr_wire::Unit;
+use openleadr_wire::{Program, Unit};
 use std::ops::Range;
 
 const SOURCE: &str = "OpenADR";
@@ -60,7 +60,7 @@ enum Limit {
 /// Payloads in kW, or without unit, are converted to W. Payloads in A are
 /// moved to an internal payload type. Payloads with any other unit are dropped
 /// with a warning.
-pub fn normalize_events(mut events: Vec<EventContent>) -> Vec<EventContent> {
+fn normalize_events(mut events: Vec<EventContent>) -> Vec<EventContent> {
     for event in &mut events {
         for direction in DIRECTIONS {
             let power_type = direction.power_type();
@@ -109,20 +109,58 @@ pub fn normalize_events(mut events: Vec<EventContent>) -> Vec<EventContent> {
     events
 }
 
-/// Builds the import and export schedules for everything in `timeline` from `now` on.
-pub fn timeline_to_external_limits(timeline: &Timeline, now: DateTime<Utc>) -> ExternalLimits {
-    let schedule_for = |direction: Direction| {
+/// Builds the import and export schedules from `now` on for the `events` of `program`.
+///
+/// Import and export limits each get their own [`Timeline`], so overlapping
+/// events with limits of different directions do not override each other.
+/// Returns `None` if an event has intervals without a period.
+pub fn events_to_external_limits(
+    program: &Program,
+    events: Vec<EventContent>,
+    now: DateTime<Utc>,
+) -> Option<ExternalLimits> {
+    let events = normalize_events(events);
+
+    let schedule_for = |direction: Direction| -> Option<Vec<ScheduleReqEntry>> {
+        let events = events_of_direction(&events, direction);
+        let timeline = Timeline::from_events(program, events.iter().collect())?;
         let segments = timeline
             .iter()
             .map(|(range, interval)| (range.clone(), limit(interval.value_map(), direction)));
-        build_schedule(segments, now)
+        Some(build_schedule(segments, now))
     };
 
-    ExternalLimits {
-        schedule_import: schedule_for(Direction::Import),
-        schedule_export: schedule_for(Direction::Export),
+    Some(ExternalLimits {
+        schedule_import: schedule_for(Direction::Import)?,
+        schedule_export: schedule_for(Direction::Export)?,
         schedule_setpoints: Vec::new(),
-    }
+    })
+}
+
+/// The events with limits of `direction`, with only those payloads.
+///
+/// Intervals are kept even when they have no such payload: intervals without
+/// their own period start where the previous one ends, so removing one would
+/// shift the following ones.
+fn events_of_direction(events: &[EventContent], direction: Direction) -> Vec<EventContent> {
+    let types = [direction.power_type(), direction.current_type()];
+    events
+        .iter()
+        .filter(|event| {
+            event
+                .intervals
+                .iter()
+                .flat_map(|i| &i.payloads)
+                .any(|p| types.contains(&p.value_type))
+        })
+        .cloned()
+        .map(|mut event| {
+            for interval in &mut event.intervals {
+                interval.payloads.retain(|p| types.contains(&p.value_type));
+            }
+            event
+        })
+        .collect()
 }
 
 /// Builds a schedule from sorted, non-overlapping time ranges with an optional
@@ -248,7 +286,9 @@ mod tests {
     use super::*;
     use chrono::TimeZone;
     use openleadr_wire::event::{EventInterval, EventPayloadDescriptor};
-    use openleadr_wire::program::ProgramId;
+    use openleadr_wire::interval::IntervalPeriod;
+    use openleadr_wire::program::{ProgramContent, ProgramId};
+    use openleadr_wire::Duration;
 
     const W: fn(f64) -> Option<Limit> = |w| Some(Limit::PowerW(w));
 
@@ -410,6 +450,42 @@ mod tests {
         assert_eq!(
             limit(&events[0].intervals[0].payloads, Direction::Export),
             None
+        );
+    }
+
+    #[test]
+    fn overlapping_import_and_export_events_both_apply() {
+        let program = Program {
+            id: ProgramId::new("program-1").unwrap(),
+            created_date_time: t(0),
+            modification_date_time: t(0),
+            content: ProgramContent::new("program-1"),
+        };
+        let mut import = event(None, vec![import_limit(Value::Number(5.0))]);
+        let mut export = event(
+            None,
+            vec![EventValuesMap {
+                value_type: EventType::ExportCapacityLimit,
+                values: vec![Value::Number(3.0)],
+            }],
+        );
+        for e in [&mut import, &mut export] {
+            e.interval_period = Some(IntervalPeriod {
+                start: t(9),
+                duration: Some(Duration::hours(2.0)),
+                randomize_start: None,
+            });
+        }
+
+        let limits = events_to_external_limits(&program, vec![import, export], t(10)).unwrap();
+
+        assert_eq!(
+            summarize(&limits.schedule_import),
+            format!("{} 5000W, {} none", ts(10), ts(11))
+        );
+        assert_eq!(
+            summarize(&limits.schedule_export),
+            format!("{} 3000W, {} none", ts(10), ts(11))
         );
     }
 }

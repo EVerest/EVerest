@@ -14,7 +14,8 @@ use generated::{
     Context, EmptyServiceSubscriber, ExternalEnergyLimitsClientPublisher,
     ExternalEnergyLimitsClientSubscriber, Module, ModuleConfig, ModulePublisher, OnReadySubscriber,
 };
-use openleadr_client::{Client, ClientCredentials, Filter, ProgramClient, Timeline};
+use openleadr_client::{Client, ClientCredentials, Filter, ProgramClient};
+use openleadr_wire::event::EventContent;
 use openleadr_wire::program::ProgramId;
 use openleadr_wire::target::TargetType;
 use openleadr_wire::Program;
@@ -76,9 +77,14 @@ async fn retrieval_loop(
         }
 
         if let Some(program) = &program {
-            match retrieve_timeline(program, &filter).await {
-                Ok(timeline) => {
-                    let limits = limits::timeline_to_external_limits(&timeline, Utc::now());
+            let limits = retrieve_events(program, &filter)
+                .await
+                .and_then(|(program, events)| {
+                    limits::events_to_external_limits(&program, events, Utc::now())
+                        .ok_or(openleadr_client::Error::InvalidInterval)
+                });
+            match limits {
+                Ok(limits) => {
                     log::info!(
                         "Publishing external limits: import [{}], export [{}]",
                         limits::summarize(&limits.schedule_import),
@@ -103,10 +109,12 @@ async fn retrieval_loop(
     }
 }
 
-async fn retrieve_timeline(
+/// Retrieves the events of `program`, together with the program itself, which
+/// [`limits::events_to_external_limits`] needs to build timelines.
+async fn retrieve_events(
     program: &ProgramClient,
     filter: &Option<(TargetType, Vec<String>)>,
-) -> Result<Timeline, openleadr_client::Error> {
+) -> Result<(Program, Vec<EventContent>), openleadr_client::Error> {
     let filter = match filter {
         Some((target_type, target_values)) => {
             Filter::By(target_type.clone(), target_values.as_slice())
@@ -114,18 +122,16 @@ async fn retrieve_timeline(
         None => Filter::None,
     };
     let events = program.get_event_list(filter).await?;
-    let events = limits::normalize_events(events.iter().map(|e| e.content().clone()).collect());
+    let events = events.iter().map(|e| e.content().clone()).collect();
 
-    // ProgramClient::get_timeline() can't be used because the events need to be
-    // normalized first, and ProgramClient doesn't expose its Program.
+    // ProgramClient doesn't expose its Program
     let program = Program {
         id: program.id().clone(),
         created_date_time: program.created_date_time(),
         modification_date_time: program.modification_date_time(),
         content: program.content().clone(),
     };
-    Timeline::from_events(&program, events.iter().collect())
-        .ok_or(openleadr_client::Error::InvalidInterval)
+    Ok((program, events))
 }
 
 fn get_credentials_from_config(config: &ModuleConfig) -> Option<ClientCredentials> {
