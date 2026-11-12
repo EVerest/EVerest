@@ -22,11 +22,13 @@ target_sources(${MODULE_NAME}
         PersistentStore.cpp
         over_voltage/OverVoltageMonitor.cpp
         voltage_plausibility/VoltagePlausibilityMonitor.cpp
+        welding_detection/WeldingDetectionVoltage.cpp
 )
 
 target_link_libraries(${MODULE_NAME}
     PRIVATE
         everest::helpers
+        everest::timer
         everest::util
         Pal::Sigslot
         pugixml::pugixml

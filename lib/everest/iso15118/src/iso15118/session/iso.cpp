@@ -175,6 +175,9 @@ TimePoint const& Session::poll() {
             ctx.cache_ac_target_power.emplace(*control_data);
         } else if (const auto control_data = ctx.get_control_event<d20::AcPresentPower>()) {
             ctx.cache_ac_present_power.emplace(*control_data);
+        } else if (const auto control_data = ctx.get_control_event<d20::PresentVoltageCurrent>()) {
+            ctx.cache_present_values.emplace(*control_data);
+            ctx.welding_detection.observe(*control_data);
         }
         // Save some control events. It can happen that these events are sent before the corresponding state. They are
         // stored temporarily here.
@@ -258,6 +261,7 @@ TimePoint const& Session::poll() {
     if (is_finished()) {
         // TODO(SL): Does this also apply when a timeout is triggered? Or should the TCP/TLS connection be terminated
         // directly?
+        ctx.welding_detection.finish(ctx.feedback);
         // Wait for 5 seconds [V2G20-1643]
         std::this_thread::sleep_for(std::chrono::seconds(5));
         connection->close();
@@ -323,6 +327,7 @@ void Session::handle_connection_event(io::ConnectionEvent event) {
 
 void Session::close() {
     connection->close();
+    ctx.welding_detection.finish(ctx.feedback);
     ctx.feedback.signal(session::feedback::Signal::DLINK_TERMINATE);
     ctx.session_stopped = true;
 }

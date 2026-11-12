@@ -151,6 +151,17 @@ void ISO15118_chargerImpl::init() {
         }
     });
 
+    mod->r_iso2->subscribe_welding_detection([this](types::iso15118::WeldingDetectionPhase phase) {
+        if (not mod->selected_iso20()) {
+            publish_welding_detection(phase);
+        }
+    });
+    mod->r_iso20->subscribe_welding_detection([this](types::iso15118::WeldingDetectionPhase phase) {
+        if (mod->selected_iso20()) {
+            publish_welding_detection(phase);
+        }
+    });
+
     mod->r_iso2->subscribe_sae_bidi_mode_active([this]() {
         if (not mod->selected_iso20()) {
             publish_sae_bidi_mode_active(nullptr);
@@ -553,11 +564,11 @@ void ISO15118_chargerImpl::handle_authorization_response(
     }
 }
 
-void ISO15118_chargerImpl::handle_ac_contactor_closed(bool& status) {
+void ISO15118_chargerImpl::handle_contactor_closed(bool& status) {
     if (mod->selected_iso20()) {
-        mod->r_iso20->call_ac_contactor_closed(status);
+        mod->r_iso20->call_contactor_closed(status);
     } else {
-        mod->r_iso2->call_ac_contactor_closed(status);
+        mod->r_iso2->call_contactor_closed(status);
     }
 }
 

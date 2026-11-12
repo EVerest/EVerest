@@ -16,6 +16,8 @@ endfunction()
 
 create_fsm_test_target(session_setup)
 create_fsm_test_target(service_detail)
+create_fsm_test_target(dc_welding_detection)
+create_fsm_test_target(dc_charge_loop_stop)
 
 add_executable(test_d20_transitions d20_transitions.cpp)
 
