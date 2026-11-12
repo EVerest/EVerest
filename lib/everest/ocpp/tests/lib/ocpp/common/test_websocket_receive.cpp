@@ -13,10 +13,12 @@
 #include <chrono>
 #include <condition_variable>
 #include <cstdint>
+#include <future>
 #include <memory>
 #include <mutex>
 #include <optional>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include <arpa/inet.h>
@@ -202,12 +204,6 @@ public:
         }
     }
 
-private:
-    int listen_fd{-1};
-    int client_fd{-1};
-    std::uint16_t listen_port{0};
-    std::string buffer;
-
     void close_client() {
         if (client_fd >= 0) {
             ::close(client_fd);
@@ -215,6 +211,12 @@ private:
         }
         buffer.clear();
     }
+
+private:
+    int listen_fd{-1};
+    int client_fd{-1};
+    std::uint16_t listen_port{0};
+    std::string buffer;
 
     std::string read_some() {
         pollfd pfd{client_fd, POLLIN, 0};
@@ -339,6 +341,38 @@ TEST_F(WebsocketReceiveTest, FragmentsTogetherExceedingMaximumSizeCloseWithMessa
     EXPECT_EQ(server.wait_for_close_status(), CLOSE_STATUS_MESSAGE_TOO_BIG);
     const std::lock_guard lock(messages_mutex);
     EXPECT_TRUE(messages.empty());
+}
+
+// Unlike WebsocketTeardown.DisconnectReturnsPromptlyWhileConnectingToDeadPort, covers a live, connected connection
+TEST_F(WebsocketReceiveTest, DisconnectWakesIdleReceiveThreadPromptly) {
+    connect(DEFAULT_MAX_INCOMING_MESSAGE_SIZE);
+    ASSERT_TRUE(server.send_frame(OPCODE_TEXT, true, R"([2,"1","Heartbeat",{}])"));
+    ASSERT_THAT(wait_for_messages(1), testing::SizeIs(1));
+
+    const auto start = std::chrono::steady_clock::now();
+    websocket->disconnect(WebsocketCloseReason::Normal);
+    const auto elapsed = std::chrono::steady_clock::now() - start;
+
+    EXPECT_LT(elapsed, 900ms) << "disconnect() stalled for "
+                              << std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count() << " ms";
+}
+
+TEST_F(WebsocketReceiveTest, SendPendingWhenConnectionDropsReturnsNotSentBeforeTimeout) {
+    connect(DEFAULT_MAX_INCOMING_MESSAGE_SIZE);
+
+    // The server never reads, and loopback socket buffers hold well under 16 MiB, so the message cannot reach
+    // the wire before the connection drops
+    const std::string message(std::size_t{16} * 1024 * 1024, 'x');
+    auto sent = std::async(std::launch::async, [this, &message] { return websocket->send(message); });
+
+    std::this_thread::sleep_for(200ms);
+    const auto start = std::chrono::steady_clock::now();
+    server.close_client();
+
+    ASSERT_EQ(sent.wait_for(3s), std::future_status::ready)
+        << "send() waited for the message timeout although the message was dropped";
+    EXPECT_FALSE(sent.get());
+    EXPECT_LT(std::chrono::steady_clock::now() - start, 3s);
 }
 
 } // namespace ocpp
