@@ -26,8 +26,8 @@ How it is put together
 The definitions are read and validated once, turned into an explicit
 intermediate representation, and handed to a backend.  The IR describes what a
 definition *means* in JSON Schema terms and knows nothing about C++: mapping
-``integer`` onto ``int32_t`` is the C++ backend's business, which is what makes
-another target -- Rust, OpenAPI, documentation -- an addition rather than a
+``integer`` onto ``int32_t`` is the C++ backend's business, which makes another
+target, such as Rust, OpenAPI or documentation, an addition rather than a
 second parser.
 
 ``--backend`` selects the target.  ``cpp`` is the default and generates the
@@ -110,10 +110,10 @@ The definition dialect
 ----------------------
 
 EVerest's type definitions are JSON Schema, but they lean on two things no
-standard tool does.  Cross-type references are written ``/units#/Power``, whose
-resolution -- a search across the ``--everest-dir`` roots, and a fragment
-addressing the contents of the ``types:`` key rather than the document -- is
-EVerest's own.  And nearly every reference carries sibling keywords such as
+standard tool does.  Cross-type references are written ``/units#/Power``, and
+their resolution is EVerest's own: a search across the ``--everest-dir`` roots,
+and a fragment addressing the contents of the ``types:`` key rather than the
+document.  And nearly every reference carries sibling keywords such as
 ``type``, which draft-07 ignores and JSON Schema 2020-12 (and so OpenAPI 3.1)
 applies.
 
@@ -127,8 +127,8 @@ type, and ``additionalProperties: false`` beside a reference to an object.
 Neither has an effect under EVerest's reading of the definitions, and both would
 change meaning if the definitions were read with OpenAPI semantics.
 
-The loader also accepts the conformant spelling already -- ``#/types/Power``
-within a file, ``units.yaml#/types/Power`` across files -- so the definitions
+The loader also accepts the conformant spelling already, ``#/types/Power``
+within a file and ``units.yaml#/types/Power`` across files, so the definitions
 can migrate one file at a time without any consumer noticing.  Nothing
 downstream can tell which spelling a file used.
 
@@ -153,5 +153,5 @@ definitions contain.
 
 ``tests/test_cpp_backend.py`` compares generated output against the golden files
 in ``tests/fixtures/golden``.  Set ``EV_CLI_UPDATE_GOLDEN=1`` to rewrite them
-after an intentional change -- and then read the diff, because it is the
+after an intentional change, and then read the diff, because it is the
 generated API that every module compiles against.

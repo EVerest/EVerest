@@ -330,7 +330,7 @@ class TestGoldenOutput:
     """The whole emitted surface, pinned.
 
     Set ``EV_CLI_UPDATE_GOLDEN=1`` to rewrite these after a change that is
-    meant to alter the output -- and then read the diff, because it is the
+    meant to alter the output, and then read the diff, because it is the
     generated API of every module.
     """
 

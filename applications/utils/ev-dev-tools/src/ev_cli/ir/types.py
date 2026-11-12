@@ -95,7 +95,7 @@ class Opaque:
 
 @dataclass(frozen=True)
 class Variant:
-    """``type: [a, b, ...]`` -- a payload that may take several JSON types."""
+    """``type: [a, b, ...]``: a payload that may take several JSON types."""
 
     options: tuple[JsonType, ...]
 

@@ -34,7 +34,7 @@ def accepted(parse, candidates):
 
 
 class TestLegacyDialect:
-    """``/energy#/Power`` -- what every definition in everest-core uses."""
+    """``/energy#/Power``, what every definition in everest-core uses."""
 
     def test_same_unit(self):
         parsed = parse_type_reference('/energy#/Power', from_unit='energy')
@@ -71,7 +71,7 @@ class TestLegacyDialect:
 
 
 class TestConformantDialect:
-    """``energy.yaml#/types/Power`` -- resolvable by any JSON Schema tool."""
+    """``energy.yaml#/types/Power``, resolvable by any JSON Schema tool."""
 
     def test_same_document(self):
         parsed = parse_type_reference('#/types/Power', from_unit='energy')

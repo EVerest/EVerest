@@ -4,8 +4,8 @@
 
 A backend turns the IR into files.  It owns everything about its target: the
 spelling of types, the naming conventions, the templates.  Nothing above this
-line knows that C++ exists, which is what makes a second target -- Rust,
-OpenAPI, documentation -- an addition rather than a second parser.
+line knows that C++ exists, which makes a second target, such as Rust,
+OpenAPI or documentation, an addition rather than a second parser.
 """
 
 from __future__ import annotations

@@ -10,7 +10,7 @@ document's ``types:`` key rather than the document itself.  Neither is
 something a standard JSON Schema or OpenAPI tool can follow.
 
 The conformant spelling of the same thing addresses the document as it really
-is -- ``#/types/Power`` within a file, ``energy.yaml#/types/Power`` across
+is: ``#/types/Power`` within a file, ``energy.yaml#/types/Power`` across
 files.  Both dialects are accepted and produce the same :class:`TypeRef`, so
 the sources can migrate a file at a time without any consumer noticing.
 """
@@ -53,8 +53,8 @@ def strip_yaml_suffix(name: str) -> str:
 class TypeRef:
     """A reference to a named type, already resolved to a unit and a name.
 
-    Both reference dialects -- EVerest's historical ``/energy#/Power`` and the
-    OpenAPI conformant ``energy.yaml#/types/Power`` -- parse into this, so
+    Both reference dialects, EVerest's historical ``/energy#/Power`` and the
+    OpenAPI conformant ``energy.yaml#/types/Power``, parse into this, so
     nothing downstream can tell which one the source used.
     """
 
@@ -69,9 +69,9 @@ class TypeRef:
 class Dialect(Enum):
     """Which spelling a reference used."""
 
-    #: ``/energy#/Power`` -- resolvable only through EVerest's own loader.
+    #: ``/energy#/Power``, resolvable only through EVerest's own loader.
     LEGACY = 'legacy'
-    #: ``energy.yaml#/types/Power`` -- resolvable by any JSON Schema tool.
+    #: ``energy.yaml#/types/Power``, resolvable by any JSON Schema tool.
     CONFORMANT = 'conformant'
 
 
@@ -90,8 +90,8 @@ class ParsedReference:
 class ParsedErrorReference:
     """``/errors/<namespace>`` or ``/errors/<namespace>#/<Name>``.
 
-    Error references are not a JSON Schema construct at all -- they live under
-    a ``reference:`` key rather than ``$ref`` -- so there is no conformant
+    Error references are not a JSON Schema construct at all: they live under
+    a ``reference:`` key rather than ``$ref``, so there is no conformant
     spelling to migrate towards and no diagnostic to raise.
     """
 
@@ -110,8 +110,8 @@ def parse_type_reference(raw: str, *, from_unit: str | None) -> ParsedReference:
     ``from_unit`` is the type unit doing the referring, named by its file
     without the suffix (``energy``).  It is needed because a reference without
     a file part, ``#/types/Power``, names a type in that unit.  Pass ``None``
-    when the referring document is not itself a type unit -- an interface or a
-    manifest -- in which case a reference must name a file.
+    when the referring document is not itself a type unit but an interface or
+    a manifest, in which case a reference must name a file.
     """
     if not isinstance(raw, str):
         raise MalformedReference(f'reference must be a string, got {type(raw).__name__}')

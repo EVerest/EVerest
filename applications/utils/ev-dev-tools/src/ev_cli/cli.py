@@ -3,10 +3,10 @@
 """The command line surface.
 
 This is a contract, not a design.  EVerest's CMake and Bazel builds drive
-ev-cli as a black box -- they parse ``--version``, use ``get-templates`` output
-as build dependencies, and declare the generated files as genrule outputs -- so
-every option, alias and default below is deliberate, including the ones that
-look odd.  New options may be added; none may be taken away.
+ev-cli as a black box: they parse ``--version``, use ``get-templates`` output
+as build dependencies, and declare the generated files as genrule outputs.
+Every option, alias and default below is therefore deliberate, including the
+ones that look odd.  New options may be added and none may be taken away.
 
 Options shared between subcommands are declared once and attached through
 argparse's ``parents=``, which is the only sharing argparse offers here: a
@@ -14,7 +14,7 @@ subparser does not inherit its command parser's options, and putting them
 there would move them ahead of the action name on the command line, which the
 build does not do.
 
-Every generating command takes the same set -- see :func:`emitting` --
+Every generating command takes the same set (see :func:`emitting`),
 including each backend's own options.  An option belonging to a backend that
 was not selected is simply inert, as is true of ``--disable-clang-format``.
 ``conformance-report`` generates nothing and takes only the definition sources.

@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright Pionix GmbH and Contributors to EVerest
-"""``ev-cli helpers ...`` -- small conveniences, unrelated to code generation."""
+"""``ev-cli helpers ...``: small conveniences, unrelated to code generation."""
 
 from __future__ import annotations
 

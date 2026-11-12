@@ -3,10 +3,10 @@
 """Acceptance gate for ev-cli's command line contract.
 
 EVerest's CMake and Bazel builds drive ev-cli as a black box.  This module
-pins down what they rely on -- the exact set of produced files, the shape of
+pins down what they rely on, so that reimplementing the generator cannot
+silently change any of it: the exact set of produced files, the shape of
 ``--version``, the ``get-templates`` output, and the developer-facing
-``module create`` / ``module update`` workflow -- so that reimplementing the
-generator cannot silently change any of it.
+``module create`` / ``module update`` workflow.
 
 The command under test is taken from the ``EV_CLI`` environment variable and
 defaults to ``ev-cli``, so the same suite can be pointed at any build.
@@ -202,7 +202,7 @@ def test_helpers_yaml_json_round_trip(tmp_path):
 
 
 # --------------------------------------------------------------------------
-# module create / update -- the documented developer workflow
+# module create / update: the documented developer workflow
 # --------------------------------------------------------------------------
 
 MANIFEST = """\

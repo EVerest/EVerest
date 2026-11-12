@@ -3,7 +3,7 @@
 """Reporting where the definitions would not conform to JSON Schema 2020-12.
 
 Under JSON Schema draft-07 every keyword sitting beside a ``$ref`` is
-*ignored*.  Under 2020-12 -- and therefore under OpenAPI 3.1 -- the same
+*ignored*.  Under 2020-12, and therefore under OpenAPI 3.1, the same
 keywords are *applied*, as an intersection with the referenced schema.  The
 definitions in everest-core lean on the draft-07 reading heavily: nearly every
 reference carries a redundant ``type``, and a handful carry keywords that would
@@ -19,8 +19,8 @@ declares no ``$schema`` is reported as well, once per document.
 Findings are kept apart from the IR: whether a definition was written in
 EVerest's historical dialect is a fact about the source text, and no backend
 should be able to reach it.  They come from a pass of their own over every
-definition document -- type units, interfaces, error lists and module manifests
--- so they do not depend on what a generator makes of the definitions.
+definition document (type units, interfaces, error lists and module manifests),
+so they do not depend on what a generator makes of the definitions.
 """
 
 from __future__ import annotations

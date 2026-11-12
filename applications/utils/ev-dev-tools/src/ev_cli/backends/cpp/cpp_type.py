@@ -90,9 +90,9 @@ def is_typed_payload_array(expr: Array) -> bool:
     A struct member is always a typed vector.  An interface payload only
     becomes one when its items are a reference to a declared type: an array of
     plain strings is handed over as the framework's raw-JSON ``Array`` instead.
-    Modules implement against that asymmetry --
-    ``handle_get_configuration_key(Array&)`` in ocpp_1_6_charge_point is one --
-    so it is part of the generated API.
+    Modules implement against that asymmetry, as
+    ``handle_get_configuration_key(Array&)`` in ocpp_1_6_charge_point does, so
+    it is part of the generated API.
     """
     return isinstance(expr.items, Ref)
 

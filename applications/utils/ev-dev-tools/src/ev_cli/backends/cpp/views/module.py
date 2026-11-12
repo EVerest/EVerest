@@ -89,8 +89,8 @@ def is_string_config(entry: ConfigEntry) -> bool:
 def select_static_config(entries) -> tuple[ConfigEntry, ...]:
     """Configuration that gets no change handler: ``ReadOnly`` and ``WriteOnly`` entries.
 
-    Splitting a module's configuration in two is a presentation decision -- the
-    IR records each entry's mutability and nothing more -- so it happens here.
+    Splitting a module's configuration in two is a presentation decision; the
+    IR records each entry's mutability and nothing more, so it happens here.
     """
     return tuple(e for e in entries if e.mutability is not Mutability.READ_WRITE)
 
