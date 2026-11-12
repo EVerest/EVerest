@@ -48,7 +48,7 @@ impl OnReadySubscriber for OpenleadrClient {
 
             for event in upcoming_event_retrieves {
 
-                let mut time_remaining = Utc::now() - event;
+                let mut time_remaining = event - Utc::now();
 
                 // sleep in maximum steps of 5 minutes, to make sure that power
                 // management features don't send our retrieval schedule out of
@@ -64,7 +64,7 @@ impl OnReadySubscriber for OpenleadrClient {
                         // we now sleep our tokio task until the next event
                         tokio::time::sleep(duration).await;
                     }
-                    time_remaining = Utc::now() - event;
+                    time_remaining = event - Utc::now();
                 }
 
                 // we should be around our expected retrieval time
@@ -130,7 +130,9 @@ fn get_filter_from_config(config: &ModuleConfig) -> Option<(TargetType, Vec<Stri
 #[everestrs::main]
 fn main(module: &Module) {
     let config = module.get_config();
-    let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+    // Multi-threaded so tasks spawned from EVerest callbacks are driven by the
+    // runtime's own worker threads; main only sleeps after start-up.
+    let rt = tokio::runtime::Builder::new_multi_thread().enable_all().build().unwrap();
 
     // create openleadr-client
     let credentials = get_credentials_from_config(&config);
