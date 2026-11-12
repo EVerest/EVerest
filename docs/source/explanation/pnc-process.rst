@@ -65,8 +65,7 @@ for further information on how to do the configuration for this module.
 
 In the visualization, step (0) shows the process that represents the previously described process of
 provisioning the charger with the correct certificates, before there is a physical
-connection to the EV. The OCPP module (OCPPmulti is recommended; OCPP/OCPP201 are
-deprecated alternatives) and the ISO 15118 module (Evse15118D20; EvseV2G is a
+connection to the EV. The OCPP module (OCPPmulti) and the ISO 15118 module (Evse15118D20; EvseV2G is a
 deprecated alternative) require a module that implements
 the :doc:`evse_security interface </reference/interfaces/evse_security>`,
 in order to execute the following commands:
@@ -127,8 +126,7 @@ Step 4
 
 The Auth module sends commands containing the *ProvidedIdToken* to its registered
 :doc:`token_validator(s) </reference/interfaces/auth_token_validator>`,
-which is the OCPP module (OCPPmulti is recommended; OCPP/OCPP201 are deprecated
-alternatives) in the case of Plug&Charge. The OCPP module validates the token based on the
+which is the OCPP module (OCPPmulti) in the case of Plug&Charge. The OCPP module validates the token based on the
 requirements specified in the OCPP protocol (either validating locally or by the CSMS).
 
 Step 5

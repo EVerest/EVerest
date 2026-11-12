@@ -58,7 +58,7 @@ from a build-directory copy and writes the development PKI into the gitignored
 `config/certs` tree for installation; a failed generation fails configure. Default
 builds need no extra flag.
 
-To iterate faster, build one module (`cmake --build build --target OCPP201`) or skip
+To iterate faster, build one module (`cmake --build build --target OCPPmulti`) or skip
 heavy ones with `-DEVEREST_EXCLUDE_MODULES="EvseSlac;EvseV2G;IsoMux"`, quoting the
 list. `cmake -LH build` lists all options; the two easiest to miss are
 `EVEREST_ENABLE_COVERAGE` and `CMAKE_RUN_CLANG_TIDY`, both OFF.
@@ -117,7 +117,7 @@ Logging is one Boost.Log config for the whole system, not per module: the manage
 install; `--log_config` overrides). Per-module verbosity is a filter in that file:
 
 ```ini
-Filter="(%Process% contains OCPP201 and %Severity% >= DEBG) or %Severity% >= INFO"
+Filter="(%Process% contains OCPPmulti and %Severity% >= DEBG) or %Severity% >= INFO"
 ```
 
 Without the `or` clause, other modules go silent. Severities: DEBG, INFO, WARN, ERRO,
@@ -262,8 +262,7 @@ Full C++ conventions: `docs/source/how-to-guides/c++-coding-guidelines.rst`.
 
 | Thing | Path | Note |
 |---|---|---|
-| OCPP 1.6 module | `modules/EVSE/OCPP/` | not `OCPP16/` |
-| OCPP 2.0.1 and 2.1 | `modules/EVSE/OCPP201/` | one module serves both versions |
+| OCPP 1.6, 2.0.1 and 2.1 | `modules/EVSE/OCPPmulti/` | one module serves all versions, selected by `Mode` |
 | API module | `modules/API/API/` | directory name is doubled |
 | libocpp | `lib/everest/ocpp/` | in-tree |
 | threading helpers | `lib/everest/util/` | `monitor` for shared state; prefer over raw `std::mutex` |

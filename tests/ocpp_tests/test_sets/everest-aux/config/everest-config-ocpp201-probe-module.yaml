@@ -1,6 +1,6 @@
 active_modules:
   ocpp:
-    module: OCPP201
+    module: OCPPmulti
     config_module:
       EnableExternalWebsocketControl: true
     connections:

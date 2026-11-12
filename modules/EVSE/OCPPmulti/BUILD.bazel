@@ -1,0 +1,32 @@
+load("//modules:module.bzl", "cc_everest_module")
+
+IMPLS = [
+    "auth_provider",
+    "auth_validator",
+    "data_transfer",
+    "ocpp_generic",
+    "session_cost",
+]
+
+cc_everest_module(
+    name = "OCPPmulti",
+    srcs = glob([
+        "*.cpp",
+        "*.hpp",
+        "grid_support/*.cpp",
+        "grid_support/*.hpp",
+    ]),
+    data = ["//lib/everest/ocpp:module_share_files"],
+    impls = IMPLS,
+    deps = [
+        "//third-party/bazel/openssl:crypto",
+        "//third-party/bazel/openssl:ssl",
+        "@everest-core//lib:external_energy_limits",
+        "@everest-core//lib:ocpp",
+        "@everest-core//lib:ocpp_conversions",
+        "@everest-core//lib:ocpp_evse_security",
+        "@everest-core//lib:ocpp_module_common",
+        "@everest-core//lib:util",
+        "@libcap",
+    ],
+)

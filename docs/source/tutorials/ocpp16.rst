@@ -4,13 +4,14 @@
 OCPP 1.6 in EVerest
 ###################
 
-.. warning::
+.. note::
 
-  **Deprecated:** The OCPP module used in this tutorial is deprecated in favor
-  of the combined OCPP module OCPPmulti, which supports OCPP 1.6, 2.0.1
-  and 2.1 in one module. New integrations should use it — see the
-  :ref:`combined module tutorial <tutorial-ocpp-combined>` and the
-  :ref:`module documentation <everest_modules_OCPPmulti>`.
+  The combined OCPP module OCPPmulti supports OCPP 1.6, 2.0.1 and 2.1 in one
+  module. This tutorial runs it with ``Mode: Only1.6`` and
+  ``EnableLegacyConfigMigration: true``, so the JSON configuration file
+  described below is migrated into the device model database on the first
+  boot. See also the :ref:`combined module tutorial <tutorial-ocpp-combined>`
+  and the :ref:`module documentation <everest_modules_OCPPmulti>`.
 
 .. note::
 
@@ -204,7 +205,7 @@ can be configured.
 
 You can specify the path to this configuration file inside the ``EVerest``
 configuration file using the configuration parameter ``ChargePointConfigPath``
-of the OCPP module within EVerest. This defaults to *ocpp-config.json*.
+of the OCPPmulti module within EVerest. This defaults to *ocpp-config.json*.
 If this path is relative, the default path for the OCPP configuration
 *dist/share/everest/modules/OCPP* will be prepended.
 
@@ -251,14 +252,14 @@ To be able to follow the further explanations, you should be familiar with the c
 Take a look into :doc:`EVerest Module Concept </explanation/detail-module-concept>` for that.
 
 To configure the OCPP module of EVerest, find the available configuration parameters
-in the :ref:`module documentation <everest_modules_OCPP>`, and read through them
+in the :ref:`module documentation <everest_modules_OCPPmulti>`, and read through them
 carefully in order to configure it according to your needs.
 
 In order to enable OCPP 1.6 in EVerest, you need to load the module in the
 EVerest configuration file and set up the module connections.
 The interfaces provided and required by the OCPP module and its purposes are
 described in the
-:ref:`module documentation <everest_modules_OCPP>`.
+:ref:`module documentation <everest_modules_OCPPmulti>`.
 
 The EVerest configuration file
 `config-sil-ocpp.yaml <https://github.com/EVerest/EVerest/blob/main/config/config-sil-ocpp.yaml>`_
@@ -268,7 +269,8 @@ the module could be set up.
 Here is a quick list of things you should remember when adding OCPP to your
 EVerest configuration file:
 
-1. **Load the OCPP module** by including it in the configuration file.
+1. **Load the OCPPmulti module** by including it in the configuration file, and
+   set its ``Mode`` config key to ``Only1.6``.
 
 2. **Add and connect the required modules:**
 

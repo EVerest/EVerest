@@ -61,7 +61,7 @@ class ProbeModuleDataTransferConfigurationAdjustment(EverestConfigAdjustmentStra
 @pytest.mark.inject_csms_mock
 class TestOcpp201DataTransferIntegration:
     """
-    Integration tests for the OCPP201 Module's implementation of the P-test cases (data transfer)
+    Integration tests for the OCPPmulti module's implementation of the P-test cases (data transfer)
     Uses the probe module and a mock CSMS.
     """
 

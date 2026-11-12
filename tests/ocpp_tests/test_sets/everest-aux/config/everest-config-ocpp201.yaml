@@ -65,7 +65,7 @@ active_modules:
         - module_id: yeti_driver_2
           implementation_id: ev_board_support
   ocpp:
-    module: OCPP201
+    module: OCPPmulti
     config_module:
       EnableExternalWebsocketControl: true
     connections:

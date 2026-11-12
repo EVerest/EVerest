@@ -12,7 +12,7 @@ integrated with your charging station firmware.
 
 ## Integration with EVerest
 
-This library is integrated within the [OCPP](https://github.com/EVerest/EVerest/tree/main/modules/OCPP) and [OCPP201](https://github.com/EVerest/EVerest/tree/main/modules/OCPP201)
+This library is integrated within the [OCPPmulti](https://github.com/EVerest/EVerest/tree/main/modules/EVSE/OCPPmulti)
 module within [EVerest](https://github.com/EVerest/EVerest) - the complete software stack for your charging station. It is recommended to use EVerest together with this OCPP implementation.
 
 ## Getting Started
