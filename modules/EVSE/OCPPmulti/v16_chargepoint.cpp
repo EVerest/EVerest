@@ -1007,14 +1007,10 @@ void ChargePointV16::register_variable_listener(const ocpp::v2::Component& compo
         }
     }
     const auto reverse = m_variable_resolver->cv_to_key(component, variable);
-    if (reverse.usable()) {
+    if (reverse.has_value()) {
         // register outside the lock: libocpp may fire the callback synchronously
         m_charge_point->register_configuration_key_changed_callback(
-            reverse.key.value(), [this](auto&&... args) { cb_variable_listener(args...); });
-    } else if (reverse.ambiguous) {
-        // writes to ambiguous CVs are rejected, so this monitor can never fire
-        EVLOG_warning << "register_variable_listener: ambiguous custom key mapping for " << component.name << '/'
-                      << variable.name << "; fix Ocpp16KeyMappingsPath";
+            reverse.value(), [this](auto&&... args) { cb_variable_listener(args...); });
     }
     // no 1.6 key: nothing to hook; direct writes are covered by synthesized monitor events
 }

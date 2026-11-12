@@ -37,7 +37,7 @@ std::string describe_mapping_target(const Component& component, const Variable& 
 ///         duplicate keys, on mappings targeting connection-config CVs (see
 ///         ocpp::v16::is_connection_config_cv), which are managed via the standardized OCPP 1.6 keys, on
 ///         entries for built-in keys that cannot be overridden (see ocpp::v16::is_overridable_key),
-///         and on overrides whose target is the built-in mapping of another key or the target of another entry.
+///         and on entries whose target is the built-in mapping of another key or the target of another entry.
 Ocpp16KeyMappings load_ocpp16_key_mappings_from_yaml(const std::filesystem::path& mapping_file_path);
 
 } // namespace ocpp::v2
