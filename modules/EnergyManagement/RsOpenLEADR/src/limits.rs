@@ -115,6 +115,19 @@ fn build_schedule(
     points.into_iter().map(|(time, limit)| schedule_entry(time, limit)).collect()
 }
 
+/// Short, human readable form of a schedule for logging, e.g.
+/// `2026-11-12T12:42:41.212Z 4000W, 2026-11-12T12:46:00.000Z none`.
+pub fn summarize(schedule: &[ScheduleReqEntry]) -> String {
+    schedule
+        .iter()
+        .map(|entry| match &entry.limits_to_root.total_power_w {
+            Some(power) => format!("{} {}W", entry.timestamp, power.value),
+            None => format!("{} none", entry.timestamp),
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 fn power_limit_w(value_map: &[EventValuesMap], limit_type: &EventType) -> Option<f64> {
     let payload = value_map.iter().find(|p| &p.value_type == limit_type)?;
     let value = payload.values.first().and_then(value_as_f64);
@@ -216,6 +229,15 @@ mod tests {
     fn open_ended_interval_has_no_closing_entry() {
         let schedule = build_schedule([(t(11)..DateTime::<Utc>::MAX_UTC, Some(1000.0))].into_iter(), t(10));
         assert_eq!(summary(&schedule), vec![(ts(10), None), (ts(11), Some(1000.0))]);
+    }
+
+    #[test]
+    fn summary_lists_limits_and_gaps() {
+        let schedule = build_schedule([(t(11)..t(12), Some(4000.0))].into_iter(), t(10));
+        assert_eq!(
+            summarize(&schedule),
+            format!("{} none, {} 4000W, {} none", ts(10), ts(11), ts(12))
+        );
     }
 
     #[test]

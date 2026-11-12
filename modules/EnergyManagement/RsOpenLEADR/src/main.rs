@@ -77,7 +77,12 @@ async fn retrieval_loop(
             match retrieve_timeline(program, &filter).await {
                 Ok(timeline) => {
                     let limits = limits::timeline_to_external_limits(&timeline, Utc::now());
-                    log::info!("Publishing external limits: {:?}", limits);
+                    log::info!(
+                        "Publishing external limits: import [{}], export [{}]",
+                        limits::summarize(&limits.schedule_import),
+                        limits::summarize(&limits.schedule_export)
+                    );
+                    log::debug!("External limits: {:?}", limits);
                     if let Err(e) = publisher.set_external_limits(limits) {
                         log::error!("Could not set external limits: {e:?}");
                     }
