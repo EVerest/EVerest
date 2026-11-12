@@ -37,6 +37,8 @@ struct FilePaths {
     fs::path mo_ca_bundle;
     fs::path v2g_ca_bundle;
 
+    fs::path cert_profiles_dir;
+
     DirectoryPaths directories;
     LinkPaths links;
 };

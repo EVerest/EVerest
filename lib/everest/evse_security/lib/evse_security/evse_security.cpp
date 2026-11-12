@@ -357,6 +357,17 @@ EvseSecurity::EvseSecurity(const FilePaths& file_paths, const std::optional<std:
     this->ca_bundle_path_map[CaCertificateType::MO] = file_paths.mo_ca_bundle;
     this->ca_bundle_path_map[CaCertificateType::V2G] = file_paths.v2g_ca_bundle;
 
+    if (!file_paths.cert_profiles_dir.empty()) {
+        if (!fs::exists(file_paths.cert_profiles_dir)) {
+            EVLOG_warning << "Configured certificate profiles directory does not exist: "
+                          << file_paths.cert_profiles_dir;
+        }
+        ::set_certificate_profiles_dir(file_paths.cert_profiles_dir.string());
+    } else if (enforce_cert_profiles) {
+        EVLOG_warning << "enforce_cert_profiles enabled but no certificate_profiles_dir "
+                         "configured; using the library default";
+    }
+
     for (const auto& pair : this->ca_bundle_path_map) {
         if (!fs::exists(pair.second)) {
             EVLOG_warning << "Could not find configured " << conversions::ca_certificate_type_to_string(pair.first)
