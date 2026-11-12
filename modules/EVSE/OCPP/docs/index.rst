@@ -439,14 +439,17 @@ The following module configuration parameters are relevant for device model back
   (default: ``device_model_migrations``, resolved against the module share path)
 * **DeviceModelConfigPath**: path to the component-config directory that defines the device model structure
   and optional default values (default: ``component_config``, resolved against the module share path)
-* **Ocpp16KeyMappingsPath**: optional YAML file mapping non-standard OCPP 1.6 keys to device model
-  component/variable targets; only used with **"device_model_with_migration"**. The built-in mapping for
-  standard OCPP 1.6 keys is documented in
+* **Ocpp16KeyMappingsPath**: optional YAML file mapping further OCPP 1.6 keys to device model
+  component/variable targets; used with **"device_model"** and **"device_model_with_migration"**, both during
+  the one-time migration and at runtime. The built-in mapping for standard OCPP 1.6 keys is documented in
   `lib/everest/ocpp/config/v16_to_v2_mapping.md <https://github.com/EVerest/everest-core/blob/main/lib/everest/ocpp/config/v16_to_v2_mapping.md>`_.
-  Mappings must not target the connection configuration (``NetworkConfiguration`` slots, the
+  An entry for a built-in key stored in ``OCPP16LegacyCtrlr``, for example ``LightIntensity``, replaces that
+  variable with a variable of your component configuration, so that OCPP 1.6 and OCPP 2.x share the value. See
+  :ref:`Share an OCPP 1.6 key with your own OCPP 2.x variable <howto-ocpp-storage-migration-share-legacy-key>`
+  for the rules. Mappings must not target the connection configuration (``NetworkConfiguration`` slots, the
   ``OCPPCommCtrlr`` network profile selectors, or the ``SecurityCtrlr`` connection fallbacks ``Identity``
-  and ``BasicAuthPassword``); those are managed via the standardized OCPP 1.6 keys, and a mapping file
-  containing such a target is rejected at startup
+  and ``BasicAuthPassword``); those are managed via the standardized OCPP 1.6 keys. A mapping file that breaks
+  these rules is rejected at startup
 * **Ocpp16NetworkConfigSlot**: ``NetworkConfiguration`` slot number that OCPP 1.6 network connection
   details (``CentralSystemURI``, ``SecurityProfile``, ``AuthorizationKey``, ``HostName``,
   ``ChargePointId``) are migrated to during the one-time migration (default: ``1``; set to ``0`` to skip).
