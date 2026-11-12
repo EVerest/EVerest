@@ -359,6 +359,48 @@ TEST(ProfileTestsA, calculateStartReccuringWeekly) {
     EXPECT_EQ(start_time[1], "2024-01-10T16:00:00.000Z");
 }
 
+TEST(ProfileTestsA, calculateStartRecurringDailyAcrossLeapSeconds) {
+    // leap seconds were inserted at the end of 2012-06-30, 2015-06-30 and 2016-12-31
+    auto profile{profileRecurring};
+    profile.chargingSchedule.startSchedule = DateTime("2012-01-01T08:00:00Z");
+
+    DateTime now("2024-01-01T12:10:00Z");
+    DateTime end("2024-01-02T20:50:00Z");
+    auto start_time = calculate_start(now, end, std::nullopt, profile);
+    ASSERT_EQ(start_time.size(), 2);
+    EXPECT_EQ(start_time[0], "2024-01-01T08:00:00.000Z");
+    EXPECT_EQ(start_time[1], "2024-01-02T08:00:00.000Z");
+
+    now = DateTime("2016-12-31T12:10:00Z");
+    end = DateTime("2017-01-02T20:50:00Z");
+    start_time = calculate_start(now, end, std::nullopt, profile);
+    ASSERT_EQ(start_time.size(), 3);
+    EXPECT_EQ(start_time[0], "2016-12-31T08:00:00.000Z");
+    EXPECT_EQ(start_time[1], "2017-01-01T08:00:00.000Z");
+    EXPECT_EQ(start_time[2], "2017-01-02T08:00:00.000Z");
+}
+
+TEST(ProfileTestsA, calculateStartRecurringWeeklyAcrossLeapSeconds) {
+    // Wednesdays at 16:00, leap seconds at the end of 2012-06-30, 2015-06-30 and 2016-12-31
+    auto profile{profileRecurring};
+    profile.recurrencyKind = RecurrencyKindType::Weekly;
+    profile.chargingSchedule.startSchedule = DateTime("2012-01-04T16:00:00Z");
+
+    DateTime now("2024-01-04T23:10:00Z");
+    DateTime end("2024-01-12T20:50:00Z");
+    auto start_time = calculate_start(now, end, std::nullopt, profile);
+    ASSERT_EQ(start_time.size(), 2);
+    EXPECT_EQ(start_time[0], "2024-01-03T16:00:00.000Z");
+    EXPECT_EQ(start_time[1], "2024-01-10T16:00:00.000Z");
+
+    now = DateTime("2016-12-29T12:10:00Z");
+    end = DateTime("2017-01-05T20:50:00Z");
+    start_time = calculate_start(now, end, std::nullopt, profile);
+    ASSERT_EQ(start_time.size(), 2);
+    EXPECT_EQ(start_time[0], "2016-12-28T16:00:00.000Z");
+    EXPECT_EQ(start_time[1], "2017-01-04T16:00:00.000Z");
+}
+
 // ----------------------------------------------------------------------------
 // Test cases - calculate_profile_entry()
 
