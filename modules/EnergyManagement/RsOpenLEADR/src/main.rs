@@ -3,91 +3,47 @@
 #![allow(non_snake_case)]
 include!(concat!(env!("OUT_DIR"), "/generated.rs"));
 
-use chrono::{TimeDelta, Utc};
+mod limits;
+
+use chrono::Utc;
 use cron::Schedule;
-use generated::{Context, EmptyServiceSubscriber, ExternalEnergyLimitsClientSubscriber, Module, ModuleConfig, ModulePublisher, OnReadySubscriber};
 use generated::types::energy::CapabilityLimits;
-use generated::types::energy::ExternalLimits;
+use generated::{
+    Context, EmptyServiceSubscriber, ExternalEnergyLimitsClientPublisher, ExternalEnergyLimitsClientSubscriber,
+    Module, ModuleConfig, ModulePublisher, OnReadySubscriber,
+};
+use openleadr_client::{Client, ClientCredentials, Filter, ProgramClient, Timeline};
 use openleadr_wire::program::ProgramId;
+use openleadr_wire::Program;
 use openleadr_wire::target::TargetType;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 use std::{thread, time};
-use openleadr_client::{Client, ClientCredentials, Filter, ProgramClient, Timeline};
+
+/// Upper bound for a single sleep while waiting for the next retrieval, so
+/// clock adjustments don't throw the retrieval schedule out of sync for long.
+const MAX_SLEEP: Duration = Duration::from_secs(300);
 
 pub struct OpenleadrClient {
-    _client: Client,
+    client: Client,
+    program_id: ProgramId,
     filter: Option<(TargetType, Vec<String>)>,
     schedule: Schedule,
-    program: Arc<ProgramClient>,
-    rt: Arc<tokio::runtime::Runtime>,
+    rt: tokio::runtime::Runtime,
 }
 
 impl EmptyServiceSubscriber for OpenleadrClient {}
 
 impl OnReadySubscriber for OpenleadrClient {
     fn on_ready(&self, publishers: &ModulePublisher) {
-        let publisher = publishers.limits_iface.clone();
-        let program = self.program.clone();
-        let filter = self.filter.clone();
-        let schedule = self.schedule.clone();
-
-        self.rt.spawn(async move {
-            let program = program;
-            let publisher = publisher;
-            let filter = filter;
-            let schedule = schedule;
-
-            let filter_vec = filter.as_ref().map(|(target_type, target_values)| {
-                (target_type, target_values.iter().map(|value| value.as_str()).collect::<Vec<&str>>())
-            });
-
-
-            let upcoming_event_retrieves = schedule.upcoming(Utc);
-
-            for event in upcoming_event_retrieves {
-
-                let mut time_remaining = event - Utc::now();
-
-                // sleep in maximum steps of 5 minutes, to make sure that power
-                // management features don't send our retrieval schedule out of
-                // sync
-                while time_remaining > TimeDelta::zero() {
-                    // we can safely unwrap because our time delta is greater than zero]
-                    let duration = time_remaining.to_std().unwrap();
-
-                    if (duration > Duration::from_secs(300)) {
-                        // we don't want to sleep for more than 5 minutes
-                        tokio::time::sleep(Duration::from_secs(300)).await;
-                    } else {
-                        // we now sleep our tokio task until the next event
-                        tokio::time::sleep(duration).await;
-                    }
-                    time_remaining = event - Utc::now();
-                }
-
-                // we should be around our expected retrieval time
-                let filter_data = if let Some((target_type, target_values)) = &filter_vec {
-                    Filter::By((*target_type).clone(), &target_values)
-                } else {
-                    Filter::None
-                };
-
-                let timeline = program.as_ref().get_timeline(filter_data).await.unwrap();
-
-                // TODO: handle events from the timeline
-
-                log::info!("handle events from the timeline: {:?}", timeline);
-
-                // TODO: something like this?
-                // let lim = ExternalLimits{schedule_import: None, schedule_export: None};
-                // publisher.set_external_limits(lim);
-
-            }
-
-
-        });
+        self.rt.spawn(retrieval_loop(
+            self.client.clone(),
+            self.program_id.clone(),
+            self.filter.clone(),
+            self.schedule.clone(),
+            publishers.limits_iface.clone(),
+        ));
     }
 }
 
@@ -95,6 +51,71 @@ impl ExternalEnergyLimitsClientSubscriber for OpenleadrClient {
     fn on_capabilities(&self, _context: &Context, value: CapabilityLimits) {
         log::debug!("Received capabilities: {:?}", value);
     }
+}
+
+/// Retrieves events once right away and then according to `schedule`, and
+/// publishes the resulting limits. Failed retrievals are logged and retried at
+/// the next scheduled time; the previously published limits stay in place.
+async fn retrieval_loop(
+    client: Client,
+    program_id: ProgramId,
+    filter: Option<(TargetType, Vec<String>)>,
+    schedule: Schedule,
+    publisher: ExternalEnergyLimitsClientPublisher,
+) {
+    let mut program: Option<ProgramClient> = None;
+
+    loop {
+        if program.is_none() {
+            match client.get_program_by_id(&program_id).await {
+                Ok(p) => program = Some(p),
+                Err(e) => log::warn!("Could not retrieve OpenADR program {program_id:?}: {e:?}"),
+            }
+        }
+
+        if let Some(program) = &program {
+            match retrieve_timeline(program, &filter).await {
+                Ok(timeline) => {
+                    let limits = limits::timeline_to_external_limits(&timeline, Utc::now());
+                    log::info!("Publishing external limits: {:?}", limits);
+                    if let Err(e) = publisher.set_external_limits(limits) {
+                        log::error!("Could not set external limits: {e:?}");
+                    }
+                }
+                Err(e) => log::warn!("Could not retrieve OpenADR events: {e:?}"),
+            }
+        }
+
+        let Some(next) = schedule.upcoming(Utc).next() else {
+            log::warn!("Retrieve schedule has no upcoming times, stopping OpenADR event retrieval");
+            return;
+        };
+        while let Ok(remaining) = (next - Utc::now()).to_std() {
+            tokio::time::sleep(remaining.min(MAX_SLEEP)).await;
+        }
+    }
+}
+
+async fn retrieve_timeline(
+    program: &ProgramClient,
+    filter: &Option<(TargetType, Vec<String>)>,
+) -> Result<Timeline, openleadr_client::Error> {
+    let filter = match filter {
+        Some((target_type, target_values)) => Filter::By(target_type.clone(), target_values.as_slice()),
+        None => Filter::None,
+    };
+    let events = program.get_event_list(filter).await?;
+    let events = limits::normalize_events(events.iter().map(|e| e.content().clone()).collect());
+
+    // ProgramClient::get_timeline() can't be used because the events need to be
+    // normalized first, and ProgramClient doesn't expose its Program.
+    let program = Program {
+        id: program.id().clone(),
+        created_date_time: program.created_date_time(),
+        modification_date_time: program.modification_date_time(),
+        content: program.content().clone(),
+    };
+    Timeline::from_events(&program, events.iter().collect()).ok_or(openleadr_client::Error::InvalidInterval)
 }
 
 fn get_credentials_from_config(config: &ModuleConfig) -> Option<ClientCredentials> {
@@ -118,10 +139,12 @@ fn get_filter_from_config(config: &ModuleConfig) -> Option<(TargetType, Vec<Stri
             "VEN_NAME" => TargetType::VENName,
             "EVENT_NAME" => TargetType::EventName,
             "PROGRAM_NAME" => TargetType::ProgramName,
-            // TODO: maybe do a warning here instead?
-            _ => return None,
+            other => {
+                log::warn!("Unknown event target type {other:?}, retrieving events without filter");
+                return None;
+            }
         };
-        Some((target_type, config.openadr_vtn_event_target_values.split(',').map(|s| s.to_string()).collect()))
+        Some((target_type, config.openadr_vtn_event_target_values.split(',').map(|s| s.trim().to_string()).collect()))
     } else {
         None
     }
@@ -134,27 +157,21 @@ fn main(module: &Module) {
     // runtime's own worker threads; main only sleeps after start-up.
     let rt = tokio::runtime::Builder::new_multi_thread().enable_all().build().unwrap();
 
-    // create openleadr-client
-    let credentials = get_credentials_from_config(&config);
-    let client = Client::with_url(config.openadr_vtn_url.parse().unwrap(), credentials);
-    let program_id = ProgramId::new(&config.openadr_vtn_program_id).unwrap();
-    let program = rt.block_on(client.get_program_by_id(&program_id)).unwrap();
-    let filter = get_filter_from_config(&config);
-    let schedule = Schedule::from_str(&config.openadr_vtn_retrieve_schedule).unwrap();
+    let url = config.openadr_vtn_url.parse().expect("openadr_vtn_url is not a valid URL");
+    let client = Client::with_url(url, get_credentials_from_config(&config));
+    let program_id = ProgramId::new(&config.openadr_vtn_program_id).expect("openadr_vtn_program_id is not a valid program id");
+    let schedule = Schedule::from_str(&config.openadr_vtn_retrieve_schedule)
+        .expect("openadr_vtn_retrieve_schedule is not a valid cron expression");
+
     let adr_client = Arc::new(OpenleadrClient {
-        _client: client,
-        filter,
+        client,
+        program_id,
+        filter: get_filter_from_config(&config),
         schedule,
-        program: Arc::new(program),
-        rt: Arc::new(rt),
+        rt,
     });
 
-    // start the module
-    let _publishers = module.start(
-        adr_client.clone(),
-        adr_client.clone(),
-        adr_client.clone(),
-    );
+    let _publishers = module.start(adr_client.clone(), adr_client.clone(), adr_client.clone());
 
     // Everest is driving execution in the background for us, nothing to do.
     loop {
