@@ -174,6 +174,10 @@ fn get_filter_from_config(config: &ModuleConfig) -> Option<(TargetType, Vec<Stri
 
 #[everestrs::main]
 fn main(module: &Module) {
+    log::warn!(
+        "This RsOpenLEADR module is currently experimental! Configuration parameters and the integration in \
+         EVerest may change without further notice"
+    );
     let config = module.get_config();
     // Multi-threaded so tasks spawned from EVerest callbacks are driven by the
     // runtime's own worker threads; main only sleeps after start-up.

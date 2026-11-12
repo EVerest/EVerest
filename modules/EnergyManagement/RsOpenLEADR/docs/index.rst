@@ -9,6 +9,13 @@ capacity limits from these events to an
 :ref:`EnergyNode <everest_modules_EnergyNode>` via its ``external_energy_limits``
 interface.
 
+.. warning::
+
+   This module is currently **experimental**: configuration parameters and its
+   integration in EVerest may change without further notice. It is exempt from
+   the stability guarantees and the deprecation period of the EVerest public
+   API until promoted to stable (see :ref:`project-experimental-components`).
+
 Requirements
 ------------
 
