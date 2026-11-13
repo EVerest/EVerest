@@ -25,6 +25,17 @@ info:
     The OCPP service answers every registration with e2m/set_registration_result, forwards writes to registered
     variables with a request on e2m/set_value, and takes the value changes the client reports on m2e/value_changed.
     This API is experimental.
+
+
+    Configuration: the cfg_ settings named in this specification are configuration keys of the ocpp_device_model_API
+    module, set in the EVerest configuration of the module instance the client talks to. cfg_expected_owners is a
+    comma separated list of the owners the client registers, empty by default; list every owner, also those whose
+    devices are not always available. cfg_expected_owners_timeout_s, 60 seconds by default, bounds the wait for them.
+    cfg_registration_timeout_s, 10 seconds by default, is the collection time when no owners are listed.
+    cfg_request_reply_to_s, 10 seconds by default, is the time the client has to answer one write; the variables of
+    one SetVariables.req are written one after the other, so their number times this timeout has to stay below the
+    message timeout of the CSMS. The module documentation of ocpp_device_model_API and the how-to guide "Add
+    Components to the OCPP Device Model from an External Application" describe these settings in full.
   license:
     name: Apache-2.0
     url: https://opensource.org/licenses/Apache-2.0
@@ -201,8 +212,9 @@ components:
       summary: >-
         A write to an attribute of a registered variable, from the CSMS or from the OCPP service itself. The OCPP
         service checked the value against the characteristics and the mutability of the variable already. Writes to
-        WriteOnly attributes are forwarded the same way. Requests may overlap, also for one variable. Reply within
-        cfg_request_reply_to_s, 10 seconds by default: without a reply in time, the write is answered Rejected.
+        WriteOnly attributes are forwarded the same way. Requests are delivered one at a time. Reply within
+        cfg_request_reply_to_s, 10 seconds by default: without a reply in time, the write is answered Rejected, and
+        until then each unanswered write holds up the following ones by cfg_request_reply_to_s.
       contentType: application/json
       payload:
         type: object

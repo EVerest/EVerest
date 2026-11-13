@@ -23,10 +23,16 @@ The module passes the messages on to the OCPP module through the internal
 :ref:`ocpp_device_model <everest_interfaces_ocpp_device_model>` interface, whose
 :ref:`types <everest_types_ocpp_device_model>` the payloads follow.
 
-Without the API, a variable has to be defined in the
-:ref:`component config <handwritten_ocppmulti_device-model-component-configs>` of libocpp, and its value comes from
-the OCPP service. With the API, the application that knows the value defines the variable and keeps it current, and
-the CSMS's writes to it are passed on to that application.
+An integrator can also declare custom variables in the
+:ref:`component config <handwritten_ocppmulti_device-model-component-configs>` of libocpp instead. The OCPP module
+documentation compares the two ways in
+:ref:`Custom configuration and telemetry <handwritten_ocppmulti_where-custom-configuration-goes>`; the
+:ref:`trade-offs <howto-ocpp-device-model-trade-offs>` below add what matters in operation.
+
+OCPPmulti serves OCPP 1.6 from the same device model. In 1.6 mode, a registered variable is reachable through
+GetConfiguration and ChangeConfiguration once ``Ocpp16KeyMappingsPath`` maps a configuration key onto it, see
+:ref:`One model for OCPP 1.6 and OCPP 2.x <handwritten_ocppmulti_one-model-for-ocpp16-and-ocpp2x>`. Only the
+``Actual`` attribute is reachable that way, and OCPP 1.6 has no monitors.
 
 The rules in this guide come from libocpp's runtime registry. The details are in
 ``lib/everest/ocpp/doc/v2/ocpp_201_device_model_initialization.md``.
@@ -394,11 +400,22 @@ Publish the status on the ``replyTo`` topic, ``"Accepted"`` for example. It goes
 A write to a ``WriteOnly`` attribute reaches the application in the same way. The CSMS cannot read the value back:
 GetVariables.req is answered ``Rejected``, and reports leave the value out.
 
-Without a reply within ``cfg_request_reply_to_s``, 10 s by default, the write is ``Rejected``. Keep that timeout
-below the message timeout of the CSMS, which waits for its SetVariables.conf meanwhile, and reject a write that the
-device does not confirm in time.
+Without a reply within ``cfg_request_reply_to_s``, 10 s by default, the write is ``Rejected``. Reject a write that
+the device does not confirm in time.
 
-Requests may overlap, also for one variable, and the API defines no order between them.
+Writes are delivered one at a time, so a write that is answered late delays the following ones: each unanswered
+write holds them up by ``cfg_request_reply_to_s``. libocpp applies the entries of a SetVariables.req one after the
+other and waits for each answer, so the timeout applies per variable, not per request. An application that does not
+answer makes a request with N variables take N times ``cfg_request_reply_to_s``, 50 s for 5 variables at the
+default. Keep that product below the message timeout of the CSMS, which waits for its SetVariables.conf meanwhile.
+Otherwise the CSMS can time out while the request is still being worked through, and if it retries, a write the
+application applies after the deadline leaves the device and the device model in disagreement.
+
+The number of entries in one request is bounded by ``DeviceDataCtrlr.ItemsPerMessage`` with instance
+``SetVariables`` (B05.FR.11), so the worst case is that value times ``cfg_request_reply_to_s``. It is 100 in the
+component config that EVerest ships. The value applies to every SetVariables.req, not only to writes to registered
+variables, so lowering it is a trade-off. libocpp does not reject a SetVariables.req with more entries than that, as
+it does a GetVariables.req, so the bound relies on the CSMS.
 
 Report changes
 ==============
@@ -470,3 +487,58 @@ Once the module handed the collected registrations on, it passes each further re
 registration is not ordered against the collected ones and may reach the OCPP module first: a release would then be
 undone by the collected registration that still holds the owner. To replace or release an owner registered at
 startup, wait for its ``e2m/set_registration_result`` first.
+
+Relation to the ocpp_consumer_API
+=================================
+
+The :ref:`ocpp_consumer_API <everest_modules_handwritten_ocpp_consumer_API>` sees the complete device model,
+registered variables included:
+
+- ``m2e/get_variables`` reads a registered variable from the values the OCPP service holds, and
+  ``m2e/monitor_variables`` watches it, like any other variable.
+- ``m2e/set_variables`` to a ``ReadWrite`` registered variable reaches the owner on ``e2m/set_value``, like a write
+  of the CSMS, and the owner's answer is the answer. A write to a ``ReadOnly`` registered variable is rejected: its
+  owner reports the value.
+- An owner reports its own changes on ``m2e/value_changed`` of this API, not with ``m2e/set_variables`` of the
+  ``ocpp_consumer_API``.
+
+.. _howto-ocpp-device-model-move-variable:
+
+Move a variable from the component config to an owner
+=====================================================
+
+A variable declared in the component config, such as telemetry declared there as an
+:ref:`interim <handwritten_ocppmulti_where-custom-configuration-goes>`, moves to an owner in three steps:
+
+1. Remove the variable from the component config. For a component of its own, delete the variable from its JSON
+   file, or the whole file. For a standardized component, place a copy of the component without the variable under
+   ``component_config/custom``, which replaces the standardized one.
+2. Register the variable, with the characteristics, attributes and monitors it had, and with its current value.
+   List its owner in ``cfg_expected_owners``.
+3. Report its changes on ``m2e/value_changed`` instead of writing them through the ``ocpp`` interface or the
+   ``ocpp_consumer_API``.
+
+The monitors of the variable, the custom monitors of the CSMS included, carry over: the device model keeps them by
+component and variable name and applies them when the owner registers the variable at startup. An owner that misses
+the registration deadline loses them. The stored value does not carry over; the owner registers its own. Until the
+variable is removed from the component config, its registration is rejected with the variable named in
+``defined_by``.
+
+.. _howto-ocpp-device-model-trade-offs:
+
+Trade-offs
+==========
+
+Compared with a variable in the component config, a registered variable:
+
+- exists only while its owner is registered. Before the registration, and after a release, the CSMS gets
+  ``UnknownComponent`` or ``UnknownVariable`` for it, and ``GetBaseReport`` leaves it out.
+- delays the start of the OCPP service, and with it the connection to the CSMS, by the time the API module waits for
+  the registrations: until every owner in ``cfg_expected_owners`` registered, at most
+  ``cfg_expected_owners_timeout_s``, or ``cfg_registration_timeout_s`` without expected owners.
+- loses its monitors from earlier boots, the custom monitors of the CSMS included, when its owner misses the
+  registration deadline.
+- slows down SetVariables.req by up to ``cfg_request_reply_to_s`` per variable when its owner does not answer.
+
+In return, the application that knows the value keeps it current, validates the writes of the CSMS itself, and
+keeps the value across restarts.

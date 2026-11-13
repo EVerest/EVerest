@@ -32,8 +32,8 @@ cmds:
     description: >-
       Applies a write to an attribute of a registered variable, from the CSMS, a SetVariables.req for example, or from
       the OCPP service itself. The OCPP module waits for the answer without a deadline, so the module answers
-      promptly, well within the message timeout of the CSMS, and rejects a write it cannot complete by then. Calls may
-      overlap, also for one variable, and the interface defines no order between them.
+      promptly, well within the message timeout of the CSMS, and rejects a write it cannot complete by then. Calls to
+      one module instance are delivered one at a time, so a write answered late delays the following ones.
       Accepted means that the owner applied exactly the written value: the OCPP service then stores it, so the owner
       does not report it with value_changed. RebootRequired means that the owner kept exactly the written value, and
       that it takes effect at the next start: the OCPP service does not store it and keeps the current value, and the

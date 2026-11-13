@@ -11,8 +11,10 @@ config:
     default: 1000
   cfg_request_reply_to_s:
     description: >-
-      Maximum time between a set_value request and its reply. After timeout the write is answered Rejected. Keep it
-      below the message timeout of the CSMS. The maximum stays below the time after which EVerest aborts a command.
+      Maximum time between a set_value request and its reply. After timeout the write is answered Rejected. The
+      variables of one SetVariables.req are written one after the other, so the number of variables in a request
+      times this timeout has to stay below the message timeout of the CSMS. The maximum stays below the time after
+      which EVerest aborts a command.
     type: integer
     default: 10
     minimum: 1

@@ -23,3 +23,11 @@ per the deprecation policy. See the "Configuration access" and "Migration from
 OCPP 1.6 key addressing" sections in the OCPPmulti module documentation
 (:ref:`everest_modules_OCPPmulti`) for examples and the migration
 guide.
+
+Registered variables
+====================
+
+Variables that an external application registers through the
+:ref:`ocpp_device_model_API <everest_modules_handwritten_ocpp_device_model_API>` are read and watched like any other
+variable. A ``set_variables`` to a ``ReadWrite`` registered variable is passed to its owner like a write of the CSMS;
+one to a ``ReadOnly`` registered variable is rejected. See :ref:`howto-ocpp-device-model`.
