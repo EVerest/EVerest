@@ -76,6 +76,7 @@ config_factory_result_t
 create_charge_point_configuration(const std::filesystem::path& ocpp_share_path, const Ocpp16DeviceModelParams& config,
                                   std::int32_t n_evse, const std::filesystem::path& everest_device_model_database_path,
                                   ocpp_module_common::device_model::EverestDeviceModel* everest_device_model = nullptr,
-                                  ocpp_module_common::device_model::ConfigServiceAccess* config_service = nullptr);
+                                  ocpp_module_common::device_model::ConfigServiceAccess* config_service = nullptr,
+                                  ocpp_module_common::device_model::ExternalOwners* external_owners = nullptr);
 
 } // namespace module::config_factory_v16

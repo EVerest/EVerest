@@ -74,7 +74,8 @@ private:
     void configure_callbacks();
     void configure_data_model(const config_info_t& config,
                               ocpp_module_common::device_model::EverestDeviceModel* everest_device_model,
-                              ocpp_module_common::device_model::ConfigServiceAccess* config_service);
+                              ocpp_module_common::device_model::ConfigServiceAccess* config_service,
+                              ocpp_module_common::device_model::ExternalOwners* external_owners);
     std::optional<evse_connector_t> evse_from_ocpp_connector(std::int32_t ocpp_connector_id) const;
 
     void cb_boot_notification_response(const ocpp::v16::BootNotificationResponse& boot_notification_response);

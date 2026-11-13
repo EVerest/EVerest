@@ -6,6 +6,7 @@
 #include <everest/ocpp_module_common/custom_error_mapping.hpp>
 #include <everest/ocpp_module_common/device_model/config_service_binding.hpp>
 #include <everest/ocpp_module_common/device_model/everest_device_model.hpp>
+#include <everest/ocpp_module_common/device_model/external_owners.hpp>
 #include <everest/ocpp_module_common/error_handling.hpp>
 #include <everest/ocpp_module_common/transaction_handler.hpp>
 
@@ -239,6 +240,9 @@ struct GenericChargePointInterface {
         /// \brief Access to the module configurations shown in the device model; nullptr shows none. Must outlive the
         /// charge point.
         ocpp_module_common::device_model::ConfigServiceAccess* config_service{nullptr};
+        /// \brief The owners of the ocpp_device_model connections; nullptr registers none. Must outlive the charge
+        /// point.
+        ocpp_module_common::device_model::ExternalOwners* external_owners{nullptr};
         std::string v16_ocpp16_key_mappings_path;
         std::int32_t v16_ocpp16_network_config_slot;
         bool v16_enable_legacy_config_migration;

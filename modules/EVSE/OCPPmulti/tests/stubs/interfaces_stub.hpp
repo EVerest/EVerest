@@ -308,6 +308,7 @@ public:
     std::vector<std::unique_ptr<charger_informationIntf>> r_charger_information;
     std::vector<std::unique_ptr<ocpp_data_transferIntf>> r_data_transfer;
     std::vector<std::unique_ptr<display_messageIntf>> r_display_message;
+    std::vector<std::unique_ptr<ocpp_device_modelIntf>> r_device_model;
     std::vector<std::unique_ptr<external_energy_limitsIntf>> r_evse_energy_sink;
     std::vector<std::unique_ptr<evse_managerIntf>> r_evse_manager;
     std::vector<std::unique_ptr<iso15118_extensionsIntf>> r_extensions_15118;
@@ -346,6 +347,12 @@ public:
         auto req = m_requirement;
         req.index = r_display_message.size();
         r_display_message.emplace_back(std::make_unique<display_messageIntf>(&m_adapter, req, module_id, std::nullopt));
+    }
+
+    void add_device_model(const std::string& module_id) {
+        auto req = m_requirement;
+        req.index = r_device_model.size();
+        r_device_model.emplace_back(std::make_unique<ocpp_device_modelIntf>(&m_adapter, req, module_id, std::nullopt));
     }
 
     void add_evse_energy_sink(const std::string& module_id, int evse) {
@@ -434,9 +441,9 @@ public:
 
 private:
     provides_t m_provides{p_auth_validator, p_auth_provider, p_data_transfer, p_ocpp_generic, p_session_cost};
-    requires_t m_requires{r_auth,         r_charger_information, r_data_transfer, r_display_message, r_evse_energy_sink,
-                          r_evse_manager, r_extensions_15118,    r_grid_support,  r_reservation,     r_security,
-                          r_system};
+    requires_t m_requires{r_auth,         r_charger_information, r_data_transfer, r_display_message,
+                          r_device_model, r_evse_energy_sink,    r_evse_manager,  r_extensions_15118,
+                          r_grid_support, r_reservation,         r_security,      r_system};
 };
 
 } // namespace stubs

@@ -21,6 +21,7 @@
 #include <generated/interfaces/ocpp_1_6_charge_point/Implementation.hpp>
 #include <generated/interfaces/ocpp_data_transfer/Implementation.hpp>
 #include <generated/interfaces/ocpp_data_transfer/Interface.hpp>
+#include <generated/interfaces/ocpp_device_model/Interface.hpp>
 #include <generated/interfaces/reservation/Interface.hpp>
 #include <generated/interfaces/session_cost/Implementation.hpp>
 #include <generated/interfaces/system/Interface.hpp>
@@ -42,6 +43,7 @@
 #include <ocpp/v21/messages/SetDERControl.hpp>
 
 #include <everest/ocpp_module_common/device_model/everest_device_model.hpp>
+#include <everest/ocpp_module_common/device_model/external_owners.hpp>
 #include <everest/ocpp_module_common/error_handling.hpp>
 #include <everest/ocpp_module_common/transaction_handler.hpp>
 
@@ -78,6 +80,7 @@ struct GenericOcppInterface {
         const std::vector<std::unique_ptr<charger_informationIntf>>& charger_information;
         const std::vector<std::unique_ptr<ocpp_data_transferIntf>>& data_transfer;
         const std::vector<std::unique_ptr<display_messageIntf>>& display_message;
+        const std::vector<std::unique_ptr<ocpp_device_modelIntf>>& device_model;
         const std::vector<std::unique_ptr<external_energy_limitsIntf>>& evse_energy_sink;
         const std::vector<std::unique_ptr<evse_managerIntf>>& evse_manager;
         const std::vector<std::unique_ptr<iso15118_extensionsIntf>>& extensions_15118;
@@ -147,6 +150,8 @@ struct DeviceModelSources {
     // thread safe - used by libocpp and GenericOcpp
     std::unique_ptr<module::device_model::EverestDeviceModel> everest_device_model;
     std::unique_ptr<module::device_model::ConfigServiceAccess> config_service_access;
+    // thread safe - the owners of the ocpp_device_model connections, created in init()
+    std::unique_ptr<module::device_model::ExternalOwners> external_owners;
 };
 
 class GenericOcpp : public GenericOcppInterface, public GenericChargePointCallbacks {
@@ -345,11 +350,14 @@ protected:
     void init_error_handlers();
     void init_evse_maps();
     void init_subscribe();
+    void init_external_owners();
     void init_evse_subscribe();
 
     void ready_custom_error_mapping(const GenericChargePointInterface::ConnectorStructure& evse_connector_structure);
     void ready_event_queue();
     void ready_module_configuration();
+    /// \brief Asks every ocpp_device_model connection for the registrations of its owners
+    void ready_external_owners();
     void ready_transaction_handler();
 
     // Pop-and-set discipline for configure_network promises: find the pending request keyed by \p request_id

@@ -37,6 +37,27 @@ constexpr const auto TX_STOP_POINT_VAR_NAME = "TxStopPoint";
 constexpr std::int32_t LOWEST_SETPOINT_PRIORITY = 1000;
 constexpr std::int32_t HIGHEST_SETPOINT_PRIORITY = 0;
 
+class DeviceModelConnection : public module::device_model::DeviceModelOwnerConnection {
+public:
+    explicit DeviceModelConnection(ocpp_device_modelIntf& device_model) : device_model(device_model) {
+    }
+
+    std::string module_id() const override {
+        return this->device_model.module_id;
+    }
+
+    void set_registration_result(const types::ocpp_device_model::RegistrationResult& result) override {
+        this->device_model.call_set_registration_result(result);
+    }
+
+    types::ocpp::SetVariableStatusEnumType set_value(const types::ocpp_device_model::WriteRequest& request) override {
+        return this->device_model.call_set_value(request);
+    }
+
+private:
+    ocpp_device_modelIntf& device_model;
+};
+
 std::optional<ocpp::v2::IdToken> get_authorised_id_token(const types::evse_manager::SessionEvent& session_event) {
     using namespace module::conversions;
 
@@ -532,6 +553,7 @@ void GenericOcpp::init() {
     init_evse_maps();
     init_subscribe();
     init_evse_subscribe();
+    init_external_owners();
 }
 
 void GenericOcpp::ready(const ConfigServiceClient& client) {
@@ -591,6 +613,7 @@ void GenericOcpp::ready(const ConfigServiceClient& client) {
             /*with_der_components=*/true, der_wired_evse_ids);
     }
     mv_device_model_sources.config_service_access = module::device_model::make_config_service_access(client);
+    ready_external_owners();
 
     // clang-format off
     ocpp_multi::GenericChargePointInterface::init_args_t args{
@@ -608,6 +631,7 @@ void GenericOcpp::ready(const ConfigServiceClient& client) {
         everest_device_model_database_path,
         mv_device_model_sources.everest_device_model.get(),
         mv_device_model_sources.config_service_access.get(),
+        mv_device_model_sources.external_owners.get(),
         mv_config.getOcpp16KeyMappingsPath(),
         static_cast<std::int32_t>(mv_config.getOcpp16NetworkConfigSlot()),
         mv_config.getEnableLegacyConfigMigration(),
@@ -829,6 +853,46 @@ bool GenericOcpp::enqueue_if_not_started(std::int32_t evse_id, const Event& even
         result = true;
     }
     return result;
+}
+
+void GenericOcpp::init_external_owners() {
+    std::vector<std::shared_ptr<module::device_model::DeviceModelOwnerConnection>> connections;
+    for (const auto& device_model : mv_requires.device_model) {
+        connections.push_back(std::make_shared<DeviceModelConnection>(*device_model));
+    }
+    mv_device_model_sources.external_owners =
+        std::make_unique<module::device_model::ExternalOwners>(std::move(connections));
+
+    for (std::size_t index = 0; index < mv_requires.device_model.size(); ++index) {
+        mv_requires.device_model.at(index)->subscribe_registration(
+            [this, index](const types::ocpp_device_model::Registration& registration) {
+                mv_device_model_sources.external_owners->on_registration(index, registration);
+            });
+        mv_requires.device_model.at(index)->subscribe_value_changed(
+            [this, index](const types::ocpp_device_model::ValueChange& change) {
+                mv_device_model_sources.external_owners->on_value_changed(index, change);
+            });
+    }
+}
+
+void GenericOcpp::ready_external_owners() {
+    // Asked in parallel, so that the time each module waits for its owners does not add up
+    std::vector<std::future<types::ocpp_device_model::Registrations>> answers;
+    for (const auto& device_model : mv_requires.device_model) {
+        EVLOG_info << "Asking " << device_model->module_id << " for the registrations of its device model owners";
+        answers.push_back(
+            std::async(std::launch::async, [&device_model]() { return device_model->call_get_registrations(); }));
+    }
+    for (std::size_t index = 0; index < answers.size(); ++index) {
+        types::ocpp_device_model::Registrations registrations;
+        try {
+            registrations = answers.at(index).get();
+        } catch (const std::exception& e) {
+            EVLOG_error << "No registrations from " << mv_requires.device_model.at(index)->module_id << ": "
+                        << e.what();
+        }
+        mv_device_model_sources.external_owners->set_startup_registrations(index, registrations);
+    }
 }
 
 void GenericOcpp::ready_module_configuration() {

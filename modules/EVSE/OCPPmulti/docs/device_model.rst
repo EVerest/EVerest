@@ -16,13 +16,6 @@ writes it with ``GetVariables`` and ``SetVariables``, an OCPP 1.6 CSMS with ``Ge
 Every variable has exactly one owner. libocpp's device model composes the model from what the owners
 bring, serves every read from memory and routes every write to the owner.
 
-.. note::
-
-   External owners register through the ``ocpp_device_model`` interface, which the
-   :ref:`ocpp_device_model_API <everest_modules_handwritten_ocpp_device_model_API>` module provides. Support for the
-   interface in OCPPmulti follows separately. External owners are described here already so that the page shows the
-   complete design.
-
 .. mermaid::
 
    flowchart LR
@@ -127,7 +120,7 @@ configuration, or through an external owner. They differ in who owns the value.
      - nobody; a client watches with ``monitor_variables`` of the ``ocpp_consumer_API``
      - the owner, which may reject it
    * - Telemetry
-     - as an interim until OCPPmulti supports external owners, declared for it; see below
+     - possible, declared for it and reported through the ``ocpp`` interface; see below
      - yes; the owner reports its values as they change
    * - Choose it for
      - configuration the station is given, where type, range and enum checks are enough
@@ -141,9 +134,9 @@ startup of the station and for its monitors, is listed in the
 Telemetry in the component configuration
 """"""""""""""""""""""""""""""""""""""""
 
-Until OCPPmulti supports external owners, an integrator's own telemetry can be declared in the component
-configuration and reported through the ``ocpp`` interface, from an EVerest module or a client of the
-``ocpp_consumer_API``. This is supported as an interim; the variable then moves to an owner, see
+An integrator's own telemetry can be declared in the component configuration and reported through the ``ocpp``
+interface, from an EVerest module or a client of the ``ocpp_consumer_API``. An external owner fits telemetry
+better; a variable moves to one as described in
 :ref:`Move a variable from the component config to an owner <howto-ocpp-device-model-move-variable>`. The
 component configuration is meant for configuration, so the variable has to be declared for the purpose:
 

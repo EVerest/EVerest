@@ -603,8 +603,8 @@ components:
           defines it twice
         - NoAttributes: The variable has no attributes
         - ReservedOwner: The owner is COMPONENT_CONFIG
-        - InvalidNameKey: The component or the variable has an empty instance, or the component an EVSE or connector
-          id of 0
+        - InvalidNameKey: The component or the variable has an empty instance, the component an EVSE or connector id
+          of 0, or a name or value of the variable does not fit the OCPP types, by its length for example
         - ReservedVariable: Only the component config may define the variable, as the OCPP service writes it from its
           own state
       type: string

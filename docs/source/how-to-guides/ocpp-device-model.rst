@@ -9,10 +9,6 @@ Add Components to the OCPP Device Model from an External Application
    The :ref:`ocpp_device_model_API <everest_modules_handwritten_ocpp_device_model_API>` is currently
    **experimental**: its topics and types may change without further notice.
 
-   No module requires the ``ocpp_device_model`` interface that the API module provides yet. Support in the
-   :ref:`OCPPmulti <everest_modules_OCPPmulti>` module, including its configuration, follows separately. This guide
-   describes what an application implements to be ready for it.
-
 This guide shows how an application outside EVerest adds its own components and variables to the OCPP 2.x device
 model at runtime, so that the CSMS can read, monitor and configure them: a cooling unit, an auxiliary meter or the
 devices behind a gateway, for example.
@@ -70,6 +66,20 @@ Add the module to the EVerest configuration and list the owners the application 
      config_module:
        cfg_expected_owners: "cooling_unit"
        cfg_expected_owners_timeout_s: 60
+
+Connect it to the ``device_model`` requirement of the :ref:`OCPPmulti <everest_modules_OCPPmulti>` module:
+
+.. code-block:: yaml
+
+   ocpp:
+     module: OCPPmulti
+     connections:
+       device_model:
+         - module_id: device_model_api
+           implementation_id: main
+
+The requirement takes any number of connections, one per API module instance. OCPPmulti asks all of them for their
+registrations at the same time, so the waits of the instances do not add up.
 
 The topics of this module instance are below ``everest_api/1/ocpp_device_model/device_model_api/``, named by its
 module id. The topics in this guide are relative to that prefix.
@@ -222,6 +232,8 @@ Keep these rules in mind when choosing names:
 
 - An ``instance`` is either absent or not empty. A component or variable with an empty instance is rejected with
   ``InvalidNameKey``, because monitors and stored values key an absent instance as an empty one.
+- A name or value that does not fit the OCPP types, a name longer than 50 characters for example, is rejected with
+  ``InvalidNameKey`` as well. The schema of the API checks these lengths already.
 - An attribute without ``mutability`` cannot be written.
 - The variables that the OCPP service writes from its own state are rejected with ``ReservedVariable``, for example
   ``AuthCacheCtrlr.Storage``, the ``AvailabilityState`` of an EVSE and every variable of a ``NetworkConfiguration``
@@ -507,8 +519,9 @@ registered variables included:
 Move a variable from the component config to an owner
 =====================================================
 
-A variable declared in the component config, such as telemetry declared there as an
-:ref:`interim <handwritten_ocppmulti_where-custom-configuration-goes>`, moves to an owner in three steps:
+A variable declared in the component config, such as
+:ref:`telemetry declared there <handwritten_ocppmulti_where-custom-configuration-goes>`, moves to an owner in three
+steps:
 
 1. Remove the variable from the component config. For a component of its own, delete the variable from its JSON
    file, or the whole file. For a standardized component, place a copy of the component without the variable under

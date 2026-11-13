@@ -489,6 +489,9 @@ void ChargePointV2::init(init_args_t& args) {
     if (args.config_service != nullptr) {
         m_device_model_registrations.register_config_service(*args.config_service, *m_device_model);
     }
+    if (args.external_owners != nullptr) {
+        m_device_model_registrations.register_external_owners(*args.external_owners, *m_device_model);
+    }
     ocpp::v2::register_availability_states(*m_device_model, args.evse_connector_structure);
     module::device_model::check_device_model_conflicts(m_device_model_registrations.results(),
                                                        args.fail_on_device_model_conflicts);

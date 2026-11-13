@@ -223,9 +223,12 @@ and ``IFace`` binds the websocket as configured.
 Who contributes to the device model
 ===================================
 
-The component configuration is one of four contributors. libocpp, the EVerest modules this module is connected to
-(``EVSE``, ``Connector``, ``ConnectedEV``, the DER controllers and others) and the configuration service (one
-component per EVerest module whose configuration the OCPP module may read) add to the device model at every start.
+The component configuration is one of five contributors. libocpp, the EVerest modules this module is connected to
+(``EVSE``, ``Connector``, ``ConnectedEV``, the DER controllers and others), the configuration service (one
+component per EVerest module whose configuration the OCPP module may read) and the external owners of the modules
+connected to the ``device_model`` requirement, such as the
+:ref:`ocpp_device_model_API <everest_modules_handwritten_ocpp_device_model_API>`, add to the device model at every
+start.
 All of it is part of the device model on both protocol paths and reachable through the ``ocpp`` interface; an OCPP
 1.6 CSMS reaches only the keys that have a device model mapping. In OCPP 1.6 mode, ``monitor_variables`` on the
 ``ocpp`` interface does not report the values the module reports at runtime, such as ``Power``: the 1.6 path reports

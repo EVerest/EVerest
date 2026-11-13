@@ -11,6 +11,20 @@
 The module lets a client outside EVerest add components and variables to the OCPP 2.x device model, as an owner of
 the ``ocpp_device_model`` interface. See :ref:`howto-ocpp-device-model` for a walk-through.
 
+The OCPP module uses the module through its ``device_model`` requirement:
+
+.. code-block:: yaml
+
+   active_modules:
+     device_model_api:
+       module: ocpp_device_model_API
+     ocpp:
+       module: OCPPmulti
+       connections:
+         device_model:
+           - module_id: device_model_api
+             implementation_id: main
+
 At startup, the module answers ``get_registrations`` from the registrations clients publish on ``m2e/registration``:
 
 - With ``cfg_expected_owners`` set, it answers as soon as every listed owner has registered, at the latest after
