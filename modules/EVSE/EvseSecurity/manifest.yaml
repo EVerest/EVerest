@@ -75,6 +75,12 @@ config:
       Location of the certificate profiles that are used to set the certificate requirements
     type: string
     default: share/everest/Security_Profiles/iso15118-2
+  enforce_cert_profiles:
+    description: >-
+      Enforce certificate profile rules during chain verification. When enabled,
+      every certificate in a chain must match a YAML profile in cert_profiles_dir.
+    type: boolean
+    default: false
 provides:
   main:
     description: Implementation of the evse_security interface

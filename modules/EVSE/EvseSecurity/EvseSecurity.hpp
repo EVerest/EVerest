@@ -34,6 +34,7 @@ struct Conf {
     int csr_expiry_s;
     int garbage_collect_time_s;
     std::string cert_profiles_dir;
+    bool enforce_cert_profiles;
 };
 
 class EvseSecurity : public Everest::ModuleBase {

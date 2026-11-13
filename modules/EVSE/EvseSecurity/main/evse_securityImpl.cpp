@@ -18,8 +18,8 @@ void evse_securityImpl::init() {
                                            certs_path / this->mod->config.csms_leaf_cert_directory,
                                            certs_path / this->mod->config.csms_leaf_key_directory,
                                            certs_path / this->mod->config.secc_leaf_cert_directory,
-                                           certs_path / this->mod->config.secc_leaf_key_directory};
-
+                                           certs_path / this->mod->config.secc_leaf_key_directory,};
+    file_paths.cert_profiles_dir = certs_path / this->mod->config.cert_profiles_dir;
     std::optional<std::string> private_key_password = std::nullopt;
     if (!this->mod->config.private_key_password.empty()) {
         private_key_password = this->mod->config.private_key_password;
@@ -33,7 +33,7 @@ void evse_securityImpl::init() {
 
     this->evse_security = std::make_unique<evse_security::EvseSecurity>(
         file_paths, private_key_password, max_fs_usage_bytes, max_fs_certificate_store_entries, csr_expiry,
-        garbage_collect_time);
+        garbage_collect_time,this->mod->config.enforce_cert_profiles);
 }
 
 void evse_securityImpl::ready() {
