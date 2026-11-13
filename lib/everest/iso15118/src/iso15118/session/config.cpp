@@ -266,7 +266,8 @@ SessionConfig::SessionConfig(EvseSetupConfig config) :
     pre20_energy_transfer_modes(std::move(config.pre20_energy_transfer_modes)),
     pre20_vas_services(std::move(config.pre20_vas_services)),
     auth_timeout_eim_s(config.auth_timeout_eim_s),
-    auth_timeout_pnc_s(config.auth_timeout_pnc_s) {
+    auth_timeout_pnc_s(config.auth_timeout_pnc_s),
+    ac_close_contactor_timeout_ms(config.ac_close_contactor_timeout_ms) {
 
     set_supported_energy_transfer_services(std::move(config.supported_energy_services));
 

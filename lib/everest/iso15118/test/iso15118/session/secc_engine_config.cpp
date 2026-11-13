@@ -483,6 +483,26 @@ SCENARIO("ISO 15118-2 SECC external VAS offers") {
     }
 }
 
+SCENARIO("ISO 15118-20 AC contactor-close timeout") {
+    session::EvseSetupConfig setup{};
+    setup.evse_id = "DE*EVR*E12345*1";
+
+    GIVEN("The default") {
+        const session::SessionConfig config(setup);
+        THEN("it keeps 100 ms of the 1.5 s PowerDelivery performance time for the response") {
+            REQUIRE(config.ac_close_contactor_timeout_ms == d20::TIMEOUT_AC_CONTACTOR_CLOSE);
+        }
+    }
+
+    GIVEN("A configured value") {
+        setup.ac_close_contactor_timeout_ms = 1800;
+        const session::SessionConfig config(setup);
+        THEN("it reaches the session config unchanged") {
+            REQUIRE(config.ac_close_contactor_timeout_ms == 1800);
+        }
+    }
+}
+
 SCENARIO("Authorization Ongoing timeouts") {
     session::EvseSetupConfig setup{};
     setup.evse_id = "DE*EVR*E12345*1";

@@ -240,7 +240,7 @@ ISO 15118-20 is offered: ``supported_ISO15118_20``, ``enforce_tls_1_3``,
 ``supported_dynamic_mode``, ``supported_scheduled_mode``,
 ``supported_mobility_needs_mode_provided_by_secc``,
 ``negative_bidirectional_limits``, ``selecting_sap_based_on_energy_service``,
-``custom_protocol_namespace``. ``logging_path`` is an obsolete key and should
+``custom_protocol_namespace``, ``ac_close_contactor_timeout_ms``. ``logging_path`` is an obsolete key and should
 not be set. ``enable_ssl_logging`` adds verbose TLS logging.
 
 Module-level switchover

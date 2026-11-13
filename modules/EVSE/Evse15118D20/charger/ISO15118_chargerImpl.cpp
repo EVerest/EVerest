@@ -23,6 +23,7 @@
 #include <everest/util/misc/container.hpp>
 
 #include <iso15118/config.hpp>
+#include <iso15118/d20/timeout.hpp>
 #include <iso15118/detail/d20/config_validation.hpp>
 
 #include <iso15118/io/logging.hpp>
@@ -37,6 +38,10 @@ std::mutex GEL; // Global EVerest Lock
 namespace dt = iso15118::message_20::datatypes;
 
 namespace {
+
+// Mirrors the manifest bounds of ac_close_contactor_timeout_ms, for config sources that bypass validation.
+constexpr int MIN_AC_CLOSE_CONTACTOR_TIMEOUT_MS = 100;
+constexpr int MAX_AC_CLOSE_CONTACTOR_TIMEOUT_MS = 10000;
 
 iso15118::config::TlsNegotiationStrategy convert_tls_negotiation_strategy(const std::string& strategy) {
     using Strategy = iso15118::config::TlsNegotiationStrategy;
@@ -709,6 +714,23 @@ void ISO15118_chargerImpl::ready() {
     };
     setup_config.auth_timeout_eim_s = auth_timeout_seconds(mod->config.auth_timeout_eim, "auth_timeout_eim");
     setup_config.auth_timeout_pnc_s = auth_timeout_seconds(mod->config.auth_timeout_pnc, "auth_timeout_pnc");
+
+    const auto configured_contactor_timeout_ms = mod->config.ac_close_contactor_timeout_ms;
+    const auto contactor_timeout_ms = std::clamp(configured_contactor_timeout_ms, MIN_AC_CLOSE_CONTACTOR_TIMEOUT_MS,
+                                                 MAX_AC_CLOSE_CONTACTOR_TIMEOUT_MS);
+    if (contactor_timeout_ms != configured_contactor_timeout_ms) {
+        EVLOG_warning << fmt::format("Evse15118D20: ac_close_contactor_timeout_ms {} is outside [{}, {}]; using {}",
+                                     configured_contactor_timeout_ms, MIN_AC_CLOSE_CONTACTOR_TIMEOUT_MS,
+                                     MAX_AC_CLOSE_CONTACTOR_TIMEOUT_MS, contactor_timeout_ms);
+    }
+    setup_config.ac_close_contactor_timeout_ms = static_cast<uint32_t>(contactor_timeout_ms);
+    if (setup_config.ac_close_contactor_timeout_ms > iso15118::d20::TIMEOUT_AC_CONTACTOR_CLOSE) {
+        EVLOG_warning << fmt::format(
+            "Evse15118D20: ac_close_contactor_timeout_ms is {} ms, above the conformant {} ms; ISO 15118-20 AC "
+            "PowerDeliveryRes may miss the 1.5 s V2G_SECC_Msg_Performance_Time ([V2G20-861/862]) and the EV's 2 s "
+            "message timeout",
+            setup_config.ac_close_contactor_timeout_ms, iso15118::d20::TIMEOUT_AC_CONTACTOR_CLOSE);
+    }
 
     {
         // setup_config, evse_max_reactive_power and controller are written by the update_* handlers and read
