@@ -1,0 +1,124 @@
+name: Unit tests
+
+on:
+  workflow_call:
+    inputs:
+      runner:
+        description: 'Which runner to use'
+        required: false
+        default: 'ubuntu-24.04'
+        type: string
+      build-kit-artifact-name:
+        description: 'The name of the build-kit artifact to download'
+        required: true
+        type: string
+      build_kit_image_tag:
+        description: 'The tag of the build-kit image to use for running the unit tests'
+        required: true
+        type: string
+      build_tree_artifact_name:
+        description: 'The name of the build tree artifact to download'
+        required: true
+        type: string
+      build_kit_scripts_directory:
+        description: 'Directory in the repository where the build kit scripts are located'
+        required: false
+        default: '.ci/build-kit/scripts'
+        type: string
+      ctest_report_path:
+        description: 'The path to the ctest report, relative to the github workspace'
+        required: false
+        default: 'build/Testing/Temporary/LastTest.log'
+        type: string
+      ctest_junit_path:
+        description: 'The path to the ctest JUnit report, relative to the github workspace'
+        required: false
+        default: 'build/Testing/ctest-junit.xml'
+        type: string
+    secrets:
+      PRIVATE_DEPS_SSH_KEY:
+        description: >-
+          Optional SSH private key granting read access to private
+          dependencies. Leave unset when every dependency is public, which is
+          the case for everest-core upstream.
+        required: false
+    outputs:
+      ctest_report_artifact_name:
+        description: 'The name of the ctest report artifact uploaded'
+        value: ${{ jobs.unit-tests.outputs.ctest_report_artifact_name }}
+      ctest_junit_artifact_name:
+        description: 'The name of the ctest JUnit report artifact uploaded'
+        value: ${{ jobs.unit-tests.outputs.ctest_junit_artifact_name }}
+
+jobs:
+  unit-tests:
+    name: unit tests
+    runs-on: ${{ inputs.runner }}
+    permissions:
+      contents: read
+    env:
+      CTEST_REPORT_ARTIFACT_NAME: ctest-report
+      CTEST_JUNIT_ARTIFACT_NAME: ctest-junit
+      BUILD_KIT_IMAGE: ${{ inputs.build_kit_image_tag }}
+      SSH_AUTH_SOCK: /tmp/ssh_agent.sock
+    outputs:
+      ctest_report_artifact_name: ${{ env.CTEST_REPORT_ARTIFACT_NAME }}
+      ctest_junit_artifact_name: ${{ env.CTEST_JUNIT_ARTIFACT_NAME }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          path: source
+      - name: Setup SSH agent for private dependencies
+        uses: ./source/.github/actions/setup-ssh-agent
+        with:
+          ssh_private_key: ${{ secrets.PRIVATE_DEPS_SSH_KEY }}
+          ssh_auth_sock: ${{ env.SSH_AUTH_SOCK }}
+      - name: Setup run scripts
+        env:
+          BUILD_KIT_SCRIPTS_DIRECTORY: ${{ inputs.build_kit_scripts_directory }}
+        run: |
+          mkdir scripts
+          rsync -a "source/${BUILD_KIT_SCRIPTS_DIRECTORY}/" scripts
+      - name: Download build-kit image
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ inputs.build-kit-artifact-name }}
+      - name: Load build-kit image
+        run: |
+          docker load -i build-kit.tar
+          docker image tag "$BUILD_KIT_IMAGE" build-kit
+      - name: Download build tree
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ inputs.build_tree_artifact_name }}
+      - name: Extract build tree
+        run: |
+          sudo tar -I zstd --same-owner -xf build-tree.tar.zst && rm build-tree.tar.zst
+      - name: Run unit tests
+        id: run_unit_tests
+        run: |
+          docker run \
+          --mount "type=bind,source=$SSH_AUTH_SOCK,target=/ssh-agent" \
+          --env SSH_AUTH_SOCK=/ssh-agent \
+          --volume "$GITHUB_WORKSPACE:/ext" \
+          --name unit-test-container \
+          build-kit run-script run_unit_tests
+      - name: Archive test results
+        if: ${{ always() && (steps.run_unit_tests.outcome == 'success' || steps.run_unit_tests.outcome == 'failure') }}
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          if-no-files-found: error
+          name: ${{ env.CTEST_REPORT_ARTIFACT_NAME }}
+          path: ${{ inputs.ctest_report_path }}
+          # A re-run of this job replaces the earlier attempt's artifact
+          overwrite: true
+      - name: Archive test results as JUnit
+        if: ${{ always() && (steps.run_unit_tests.outcome == 'success' || steps.run_unit_tests.outcome == 'failure') }}
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          if-no-files-found: error
+          name: ${{ env.CTEST_JUNIT_ARTIFACT_NAME }}
+          path: ${{ inputs.ctest_junit_path }}
+          overwrite: true
