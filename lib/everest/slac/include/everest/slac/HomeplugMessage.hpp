@@ -7,23 +7,29 @@
 #include <cstdint>
 #include <cstring>
 #include <everest/slac/slac_defs.hpp>
-#include <net/ethernet.h>
 #include <optional>
 #include <stdexcept>
 
 namespace everest::lib::slac::messages {
 
 typedef struct {
-    struct ether_header ethernet_header;
-    struct homeplug_header {
+    struct {
+        std::uint8_t ether_dhost[defs::MAC_LEN]; // destination mac address
+        std::uint8_t ether_shost[defs::MAC_LEN]; // source mac address
+        std::uint16_t ether_type;                // in network byte order
+    } __attribute__((packed)) ethernet_header;
+    struct {
         std::uint8_t mmv;     // management message version
         std::uint16_t mmtype; // management message type
 
     } __attribute__((packed)) homeplug_header;
 
     // the rest of this message is potentially payload data
-    std::uint8_t payload[ETH_FRAME_LEN - ETH_HLEN - sizeof(homeplug_header)];
+    std::uint8_t payload[defs::ETHERNET_FRAME_MAX_LEN - sizeof(ethernet_header) - sizeof(homeplug_header)];
 } __attribute__((packed)) homeplug_message;
+
+static_assert(offsetof(homeplug_message, homeplug_header) == defs::ETHERNET_HEADER_LEN,
+              "the Ethernet header must be ETHERNET_HEADER_LEN bytes");
 
 typedef struct {
     std::uint8_t fmni; // fragmentation management number information
@@ -31,11 +37,12 @@ typedef struct {
 } __attribute__((packed)) homeplug_fragmentation_part;
 
 inline constexpr std::size_t HOMEPLUG_PAYLOAD_OFFSET = offsetof(homeplug_message, payload);
-inline constexpr std::size_t HOMEPLUG_HEADER_SIZE = HOMEPLUG_PAYLOAD_OFFSET - ETH_HLEN;
+inline constexpr std::size_t HOMEPLUG_HEADER_SIZE =
+    HOMEPLUG_PAYLOAD_OFFSET - offsetof(homeplug_message, homeplug_header);
 
 class HomeplugMessage {
 public:
-    using MacAddress = std::array<std::uint8_t, ETH_ALEN>;
+    using MacAddress = std::array<std::uint8_t, defs::MAC_LEN>;
     homeplug_message* get_raw_message_ptr();
     homeplug_message const* get_raw_message_ptr() const;
 
