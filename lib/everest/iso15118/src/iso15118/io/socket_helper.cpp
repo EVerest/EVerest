@@ -4,13 +4,14 @@
 
 #include <cerrno>
 #include <chrono>
+#include <cstdio>
 #include <cstring>
 #include <utility>
 
 #include <arpa/inet.h>
+#include <fcntl.h>
 #include <ifaddrs.h>
 #include <net/if.h>
-#include <netdb.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <poll.h>
@@ -70,6 +71,12 @@ public:
 private:
     int fd_;
 };
+
+// What SOCK_NONBLOCK does for socket() and accept4(), which not every socket implementation has (e.g. lwIP)
+bool set_nonblocking(int fd) {
+    const auto flags = fcntl(fd, F_GETFL, 0);
+    return flags != -1 and fcntl(fd, F_SETFL, flags | O_NONBLOCK) != -1;
+}
 
 } // namespace
 
@@ -171,14 +178,13 @@ AcceptResult accept_connection(int listen_fd, sockaddr_in6& peer_address) {
     socklen_t address_len = sizeof(peer_address);
 
     // The poll loop is shared (SDP server + connections), so nothing downstream may ever block here.
-    const auto accept_fd =
-        ::accept4(listen_fd, reinterpret_cast<sockaddr*>(&peer_address), &address_len, SOCK_NONBLOCK);
+    const auto accept_fd = ::accept(listen_fd, reinterpret_cast<sockaddr*>(&peer_address), &address_len);
 
     if (accept_fd == -1) {
         // A client that connects and RSTs quickly (e.g. a port scan) yields ECONNABORTED; the listener
         // stays usable, so the caller should just wait for the next connection.
         if (errno == EINTR or errno == EAGAIN or errno == EWOULDBLOCK or errno == ECONNABORTED) {
-            logf_warning("accept4 failed with a transient error code: %d", errno);
+            logf_warning("accept failed with a transient error code: %d", errno);
             return {AcceptResult::Status::Transient, -1};
         }
         // A hard accept failure (e.g. EMFILE): the caller must contain this by tearing down its own
@@ -187,8 +193,16 @@ AcceptResult accept_connection(int listen_fd, sockaddr_in6& peer_address) {
         // Deliberate deviation from accept(2)'s advice to retry the pending-connection network errnos: this
         // listener serves exactly one EV over a point-to-point link-local connection, so such a failure
         // means the link itself is gone and dlink-loss handling, not an accept retry, is the recovery.
-        logf_error("accept4 failed with error code: %d", errno);
+        logf_error("accept failed with error code: %d", errno);
         return {AcceptResult::Status::Fatal, -1};
+    }
+
+    // The accepted socket does not inherit O_NONBLOCK from the listener on Linux.
+    if (not set_nonblocking(accept_fd)) {
+        // Only this client is dropped; the listener stays usable.
+        logf_error("Failed to make the accepted socket non-blocking: %d", errno);
+        ::close(accept_fd);
+        return {AcceptResult::Status::Transient, -1};
     }
 
     // The read() paths rely on the keepalive's ETIMEDOUT to tear down a peer that vanished without FIN.
@@ -252,13 +266,17 @@ ReadResult drain_until_peer_close(int fd) {
 }
 
 int create_tcp_listen_socket(sockaddr_in6 address, uint16_t port, int backlog, const std::string& interface_name) {
-    // accept_connection()'s Transient/EAGAIN contract depends on it: a blocking accept4 would stall the
+    // accept_connection()'s Transient/EAGAIN contract depends on it: a blocking accept would stall the
     // shared controller poll loop until the next TCP connect arrives.
-    const auto fd = socket(AF_INET6, SOCK_STREAM | SOCK_NONBLOCK, 0);
+    const auto fd = socket(AF_INET6, SOCK_STREAM, 0);
     if (fd == -1) {
         log_and_throw("Failed to create an ipv6 socket");
     }
     fd_guard guard{fd};
+
+    if (not set_nonblocking(fd)) {
+        log_and_throw("Failed to make the ipv6 socket non-blocking");
+    }
 
     address.sin6_port = htons(port);
 
@@ -292,14 +310,25 @@ std::unique_ptr<char[]> sockaddr_in6_to_name(const sockaddr_in6& address) {
     static constexpr auto MAX_NUMERIC_NAME_LENGTH = INET6_ADDRSTRLEN + IFNAMSIZ;
     auto name = std::make_unique<char[]>(MAX_NUMERIC_NAME_LENGTH);
 
-    // FIXME (aw): what about alignment issues here between casting from sockaddr_in6 to sockaddr?
-    const auto result = getnameinfo(reinterpret_cast<const sockaddr*>(&address), sizeof(address), name.get(),
-                                    MAX_NUMERIC_NAME_LENGTH, nullptr, 0, NI_NUMERICHOST);
-
-    if (result == 0) {
-        return name;
-    } else {
+    // Only the numeric address is needed: inet_ntop() is enough and more widely available than getnameinfo()
+    if (inet_ntop(AF_INET6, &address.sin6_addr, name.get(), INET6_ADDRSTRLEN) == nullptr) {
         return nullptr;
     }
+
+    // Append the scope like getnameinfo() does: the interface name for a link-local address, e.g. fe80::1%eth1,
+    // else, or if no interface has it (anymore), the scope index
+    if (address.sin6_scope_id != 0) {
+        const auto length = strlen(name.get());
+        const bool link_local =
+            IN6_IS_ADDR_LINKLOCAL(&address.sin6_addr) or IN6_IS_ADDR_MC_LINKLOCAL(&address.sin6_addr);
+        char scope_name[IF_NAMESIZE];
+        if (link_local and if_indextoname(address.sin6_scope_id, scope_name) != nullptr) {
+            snprintf(name.get() + length, MAX_NUMERIC_NAME_LENGTH - length, "%%%s", scope_name);
+        } else {
+            snprintf(name.get() + length, MAX_NUMERIC_NAME_LENGTH - length, "%%%u",
+                     static_cast<unsigned>(address.sin6_scope_id));
+        }
+    }
+    return name;
 }
 } // namespace iso15118::io

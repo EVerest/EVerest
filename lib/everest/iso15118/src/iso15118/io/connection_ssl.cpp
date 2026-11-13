@@ -6,6 +6,7 @@
 #include <cerrno>
 #include <chrono>
 #include <cinttypes>
+#include <cstdio>
 #include <cstring>
 #include <memory>
 #include <string>
@@ -13,7 +14,6 @@
 #include <vector>
 
 #include <arpa/inet.h>
-#include <netdb.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -251,15 +251,16 @@ void ConnectionSSL::handle_connect() {
 
     const int accepted_fd = accepted.fd;
 
-    char host[NI_MAXHOST] = {0};
-    char service[NI_MAXSERV] = {0};
-    const auto gni_result = ::getnameinfo(reinterpret_cast<sockaddr*>(&peer_addr), sizeof(peer_addr), host,
-                                          sizeof(host), service, sizeof(service), NI_NUMERICHOST | NI_NUMERICSERV);
-    if (gni_result != 0) {
-        logf_warning("getnameinfo() failed for incoming connection: %s", gai_strerror(gni_result));
+    const auto host = sockaddr_in6_to_name(peer_addr);
+    if (not host) {
+        logf_warning("Failed to determine string representation of the peer address");
     }
+    const char* host_name = host ? host.get() : "";
 
-    logf_info("Incoming connection from [%s]:%s", host, service);
+    char service[6]; // up to "65535"
+    snprintf(service, sizeof(service), "%" PRIu16, ntohs(peer_addr.sin6_port));
+
+    logf_info("Incoming connection from [%s]:%s", host_name, service);
 
     poll_manager.unregister_fd(ssl->listen_fd);
     ::close(ssl->listen_fd);
@@ -275,7 +276,7 @@ void ConnectionSSL::handle_connect() {
         return;
     }
 
-    ssl->connection = ssl->server->wrap_accepted_fd(accepted_fd, host, service);
+    ssl->connection = ssl->server->wrap_accepted_fd(accepted_fd, host_name, service);
     if (ssl->connection == nullptr) {
         ::close(accepted_fd);
         // Same containment: fail this connection rather than throw out of the poll callback.
