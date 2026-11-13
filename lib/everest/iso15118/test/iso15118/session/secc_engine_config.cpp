@@ -503,6 +503,30 @@ SCENARIO("ISO 15118-20 AC contactor-close timeout") {
     }
 }
 
+SCENARIO("DC stop contactor-open timeout response") {
+    session::EvseSetupConfig setup{};
+    setup.evse_id = "DE*EVR*E12345*1";
+
+    GIVEN("The default") {
+        const session::SessionConfig config(setup);
+        THEN("no engine answers FAILED") {
+            REQUIRE_FALSE(config.dc_stop_contactor_open_timeout_failed);
+            REQUIRE_FALSE(make_d2_config(config, false).dc_stop_contactor_open_timeout_failed);
+            REQUIRE_FALSE(make_din_config(config).dc_stop_contactor_open_timeout_failed);
+        }
+    }
+
+    GIVEN("FAILED configured") {
+        setup.dc_stop_contactor_open_timeout_failed = true;
+        const session::SessionConfig config(setup);
+        THEN("it reaches every engine") {
+            REQUIRE(config.dc_stop_contactor_open_timeout_failed);
+            REQUIRE(make_d2_config(config, false).dc_stop_contactor_open_timeout_failed);
+            REQUIRE(make_din_config(config).dc_stop_contactor_open_timeout_failed);
+        }
+    }
+}
+
 SCENARIO("Authorization Ongoing timeouts") {
     session::EvseSetupConfig setup{};
     setup.evse_id = "DE*EVR*E12345*1";

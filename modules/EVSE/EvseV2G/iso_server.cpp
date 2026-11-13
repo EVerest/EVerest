@@ -1856,7 +1856,10 @@ static enum v2g_event handle_iso_power_delivery(struct v2g_connection* conn) {
             conn->ctx->p_charger->publish_dc_open_contactor(nullptr);
             v2g_ctx_start_welding_detection(conn->ctx);
             /* Side B is disabled before the EV learns of it [IEC 61851-23:2023 Table CC.9 t103 before t104]. */
-            v2g_ctx_wait_contactor_open(conn->ctx, V2G_CONTACTOR_OPEN_TIMEOUT);
+            if (not v2g_ctx_wait_contactor_open(conn->ctx, V2G_CONTACTOR_OPEN_TIMEOUT) and
+                conn->ctx->dc_stop_contactor_open_timeout_failed) {
+                res->ResponseCode = iso2_responseCodeType_FAILED;
+            }
         }
         break;
 

@@ -888,7 +888,34 @@ SCENARIO("ISO 15118-2 SECC holds PowerDeliveryRes(Stop) until the contactor is r
 
                 THEN("The response is sent anyway") {
                     REQUIRE(secc.fsm.state() == StateID::PostCharge);
-                    REQUIRE(secc.fsm.response<message_2::PowerDeliveryResponse>().has_value());
+                    const auto res = secc.fsm.response<message_2::PowerDeliveryResponse>();
+                    REQUIRE(res.has_value());
+                    REQUIRE(res->response_code == dt::ResponseCode::OK);
+                }
+            }
+
+            AND_WHEN("FAILED is configured and the contactor is reported open in time") {
+                secc.fsm.context().session_config.dc_stop_contactor_open_timeout_failed = true;
+                secc.fsm.control(d20::ClosedContactor{false});
+
+                THEN("The response is sent OK and PostCharge follows") {
+                    REQUIRE(secc.fsm.state() == StateID::PostCharge);
+                    const auto res = secc.fsm.response<message_2::PowerDeliveryResponse>();
+                    REQUIRE(res.has_value());
+                    REQUIRE(res->response_code == dt::ResponseCode::OK);
+                    REQUIRE_FALSE(secc.fsm.context().session_stopped);
+                }
+            }
+
+            AND_WHEN("The contactor is not reported open in time and FAILED is configured") {
+                secc.fsm.context().session_config.dc_stop_contactor_open_timeout_failed = true;
+                secc.fsm.timeout(d20::TimeoutType::CONTACTOR);
+
+                THEN("The response is sent FAILED and the session ends") {
+                    const auto res = secc.fsm.response<message_2::PowerDeliveryResponse>();
+                    REQUIRE(res.has_value());
+                    REQUIRE(res->response_code == dt::ResponseCode::FAILED);
+                    REQUIRE(secc.fsm.context().session_stopped);
                 }
             }
 
@@ -928,6 +955,18 @@ SCENARIO("ISO 15118-2 SECC holds PowerDeliveryRes(Stop) until the contactor is r
             THEN("The response is sent right away") {
                 REQUIRE(secc.fsm.state() == StateID::PostCharge);
                 REQUIRE(secc.fsm.response<message_2::PowerDeliveryResponse>().has_value());
+            }
+        }
+
+        WHEN("FAILED is configured and the EV sends PowerDeliveryReq(Stop)") {
+            secc.fsm.context().session_config.dc_stop_contactor_open_timeout_failed = true;
+            secc.drive(power_delivery_req(dt::ChargeProgress::Stop));
+
+            THEN("The response is sent OK right away") {
+                REQUIRE(secc.fsm.state() == StateID::PostCharge);
+                const auto res = secc.fsm.response<message_2::PowerDeliveryResponse>();
+                REQUIRE(res.has_value());
+                REQUIRE(res->response_code == dt::ResponseCode::OK);
             }
         }
     }

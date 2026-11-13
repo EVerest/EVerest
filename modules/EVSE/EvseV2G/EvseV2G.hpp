@@ -36,6 +36,7 @@ struct Conf {
     bool supported_ISO15118_2;
     std::string tls_security;
     bool terminate_connection_on_failed_response;
+    std::string dc_stop_contactor_open_timeout_response;
     bool tls_key_logging;
     std::string tls_key_logging_path;
     int tls_timeout;
