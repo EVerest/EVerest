@@ -18,6 +18,7 @@ target_sources(${TEST_TARGET_NAME}
     everest_device_model_components_test.cpp
     everest_device_model_test.cpp
     external_limits_tests.cpp
+    external_owners_test.cpp
     grid_support_conversions_test.cpp
     meter_value_conversions_test.cpp
     network_conversions_test.cpp

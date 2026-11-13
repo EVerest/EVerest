@@ -62,6 +62,12 @@ active_modules:
     config_module:
       cfg_communication_check_to_s: 0
       cfg_heartbeat_interval_ms: 5000
+  # no module in this config requires ocpp_device_model, so only m2e messages and the heartbeat are exercised
+  device_model_api:
+    module: ocpp_device_model_API
+    config_module:
+      cfg_communication_check_to_s: 0
+      cfg_heartbeat_interval_ms: 5000
   error_raiser_api:
     module: generic_error_raiser_API
     config_module:

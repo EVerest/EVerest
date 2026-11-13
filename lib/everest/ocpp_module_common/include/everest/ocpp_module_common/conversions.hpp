@@ -17,6 +17,7 @@
 #include <generated/types/iso15118.hpp>
 #include <generated/types/network.hpp>
 #include <generated/types/ocpp.hpp>
+#include <generated/types/ocpp_device_model.hpp>
 #include <generated/types/reservation.hpp>
 #include <generated/types/system.hpp>
 
@@ -128,6 +129,18 @@ ocpp::v2::EVSE to_ocpp_evse(const types::ocpp::EVSE& evse);
 
 /// \brief Converts a given types::ocpp::AttributeEnum to ocpp::v2::AttributeEnum
 ocpp::v2::AttributeEnum to_ocpp_attribute_enum(const types::ocpp::AttributeEnum attribute_enum);
+
+/// \brief Converts a given types::ocpp::SetVariableStatusEnumType to ocpp::v2::SetVariableStatusEnum
+ocpp::v2::SetVariableStatusEnum to_ocpp_set_variable_status_enum(const types::ocpp::SetVariableStatusEnumType status);
+
+/// \brief Converts a given types::ocpp_device_model::DataEnum to ocpp::v2::DataEnum
+ocpp::v2::DataEnum to_ocpp_data_enum(const types::ocpp_device_model::DataEnum data_enum);
+
+/// \brief Converts a given types::ocpp_device_model::MutabilityEnum to ocpp::v2::MutabilityEnum
+ocpp::v2::MutabilityEnum to_ocpp_mutability_enum(const types::ocpp_device_model::MutabilityEnum mutability);
+
+/// \brief Converts a given types::ocpp_device_model::MonitorEnum to ocpp::v2::MonitorEnum
+ocpp::v2::MonitorEnum to_ocpp_monitor_enum(const types::ocpp_device_model::MonitorEnum monitor);
 
 /// \brief Converts a given types::types::iso15118::RequestExiStreamSchema to
 /// ocpp::v2::Get15118EVCertificateRequest

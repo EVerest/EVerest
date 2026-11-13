@@ -11,15 +11,10 @@ writes it with ``GetVariables`` and ``SetVariables``, an OCPP 1.6 CSMS with ``Ge
 - **libocpp**, which computes the availability states;
 - the **components EVerest provides**, reported by the modules the OCPP module is connected to;
 - the **EVerest module configuration views**, backed by the configuration service;
-- **external providers**, components that bring their own configuration and telemetry.
+- **external owners**, applications that bring components with their own configuration and telemetry.
 
 Every variable has exactly one owner. libocpp's device model composes the model from what the owners
 bring, serves every read from memory and routes every write to the owner.
-
-.. note::
-
-   External providers and the ``ocpp_device_model_provider`` API arrive in their own pull request, after the single
-   device model database. They are described here already so that the page shows the complete design.
 
 .. mermaid::
 
@@ -28,12 +23,12 @@ bring, serves every read from memory and routes every write to the owner.
        LIB[libocpp]
        EV[Components EVerest provides]
        VIEWS[Module configuration views]
-       PRV[Provider binding]
+       PRV[ocpp_device_model_API]
        DM[Device model]
        DB[(device model database)]
        CS[(configuration service)]
        MODS[EVerest modules]
-       EXT[External provider]
+       EXT[External application]
        CSMS[CSMS]
        API[ocpp interface]
        JSON -- seeds --> DB
@@ -47,6 +42,8 @@ bring, serves every read from memory and routes every write to the owner.
        PRV -- registers, answers writes --> DM
        DM --> CSMS
        DM --> API
+
+.. _handwritten_ocppmulti_one-model-for-ocpp16-and-ocpp2x:
 
 One model for OCPP 1.6 and OCPP 2.x
 -----------------------------------
@@ -89,11 +86,11 @@ Who contributes
      - ``EVEREST_CONFIG``
      - one component per EVerest module the OCPP module may read, one variable per configuration parameter
      - the configuration service
-   * - External providers
-     - ``EXT:<module_id>``
+   * - External owners
+     - the name the application registers, by default the module id of the ``ocpp_device_model_API`` instance
      - their own components, vendor variables on standard components, and standard configuration variables the
        component configuration leaves out
-     - the provider; nothing on the EVerest side
+     - the application; nothing on the EVerest side
 
 .. _handwritten_ocppmulti_where-custom-configuration-goes:
 
@@ -101,7 +98,7 @@ Custom configuration and telemetry
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 An integrator adds custom configuration and telemetry to the device model in one of two ways: in the component
-configuration, or through an external provider. They differ in who owns the value.
+configuration, or through an external owner. They differ in who owns the value.
 
 .. list-table::
    :header-rows: 1
@@ -109,35 +106,38 @@ configuration, or through an external provider. They differ in who owns the valu
 
    * -
      - Component configuration
-     - External provider
+     - External owner
    * - Owner of the value
      - the OCPP module, in the device model database
      - the integrator's component
    * - Declared in
      - the JSON files
-     - the provider's registration
+     - the owner's registration
    * - Validated by
      - the device model, against the declared characteristics
-     - the device model, then the provider itself
+     - the device model, then the owner itself
    * - Told about a write
      - nobody; a client watches with ``monitor_variables`` of the ``ocpp_consumer_API``
-     - the provider, which may reject it
+     - the owner, which may reject it
    * - Telemetry
-     - as an interim until providers exist, declared for it; see below
-     - yes; the provider reports its values as they change
+     - possible, declared for it and reported through the ``ocpp`` interface; see below
+     - yes; the owner reports its values as they change
    * - Choose it for
      - configuration the station is given, where type, range and enum checks are enough
      - configuration the component validates, keeps or changes itself; telemetry; a standard variable the
        component configuration leaves out
 
-A custom variable is declared in exactly one of them.
+A custom variable is declared in exactly one of them. What a registered variable means in operation, for the
+startup of the station and for its monitors, is listed in the
+:ref:`trade-offs <howto-ocpp-device-model-trade-offs>` of the guide for external owners.
 
 Telemetry in the component configuration
 """"""""""""""""""""""""""""""""""""""""
 
-Until external providers are available, an integrator's own telemetry can be declared in the component
-configuration and reported through the ``ocpp`` interface, from an EVerest module or a client of the
-``ocpp_consumer_API``. This is supported as an interim; the variable moves to a provider once providers exist. The
+An integrator's own telemetry can be declared in the component configuration and reported through the ``ocpp``
+interface, from an EVerest module or a client of the ``ocpp_consumer_API``. An external owner fits telemetry
+better; a variable moves to one as described in
+:ref:`Move a variable from the component config to an owner <howto-ocpp-device-model-move-variable>`. The
 component configuration is meant for configuration, so the variable has to be declared for the purpose:
 
 * ``mutability`` ``ReadOnly``: the CSMS cannot write the value, the ``ocpp`` interface can.
@@ -272,35 +272,44 @@ change made elsewhere, for example through the Configuration API, shows up in ``
 monitors right away. A change that the module applies only at its next start does not: until then,
 ``GetVariables`` returns the value in effect.
 
-.. _handwritten_ocppmulti_external-providers:
+.. _handwritten_ocppmulti_external-owners:
 
-External providers
-^^^^^^^^^^^^^^^^^^
+External owners
+^^^^^^^^^^^^^^^
 
 An integrator can bring their own configuration and telemetry into the device model from outside the EVerest
-process tree: a vendor controller with its settings, a display, a payment terminal, a cloud agent. The EVerest
-interface ``ocpp_device_model_provider`` carries it, and the bridge module ``ocpp_device_model_provider_API``
-exposes it on the EVerest API, so a client needs no EVerest module of its own. Each provider is registered as an
-owner of its own, ``EXT:<module_id>``.
+process tree: a vendor controller with its settings, a display, a payment terminal, the devices behind a gateway. The
+EVerest interface ``ocpp_device_model`` carries it, and the module
+:ref:`ocpp_device_model_API <everest_modules_handwritten_ocpp_device_model_API>` exposes it on the EVerest API, so
+an application needs no EVerest module of its own. The application acts for one or more owners and names them
+itself; a registration without a name belongs to the owner named by the module id of the ``ocpp_device_model_API``
+instance. OCPPmulti passes the names to the device model unchanged. :ref:`howto-ocpp-device-model` describes what
+the application implements.
 
-A provider hands OCPPmulti its *registration*: the complete set of components it owns, with characteristics,
-attributes and current values. OCPPmulti asks for it at start and whenever the provider signals a change; a new
-registration replaces the previous one. A write from the CSMS, already validated against the registered
-characteristics, is handed to the provider, which answers ``Accepted``, ``RebootRequired`` or ``Rejected``. A
-value the provider changes itself is reported to the device model like a value EVerest provides. Whether a
-variable is only reported or also written follows the mutability the provider registers.
+An owner's *registration* is the complete set of variables it owns, with characteristics, attributes, current values
+and monitors. OCPPmulti calls ``get_registrations`` once at startup, before the OCPP service starts; the API module
+answers with the registrations it collected, after waiting for the owners in its ``cfg_expected_owners``. After
+that, the application publishes a registration whenever its devices change, and each one is applied at once. A
+registration replaces everything its owner registered before; one without components releases the owner. An owner
+name belongs to the module that registered it first until it is released, and a registration of another module for
+it is refused with ``OwnerInUse``. Each registration is answered with the variables the device model rejected.
 
-A provider owns its values, whatever ``persistent`` says; OCPPmulti stores nothing of them, so the provider keeps
-them across its own restarts. Monitors the CSMS places on a provider's variables are stored by OCPPmulti and apply
-again when the provider registers at the next start.
+A write from the CSMS, already validated against the registered characteristics, is handed to the owner, which
+answers ``Accepted``, ``RebootRequired`` or ``Rejected``. A value the owner changes itself is reported to the device
+model like a value EVerest provides. Whether a variable is only reported or also written follows the mutability the
+owner registers.
 
-A provider may register components of its own, such as ``VendorCtrlr`` / ``DisplayBrightness``; vendor variables on
+An owner keeps its values, whatever ``persistent`` says; OCPPmulti stores nothing of them, so the application keeps
+them across its own restarts. Monitors the CSMS places on an owner's variables are stored by OCPPmulti and apply
+again when the owner registers at the next start.
+
+An owner may register components of its own, such as ``VendorCtrlr`` / ``DisplayBrightness``; vendor variables on
 a standard component, such as a vendor variable on ``EVSE``; and standard configuration variables the component
-configuration leaves out, such as ``OCPPCommCtrlr`` / ``HeartbeatInterval``. To hand such a variable to a provider,
+configuration leaves out, such as ``OCPPCommCtrlr`` / ``HeartbeatInterval``. To hand such a variable to an owner,
 the integrator places a component configuration of the same component without the variable under
 ``component_config/custom``, which replaces the standardized one; the variable's monitors carry over to the
-provider's registration. A provider that registers a standard variable must use the data type the
-standard defines, since libocpp reads it. A provider may not register what the component configuration defines,
+owner's registration. An owner that registers a standard variable must use the data type the
+standard defines, since libocpp reads it. An owner may not register what the component configuration defines,
 libocpp writes from its own state or EVerest reports, such as ``AvailabilityState``, ``SecurityCtrlr`` /
 ``Identity``, a network connection profile or ``EVSE`` / ``Power``; such a variable is rejected and the rest of the
 registration is applied.
@@ -330,14 +339,14 @@ The device model applies the same few rules to every contributor:
   then. OCPP 2.x leaves open what a read returns until then; B10.FR.01 allows either answer for a
   ``NetworkConfigurationPriority`` change that applies after a reboot.
 * **libocpp writes what it owns.** libocpp sets a variable it registered or one of the component configuration
-  variables it maintains. A write of its own to a variable an external provider took over, such as the heartbeat
-  interval from the ``BootNotification`` response, reaches the provider like a CSMS write.
+  variables it maintains. A write of its own to a variable an external owner took over, such as the heartbeat
+  interval from the ``BootNotification`` response, reaches the owner like a CSMS write.
 * **Every write reaches the owner.** The CSMS writes across all contributors; that is what OCPP is for. The
   ``ocpp`` interface, and with it the ``ocpp_consumer_API`` module, is the local channel, the integrator's own code
   that OCPPmulti trusts: it writes ``ReadOnly`` variables of the component configuration, which the integrator
   maintains that way, and writes a registered variable like the CSMS does, through its owner
   and only when it is ``ReadWrite``. A ``ReadOnly`` registered variable is a value its owner reports, so a write to
-  it is rejected: the modules report the values they provide, and an external provider changes its own values.
+  it is rejected: the modules report the values they provide, and an external owner changes its own values.
 
 Startup
 -------
@@ -345,16 +354,18 @@ Startup
 The device model is complete before the charge point reports it for the first time. On the OCPP 2.x and the OCPP
 1.6 path alike, OCPPmulti
 
-1. collects what the connected modules report and asks every external provider for its registration;
+1. collects what the connected modules report and asks every ``ocpp_device_model`` connection for the
+   registrations of its external owners;
 2. opens the device model database and applies the component configuration;
-3. registers the components EVerest provides, the EVerest module configuration views and the external providers;
+3. registers the components EVerest provides, the EVerest module configuration views and the external owners;
 4. registers the availability states (OCPP 2.x only);
 5. reports the conflicts between the component configuration and the registrations, and stops if
    ``FailOnDeviceModelConflicts`` is set;
 6. constructs the charge point, which checks the composed model for completeness, and connects to the CSMS.
 
-External providers are up when OCPPmulti starts; the stack relies on that. A registration a provider changes at
-runtime is applied live: visible to ``GetVariables`` at once, and to the CSMS with its next ``GetBaseReport``.
+Step 1 waits until every connection answered; the ``ocpp_device_model_API`` module answers once the owners in its
+``cfg_expected_owners`` registered, or at its deadline. A registration an owner publishes at runtime is applied
+live: visible to ``GetVariables`` at once, and to the CSMS with its next ``GetBaseReport``.
 
 Reads, writes and changes
 -------------------------
@@ -475,16 +486,16 @@ and the value list of the variable; limits bound what the CSMS may set, not what
 stores it. A write to any other variable of this group is rejected, from the ``ocpp`` interface as well, since the
 module reports them.
 
-External providers
-^^^^^^^^^^^^^^^^^^
+External owners
+^^^^^^^^^^^^^^^
 
 .. mermaid::
 
    sequenceDiagram
        participant CSMS
        participant DM as device model
-       participant BR as provider bridge
-       participant C as client
+       participant BR as ocpp_device_model_API
+       participant C as application
        Note over CSMS,C: Write by the CSMS
        CSMS->>DM: SetVariables VendorCtrlr.DisplayBrightness = 50
        DM->>DM: validate against the registered characteristics
@@ -494,14 +505,15 @@ External providers
        BR-->>DM: Accepted
        DM->>DM: update memory, evaluate monitors
        DM-->>CSMS: Accepted
-       Note over CSMS,C: Value changed by the client
+       Note over CSMS,C: Value changed by the application
        C-)BR: value_changed DisplayBrightness = 65
        BR->>DM: value changed
        DM->>DM: update memory, evaluate monitors
        DM-)CSMS: NotifyEvent, if a monitor triggers
 
-The CSMS waits on the same call as the client, so a client that does not answer in time gets ``Rejected`` on its
-behalf. A write from the ``ocpp`` interface to a ``ReadWrite`` variable of a provider reaches the provider like a
+The CSMS waits on the same call as the application, so an application that does not answer within
+``cfg_request_reply_to_s`` gets ``Rejected`` on its behalf. A write from the ``ocpp`` interface to a ``ReadWrite``
+variable of an owner reaches the owner like a
 write from the CSMS.
 
 What the database stores
@@ -514,8 +526,8 @@ The database at ``DeviceModelDatabasePath`` keeps three things:
   every variable whoever owns it;
 * the values of persistent attributes of registered variables, which today is DER ``Enabled`` only.
 
-Nothing is kept for the EVerest module configuration views or for external providers: the configuration service
-and the providers hold their values.
+Nothing is kept for the EVerest module configuration views or for external owners: the configuration service
+and the applications hold their values.
 
 Monitors belong to OCPP, not to the owner of the variable, and are stored by name so that they outlive the
 registration that brought the variable. Until the owner registers, its variables are not part of the model and
@@ -577,7 +589,7 @@ Hardwired and preconfigured monitors are declared where the variable is defined.
 its default alarms.
 
 * A variable of the component configuration lists them in a ``monitors`` array next to its ``attributes``.
-* A variable registered at runtime, such as one of an external provider, lists them in
+* A variable registered at runtime, such as one of an external owner, lists them in
   ``RegisteredVariable::monitors`` with the same fields.
 
 The components EVerest provides and the module configuration views declare none.

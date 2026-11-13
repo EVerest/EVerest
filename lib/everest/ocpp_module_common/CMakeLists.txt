@@ -24,6 +24,7 @@ target_sources(ocpp_module_common
         src/device_model/device_model_conflicts.cpp
         src/device_model/device_model_registrations.cpp
         src/device_model/everest_device_model.cpp
+        src/device_model/external_owners.cpp
 )
 
 target_include_directories(ocpp_module_common

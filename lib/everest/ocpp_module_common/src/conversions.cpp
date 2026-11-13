@@ -1710,6 +1710,78 @@ to_everest_set_variable_status_enum_type(const ocpp::v2::SetVariableStatusEnum s
     throw std::out_of_range("Could not convert GetVariableStatusEnumType");
 }
 
+ocpp::v2::SetVariableStatusEnum to_ocpp_set_variable_status_enum(const types::ocpp::SetVariableStatusEnumType status) {
+    switch (status) {
+    case types::ocpp::SetVariableStatusEnumType::Accepted:
+        return ocpp::v2::SetVariableStatusEnum::Accepted;
+    case types::ocpp::SetVariableStatusEnumType::Rejected:
+        return ocpp::v2::SetVariableStatusEnum::Rejected;
+    case types::ocpp::SetVariableStatusEnumType::UnknownComponent:
+        return ocpp::v2::SetVariableStatusEnum::UnknownComponent;
+    case types::ocpp::SetVariableStatusEnumType::UnknownVariable:
+        return ocpp::v2::SetVariableStatusEnum::UnknownVariable;
+    case types::ocpp::SetVariableStatusEnumType::NotSupportedAttributeType:
+        return ocpp::v2::SetVariableStatusEnum::NotSupportedAttributeType;
+    case types::ocpp::SetVariableStatusEnumType::RebootRequired:
+        return ocpp::v2::SetVariableStatusEnum::RebootRequired;
+    }
+    throw std::out_of_range("Could not convert SetVariableStatusEnumType");
+}
+
+ocpp::v2::DataEnum to_ocpp_data_enum(const types::ocpp_device_model::DataEnum data_enum) {
+    switch (data_enum) {
+    case types::ocpp_device_model::DataEnum::string:
+        return ocpp::v2::DataEnum::string;
+    case types::ocpp_device_model::DataEnum::decimal:
+        return ocpp::v2::DataEnum::decimal;
+    case types::ocpp_device_model::DataEnum::integer:
+        return ocpp::v2::DataEnum::integer;
+    case types::ocpp_device_model::DataEnum::dateTime:
+        return ocpp::v2::DataEnum::dateTime;
+    case types::ocpp_device_model::DataEnum::boolean:
+        return ocpp::v2::DataEnum::boolean;
+    case types::ocpp_device_model::DataEnum::OptionList:
+        return ocpp::v2::DataEnum::OptionList;
+    case types::ocpp_device_model::DataEnum::SequenceList:
+        return ocpp::v2::DataEnum::SequenceList;
+    case types::ocpp_device_model::DataEnum::MemberList:
+        return ocpp::v2::DataEnum::MemberList;
+    }
+    throw std::out_of_range("Could not convert DataEnum");
+}
+
+ocpp::v2::MutabilityEnum to_ocpp_mutability_enum(const types::ocpp_device_model::MutabilityEnum mutability) {
+    switch (mutability) {
+    case types::ocpp_device_model::MutabilityEnum::ReadOnly:
+        return ocpp::v2::MutabilityEnum::ReadOnly;
+    case types::ocpp_device_model::MutabilityEnum::WriteOnly:
+        return ocpp::v2::MutabilityEnum::WriteOnly;
+    case types::ocpp_device_model::MutabilityEnum::ReadWrite:
+        return ocpp::v2::MutabilityEnum::ReadWrite;
+    }
+    throw std::out_of_range("Could not convert MutabilityEnum");
+}
+
+ocpp::v2::MonitorEnum to_ocpp_monitor_enum(const types::ocpp_device_model::MonitorEnum monitor) {
+    switch (monitor) {
+    case types::ocpp_device_model::MonitorEnum::UpperThreshold:
+        return ocpp::v2::MonitorEnum::UpperThreshold;
+    case types::ocpp_device_model::MonitorEnum::LowerThreshold:
+        return ocpp::v2::MonitorEnum::LowerThreshold;
+    case types::ocpp_device_model::MonitorEnum::Delta:
+        return ocpp::v2::MonitorEnum::Delta;
+    case types::ocpp_device_model::MonitorEnum::Periodic:
+        return ocpp::v2::MonitorEnum::Periodic;
+    case types::ocpp_device_model::MonitorEnum::PeriodicClockAligned:
+        return ocpp::v2::MonitorEnum::PeriodicClockAligned;
+    case types::ocpp_device_model::MonitorEnum::TargetDelta:
+        return ocpp::v2::MonitorEnum::TargetDelta;
+    case types::ocpp_device_model::MonitorEnum::TargetDeltaRelative:
+        return ocpp::v2::MonitorEnum::TargetDeltaRelative;
+    }
+    throw std::out_of_range("Could not convert MonitorEnum");
+}
+
 types::ocpp::ChargingSchedules
 to_everest_charging_schedules(const std::vector<ocpp::v2::EnhancedCompositeSchedule>& composite_schedules) {
     types::ocpp::ChargingSchedules charging_schedules;

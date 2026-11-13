@@ -78,6 +78,8 @@ target_sources(everest_api_types
 
   src/everest_api_types/ocpp/codec.cpp
   src/everest_api_types/ocpp/json_codec.cpp
+  src/everest_api_types/ocpp_device_model/codec.cpp
+  src/everest_api_types/ocpp_device_model/json_codec.cpp
 
   src/everest_api_types/over_voltage_monitor/codec.cpp
   src/everest_api_types/over_voltage_monitor/json_codec.cpp
@@ -141,6 +143,7 @@ target_sources(everest_api_types
   src/everest_api_types/iso15118_charger/wrapper.cpp
   src/everest_api_types/isolation_monitor/wrapper.cpp
   src/everest_api_types/ocpp/wrapper.cpp
+  src/everest_api_types/ocpp_device_model/wrapper.cpp
   src/everest_api_types/power_supply_DC/wrapper.cpp
   src/everest_api_types/powermeter/wrapper.cpp
   src/everest_api_types/session_cost/wrapper.cpp

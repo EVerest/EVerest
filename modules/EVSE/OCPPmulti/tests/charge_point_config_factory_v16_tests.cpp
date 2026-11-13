@@ -21,6 +21,7 @@
 #include <everest/ocpp_module_common/device_model/config_service_binding.hpp>
 #include <everest/ocpp_module_common/device_model/definitions.hpp>
 #include <everest/ocpp_module_common/device_model/everest_device_model.hpp>
+#include <everest/ocpp_module_common/device_model/external_owners.hpp>
 #include <ocpp/v2/comparators.hpp>
 #include <ocpp/v2/ctrlr_component_variables.hpp>
 #include <ocpp/v2/device_model_storage_interface.hpp>
@@ -218,6 +219,61 @@ TEST_F(ChargePointConfigFactoryV16Test, ConfigurationViewsAreRegistered) {
 
     result.registrations.end();
     EXPECT_EQ(config_service.handlers, 0);
+}
+
+TEST_F(ChargePointConfigFactoryV16Test, ExternalOwnersAreRegistered) {
+    namespace dm_types = types::ocpp_device_model;
+    class Connection : public ocpp_module_common::device_model::DeviceModelOwnerConnection {
+    public:
+        std::string module_id() const override {
+            return "device_model_api";
+        }
+        void set_registration_result(const dm_types::RegistrationResult& result) override {
+            this->results.push_back(result);
+        }
+        types::ocpp::SetVariableStatusEnumType set_value(const dm_types::WriteRequest& /*request*/) override {
+            return types::ocpp::SetVariableStatusEnumType::Accepted;
+        }
+        std::vector<dm_types::RegistrationResult> results;
+    };
+    const auto connection = std::make_shared<Connection>();
+    ocpp_module_common::device_model::ExternalOwners owners({connection});
+
+    dm_types::VariableAttribute attribute;
+    attribute.value = "40";
+    dm_types::RegisteredVariable variable;
+    variable.variable.name = "FanSpeed";
+    variable.characteristics.data_type = dm_types::DataEnum::integer;
+    variable.characteristics.supports_monitoring = true;
+    variable.attributes.push_back(attribute);
+    dm_types::RegisteredComponent component;
+    component.component.name = "CoolingCtrlr";
+    component.variables.push_back(variable);
+    dm_types::Registration registration;
+    registration.components.push_back(component);
+    dm_types::Registrations registrations;
+    registrations.registrations.push_back(registration);
+    owners.set_startup_registrations(0, registrations);
+
+    auto result = module::config_factory_v16::create_charge_point_configuration(work_dir, make_params(), n_evse, {},
+                                                                                nullptr, nullptr, &owners);
+    ASSERT_EQ(result.registrations.results().size(), 1u);
+    EXPECT_EQ(result.registrations.results().front().owner, "device_model_api");
+    ASSERT_EQ(connection->results.size(), 1u);
+    EXPECT_EQ(connection->results.front().status, dm_types::RegistrationStatus::Accepted);
+
+    std::string value;
+    EXPECT_EQ(result.configuration->get_device_model().get_variable(
+                  make_component("CoolingCtrlr"), make_variable("FanSpeed"), ocpp::v2::AttributeEnum::Actual, value,
+                  false, ocpp::v2::UnsetValue::NotSupported),
+              ocpp::v2::GetVariableStatusEnum::Accepted);
+    EXPECT_EQ(value, "40");
+
+    result.registrations.end();
+    EXPECT_EQ(result.configuration->get_device_model().get_variable(
+                  make_component("CoolingCtrlr"), make_variable("FanSpeed"), ocpp::v2::AttributeEnum::Actual, value,
+                  false, ocpp::v2::UnsetValue::NotSupported),
+              ocpp::v2::GetVariableStatusEnum::UnknownComponent);
 }
 
 // The configuration views are stopped before the device model that holds them is destroyed

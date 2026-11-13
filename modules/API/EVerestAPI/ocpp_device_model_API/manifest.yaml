@@ -1,0 +1,58 @@
+description: >-
+  API for external owners of OCPP device model components and variables. Experimental.
+config:
+  cfg_communication_check_to_s:
+    description: "Maximum time between two communication check events. Values <= 0 disables communication checks."
+    type: integer
+    default: 5
+  cfg_heartbeat_interval_ms:
+    description: "Interval between two heartbeat messages send by the API. Values <= 0 disable heartbeat."
+    type: integer
+    default: 1000
+  cfg_request_reply_to_s:
+    description: >-
+      Maximum time between a set_value request and its reply. After timeout the write is answered Rejected. The
+      variables of one SetVariables.req are written one after the other, so the number of variables in a request
+      times this timeout has to stay below the message timeout of the CSMS. The maximum stays below the time after
+      which EVerest aborts a command.
+    type: integer
+    default: 10
+    minimum: 1
+    maximum: 240
+  cfg_expected_owners:
+    description: >-
+      Comma separated list of the owners whose registrations the module waits for before it answers
+      get_registrations. Whitespace around a name is ignored. A registration without owner counts as the module id.
+      When empty, the module collects registrations for cfg_registration_timeout_s instead.
+    type: string
+    default: ""
+  cfg_expected_owners_timeout_s:
+    description: >-
+      Maximum time to wait for the expected owners after get_registrations was called. At the deadline, the module
+      answers with the registrations it has and logs the owners still missing. The maximum stays below the time after
+      which EVerest aborts a command.
+    type: integer
+    default: 60
+    minimum: 1
+    maximum: 240
+  cfg_registration_timeout_s:
+    description: >-
+      Time to collect registrations after get_registrations was called, when cfg_expected_owners is empty. The
+      maximum stays below the time after which EVerest aborts a command.
+    type: integer
+    default: 10
+    minimum: 0
+    maximum: 240
+provides:
+  main:
+    interface: ocpp_device_model
+    description: "Allows API clients to add components and variables to the OCPP device model."
+  generic_error:
+    interface: generic_error
+    description: "Provides errors types for module communication status."
+
+enable_external_mqtt: true
+metadata:
+  license: https://opensource.org/licenses/Apache-2.0
+  authors:
+    - James Chapman
