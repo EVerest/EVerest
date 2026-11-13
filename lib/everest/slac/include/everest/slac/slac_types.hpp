@@ -7,14 +7,13 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
-#include <net/ethernet.h>
 #include <tuple>
 
 #include <everest/slac/slac_defs.hpp>
 
 namespace everest::lib::slac {
 
-using MacAddress = std::array<std::uint8_t, ETH_ALEN>;
+using MacAddress = std::array<std::uint8_t, defs::MAC_LEN>;
 using StationId = std::array<std::uint8_t, defs::STATION_ID_LEN>;
 using RunId = std::array<std::uint8_t, defs::RUN_ID_LEN>;
 using Nmk = std::array<std::uint8_t, defs::NMK_LEN>;

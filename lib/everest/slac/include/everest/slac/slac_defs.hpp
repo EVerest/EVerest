@@ -17,6 +17,9 @@ enum class ModemVendor {
 };
 
 inline constexpr std::uint16_t ETH_P_HOMEPLUG_GREENPHY = 0x88E1;
+inline constexpr int MAC_LEN = 6;
+inline constexpr int ETHERNET_HEADER_LEN = 14;
+inline constexpr int ETHERNET_FRAME_MAX_LEN = 1514; // without the FCS
 
 enum class MMV : std::uint8_t {
     AV_1_0 = 0x0,
