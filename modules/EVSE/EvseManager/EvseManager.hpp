@@ -169,6 +169,7 @@ struct Conf {
     std::string bpt_generator_mode;
     std::string bpt_grid_code_island_method;
     int hlc_charge_loop_without_energy_timeout_s;
+    bool hlc_charge_loop_without_energy_pause;
     int dc_ramp_ampere_per_second;
     bool enable_nodered_interface;
     std::string phase_rotation_grid_side;

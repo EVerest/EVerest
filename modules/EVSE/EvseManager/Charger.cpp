@@ -966,6 +966,7 @@ void Charger::run_state_machine() {
                                 config_context.hlc_charge_loop_without_energy_timeout_s * 1000) {
                                 session_log.evse(false, "No energy available, ISO charge loop timeout reached");
                                 internal_context.hlc_charge_loop_no_energy_timeout_running = false;
+                                internal_context.stopping_for_no_energy = no_energy_pauses();
                                 set_state(EvseState::StoppingCharging);
                                 break;
                             }
@@ -973,6 +974,7 @@ void Charger::run_state_machine() {
                     } else {
                         session_log.evse(
                             false, "No energy available, but no timeout configured, stopping charging immediately");
+                        internal_context.stopping_for_no_energy = no_energy_pauses();
                         set_state(EvseState::StoppingCharging);
                         break;
                     }
@@ -1216,7 +1218,9 @@ void Charger::run_state_machine() {
 
                 signal_simple_event(types::evse_manager::SessionEventEnum::StoppingCharging);
                 // A scheduled -20 pause that has gone out to the EV is an EVSE pause even if the user resumed since.
-                const bool evse_pause = shared_context.flag_paused_by_evse or internal_context.d20_pause_confirmed;
+                const bool evse_pause = shared_context.flag_paused_by_evse or internal_context.d20_pause_confirmed or
+                                        internal_context.stopping_for_no_energy;
+                internal_context.stopping_for_no_energy = false;
                 const bool d20_pause_already_notified = internal_context.d20_pause_confirmed;
                 internal_context.d20_pause_requested = false;
                 internal_context.d20_pause_confirmed = false;
@@ -1686,6 +1690,13 @@ bool Charger::evse_pause_resumable() const {
     return shared_context.hlc_session_paused_by_evse and not shared_context.flag_paused_by_evse;
 }
 
+bool Charger::no_energy_pauses() const {
+    // [V2G20-1198]: a scheduled pause needs a 0 kW EVPowerProfile entry, which needs a schedule renegotiation (not
+    // supported yet)
+    return config_context.hlc_charge_loop_without_energy_pause and shared_context.hlc_d20_active and
+           shared_context.hlc_d20_dynamic_mode;
+}
+
 void Charger::resume_evse_pause_marker() {
     // After dlink_terminate (-2/DIN) the slac provider was reset and needs enter_bcd to match again. After a
     // dlink_pause (-20) it is still Matched and SLAC is not restarted.
@@ -1988,6 +1999,7 @@ void Charger::setup(const SetupConfig& config) {
     config_context.sleep_before_enabling_pwm_hlc_mode_ms = config.sleep_before_enabling_pwm_hlc_mode_ms;
     config_context.session_id_type = config.session_id_type;
     config_context.hlc_charge_loop_without_energy_timeout_s = config.hlc_charge_loop_without_energy_timeout_s;
+    config_context.hlc_charge_loop_without_energy_pause = config.hlc_charge_loop_without_energy_pause;
 
     if (config_context.charge_mode == ChargeMode::DC) {
         shared_context.hlc_charging_active = true;
