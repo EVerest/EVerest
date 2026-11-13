@@ -86,6 +86,21 @@ config:
     type: integer
     minimum: 0
     default: 55
+  ac_close_contactor_timeout_ms:
+    description: >-
+      ISO 15118-20 AC only. How many milliseconds the SECC waits, after receiving PowerDeliveryReq(Start),
+      for the AC contactor to report closed before it answers FAILED_ContactorError and stops the session
+      ([V2G20-862]). The timer starts on receipt of the request ([V2G20-858]) and includes the EV switching
+      to CP state C (up to 250 ms, [V2G20-847]) as well as the contactor closing. The default keeps 100 ms of
+      the 1.5 s V2G_SECC_Msg_Performance_Time (Table 215) for sending the response, and is the highest
+      conformant value. Larger values tolerate slow contactor hardware but are not conformant: above 1400 the
+      response may miss the performance time, and above about 1750 a conformant EV has usually reached its
+      2 s message timeout before the response arrives. Values up to 10000 are accepted for EVs that wait
+      longer than the specification requires.
+    type: integer
+    minimum: 100
+    maximum: 10000
+    default: 1400
   enable_ssl_logging:
     description: Verbosely log the ssl/tls connection
     type: boolean

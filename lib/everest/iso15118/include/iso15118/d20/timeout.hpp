@@ -3,6 +3,7 @@
 #pragma once
 
 #include <array>
+#include <cstdint>
 #include <optional>
 #include <vector>
 
@@ -54,6 +55,10 @@ constexpr auto TIMEOUT_WELDING_VOLTAGE = 1400;
 // 1,5 s in DIN 70121 (Table 75) and ISO 15118-20 (Table 215), 100 ms kept for sending. EvseV2G waits as long.
 constexpr auto TIMEOUT_CONTACTOR_OPEN_ISO2 = 3000;
 constexpr auto TIMEOUT_CONTACTOR_OPEN = 1400;
+// Conformant upper bound for how long an AC PowerDeliveryReq(Start) waits for the closed contactor before
+// FAILED_ContactorError ([V2G20-862]): within the 1,5 s V2G_SECC_Msg_Performance_Time (Table 215), 100 ms kept
+// for sending the response.
+constexpr uint32_t TIMEOUT_AC_CONTACTOR_CLOSE = 1400;
 
 class Timeouts {
 public:
