@@ -396,6 +396,7 @@ void to_json(json& j, GetRegistrations const& k) noexcept {
     j = json{{"expected_owners", k.expected_owners}};
 }
 void from_json(const json& j, GetRegistrations& k) {
+    check_properties(j, {"expected_owners"}, "GetRegistrations");
     k.expected_owners = j.at("expected_owners").get<std::vector<std::string>>();
 }
 

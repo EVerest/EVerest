@@ -4,6 +4,7 @@
 #pragma once
 
 #include <cstddef>
+#include <deque>
 #include <map>
 #include <memory>
 #include <optional>
@@ -50,12 +51,13 @@ public:
     ExternalOwners(ExternalOwners&&) = delete;
     ExternalOwners& operator=(ExternalOwners&&) = delete;
 
-    /// \brief Takes the answer of get_registrations of the connection \p index. The registrations the connection
-    /// published before are newer and are applied after it.
+    /// \brief Takes the answer of get_registrations of the connection \p index. The registrations and value changes
+    /// the connection published before are newer and are applied after it.
     void set_startup_registrations(std::size_t index, const types::ocpp_device_model::Registrations& registrations);
 
     /// \brief Applies a registration that the connection \p index published. Registrations of one connection must
-    /// not be applied concurrently, which the framework ensures for the publications of one variable.
+    /// not be applied concurrently, which the framework ensures for the publications of one variable. A registration
+    /// the device model fails to apply is logged and not answered, and its owner is dropped, which frees its name.
     void on_registration(std::size_t index, const types::ocpp_device_model::Registration& registration);
 
     /// \brief Reports a value that an owner of the connection \p index changed. A change for an owner of another
@@ -63,13 +65,14 @@ public:
     void on_value_changed(std::size_t index, const types::ocpp_device_model::ValueChange& change);
 
     /// \brief Registers every owner with \p registry and answers each registration not answered yet. Connections
-    /// whose startup registrations are missing count as having none. Call detach() before \p registry is destroyed.
+    /// whose startup registrations are missing count as having none. An owner whose registration fails is logged and
+    /// dropped, which frees its name. Call detach() before \p registry is destroyed.
     /// \returns The result of each owner's registration
     std::vector<OwnerRegistrationResult> register_with(ocpp::v2::DeviceModelRegistryInterface& registry);
 
     /// \brief Unregisters the owners from the attached registry, which keeps their monitors for the next
-    /// registration, once the releases in progress finished. The owners and their registrations are kept for the
-    /// next register_with.
+    /// registration, once the registrations, releases and value reports in progress finished. The owners and their
+    /// registrations are kept for the next register_with.
     void detach();
 
 private:
@@ -79,8 +82,10 @@ private:
         /// \brief The variables of the registration that do not fit the OCPP types, rejected with InvalidNameKey
         std::vector<types::ocpp_device_model::RejectedVariable> unconvertible;
         std::shared_ptr<ocpp::v2::VariableValueProvider> provider;
-        /// \brief Being unregistered after its connection released it; the name stays in use until then
+        /// \brief Being unregistered after a release or a failed registration; the name stays in use until then
         bool releasing{false};
+        /// \brief Whether the registration in components has been answered
+        bool answered{false};
     };
 
     using PendingResult = std::pair<std::size_t, types::ocpp_device_model::RegistrationResult>;
@@ -89,31 +94,49 @@ private:
         ocpp::v2::DeviceModelRegistryInterface* registry{nullptr};
         std::map<std::string, Owner> owners;
         std::vector<bool> answered;
-        /// \brief Per connection, the registrations published before its startup registrations arrived
+        /// \brief Per connection, the latest registration of each owner published before its startup registrations
+        /// arrived
         std::vector<std::vector<types::ocpp_device_model::Registration>> early;
-        /// \brief Results that are sent once a registry is attached
-        std::vector<PendingResult> pending_results;
-        /// \brief The number of releases that unregister an owner from the registry without the lock
-        std::size_t releases_in_progress{0};
+        /// \brief Per connection, the value changes published before its startup registrations arrived
+        std::vector<std::vector<types::ocpp_device_model::ValueChange>> early_values;
+        /// \brief Results in the order they were decided, sent while a registry is attached
+        std::deque<PendingResult> outbox;
+        /// \brief Whether a thread is sending the outbox
+        bool sending{false};
+        /// \brief The number of calls to the registry made without the lock, which detach() waits for
+        std::size_t registry_calls_in_progress{0};
     };
 
-    /// \brief What applying a registration leaves to do without the lock
+    /// \brief The registry call that applying a registration leaves to be made without the lock
+    enum class RegistryCall {
+        None,
+        Register,
+        Unregister,
+    };
+
     struct Applied {
+        std::string owner;
+        /// \brief For a call, the result to send once it returned
         std::optional<PendingResult> result;
-        /// \brief The registry to unregister a released owner from, set when the owner was marked releasing
-        ocpp::v2::DeviceModelRegistryInterface* release_from{nullptr};
+        RegistryCall call{RegistryCall::None};
     };
 
     std::string owner_of(std::size_t index, const std::optional<std::string>& owner) const;
-    /// \brief Applies \p registration to \p state, and to the registry if one is attached. The release of an
-    /// attached owner is completed by the caller, see Applied::release_from.
+    /// \brief Applies \p registration to \p state, leaving the call to an attached registry to the caller
     /// \param claimed The owners already registered by the same get_registrations answer
     Applied apply(State& state, std::size_t index, const types::ocpp_device_model::Registration& registration,
                   std::vector<std::string>* claimed);
-    /// \brief Marks the startup registrations of the connection \p index as arrived and applies the registrations it
-    /// published before
+    /// \brief Marks the startup registrations of the connection \p index as arrived and applies the registrations and
+    /// value changes it published before
     void replay_early(State& state, std::size_t index);
-    void send(const std::vector<PendingResult>& results);
+    /// \brief Keeps \p change in the registration of its owner for the next register_with
+    /// \returns false if the owner did not register the attribute
+    static bool store(State& state, const std::string& owner, const types::ocpp_device_model::ValueChange& change);
+    /// \brief Unregisters \p owner, which is marked releasing, from \p registry and drops it
+    void unregister(ocpp::v2::DeviceModelRegistryInterface& registry, const std::string& owner);
+    /// \brief Sends the outbox while a registry is attached, unless another thread is sending it already
+    void flush();
+    void send(const PendingResult& result);
 
     std::vector<std::shared_ptr<DeviceModelOwnerConnection>> connections;
     everest::lib::util::monitor<State> state;

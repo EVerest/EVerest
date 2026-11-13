@@ -5,6 +5,7 @@
 
 #include <chrono>
 #include <filesystem>
+#include <functional>
 #include <future>
 #include <memory>
 #include <optional>
@@ -41,6 +42,11 @@ public:
 
     void set_registration_result(const dm_types::RegistrationResult& result) override {
         this->results.push_back(result);
+        if (this->on_result) {
+            auto hook = std::move(this->on_result);
+            this->on_result = nullptr;
+            hook();
+        }
     }
 
     types::ocpp::SetVariableStatusEnumType set_value(const dm_types::WriteRequest& request) override {
@@ -57,6 +63,51 @@ public:
     std::vector<dm_types::WriteRequest> writes;
     types::ocpp::SetVariableStatusEnumType reply{types::ocpp::SetVariableStatusEnumType::Accepted};
     /// \brief When set, a write waits for it after signalling entered
+    std::optional<std::shared_future<void>> gate;
+    std::promise<void> entered;
+    /// \brief Called once after the next result, as if a registration arrived at that moment
+    std::function<void()> on_result;
+};
+
+/// \brief Passes everything on to a device model, and can fail the next registration, hold value reports and record
+/// what is registered
+class WrappingRegistry : public ocpp::v2::DeviceModelRegistryInterface {
+public:
+    explicit WrappingRegistry(ocpp::v2::DeviceModelRegistryInterface& registry) : registry(registry) {
+    }
+
+    ocpp::v2::ComponentRegistrationResult
+    register_components(const std::string& owner, const std::vector<ocpp::v2::RegisteredComponent>& components,
+                        std::shared_ptr<ocpp::v2::VariableValueProvider> provider) override {
+        if (this->fail_next_registration) {
+            this->fail_next_registration = false;
+            throw std::runtime_error("storage failed");
+        }
+        if (this->register_gate.has_value()) {
+            this->register_entered.set_value();
+            this->register_gate->wait();
+        }
+        this->registered = components;
+        return this->registry.register_components(owner, components, provider);
+    }
+    void unregister_components(const std::string& owner) override {
+        this->registry.unregister_components(owner);
+    }
+    SetVariableStatusEnum notify_value_changed(const ocpp::v2::Component& component, const ocpp::v2::Variable& variable,
+                                               AttributeEnum attribute, const std::string& value,
+                                               const std::string& owner) override {
+        if (this->gate.has_value()) {
+            this->entered.set_value();
+            this->gate->wait();
+        }
+        return this->registry.notify_value_changed(component, variable, attribute, value, owner);
+    }
+
+    ocpp::v2::DeviceModelRegistryInterface& registry;
+    bool fail_next_registration{false};
+    std::optional<std::shared_future<void>> register_gate;
+    std::promise<void> register_entered;
+    std::vector<ocpp::v2::RegisteredComponent> registered;
     std::optional<std::shared_future<void>> gate;
     std::promise<void> entered;
 };
@@ -478,4 +529,171 @@ TEST_F(ExternalOwnersTest, ReleaseWaitingForAWriteBlocksNoOtherConnection) {
 
     this->owners->on_registration(1, make_registration("cooling", "OtherCtrlr", "Level", "1"));
     EXPECT_EQ(this->second->results.back().status, dm_types::RegistrationStatus::Accepted);
+}
+
+TEST_F(ExternalOwnersTest, FailedRegistrationFreesTheOwnerName) {
+    WrappingRegistry registry(*this->device_model);
+    this->owners->set_startup_registrations(
+        0, make_registrations({make_registration("meter", "AuxMeter", "Energy", "5")}));
+    this->owners->set_startup_registrations(1, {});
+    registry.fail_next_registration = true;
+    EXPECT_TRUE(this->owners->register_with(registry).empty());
+    EXPECT_TRUE(this->first->results.empty());
+
+    this->owners->on_registration(1, make_registration("meter", "AuxMeter", "Energy", "7"));
+    ASSERT_EQ(this->second->results.size(), 1u);
+    EXPECT_EQ(this->second->results.at(0).status, dm_types::RegistrationStatus::Accepted);
+    EXPECT_EQ(this->read("AuxMeter", "Energy"), "7");
+
+    // At runtime as well
+    registry.fail_next_registration = true;
+    this->owners->on_registration(1, make_registration("meter", "AuxMeter", "Energy", "8"));
+    EXPECT_EQ(this->second->results.size(), 1u);
+    this->owners->on_registration(0, make_registration("meter", "AuxMeter", "Energy", "9"));
+    ASSERT_EQ(this->first->results.size(), 1u);
+    EXPECT_EQ(this->first->results.at(0).status, dm_types::RegistrationStatus::Accepted);
+    this->owners->detach();
+}
+
+TEST_F(ExternalOwnersTest, ResultsArriveInTheOrderOfTheRegistrations) {
+    // The startup registration of meter has a rejected variable, the one that arrives while the startup results are
+    // sent has none. Its result is sent after the startup result of meter, so the last result matches the device model.
+    auto startup = make_registration("meter", "AuxMeter", "Energy", "5");
+    auto no_attributes = startup.components.at(0).variables.at(0);
+    no_attributes.variable.name = "Empty";
+    no_attributes.attributes.clear();
+    startup.components.at(0).variables.push_back(no_attributes);
+    this->first->on_result = [this]() {
+        this->owners->on_registration(0, make_registration("meter", "AuxMeter", "Power", "1"));
+    };
+    this->start(make_registrations({make_registration("a_cooling", "CoolingCtrlr", "FanSpeed", "40"), startup}));
+
+    ASSERT_EQ(this->first->results.size(), 3u);
+    EXPECT_EQ(this->first->results.at(0).owner, "a_cooling");
+    EXPECT_EQ(this->first->results.at(1).owner, "meter");
+    EXPECT_EQ(this->first->results.at(1).rejected.size(), 1u);
+    EXPECT_EQ(this->first->results.at(2).owner, "meter");
+    EXPECT_TRUE(this->first->results.at(2).rejected.empty());
+    EXPECT_EQ(this->read("AuxMeter", "Power"), "1");
+    EXPECT_EQ(this->read("AuxMeter", "Energy"), std::nullopt);
+}
+
+TEST_F(ExternalOwnersTest, ValueReportBlocksNoOtherConnection) {
+    WrappingRegistry registry(*this->device_model);
+    this->owners->set_startup_registrations(
+        0, make_registrations({make_registration("meter", "AuxMeter", "Energy", "5")}));
+    this->owners->set_startup_registrations(1, {});
+    this->owners->register_with(registry);
+
+    std::promise<void> open;
+    registry.gate = open.get_future().share();
+    auto report = std::async(std::launch::async, [this]() {
+        this->owners->on_value_changed(0, make_change("meter", "AuxMeter", "Energy", "6"));
+    });
+    registry.entered.get_future().wait();
+    registry.gate.reset();
+
+    auto other = std::async(std::launch::async, [this]() {
+        this->owners->on_registration(1, make_registration("cooling", "CoolingCtrlr", "FanSpeed", "40"));
+    });
+    ASSERT_EQ(other.wait_for(std::chrono::seconds(5)), std::future_status::ready);
+    ASSERT_EQ(this->second->results.size(), 1u);
+
+    // Detaching waits for the report in progress
+    auto detach = std::async(std::launch::async, [this]() { this->owners->detach(); });
+    EXPECT_EQ(detach.wait_for(std::chrono::milliseconds(200)), std::future_status::timeout);
+    open.set_value();
+    report.get();
+    detach.get();
+    EXPECT_EQ(this->read("AuxMeter", "Energy"), std::nullopt);
+    this->owners->register_with(*this->device_model);
+    EXPECT_EQ(this->read("AuxMeter", "Energy"), "6");
+}
+
+TEST_F(ExternalOwnersTest, ComponentWithoutVariablesLeftIsNotRegistered) {
+    WrappingRegistry registry(*this->device_model);
+    auto registration = make_registration("meter", "AuxMeter", "Energy", "5");
+    auto rejected_only = registration.components.at(0);
+    rejected_only.component.name = "OtherCtrlr";
+    rejected_only.variables.at(0).variable.name = std::string(51, 'V');
+    registration.components.push_back(rejected_only);
+    this->owners->set_startup_registrations(0, make_registrations({registration}));
+    this->owners->set_startup_registrations(1, {});
+    this->owners->register_with(registry);
+
+    ASSERT_EQ(registry.registered.size(), 1u);
+    EXPECT_EQ(registry.registered.at(0).component.name.get(), "AuxMeter");
+    ASSERT_EQ(this->first->results.size(), 1u);
+    EXPECT_EQ(this->first->results.at(0).rejected.size(), 1u);
+    this->owners->detach();
+}
+
+TEST_F(ExternalOwnersTest, ValueChangeBeforeTheStartupAnswerIsApplied) {
+    this->owners->on_value_changed(0, make_change("meter", "AuxMeter", "Energy", "7"));
+    this->owners->on_value_changed(0, make_change("meter", "AuxMeter", "Energy", "8"));
+    this->owners->on_value_changed(0, make_change("other", "AuxMeter", "Energy", "9"));
+    this->start(make_registrations({make_registration("meter", "AuxMeter", "Energy", "5")}));
+
+    EXPECT_EQ(this->read("AuxMeter", "Energy"), "8");
+}
+
+TEST_F(ExternalOwnersTest, FailedRegistrationAtRuntimeRemovesTheEarlierOne) {
+    WrappingRegistry registry(*this->device_model);
+    this->owners->set_startup_registrations(
+        0, make_registrations({make_registration("meter", "AuxMeter", "Energy", "5")}));
+    this->owners->set_startup_registrations(1, {});
+    this->owners->register_with(registry);
+    ASSERT_EQ(this->read("AuxMeter", "Energy"), "5");
+
+    registry.fail_next_registration = true;
+    this->owners->on_registration(0, make_registration("meter", "AuxMeter", "Power", "1"));
+    EXPECT_EQ(this->first->results.size(), 1u);
+    EXPECT_EQ(this->read("AuxMeter", "Energy"), std::nullopt);
+    EXPECT_EQ(this->read("AuxMeter", "Power"), std::nullopt);
+    EXPECT_EQ(this->write("AuxMeter", "Energy", "6"), SetVariableStatusEnum::UnknownComponent);
+
+    this->owners->on_registration(1, make_registration("meter", "AuxMeter", "Power", "2"));
+    ASSERT_EQ(this->second->results.size(), 1u);
+    EXPECT_EQ(this->second->results.at(0).status, dm_types::RegistrationStatus::Accepted);
+    this->owners->detach();
+}
+
+TEST_F(ExternalOwnersTest, RegistrationAtRuntimeBlocksNoOtherConnection) {
+    WrappingRegistry registry(*this->device_model);
+    this->owners->set_startup_registrations(0, {});
+    this->owners->set_startup_registrations(
+        1, make_registrations({make_registration("meter", "AuxMeter", "Energy", "5")}));
+    this->owners->register_with(registry);
+
+    std::promise<void> open;
+    registry.register_gate = open.get_future().share();
+    auto registration = std::async(std::launch::async, [this]() {
+        this->owners->on_registration(0, make_registration("cooling", "CoolingCtrlr", "FanSpeed", "40"));
+    });
+    registry.register_entered.get_future().wait();
+    registry.register_gate.reset();
+
+    auto other = std::async(std::launch::async, [this]() {
+        this->owners->on_value_changed(1, make_change("meter", "AuxMeter", "Energy", "6"));
+    });
+    ASSERT_EQ(other.wait_for(std::chrono::seconds(5)), std::future_status::ready);
+    EXPECT_EQ(this->read("AuxMeter", "Energy"), "6");
+
+    auto detach = std::async(std::launch::async, [this]() { this->owners->detach(); });
+    EXPECT_EQ(detach.wait_for(std::chrono::milliseconds(200)), std::future_status::timeout);
+    open.set_value();
+    registration.get();
+    detach.get();
+    ASSERT_EQ(this->first->results.size(), 1u);
+    EXPECT_EQ(this->first->results.at(0).status, dm_types::RegistrationStatus::Accepted);
+}
+
+TEST_F(ExternalOwnersTest, AnsweredRegistrationsAreNotAnsweredAgain) {
+    this->start(make_registrations({make_registration("meter", "AuxMeter", "Energy", "5")}));
+    ASSERT_EQ(this->first->results.size(), 1u);
+
+    this->owners->detach();
+    EXPECT_EQ(this->owners->register_with(*this->device_model).size(), 1u);
+    EXPECT_EQ(this->first->results.size(), 1u);
+    EXPECT_EQ(this->read("AuxMeter", "Energy"), "5");
 }

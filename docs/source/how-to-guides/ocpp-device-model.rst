@@ -78,7 +78,7 @@ Connect it to the ``device_model`` requirement of the :ref:`OCPPmulti <everest_m
          - module_id: device_model_api
            implementation_id: main
 
-The requirement takes any number of connections, one per API module instance. OCPPmulti asks all of them for their
+The requirement takes up to 128 connections, one per API module instance. OCPPmulti asks all of them for their
 registrations at the same time, so the waits of the instances do not add up.
 
 The topics of this module instance are below ``everest_api/1/ocpp_device_model/device_model_api/``, named by its

@@ -98,6 +98,10 @@ TEST(ocpp_device_model, unknown_properties_are_rejected) {
     reg = registration();
     variable_of(reg)["characteristics"]["extra"] = 1;
     EXPECT_FALSE(parses(reg));
+
+    GetRegistrations prompt;
+    EXPECT_TRUE(deserialize(json{{"expected_owners", {"meter_1"}}}.dump(), prompt));
+    EXPECT_FALSE(deserialize(json{{"expected_owners", {"meter_1"}}, {"extra", 1}}.dump(), prompt));
 }
 
 TEST(ocpp_device_model, owner_must_not_be_empty) {

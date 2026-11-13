@@ -35,6 +35,13 @@ After the answer, each registration is passed on at once. It may reach the OCPP 
 a client replaces or releases an owner registered at startup only after it received the owner's
 ``e2m/set_registration_result``.
 
+Value changes are passed on at once, also while the module collects registrations. The OCPP module keeps the latest
+value of each attribute it receives before the answer and applies it to the registration of the owner.
+
+If the OCPP module's ``get_registrations`` call fails, for example because EVerest aborted it after 300 s, the
+registrations collected for it do not reach the OCPP module. Their owners are missing from the device model until a
+client publishes their registration again or EVerest restarts.
+
 A write to a registered variable is answered ``Rejected`` when the client does not reply within
 ``cfg_request_reply_to_s``.
 

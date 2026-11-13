@@ -127,7 +127,9 @@ to_registered_components(const std::string& owner, const std::vector<dm_types::R
                 unconvertible.push_back(make_unconvertible(component.component, variable.variable));
             }
         }
-        result.push_back(std::move(registered));
+        if (not registered.variables.empty()) {
+            result.push_back(std::move(registered));
+        }
     }
     return result;
 }
@@ -238,6 +240,7 @@ ExternalOwners::ExternalOwners(std::vector<std::shared_ptr<DeviceModelOwnerConne
     auto handle = this->state.handle();
     handle->answered.resize(this->connections.size(), false);
     handle->early.resize(this->connections.size());
+    handle->early_values.resize(this->connections.size());
 }
 
 ExternalOwners::~ExternalOwners() {
@@ -259,7 +262,7 @@ void ExternalOwners::set_startup_registrations(const std::size_t index, const dm
     for (const auto& registration : registrations.registrations) {
         auto applied = this->apply(*handle, index, registration, &claimed);
         if (applied.result.has_value()) {
-            handle->pending_results.push_back(std::move(applied.result.value()));
+            handle->outbox.push_back(std::move(applied.result.value()));
         }
     }
     this->replay_early(*handle, index);
@@ -267,42 +270,67 @@ void ExternalOwners::set_startup_registrations(const std::size_t index, const dm
 
 void ExternalOwners::on_registration(const std::size_t index, const dm_types::Registration& registration) {
     Applied applied;
+    ocpp::v2::DeviceModelRegistryInterface* registry{nullptr};
+    std::vector<ocpp::v2::RegisteredComponent> components;
+    std::shared_ptr<ocpp::v2::VariableValueProvider> provider;
     {
         auto handle = this->state.handle();
         if (not handle->answered.at(index)) {
-            handle->early.at(index).push_back(registration);
+            // A registration replaces the earlier ones of its owner, so only the latest is kept
+            auto& early = handle->early.at(index);
+            const auto owner = this->owner_of(index, registration.owner);
+            const auto same_owner = std::find_if(early.begin(), early.end(), [&](const auto& earlier) {
+                return this->owner_of(index, earlier.owner) == owner;
+            });
+            if (same_owner != early.end()) {
+                *same_owner = registration;
+            } else {
+                early.push_back(registration);
+            }
             return;
         }
         applied = this->apply(*handle, index, registration, nullptr);
-        if (applied.result.has_value() and handle->registry == nullptr) {
-            handle->pending_results.push_back(std::move(applied.result.value()));
-            return;
+        registry = handle->registry;
+        if (applied.call == RegistryCall::None and applied.result.has_value()) {
+            handle->outbox.push_back(std::move(applied.result.value()));
+        } else if (applied.call == RegistryCall::Register) {
+            components = handle->owners.at(applied.owner).components;
+            provider = handle->owners.at(applied.owner).provider;
         }
     }
 
-    if (applied.release_from != nullptr) {
-        // Without the lock: unregistering waits for the writes to the owner in progress
-        const auto& owner = applied.result.value().second.owner;
+    // Without the lock: the device model waits for the writes in progress to the owner and notifies its listeners
+    if (applied.call == RegistryCall::Unregister) {
+        this->unregister(*registry, applied.owner);
+        this->state.handle()->outbox.push_back(std::move(applied.result.value()));
+        EVLOG_info << "Owner " << applied.owner << " released";
+    } else if (applied.call == RegistryCall::Register) {
+        std::optional<ocpp::v2::ComponentRegistrationResult> result;
         try {
-            applied.release_from->unregister_components(owner);
+            result = registry->register_components(applied.owner, components, provider);
         } catch (const std::exception& e) {
-            EVLOG_error << "Unregistering owner " << owner << " failed: " << e.what();
+            EVLOG_error << "Registering owner " << applied.owner << " failed, the owner is dropped: " << e.what();
         }
         {
             auto handle = this->state.handle();
-            const auto entry = handle->owners.find(owner);
-            if (entry != handle->owners.end() and entry->second.releasing) {
-                handle->owners.erase(entry);
+            auto& owned = handle->owners.at(applied.owner);
+            if (result.has_value()) {
+                --handle->registry_calls_in_progress;
+                owned.answered = true;
+                handle->outbox.emplace_back(index, make_result(applied.owner, dm_types::RegistrationStatus::Accepted,
+                                                               owned.unconvertible, result.value()));
+            } else {
+                // The device model may hold parts of the registration or the previous one: removed like a release
+                owned.releasing = true;
             }
-            --handle->releases_in_progress;
         }
         this->state.notify_all();
-        EVLOG_info << "Owner " << owner << " released";
+        if (not result.has_value()) {
+            this->unregister(*registry, applied.owner);
+        }
     }
 
-    if (applied.result.has_value()) {
-        this->send({std::move(applied.result.value())});
-    }
+    this->flush();
 }
 
 void ExternalOwners::on_value_changed(const std::size_t index, const dm_types::ValueChange& change) {
@@ -318,38 +346,75 @@ void ExternalOwners::on_value_changed(const std::size_t index, const dm_types::V
     }
     const auto attribute = change.attribute_type.has_value() ? to_ocpp_attribute_enum(change.attribute_type.value())
                                                              : ocpp::v2::AttributeEnum::Actual;
+    const auto is_registered_by_connection = [&](const State& state) {
+        const auto entry = state.owners.find(owner);
+        return entry != state.owners.end() and entry->second.connection == index and not entry->second.releasing;
+    };
 
-    auto handle = this->state.handle();
-    const auto entry = handle->owners.find(owner);
-    if (entry == handle->owners.end() or entry->second.connection != index or entry->second.releasing) {
-        EVLOG_warning << "Value change of " << component << "." << variable << " ignored: owner " << owner
-                      << " is not registered by " << this->connections.at(index)->module_id();
-        return;
-    }
-    try {
-        if (handle->registry != nullptr) {
-            const auto status =
-                handle->registry->notify_value_changed(component, variable, attribute, change.value, owner);
-            if (status != ocpp::v2::SetVariableStatusEnum::Accepted) {
-                EVLOG_warning << "Value change of " << component << "." << variable << " of owner " << owner
-                              << " ignored: " << status;
-                return;
+    ocpp::v2::DeviceModelRegistryInterface* registry{nullptr};
+    {
+        auto handle = this->state.handle();
+        if (not handle->answered.at(index)) {
+            // A change replaces the earlier ones of its attribute, so only the latest is kept
+            auto& early = handle->early_values.at(index);
+            const auto same_attribute = std::find_if(early.begin(), early.end(), [&](const auto& earlier) {
+                try {
+                    return this->owner_of(index, earlier.owner) == owner and
+                           to_ocpp_component(earlier.component) == component and
+                           to_ocpp_variable(earlier.variable) == variable and
+                           earlier.attribute_type.value_or(types::ocpp::AttributeEnum::Actual) ==
+                               change.attribute_type.value_or(types::ocpp::AttributeEnum::Actual);
+                } catch (const std::exception&) {
+                    return false;
+                }
+            });
+            if (same_attribute != early.end()) {
+                *same_attribute = change;
+            } else {
+                early.push_back(change);
             }
+            return;
         }
-        if (not store_value(entry->second.components, component, variable, attribute, change.value) and
-            handle->registry == nullptr) {
+        if (not is_registered_by_connection(*handle)) {
             EVLOG_warning << "Value change of " << component << "." << variable << " ignored: owner " << owner
-                          << " did not register it";
+                          << " is not registered by " << this->connections.at(index)->module_id();
+            return;
+        }
+        if (handle->registry == nullptr) {
+            if (not store(*handle, owner, change)) {
+                EVLOG_warning << "Value change of " << component << "." << variable << " ignored: owner " << owner
+                              << " did not register it";
+            }
+            return;
+        }
+        registry = handle->registry;
+        ++handle->registry_calls_in_progress;
+    }
+
+    // Without the lock: the device model evaluates the monitors of the variable and notifies its listeners
+    auto status = ocpp::v2::SetVariableStatusEnum::Rejected;
+    try {
+        status = registry->notify_value_changed(component, variable, attribute, change.value, owner);
+        if (status != ocpp::v2::SetVariableStatusEnum::Accepted) {
+            EVLOG_warning << "Value change of " << component << "." << variable << " of owner " << owner
+                          << " ignored: " << status;
         }
     } catch (const std::exception& e) {
         EVLOG_warning << "Value change of " << component << "." << variable << " of owner " << owner
                       << " ignored: " << e.what();
     }
+    {
+        auto handle = this->state.handle();
+        --handle->registry_calls_in_progress;
+        if (status == ocpp::v2::SetVariableStatusEnum::Accepted and is_registered_by_connection(*handle)) {
+            store(*handle, owner, change);
+        }
+    }
+    this->state.notify_all();
 }
 
 std::vector<OwnerRegistrationResult> ExternalOwners::register_with(ocpp::v2::DeviceModelRegistryInterface& registry) {
     std::vector<OwnerRegistrationResult> results;
-    std::vector<PendingResult> to_send;
     {
         auto handle = this->state.handle();
         for (std::size_t index = 0; index < this->connections.size(); ++index) {
@@ -358,20 +423,32 @@ std::vector<OwnerRegistrationResult> ExternalOwners::register_with(ocpp::v2::Dev
             }
         }
         handle->registry = &registry;
-        to_send = std::move(handle->pending_results);
-        handle->pending_results.clear();
-        for (const auto& [owner, entry] : handle->owners) {
+        std::vector<std::string> failed;
+        for (auto& [owner, entry] : handle->owners) {
             try {
                 const auto result = registry.register_components(owner, entry.components, entry.provider);
                 results.push_back({owner, result});
-                to_send.emplace_back(entry.connection, make_result(owner, dm_types::RegistrationStatus::Accepted,
-                                                                   entry.unconvertible, result));
+                if (not entry.answered) {
+                    entry.answered = true;
+                    handle->outbox.emplace_back(
+                        entry.connection,
+                        make_result(owner, dm_types::RegistrationStatus::Accepted, entry.unconvertible, result));
+                }
             } catch (const std::exception& e) {
-                EVLOG_error << "Registering owner " << owner << " failed: " << e.what();
+                EVLOG_error << "Registering owner " << owner << " failed, the owner is dropped: " << e.what();
+                failed.push_back(owner);
             }
         }
+        for (const auto& owner : failed) {
+            try {
+                registry.unregister_components(owner);
+            } catch (const std::exception& e) {
+                EVLOG_error << "Unregistering owner " << owner << " failed: " << e.what();
+            }
+            handle->owners.erase(owner);
+        }
     }
-    this->send(to_send);
+    this->flush();
     return results;
 }
 
@@ -380,7 +457,7 @@ void ExternalOwners::detach() {
     ocpp::v2::DeviceModelRegistryInterface* registry{nullptr};
     {
         auto handle = this->state.handle();
-        handle.wait([&handle]() { return handle->releases_in_progress == 0; });
+        handle.wait([&handle]() { return handle->registry_calls_in_progress == 0; });
         registry = std::exchange(handle->registry, nullptr);
         if (registry == nullptr) {
             return;
@@ -410,14 +487,16 @@ ExternalOwners::Applied ExternalOwners::apply(State& state, const std::size_t in
         (entry != state.owners.end() and (entry->second.connection != index or entry->second.releasing))) {
         EVLOG_warning << "Registration of owner " << owner << " by " << this->connections.at(index)->module_id()
                       << " refused: the owner is in use";
-        return {PendingResult{index, make_result(owner, dm_types::RegistrationStatus::OwnerInUse)}, nullptr};
+        return {owner, PendingResult{index, make_result(owner, dm_types::RegistrationStatus::OwnerInUse)},
+                RegistryCall::None};
     }
     if (claimed != nullptr) {
         claimed->push_back(owner);
     }
 
     if (registration.components.empty()) {
-        Applied applied{PendingResult{index, make_result(owner, dm_types::RegistrationStatus::Accepted)}, nullptr};
+        Applied applied{owner, PendingResult{index, make_result(owner, dm_types::RegistrationStatus::Accepted)},
+                        RegistryCall::None};
         if (entry == state.owners.end()) {
             return applied;
         }
@@ -427,30 +506,24 @@ ExternalOwners::Applied ExternalOwners::apply(State& state, const std::size_t in
             return applied;
         }
         entry->second.releasing = true;
-        ++state.releases_in_progress;
-        applied.release_from = state.registry;
+        ++state.registry_calls_in_progress;
+        applied.call = RegistryCall::Unregister;
         return applied;
     }
 
     auto& owned = state.owners[owner];
     owned.connection = index;
+    owned.answered = false;
     owned.unconvertible.clear();
     owned.components = to_registered_components(owner, registration.components, owned.unconvertible);
     if (owned.provider == nullptr) {
         owned.provider = std::make_shared<OwnerProvider>(this->connections.at(index), owner);
     }
     if (state.registry == nullptr) {
-        return {};
+        return {owner, std::nullopt, RegistryCall::None};
     }
-    try {
-        const auto result = state.registry->register_components(owner, owned.components, owned.provider);
-        return {PendingResult{index,
-                              make_result(owner, dm_types::RegistrationStatus::Accepted, owned.unconvertible, result)},
-                nullptr};
-    } catch (const std::exception& e) {
-        EVLOG_error << "Registering owner " << owner << " failed: " << e.what();
-        return {};
-    }
+    ++state.registry_calls_in_progress;
+    return {owner, std::nullopt, RegistryCall::Register};
 }
 
 void ExternalOwners::replay_early(State& state, const std::size_t index) {
@@ -460,19 +533,81 @@ void ExternalOwners::replay_early(State& state, const std::size_t index) {
     for (const auto& registration : early) {
         auto applied = this->apply(state, index, registration, nullptr);
         if (applied.result.has_value()) {
-            state.pending_results.push_back(std::move(applied.result.value()));
+            state.outbox.push_back(std::move(applied.result.value()));
+        }
+    }
+    auto early_values = std::move(state.early_values.at(index));
+    state.early_values.at(index).clear();
+    for (const auto& change : early_values) {
+        const auto owner = this->owner_of(index, change.owner);
+        const auto entry = state.owners.find(owner);
+        if (entry == state.owners.end() or entry->second.connection != index or not store(state, owner, change)) {
+            EVLOG_warning << "Value change of " << change.component.name << "." << change.variable.name
+                          << " ignored: owner " << owner << " did not register it";
         }
     }
 }
 
-void ExternalOwners::send(const std::vector<PendingResult>& results) {
-    for (const auto& [index, result] : results) {
-        try {
-            this->connections.at(index)->set_registration_result(result);
-        } catch (const std::exception& e) {
-            EVLOG_warning << "Registration result for owner " << result.owner << " not delivered to "
-                          << this->connections.at(index)->module_id() << ": " << e.what();
+bool ExternalOwners::store(State& state, const std::string& owner, const dm_types::ValueChange& change) {
+    try {
+        const auto attribute = change.attribute_type.has_value() ? to_ocpp_attribute_enum(change.attribute_type.value())
+                                                                 : ocpp::v2::AttributeEnum::Actual;
+        return store_value(state.owners.at(owner).components, to_ocpp_component(change.component),
+                           to_ocpp_variable(change.variable), attribute, change.value);
+    } catch (const std::exception& e) {
+        EVLOG_warning << "Value change of " << change.component.name << "." << change.variable.name << " of owner "
+                      << owner << " not kept for the next registration: " << e.what();
+        return true;
+    }
+}
+
+void ExternalOwners::unregister(ocpp::v2::DeviceModelRegistryInterface& registry, const std::string& owner) {
+    try {
+        registry.unregister_components(owner);
+    } catch (const std::exception& e) {
+        EVLOG_error << "Unregistering owner " << owner << " failed: " << e.what();
+    }
+    {
+        auto handle = this->state.handle();
+        const auto entry = handle->owners.find(owner);
+        if (entry != handle->owners.end() and entry->second.releasing) {
+            handle->owners.erase(entry);
         }
+        --handle->registry_calls_in_progress;
+    }
+    this->state.notify_all();
+}
+
+void ExternalOwners::flush() {
+    {
+        auto handle = this->state.handle();
+        if (handle->sending or handle->registry == nullptr) {
+            return;
+        }
+        handle->sending = true;
+    }
+    while (true) {
+        PendingResult next;
+        {
+            auto handle = this->state.handle();
+            if (handle->outbox.empty() or handle->registry == nullptr) {
+                handle->sending = false;
+                return;
+            }
+            next = std::move(handle->outbox.front());
+            handle->outbox.pop_front();
+        }
+        this->send(next);
+    }
+}
+
+void ExternalOwners::send(const PendingResult& result) {
+    const auto& [index, registration_result] = result;
+    try {
+        this->connections.at(index)->set_registration_result(registration_result);
+    } catch (const std::exception& e) {
+        EVLOG_warning << "Registration result for owner " << registration_result.owner << " not delivered to "
+                      << this->connections.at(index)->module_id() << ": " << e.what();
     }
 }
 
