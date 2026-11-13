@@ -5,8 +5,10 @@ import asyncio
 import logging
 import time
 from copy import deepcopy
+from pathlib import Path
 from typing import Callable, Optional
 
+import pytest
 from everest.testing.core_utils._configuration.everest_configuration_strategies.everest_configuration_strategy import (
     EverestConfigAdjustmentStrategy,
 )
@@ -16,6 +18,13 @@ from everest.testing.core_utils.probe_module import ProbeModule
 from mock_vtn import CLIENT_ID, CLIENT_SECRET
 
 BOOT_TIMEOUT_S = 30
+
+
+def skip_unless_module_installed(request: pytest.FixtureRequest):
+    """Skips the test if RsOpenLEADR is not installed, e.g. in builds without Rust support."""
+    module = Path(request.config.getoption("--everest-prefix")) / "libexec/everest/modules/RsOpenLEADR"
+    if not module.exists():
+        pytest.skip(f"{module} not found; build and install EVerest with EVEREST_ENABLE_RS_SUPPORT=ON")
 
 
 class VtnStrategy(EverestConfigAdjustmentStrategy):

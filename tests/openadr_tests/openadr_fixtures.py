@@ -7,11 +7,12 @@ from everest.testing.core_utils._configuration.everest_configuration_strategies.
 )
 
 from mock_vtn import MockVtn
-from openadr_test_utils import VtnStrategy
+from openadr_test_utils import VtnStrategy, skip_unless_module_installed
 
 
 @pytest.fixture
-def mock_vtn():
+def mock_vtn(request):
+    skip_unless_module_installed(request)
     vtn = MockVtn()
     vtn.start()
     yield vtn

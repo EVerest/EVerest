@@ -42,7 +42,7 @@ from ocpp.v21.enums import (
 
 sys.path.insert(0, str(Path(__file__).parents[3] / "openadr_tests"))
 from mock_vtn import MockVtn, event  # noqa: E402
-from openadr_test_utils import VtnStrategy  # noqa: E402
+from openadr_test_utils import VtnStrategy, skip_unless_module_installed  # noqa: E402
 
 log = logging.getLogger("openadrLimitsTest")
 
@@ -54,7 +54,8 @@ OBSERVATION_TIMEOUT_S = 30.0
 
 
 @pytest.fixture
-def mock_vtn():
+def mock_vtn(request):
+    skip_unless_module_installed(request)
     vtn = MockVtn()
     vtn.start()
     yield vtn
