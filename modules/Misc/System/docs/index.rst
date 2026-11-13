@@ -32,6 +32,25 @@ before resetting. With ``ResetAfterUpdate`` disabled, it publishes ``Installed``
 without resetting.
 
 Whether an update takes the connectors out of service is controlled per update through
-``firmware_update_metadata.disable_connectors_during_install``, read from the ``#`` fragment of an
-unsigned update's location or from the metadata block of a signed package. See
-:ref:`howto-firmware-update-connector-availability`.
+``firmware_update_metadata.disable_connectors_during_install``; the OCPP side is described in
+:ref:`howto-firmware-update-connector-availability`. System reads the flag from the update itself:
+
+- **Unsigned update:** append the flag as a fragment to the firmware location the CSMS sends, for example
+  ``https://updates.example.com/images.pnx#disable_connectors_during_install=false``. System strips the
+  fragment before downloading and attaches the flag to every status of that update.
+- **Signed update:** put the flag in the package's metadata block. System runs
+  ``signed_firmware_metadata_parser.sh`` on the downloaded file, which prints the lines between
+  ``===== BEGIN METADATA =====`` and ``===== END METADATA =====``, one ``key=value`` per line:
+
+  .. code-block:: text
+
+     ===== BEGIN METADATA =====
+     disable_connectors_during_install=false
+     ===== END METADATA =====
+
+  The parsed flag is attached to the ``SignatureVerified`` status.
+
+System reports ``InstallScheduled`` only for a signed update whose ``installDateTime`` lies in the future,
+without the flag, and it does not wait for ``allow_firmware_installation``: its installer scripts are
+placeholders for a real update mechanism, so the module is meant for software-in-the-loop setups rather than
+production.

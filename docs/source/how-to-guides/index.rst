@@ -136,8 +136,8 @@ Have a look at this categorized list of all guides:
       :link: firmware-update-connector-availability
       :link-type: doc
 
-      How a system implementation keeps connectors available for an update, decides after inspecting the
-      package, and installs while the station is offline.
+      How an update mechanism using the System API keeps connectors available for an update, decides after
+      inspecting the package, and installs while the station is offline.
 
 .. toctree::
     :maxdepth: 1
