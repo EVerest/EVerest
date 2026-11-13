@@ -1,0 +1,106 @@
+{# SPDX-License-Identifier: Apache-2.0 #}
+{# Copyright Pionix GmbH and Contributors to EVerest #}
+{# One API page. The structure is RST so that Sphinx indexes it and lists
+   it in the page contents; the detail views are raw HTML fragments. #}
+{% import '_fragments.html.j2' as html with context %}
+{% macro heading(text, char, overline=false) %}
+{% set title = text | rst_escape %}
+{% if overline %}
+{{ char * (title | length) }}
+{% endif %}
+{{ title }}
+{{ char * (title | length) }}
+
+{% endmacro %}
+{% macro raw(content) %}
+{% if content | trim %}
+.. raw:: html
+
+{{ content | trim | indent(3, true) }}
+
+{% endif %}
+{% endmacro %}
+{% macro container(classes) %}
+{% set body = caller() | trim %}
+{% if body %}
+.. container:: {{ classes }}
+
+{{ body | indent(3, true) }}
+
+{% endif %}
+{% endmacro %}
+.. _{{ page_label(model.name) }}:
+
+{{ heading(model.name, '#', true) }}
+{% if model.experimental %}
+.. warning::
+
+   **Experimental API**{% if model.experimental.since %} since {{ model.experimental.since | rst_escape }}{% endif %}.
+   This API is exempt from the EVerest stability guarantees and the deprecation
+   period. Its channels, operations and message payloads may change or be
+   removed in any release without notice until it is promoted to stable. See
+   the :ref:`policy on experimental components <project-experimental-components>`
+   and the :ref:`experimental feature index <project-experimental-index>`.
+{% if model.experimental.note %}
+
+{{ model.experimental.note | rst | indent(3, true) }}
+{% endif %}
+
+{% endif %}
+{% call container('everest-api overview') %}
+{{ raw(html.overview_facts()) }}
+{% if model.title != model.name %}
+.. container:: lead
+
+   {{ model.title | rst_escape }}
+
+{% endif %}
+{{ model.description | rst }}
+
+{{ raw(html.overview_footer()) }}
+{% endcall %}
+{{ heading('Servers', '=') }}
+{% call container('everest-api') %}
+{{ raw(html.servers()) }}
+{% endcall %}
+{{ heading('Operations', '=') }}
+{% call container('everest-api') %}
+{{ raw(html.toolbar()) }}
+{% endcall %}
+{% for action, title in [('send', 'Client to EVerest'), ('receive', 'EVerest to client')] %}
+{% set ops = model.send_operations if action == 'send' else model.receive_operations %}
+{% if ops %}
+{{ heading(title, '-') }}
+{% for op in ops %}
+.. _{{ op_label(model.name, op.op_id) }}:
+
+{{ heading(op.op_id, '~') }}
+{% call container('everest-api op ' ~ op.action) %}
+{{ raw(html.op_head(op)) }}
+{{ op.summary | rst }}
+
+{{ op.description | rst }}
+
+{{ raw(html.op_messages(op)) }}
+{% endcall %}
+{% endfor %}
+{% endif %}
+{% endfor %}
+{{ heading('Messages', '=') }}
+{% call container('everest-api') %}
+{{ raw(html.messages()) }}
+{% endcall %}
+{{ heading('Schemas', '=') }}
+{% call container('everest-api') %}
+{{ raw(html.schemas()) }}
+{% endcall %}
+{% if not model.schemas %}
+This API defines no schemas of its own.
+
+{% endif %}
+{% if model.imported_schemas %}
+{{ heading('Schemas from other APIs', '-') }}
+{% call container('everest-api') %}
+{{ raw(html.imported_schemas()) }}
+{% endcall %}
+{% endif %}

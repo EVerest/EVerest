@@ -1,0 +1,284 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/* Copyright Pionix GmbH and Contributors to EVerest */
+/* Stylesheet of the EVerest API reference pages. The pages are Sphinx pages
+   with the Furo theme; colors follow its variables and its light/dark
+   switch, and every rule is scoped to the .everest-api containers. */
+
+body {
+  --ea-send: #9a4d00;
+  --ea-send-bg: #fff1e0;
+  --ea-receive: #0b6b47;
+  --ea-receive-bg: #e3f6ed;
+  --ea-req: #b4232c;
+  --ea-warn: #8a5300;
+  --ea-warn-bg: #fff7e0;
+  --ea-warn-border: #f0c360;
+  --ea-schema: #0e7a8a;
+}
+body[data-theme="dark"] {
+  --ea-send: #ffb46b;
+  --ea-send-bg: #3a2610;
+  --ea-receive: #5fd3a2;
+  --ea-receive-bg: #11342a;
+  --ea-req: #ff8a8f;
+  --ea-warn: #ffd27a;
+  --ea-warn-bg: #352a12;
+  --ea-warn-border: #7a5a1c;
+  --ea-schema: #4fd1e0;
+}
+@media (prefers-color-scheme: dark) {
+  body:not([data-theme="light"]) {
+    --ea-send: #ffb46b;
+    --ea-send-bg: #3a2610;
+    --ea-receive: #5fd3a2;
+    --ea-receive-bg: #11342a;
+    --ea-req: #ff8a8f;
+    --ea-warn: #ffd27a;
+    --ea-warn-bg: #352a12;
+    --ea-warn-border: #7a5a1c;
+    --ea-schema: #4fd1e0;
+  }
+}
+
+.everest-api {
+  --ea-fg: var(--color-foreground-primary);
+  --ea-muted: var(--color-foreground-secondary);
+  --ea-border: var(--color-background-border);
+  --ea-bg: var(--color-background-primary);
+  --ea-bg-soft: var(--color-background-secondary);
+  --ea-bg-code: var(--color-inline-code-background);
+  --ea-accent: var(--color-brand-content);
+  --ea-accent-soft: var(--color-background-hover);
+  --ea-mono: var(--font-stack--monospace);
+}
+
+.everest-api code, .everest-api pre { font-family: var(--ea-mono); font-size: var(--font-size--small--2); }
+.everest-api code {
+  background: var(--ea-bg-code);
+  border-radius: 0.2em;
+  padding: 0.05em 0.3em;
+  overflow-wrap: anywhere;
+}
+
+/* JS-only controls stay hidden until the script marks the page */
+.everest-api .js-only { display: none !important; }
+html.js .everest-api .js-only { display: revert !important; }
+
+.everest-api button {
+  font: inherit;
+  font-size: var(--font-size--small);
+  color: var(--ea-fg);
+  background: var(--ea-bg-soft);
+  border: 1px solid var(--ea-border);
+  border-radius: 0.3rem;
+  padding: 0.2rem 0.6rem;
+  cursor: pointer;
+}
+.everest-api button:hover { border-color: var(--ea-accent); }
+.everest-api .toolbar { display: flex; gap: 0.4rem; margin-bottom: 1rem; }
+
+.everest-api .anchor { visibility: hidden; margin-left: 0.35rem; color: var(--ea-muted); text-decoration: none; }
+.everest-api summary:hover .anchor, .everest-api .anchor:focus { visibility: visible; }
+
+/* ---- overview ---- */
+
+.everest-api .facts { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 1rem; }
+.everest-api .chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  padding: 0.1rem 0.55rem;
+  font-size: var(--font-size--small--2);
+  border: 1px solid var(--ea-border);
+  border-radius: 999px;
+  background: var(--ea-bg-soft);
+}
+.everest-api .chip.tag, .everest-api .tag {
+  background: var(--ea-accent-soft);
+  border-color: transparent;
+  color: var(--ea-accent);
+}
+.everest-api .tag { font-size: var(--font-size--small--3); padding: 0 0.4rem; border-radius: 0.2rem; }
+.everest-api .lead { font-size: 1.05em; font-weight: 600; }
+.everest-api .spec-file { color: var(--ea-muted); font-size: var(--font-size--small); }
+.everest-api .legend { display: flex; flex-wrap: wrap; gap: 0.5rem 1.5rem; font-size: var(--font-size--small); color: var(--ea-muted); }
+.everest-api .muted { color: var(--ea-muted); }
+
+.everest-api .badge {
+  display: inline-block;
+  min-width: 4.6rem;
+  text-align: center;
+  padding: 0.1rem 0.5rem;
+  font-size: var(--font-size--small--3);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  border-radius: 0.2rem;
+}
+.everest-api .badge.send { color: var(--ea-send); background: var(--ea-send-bg); }
+.everest-api .badge.receive { color: var(--ea-receive); background: var(--ea-receive-bg); }
+.everest-api .badge.experimental {
+  color: var(--ea-warn);
+  background: var(--ea-warn-bg);
+  border: 1px solid var(--ea-warn-border);
+  min-width: 0;
+}
+.everest-api .callout-inline {
+  margin: 0.6rem 0 0;
+  padding: 0.35rem 0.6rem;
+  font-size: var(--font-size--small);
+  color: var(--ea-warn);
+  background: var(--ea-warn-bg);
+  border-radius: 0.3rem;
+}
+
+/* ---- servers and operations ---- */
+
+.everest-api .card {
+  border: 1px solid var(--ea-border);
+  border-radius: 0.4rem;
+  padding: 0.25rem 1rem;
+  margin-bottom: 0.9rem;
+}
+/* outranks Furo's [role=main] .container, which drops the padding */
+[role=main] .everest-api.op {
+  border-left: 3px solid var(--ea-border);
+  padding-left: 1rem;
+  margin-bottom: 2rem;
+}
+.everest-api.op.send { border-left-color: var(--ea-send); }
+.everest-api.op.receive { border-left-color: var(--ea-receive); }
+.everest-api .op-head { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.75rem; }
+.everest-api .op-title { font-weight: 600; }
+.everest-api .op-facts {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 0.3rem 1rem;
+  margin: 0.75rem 0;
+  font-size: var(--font-size--small);
+}
+.everest-api .op-facts dt { color: var(--ea-muted); font-weight: normal; margin: 0; }
+.everest-api .op-facts dd { margin: 0; }
+.everest-api .op-facts dd p, .everest-api .msg-summary p, .everest-api .msg-desc p { margin: 0.3rem 0; }
+
+.everest-api code.topic { user-select: all; }
+.everest-api .copy {
+  margin-left: 0.4rem;
+  padding: 0 0.45rem;
+  font-size: var(--font-size--small--3);
+  vertical-align: middle;
+}
+
+/* ---- messages ---- */
+
+.everest-api details > summary { cursor: pointer; }
+.everest-api details.msg {
+  margin: 0.75rem 0;
+  border: 1px solid var(--ea-border);
+  border-radius: 0.3rem;
+  background: var(--ea-bg-soft);
+}
+.everest-api details.msg > summary {
+  padding: 0.5rem 0.75rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: baseline;
+}
+.everest-api .msg-label, .everest-api .msg-section {
+  font-size: var(--font-size--small--3);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ea-muted);
+}
+.everest-api .msg-section { margin: 0.9rem 0 0.4rem; font-weight: 600; }
+.everest-api .msg-name { font-weight: 600; }
+.everest-api .msg-body { padding: 0 0.9rem 0.9rem; border-top: 1px solid var(--ea-border); background: var(--ea-bg); }
+.everest-api .msg-ref { font-size: var(--font-size--small); color: var(--ea-muted); margin: 0.6rem 0 0; }
+/* side by side only where the content column is wide enough */
+.everest-api .msg-grid { display: grid; grid-template-columns: minmax(0, 1fr); }
+@media (min-width: 82em) {
+  .everest-api .msg-grid { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 1.25rem; }
+}
+
+.everest-api .example { margin: 0 0 0.75rem; }
+.everest-api .example figcaption { font-size: var(--font-size--small--2); color: var(--ea-muted); margin-bottom: 0.25rem; text-align: left; }
+.everest-api .example pre {
+  position: relative;
+  margin: 0;
+  padding: 0.7rem 0.8rem;
+  max-height: 28rem;
+  overflow: auto;
+  background: var(--color-code-background);
+  color: var(--color-code-foreground);
+  border: 1px solid var(--ea-border);
+  border-radius: 0.3rem;
+}
+.everest-api .example pre code { background: none; padding: 0; overflow-wrap: normal; }
+.everest-api .example pre .copy { position: absolute; top: 0.4rem; right: 0.4rem; }
+
+.everest-api .table-wrap { overflow-x: auto; margin-bottom: 1rem; }
+.everest-api table.messages { width: 100%; border-collapse: collapse; font-size: var(--font-size--small); }
+.everest-api table.messages th, .everest-api table.messages td {
+  text-align: left;
+  vertical-align: top;
+  padding: 0.5rem 0.6rem;
+  border-bottom: 1px solid var(--ea-border);
+}
+.everest-api table.messages th { color: var(--ea-muted); font-weight: 600; background: var(--ea-bg-soft); }
+.everest-api table.messages td p { margin: 0; }
+
+.everest-api details.schema:target, .everest-api tr:target {
+  outline: 2px solid var(--ea-accent);
+  outline-offset: 2px;
+}
+
+/* ---- schema trees ---- */
+
+.everest-api .s-root { font-size: var(--font-size--small); }
+.everest-api .s-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.2rem 0.5rem;
+}
+.everest-api details.s-node > summary { display: list-item; }
+.everest-api details.s-node > summary > * { margin-right: 0.4rem; }
+.everest-api .s-name { font-family: var(--ea-mono); font-weight: 600; font-size: var(--font-size--small--2); }
+.everest-api .s-type { font-family: var(--ea-mono); color: var(--ea-accent); font-size: var(--font-size--small--2); }
+.everest-api .s-req { color: var(--ea-req); font-size: var(--font-size--small--3); font-weight: 600; }
+.everest-api .s-ref { font-family: var(--ea-mono); font-size: var(--font-size--small--2); }
+.everest-api .s-ref::before { content: "→ "; color: var(--ea-muted); }
+.everest-api .s-desc { color: var(--ea-muted); }
+.everest-api .s-desc p { margin: 0.15rem 0; }
+.everest-api .s-note { color: var(--ea-muted); font-size: var(--font-size--small--2); font-style: italic; margin: 0.25rem 0; }
+.everest-api .s-label { color: var(--ea-muted); font-size: var(--font-size--small--3); text-transform: uppercase; letter-spacing: 0.04em; }
+.everest-api .s-enum, .everest-api .s-constraints { display: flex; flex-wrap: wrap; gap: 0.3rem; align-items: baseline; margin: 0.3rem 0; }
+.everest-api ul.s-tree {
+  list-style: none;
+  margin: 0.35rem 0 0.2rem;
+  padding-left: 1rem;
+  border-left: 1px dashed var(--ea-border);
+}
+.everest-api ul.s-tree > li { padding: 0.3rem 0 0.3rem 0.5rem; margin: 0; }
+.everest-api details.s-node > summary::marker { color: var(--ea-muted); }
+
+.everest-api details.schema {
+  border: 1px solid var(--ea-border);
+  border-left: 3px solid var(--ea-schema);
+  border-radius: 0.4rem;
+  margin-bottom: 0.6rem;
+}
+.everest-api details.schema > summary { padding: 0.55rem 0.9rem; }
+.everest-api details.schema > summary > * { margin-right: 0.5rem; }
+.everest-api details.schema > .s-root,
+.everest-api details.schema > details.s-top {
+  padding: 0.6rem 0.9rem 0.9rem;
+  border-top: 1px solid var(--ea-border);
+}
+
+@media print {
+  .everest-api .js-only, .everest-api .copy, .everest-api .anchor { display: none !important; }
+  .everest-api details.schema, .everest-api .card { break-inside: avoid; }
+  .everest-api .example pre { max-height: none; overflow: visible; white-space: pre-wrap; }
+}
