@@ -157,6 +157,10 @@ When another module calls a command on that interface, the following sequence oc
 If no reply arrives within the specified timeout, the API module issues a default reply
 to the internal interface to unblock the calling module.
 
+The default and maximum is 275 seconds. The value must stay below the framework's 300 second
+command timeout, after which the calling module abandons the command and the default reply
+can no longer reach it.
+
 The Request-Reply Pattern
 =========================
 
