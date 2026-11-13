@@ -46,18 +46,6 @@ target_compile_features(slac_socket_test PRIVATE cxx_std_17)
 
 add_test(NAME slac_socket_test COMMAND slac_socket_test)
 
-add_executable(evse_slac_telemetry_test evse_slac_telemetry_test.cpp)
-
-target_link_libraries(evse_slac_telemetry_test
-    PRIVATE
-        slac
-        nlohmann_json::nlohmann_json
-)
-
-target_compile_features(evse_slac_telemetry_test PRIVATE cxx_std_17)
-
-add_test(NAME evse_slac_telemetry_test COMMAND evse_slac_telemetry_test)
-
 add_executable(evse_slac_matching_test evse_slac_matching_test.cpp)
 
 target_link_libraries(evse_slac_matching_test

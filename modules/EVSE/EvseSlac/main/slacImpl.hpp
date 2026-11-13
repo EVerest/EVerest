@@ -14,7 +14,6 @@
 
 // ev@75ac1216-19eb-4182-a85c-820f1fc2c091:v1
 // insert your custom include headers here
-#include <map>
 #include <memory>
 #include <string>
 
@@ -106,12 +105,12 @@ private:
         void request_error_routine() override;
         void raise_fault(std::string const& type, std::string const& sub_type, std::string const& message) override;
         void clear_fault(std::string const& type) override;
-        void publish_telemetry(std::string const& block, std::string const& key, std::string const& value) override;
+        void publish_telemetry(everest::lib::slac::SlacFsmState const& fsm_state,
+                               everest::lib::slac::SlacTelemetry const& status) override;
         void log(LogLevel level, std::string const& text) override;
 
     private:
         slacImpl& owner;
-        std::map<std::string, Everest::TelemetryMap> telemetry_generic;
     };
 
     SlacRuntimeConfig make_runtime_config() const;
