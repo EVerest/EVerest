@@ -194,6 +194,151 @@ TEST_P(ChargePointFirmwareStatusTest, HeldTerminalStatusDoesNotResetNextUpdate) 
     stop_charge_point(*charge_point);
 }
 
+TEST_P(ChargePointFirmwareStatusTest, ConnectorsDisableWhileRegistrationPending) {
+    const auto request_id = GetParam();
+    const auto action = request_id == -1 ? "FirmwareStatusNotification" : "SignedFirmwareStatusNotification";
+    const auto pending_install =
+        request_id == -1 ? FirmwareStatusNotification::Downloaded : FirmwareStatusNotification::SignatureVerified;
+    {
+        const std::lock_guard<std::mutex> lock(mtx);
+        boot_pending = true;
+    }
+    auto charge_point = make_charge_point();
+    std::atomic<int> disabled_connectors{0};
+    std::atomic<int> install_allowed{0};
+    charge_point->register_disable_evse_callback([&](std::int32_t) {
+        disabled_connectors += 1;
+        return true;
+    });
+    charge_point->register_all_connectors_unavailable_callback([&]() { install_allowed += 1; });
+    charge_point->init({{0, ChargePointStatus::Available}, {CONNECTOR, ChargePointStatus::Available}}, {});
+    charge_point->start({}, BootReasonEnum::PowerUp, {});
+    charge_point->on_websocket_connected(0, ocpp::v2::NetworkConnectionProfile{}, ocpp::OcppProtocolVersion::v16);
+    EXPECT_TRUE(wait_for_action_count("BootNotification", 1, WAIT_TIMEOUT));
+    EXPECT_TRUE(wait_for_all_answered());
+
+    charge_point->on_firmware_update_status_notification(request_id, pending_install, true);
+    EXPECT_EQ(count_action(action), 0);
+    EXPECT_EQ(disabled_connectors, 1);
+    EXPECT_EQ(install_allowed, 1);
+
+    charge_point->on_firmware_update_status_notification(request_id, FirmwareStatusNotification::Installing, true);
+    EXPECT_EQ(install_allowed, 1);
+
+    {
+        const std::lock_guard<std::mutex> lock(mtx);
+        boot_pending = false;
+    }
+    to_charge_point(
+        nlohmann::json::array({2, "trigger-boot", "TriggerMessage", {{"requestedMessage", "BootNotification"}}})
+            .dump());
+    EXPECT_TRUE(wait_for_action_count("BootNotification", 2, WAIT_TIMEOUT));
+    EXPECT_TRUE(wait_for_action_count(action, 1, WAIT_TIMEOUT));
+    EXPECT_EQ(last_payload(action)->at("status"), "Installing");
+    EXPECT_TRUE(wait_for_all_answered());
+    EXPECT_FALSE(wait_for_action_count(action, 2, std::chrono::milliseconds(300)));
+    stop_charge_point(*charge_point);
+}
+
+TEST_P(ChargePointFirmwareStatusTest, InstallScheduledDisablesConnectorsWhenRequested) {
+    const auto request_id = GetParam();
+    const auto action = request_id == -1 ? "FirmwareStatusNotification" : "SignedFirmwareStatusNotification";
+    const auto pending_install =
+        request_id == -1 ? FirmwareStatusNotification::Downloaded : FirmwareStatusNotification::SignatureVerified;
+    auto charge_point = make_charge_point();
+    std::atomic<int> disabled_connectors{0};
+    std::atomic<int> install_allowed{0};
+    charge_point->register_disable_evse_callback([&](std::int32_t) {
+        disabled_connectors += 1;
+        return true;
+    });
+    charge_point->register_all_connectors_unavailable_callback([&]() { install_allowed += 1; });
+    charge_point->init({{0, ChargePointStatus::Available}, {CONNECTOR, ChargePointStatus::Available}}, {});
+    charge_point->start({}, BootReasonEnum::PowerUp, {});
+    charge_point->on_websocket_connected(0, ocpp::v2::NetworkConnectionProfile{}, ocpp::OcppProtocolVersion::v16);
+    EXPECT_TRUE(wait_for_action_count("BootNotification", 1, WAIT_TIMEOUT));
+    EXPECT_TRUE(wait_for_all_answered());
+
+    charge_point->on_firmware_update_status_notification(request_id, pending_install, false);
+    EXPECT_TRUE(wait_for_action_count(action, 1, WAIT_TIMEOUT));
+    EXPECT_TRUE(wait_for_all_answered());
+    EXPECT_EQ(disabled_connectors, 0);
+    EXPECT_EQ(install_allowed, 0);
+
+    charge_point->on_firmware_update_status_notification(request_id, FirmwareStatusNotification::InstallScheduled,
+                                                         true);
+    EXPECT_EQ(disabled_connectors, 1);
+    EXPECT_EQ(install_allowed, 1);
+    // Plain OCPP 1.6 has no InstallScheduled status, so only a signed update reports it
+    if (request_id != -1) {
+        EXPECT_TRUE(wait_for_action_count(action, 2, WAIT_TIMEOUT));
+        EXPECT_EQ(last_payload(action)->at("status"), "InstallScheduled");
+    }
+    stop_charge_point(*charge_point);
+}
+
+TEST_P(ChargePointFirmwareStatusTest, InstallScheduledWithoutFlagLeavesConnectors) {
+    const auto request_id = GetParam();
+    const auto action = request_id == -1 ? "FirmwareStatusNotification" : "SignedFirmwareStatusNotification";
+    const auto pending_install =
+        request_id == -1 ? FirmwareStatusNotification::Downloaded : FirmwareStatusNotification::SignatureVerified;
+    auto charge_point = make_charge_point();
+    std::atomic<int> disabled_connectors{0};
+    std::atomic<int> install_allowed{0};
+    charge_point->register_disable_evse_callback([&](std::int32_t) {
+        disabled_connectors += 1;
+        return true;
+    });
+    charge_point->register_all_connectors_unavailable_callback([&]() { install_allowed += 1; });
+    charge_point->init({{0, ChargePointStatus::Available}, {CONNECTOR, ChargePointStatus::Available}}, {});
+    charge_point->start({}, BootReasonEnum::PowerUp, {});
+    charge_point->on_websocket_connected(0, ocpp::v2::NetworkConnectionProfile{}, ocpp::OcppProtocolVersion::v16);
+    EXPECT_TRUE(wait_for_action_count("BootNotification", 1, WAIT_TIMEOUT));
+    EXPECT_TRUE(wait_for_all_answered());
+
+    charge_point->on_firmware_update_status_notification(request_id, pending_install, false);
+    EXPECT_TRUE(wait_for_action_count(action, 1, WAIT_TIMEOUT));
+    EXPECT_TRUE(wait_for_all_answered());
+    charge_point->on_firmware_update_status_notification(request_id, FirmwareStatusNotification::InstallScheduled);
+    EXPECT_EQ(disabled_connectors, 0);
+    EXPECT_EQ(install_allowed, 0);
+    stop_charge_point(*charge_point);
+}
+
+TEST_P(ChargePointFirmwareStatusTest, InstallScheduledDisablesConnectorsWhileRegistrationPending) {
+    const auto request_id = GetParam();
+    const auto action = request_id == -1 ? "FirmwareStatusNotification" : "SignedFirmwareStatusNotification";
+    const auto pending_install =
+        request_id == -1 ? FirmwareStatusNotification::Downloaded : FirmwareStatusNotification::SignatureVerified;
+    {
+        const std::lock_guard<std::mutex> lock(mtx);
+        boot_pending = true;
+    }
+    auto charge_point = make_charge_point();
+    std::atomic<int> disabled_connectors{0};
+    std::atomic<int> install_allowed{0};
+    charge_point->register_disable_evse_callback([&](std::int32_t) {
+        disabled_connectors += 1;
+        return true;
+    });
+    charge_point->register_all_connectors_unavailable_callback([&]() { install_allowed += 1; });
+    charge_point->init({{0, ChargePointStatus::Available}, {CONNECTOR, ChargePointStatus::Available}}, {});
+    charge_point->start({}, BootReasonEnum::PowerUp, {});
+    charge_point->on_websocket_connected(0, ocpp::v2::NetworkConnectionProfile{}, ocpp::OcppProtocolVersion::v16);
+    EXPECT_TRUE(wait_for_action_count("BootNotification", 1, WAIT_TIMEOUT));
+    EXPECT_TRUE(wait_for_all_answered());
+
+    charge_point->on_firmware_update_status_notification(request_id, pending_install, false);
+    EXPECT_EQ(disabled_connectors, 0);
+    EXPECT_EQ(install_allowed, 0);
+    charge_point->on_firmware_update_status_notification(request_id, FirmwareStatusNotification::InstallScheduled,
+                                                         true);
+    EXPECT_EQ(count_action(action), 0);
+    EXPECT_EQ(disabled_connectors, 1);
+    EXPECT_EQ(install_allowed, 1);
+    stop_charge_point(*charge_point);
+}
+
 INSTANTIATE_TEST_SUITE_P(SignedAndPlain, ChargePointFirmwareStatusTest, ::testing::Values(42, -1));
 
 } // namespace v16

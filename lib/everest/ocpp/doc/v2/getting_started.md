@@ -15,3 +15,11 @@ Your reference within libocpp to interact is a single instance to the class ocpp
 Firmware update status reported before the BootNotification is accepted is held until registration succeeds.
 Only the latest pending status is sent, once. An Installed status generates the FirmwareUpdated security event;
 a FirmwareUpdate boot reason does not generate a second event.
+
+The disable_connectors_during_install flag of on_firmware_update_status_notification decides whether all
+connectors are made unavailable for the install. Left unset, connectors are disabled with the Downloaded status
+of an unsigned update and the SignatureVerified status of a signed one. Set to false at that point, the
+connectors stay available; a later InstallScheduled status with the flag set to true disables them after all.
+Connector availability does not depend on registration; only the status message is held. Whether an update is
+signed is taken from the accepted UpdateFirmware request with the same request ID; for a status that matches no
+such request, request ID -1 is treated as unsigned and any other request ID as signed.

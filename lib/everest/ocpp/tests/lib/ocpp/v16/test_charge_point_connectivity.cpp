@@ -34,7 +34,11 @@
 
 #include <ocpp/common/connectivity_manager.hpp>
 #include <ocpp/v16/charge_point_configuration.hpp>
+
+#define private public
 #include <ocpp/v16/charge_point_impl.hpp>
+#undef private
+
 #include <ocpp/v16/charge_point_state_machine.hpp>
 #include <ocpp/v16/database_handler.hpp>
 
@@ -177,6 +181,26 @@ TEST_F(ChargePointConnectivityTest, StartConnectsStopDisconnects) {
     auto charge_point = make_charge_point();
     charge_point->start({}, BootReasonEnum::PowerUp, {});
     charge_point->stop();
+}
+
+TEST_F(ChargePointConnectivityTest, FirmwareCleanupPreservesCsmsAvailabilityChanges) {
+    auto charge_point = make_charge_point();
+    charge_point->set_firmware_install_pending(false);
+    {
+        auto state = charge_point->firmware_install_state.handle();
+        state->notified = true;
+        state->connectors_awaiting_disable = {2};
+    }
+    charge_point->change_availability_queue = {{1, {AvailabilityType::Inoperative, true}}};
+
+    charge_point->clear_firmware_install_pending();
+
+    auto state = charge_point->firmware_install_state.handle();
+    EXPECT_FALSE(state->pending);
+    EXPECT_TRUE(state->disable_connectors);
+    EXPECT_FALSE(state->notified);
+    EXPECT_TRUE(state->connectors_awaiting_disable.empty());
+    EXPECT_EQ(charge_point->change_availability_queue.size(), 1);
 }
 
 // stop() is the external "stop OCPP communication" control, not destruction: the charge point stays alive

@@ -64,28 +64,43 @@ void Availability::heartbeat_req(const bool initiated_by_trigger_message) {
 }
 
 void Availability::handle_scheduled_change_availability_requests(const std::int32_t evse_id) {
-    if (this->scheduled_change_availability_requests.count(evse_id) != 0) {
-        EVLOG_info << "Found scheduled ChangeAvailability.req for evse_id:" << evse_id;
-        const auto req = this->scheduled_change_availability_requests[evse_id].request;
-        const auto persist = this->scheduled_change_availability_requests[evse_id].persist;
-        if (!this->context.evse_manager.any_transaction_active(req.evse)) {
-            EVLOG_info << "Changing availability of evse:" << evse_id;
-            this->execute_change_availability_request(req, persist);
-            this->scheduled_change_availability_requests.erase(evse_id);
-            // Check succeeded, trigger the callback if needed
-            if (this->all_connectors_unavailable_callback.has_value() and
-                this->context.evse_manager.are_all_connectors_effectively_inoperative()) {
-                this->all_connectors_unavailable_callback.value()();
+    std::vector<AvailabilityChange> due_changes;
+    {
+        auto handle = this->scheduled_changes.handle();
+        for (auto* queue : {&handle->persistent, &handle->non_persistent}) {
+            const auto scheduled = queue->find(evse_id);
+            if (scheduled == queue->end()) {
+                continue;
             }
-        } else {
-            EVLOG_info << "Cannot change availability because transaction is still active";
+            EVLOG_info << "Found scheduled ChangeAvailability.req for evse_id:" << evse_id;
+            if (this->context.evse_manager.any_transaction_active(scheduled->second.request.evse)) {
+                EVLOG_info << "Cannot change availability because transaction is still active";
+                continue;
+            }
+            due_changes.push_back(scheduled->second);
+            queue->erase(scheduled);
         }
+    }
+
+    for (const auto& change : due_changes) {
+        EVLOG_info << "Changing availability of evse:" << evse_id;
+        this->execute_change_availability_request(change.request, change.persist);
+    }
+    if (!due_changes.empty() and this->all_connectors_unavailable_callback.has_value() and
+        this->context.evse_manager.are_all_connectors_effectively_inoperative()) {
+        this->all_connectors_unavailable_callback.value()();
     }
 }
 
 void Availability::set_scheduled_change_availability_requests(const std::int32_t evse_id,
                                                               AvailabilityChange availability_change) {
-    this->scheduled_change_availability_requests[evse_id] = availability_change;
+    auto handle = this->scheduled_changes.handle();
+    auto& queue = availability_change.persist ? handle->persistent : handle->non_persistent;
+    queue[evse_id] = availability_change;
+}
+
+void Availability::drop_non_persistent_scheduled_changes() {
+    this->scheduled_changes.handle()->non_persistent.clear();
 }
 
 void Availability::set_heartbeat_timer_interval(const std::chrono::seconds& interval) {
@@ -124,11 +139,11 @@ ChangeAvailabilityResponse Availability::change_availability_req(bool& transacti
             response.status = ChangeAvailabilityStatusEnum::Accepted;
             // Remove any scheduled availability requests for the evse_id.
             // This is relevant in case some of those requests become activated later - the current one overrides them.
-            scheduled_change_availability_requests.erase(evse_id);
+            this->scheduled_changes.handle()->persistent.erase(evse_id);
         } else {
             // We can't immediately perform the change, because we have a transaction running.
             // Schedule the request to run when the transaction finishes.
-            scheduled_change_availability_requests[evse_id] = {request, true};
+            this->scheduled_changes.handle()->persistent[evse_id] = {request, true};
         }
     }
     return response;
