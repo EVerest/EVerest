@@ -188,9 +188,9 @@ Most numbers with a fractional part are handled as 32-bit floats, so they keep
 only about seven significant digits.
 
 In situations where a request/reply pattern is implemented, the timeout
-for a response can be configured (*cfg_request_reply_to_s*, 275 s by default and at
+for a response can be configured (*cfg_request_reply_to_s*, 100 s by default and at
 most). These timeouts cannot be disabled, and they must stay below the framework's
-300 s command timeout so that the default response still reaches the caller. In general it
+120 s command timeout so that the default response still reaches the caller. In general it
 is advisable to respond as quickly as possible in to to prevent EVerest
 from blocking internally. A reply that does not match its schema ends the
 request at once with the same default response as a timeout.

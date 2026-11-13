@@ -213,7 +213,7 @@ The example script takes care of these:
   It is sent only once, when the first powermeter value arrives or at the
   latest 5 s after EVerest is up; `ac_charging_session.script` waits up to 30 s
   for it, so start the script before EVerest is up or right after. A request nobody saw is only answered by the
-  powermeter_API's reply timeout (`cfg_request_reply_to_s`, 275 s by default).
+  powermeter_API's reply timeout (`cfg_request_reply_to_s`, 100 s by default).
 - **Send capabilities before events.** EvseManager needs `<bsp>.send_capabilities`
   to initialize phases and enable the port; CP events sent before it are
   dropped ("Ignoring BSP Event, BSP is not enabled yet"). `max_current_A_import`

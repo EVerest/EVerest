@@ -9,11 +9,11 @@ config:
     type: integer
     default: 1000
   cfg_request_reply_to_s:
-    description: "Maximum time between request and reply. After timeout the request is answered with a default response. Must stay below the framework's 300 s command timeout."
+    description: "Maximum time between request and reply. After timeout the request is answered with a default response. Must stay below the framework's 120 s command timeout."
     type: integer
-    default: 275
+    default: 100
     minimum: 1
-    maximum: 275
+    maximum: 100
   latch_variable_values:
     description: "Determines whether variables published by this module are cached and made available for `get` requests."
     type: boolean
