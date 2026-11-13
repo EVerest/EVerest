@@ -1,0 +1,72 @@
+{{ u.license_header }}
+#ifndef {{ u.guard }}
+#define {{ u.guard }}
+
+//
+// AUTO GENERATED - MARKED REGIONS WILL BE KEPT
+// template version {{ template_version }}
+//
+
+#include <{{ u.base_class_header }}>
+
+#include "{{ u.module_header }}"
+
+{{ u.blocks.add_headers.render() }}
+
+namespace module {
+namespace {{ u.id }} {
+
+{% include 'module-files/_config-structs.hpp.j2' %}
+
+{% if u.rwconfig %}
+class {{ u.class_name }} : public {{ u.base_class }}, public RwConfUpdate {
+{% else %}
+class {{ u.class_name }} : public {{ u.base_class }} {
+{% endif %}
+public:
+    {{ u.class_name }}() = delete;
+    {{ u.class_name }}(Everest::ModuleAdapter* ev, const Everest::PtrContainer<{{ u.module_class }}> &mod, {% if u.rwconfig %}Conf& config, RwConf& rw_config{% else %}Conf& config{% endif %}) :
+        {{ u.base_class }}(ev, "{{ u.id }}"),
+        mod(mod),
+{% if u.rwconfig %}
+        config(config),
+        rw_config(rw_config)
+{% else %}
+        config(config)
+{% endif %}
+    {};
+
+    {{ u.blocks.public_defs.render(4) }}
+
+protected:
+{% if not u.cmds %}
+    // no commands defined for this interface
+{% else %}
+    // command handler functions (virtual)
+{% for cmd in u.cmds %}
+    virtual {{ u.result_type(cmd) }} handle_{{ cmd.name }}({% for argument in cmd.arguments %}{{ u.argument_declaration(argument) }}{{ ', ' if not loop.last }}{% endfor %}) override;
+{% endfor %}
+{% endif %}
+
+    {{ u.blocks.protected_defs.render(4) }}
+
+private:
+    const Everest::PtrContainer<{{ u.module_class }}>& mod;
+    const Conf& config;
+{% if u.rwconfig %}
+    RwConf& rw_config;
+{% endif %}
+
+    virtual void init() override;
+    virtual void ready() override;
+    void shutdown() override;
+
+    {{ u.blocks.private_defs.render(4) }}
+};
+
+{{ u.blocks.after_class.render() }}
+
+} // namespace {{ u.id }}
+} // namespace module
+
+#endif // {{ u.guard }}

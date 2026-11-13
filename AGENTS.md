@@ -197,7 +197,8 @@ module's manifest to a `module_id` plus that module's `implementation_id`.
 
 `ev-cli` turns `manifest.yaml`, `interfaces/*.yaml` and `types/*.yaml` into C++
 scaffolding. It lives in-tree at `applications/utils/ev-dev-tools/`, installs into the
-build venv, and templates are under `src/ev_cli/templates/`.
+build venv, and the C++ templates are under `src/ev_cli/backends/cpp/templates/`, one
+directory per output kind.
 
 A file is ev-cli-managed if it carries `// ev@<uuid>:v1` markers. Content between paired
 markers is yours; everything else is regenerated. This includes files that look
@@ -206,7 +207,7 @@ Adding a config key to a manifest means regenerating, not editing the struct.
 
 ```bash
 . build/venv/bin/activate
-ev-cli mod update <Category>/<Name> --work-dir . --build-dir build --disable-clang-format -f
+ev-cli mod update <Category>/<Name> --work-dir . --disable-clang-format -f
 cmake -S . -B build     # codegen for build/generated/ runs at configure time
 ```
 
@@ -233,7 +234,9 @@ would touch.
 Full C++ conventions: `docs/source/how-to-guides/c++-coding-guidelines.rst`.
 
 - clang-format, LLVM base, 4-space indent, 120 columns (`.clang-format`). CI enforces it
-  over `.hpp` and `.cpp` via `.github/workflows/job_lint.yml`. Format changed files with
+  over `.hpp` and `.cpp` via `.github/workflows/job_lint.yml`, which excludes the ev-cli
+  golden fixtures under `applications/utils/ev-dev-tools/tests/fixtures/golden`: those are
+  compared byte for byte against unformatted generator output. Format changed files with
   the version CI uses:
 
   ```bash

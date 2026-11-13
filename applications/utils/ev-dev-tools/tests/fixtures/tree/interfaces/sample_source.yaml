@@ -1,0 +1,63 @@
+description: Fixture interface exercising every payload shape
+vars:
+  latest:
+    description: The latest reading
+    type: object
+    $ref: /sample#/Reading
+  nothing_happened:
+    description: A signal carrying no payload
+    type: 'null'
+  moods_seen:
+    description: Every mood seen so far
+    type: array
+    items:
+      type: object
+      $ref: /sample#/Mood
+  count:
+    description: How many readings were taken
+    type: integer
+    minimum: 0
+cmds:
+  configure:
+    description: Configure the source
+    arguments:
+      mood:
+        description: The mood to report
+        $ref: /sample#/Mood
+        type: string
+      interval:
+        description: Sampling interval in seconds
+        type: number
+      enabled:
+        description: Whether sampling is on
+        type: boolean
+      allowed:
+        description: The moods that may be reported
+        type: array
+        items:
+          type: object
+          $ref: /sample#/Mood
+    result:
+      description: The reading taken right after configuring
+      type: object
+      $ref: /sample#/Reading
+  reset:
+    description: Reset the source, returning nothing
+  store:
+    description: Store an arbitrary value
+    arguments:
+      value:
+        description: Anything at all
+        type:
+          - 'null'
+          - string
+          - number
+          - integer
+          - boolean
+          - array
+          - object
+    result:
+      description: Whether it was stored
+      type: boolean
+errors:
+  - reference: /errors/sample

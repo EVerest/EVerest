@@ -2,6 +2,7 @@
 !.ci/build-kit/
 !lib/everest/framework/.ci/build-kit/
 !lib/everest/ocpp/doc/common/build-with-fetchcontent/
+!applications/utils/ev-dev-tools/src/ev_cli/ir/build/
 *dist
 .cache/
 workspace.yaml
