@@ -1,0 +1,98 @@
+name: Nightly builds
+
+# Ways of building EVerest that take too long to run on every PR. They run
+# nightly, on demand, and on PRs that change them.
+on:
+  schedule:
+    - cron: '43 2 * * *'
+  workflow_dispatch:
+    inputs:
+      runner:
+        description: Which runner to use
+        type: choice
+        default: 'ubuntu-24.04'
+        required: true
+        options:
+          - 'ubuntu-24.04'
+          - 'large-ubuntu-24.04-xxl'
+  pull_request:
+    paths:
+      - .github/workflows/on_schedule_nightly-builds.yaml
+      - .github/workflows/job_build-yocto-esdk.yaml
+      - .github/workflows/job_build-cmake-non-edm.yml
+      - .ci/build-kit/scripts/setup_sysroot.sh
+      - .ci/build-kit/scripts/compile_non_edm.sh
+      - applications/utils/scripts/setup_sysroot.py
+      - .github/workflows/job_build-out-of-tree-edm.yml
+      - .ci/build-kit/scripts/setup_out_of_tree_deps.sh
+      - .ci/build-kit/scripts/compile_out_of_tree_edm.sh
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+
+
+  setup-env:
+    name: Setup
+    uses: ./.github/workflows/job_setup-env.yml
+    with:
+      runner: ${{ inputs.runner || 'ubuntu-24.04' }}
+      ref_everest_ci: v1.6.0
+
+
+  build-build-kit:
+    name: Build-kit
+    uses: ./.github/workflows/job_build-build-kit.yml
+    needs:
+      - setup-env
+    with:
+      runner: ${{ inputs.runner || 'ubuntu-24.04' }}
+      base_image_tag_everest_ci: ${{ needs.setup-env.outputs.closest_tag_everest_ci }}
+
+
+  # The eSDK images are not public, so PRs from forks cannot pull them.
+  build-yocto-esdk:
+    name: Yocto eSDK (${{ matrix.release }})
+    needs:
+      - setup-env
+    if: ${{ needs.setup-env.outputs.is_fork != 'true' }}
+    permissions:
+      contents: read
+      packages: read
+    strategy:
+      fail-fast: false
+      matrix:
+        release: [kirkstone, scarthgap, wrynose]
+    uses: ./.github/workflows/job_build-yocto-esdk.yaml
+    with:
+      runner: ${{ inputs.runner || 'ubuntu-24.04' }}
+      esdk_image: ghcr.io/everest/everest-ci/yocto-esdk:${{ matrix.release }}-qemuarm64-20261020
+
+
+  build-cmake-non-edm:
+    name: CMake without EDM
+    uses: ./.github/workflows/job_build-cmake-non-edm.yml
+    needs:
+      - setup-env
+      - build-build-kit
+    with:
+      runner: ${{ inputs.runner || 'ubuntu-24.04' }}
+      build_kit_artifact_name: ${{ needs.build-build-kit.outputs.build_kit_artifact_name }}
+      build_kit_image_tag: ${{ needs.build-build-kit.outputs.build_kit_image_tag }}
+
+
+  build-out-of-tree-edm:
+    name: Out-of-tree EDM
+    uses: ./.github/workflows/job_build-out-of-tree-edm.yml
+    needs:
+      - setup-env
+      - build-build-kit
+    with:
+      runner: ${{ inputs.runner || 'ubuntu-24.04' }}
+      build_kit_artifact_name: ${{ needs.build-build-kit.outputs.build_kit_artifact_name }}
+      build_kit_image_tag: ${{ needs.build-build-kit.outputs.build_kit_image_tag }}
