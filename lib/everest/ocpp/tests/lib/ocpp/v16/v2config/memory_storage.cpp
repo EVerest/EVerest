@@ -294,29 +294,7 @@ std::optional<MemoryStorage::Storage::iterator> MemoryStorage::locate_v16(const 
     return std::nullopt;
 }
 
-std::optional<std::string> MemoryStorage::get_meter_public_keys_v16() const {
-    std::vector<std::string> meter_public_keys;
-    for (std::uint32_t i = 1;; i++) {
-        const auto key = "MeterPublicKey" + std::to_string(i);
-        auto it = locate_v16(key);
-        if (!it.has_value()) {
-            break;
-        }
-        meter_public_keys.push_back(it.value()->second);
-    }
-
-    if (meter_public_keys.empty()) {
-        return std::nullopt;
-    }
-
-    return ocpp::v16::utils::to_csl(meter_public_keys);
-}
-
 std::optional<std::string> MemoryStorage::get_v16(const std::string& name) const {
-    if (name == std::string{ocpp::v16::keys::convert(ocpp::v16::keys::valid_keys::MeterPublicKeys)}) {
-        return get_meter_public_keys_v16();
-    }
-
     // since V16 items are unique, just search through the storage items
     // to locate it
     auto it = locate_v16(name);
@@ -343,11 +321,7 @@ MemoryStorage::SetVariableStatusEnum MemoryStorage::set_v16(const std::string& n
         result = SetVariableStatusEnum::Accepted;
     } else {
         auto found = keys::convert(name);
-        bool create = found.has_value();
-
-        if (name.rfind("MeterPublicKey") == 0) {
-            create = true;
-        }
+        const bool create = found.has_value();
 
         if (create) {
             std::cout << "set_v16: unable to locate '" << name << "' creating\n";

@@ -454,7 +454,7 @@ void patch_component_config_with_ocpp16(std::map<ComponentKey, std::vector<Devic
         patch_network_connection_profile(component_configs, ocpp16_config, network_config_slot);
     }
 
-    // MeterPublicKeys -> MeterPublicKey[0], MeterPublicKey[1], ...
+    // MeterPublicKeys array -> OCPP16LegacyCtrlr:MeterPublicKeys as comma-separated list
     patch_meter_public_keys(component_configs, ocpp16_config);
     // DefaultPriceText,<lang> -> OCPP16LegacyCtrlr:DefaultPriceText as combined JSON object
     patch_default_price_text(component_configs, ocpp16_config);
