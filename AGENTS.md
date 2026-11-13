@@ -152,7 +152,8 @@ fixtures itself but not the venv, so activate `build/venv` first:
 ```bash
 . build/venv/bin/activate
 ./tests/run-tests.sh core            # suites: all, integration, core, framework,
-                                     # asyncapi, ocpp, ocpp16, ocpp201, ocpp21, eebus
+                                     # asyncapi, ocpp, ocpp16, ocpp201, ocpp21, eebus,
+                                     # openadr
 ./tests/run-tests.sh ocpp201 -k authorization   # -k filters; -- passes args to pytest
 ```
 

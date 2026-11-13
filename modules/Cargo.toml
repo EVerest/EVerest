@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
+   "EnergyManagement/RsOpenLEADR",
    "HardwareDrivers/PowerMeters/RsIskraMeter",
    "HardwareDrivers/Payment/RsPaymentTerminal",
    "Examples/RustExamples/RsExample",
