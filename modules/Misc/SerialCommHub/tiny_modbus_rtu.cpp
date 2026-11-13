@@ -237,15 +237,29 @@ static std::vector<uint16_t> decode_reply(const uint8_t* buf, int len, uint8_t e
 }
 
 TinyModbusRTU::~TinyModbusRTU() {
-    if (fd != -1)
-        close(fd);
+    close_device();
 }
 
-bool TinyModbusRTU::open_device(const std::string& device, int _baud, bool _ignore_echo,
-                                const Everest::GpioSettings& rxtx_gpio_settings, const Parity parity, bool rtscts,
+bool TinyModbusRTU::is_open() const {
+    return fd != -1;
+}
+
+void TinyModbusRTU::close_device() {
+    if (fd != -1) {
+        close(fd);
+        fd = -1;
+    }
+}
+
+bool TinyModbusRTU::open_device(const std::string& _device, int _baud, bool _ignore_echo,
+                                const Everest::GpioSettings& rxtx_gpio_settings, const Parity _parity, bool _rtscts,
                                 std::chrono::milliseconds _initial_timeout,
                                 std::chrono::milliseconds _within_message_timeout) {
 
+    device = _device;
+    baud = _baud;
+    parity = _parity;
+    rtscts = _rtscts;
     initial_timeout = _initial_timeout;
     within_message_timeout = _within_message_timeout;
     ignore_echo = _ignore_echo;
@@ -253,44 +267,53 @@ bool TinyModbusRTU::open_device(const std::string& device, int _baud, bool _igno
     rxtx_gpio.open(rxtx_gpio_settings);
     rxtx_gpio.set_output(true);
 
-    fd = open(device.c_str(), O_RDWR | O_NOCTTY | O_SYNC);
-    if (fd < 0) {
-        EVLOG_error << fmt::format("Serial: error {} opening {}: {}\n", errno, device, strerror(errno));
+    return reopen_device();
+}
+
+bool TinyModbusRTU::reopen_device() {
+    close_device();
+
+    int baud_flag;
+    switch (baud) {
+    case 9600:
+        baud_flag = B9600;
+        break;
+    case 19200:
+        baud_flag = B19200;
+        break;
+    case 38400:
+        baud_flag = B38400;
+        break;
+    case 57600:
+        baud_flag = B57600;
+        break;
+    case 115200:
+        baud_flag = B115200;
+        break;
+    case 230400:
+        baud_flag = B230400;
+        break;
+    default:
+        errno = EINVAL;
         return false;
     }
 
-    int baud;
-    switch (_baud) {
-    case 9600:
-        baud = B9600;
-        break;
-    case 19200:
-        baud = B19200;
-        break;
-    case 38400:
-        baud = B38400;
-        break;
-    case 57600:
-        baud = B57600;
-        break;
-    case 115200:
-        baud = B115200;
-        break;
-    case 230400:
-        baud = B230400;
-        break;
-    default:
+    fd = open(device.c_str(), O_RDWR | O_NOCTTY | O_SYNC);
+    if (fd < 0) {
+        fd = -1;
         return false;
     }
 
     struct termios tty;
     if (tcgetattr(fd, &tty) != 0) {
-        printf("Serial: error %d from tcgetattr\n", errno);
+        const auto saved_errno = errno;
+        close_device();
+        errno = saved_errno;
         return false;
     }
 
-    cfsetospeed(&tty, baud);
-    cfsetispeed(&tty, baud);
+    cfsetospeed(&tty, baud_flag);
+    cfsetispeed(&tty, baud_flag);
 
     tty.c_cflag = (tty.c_cflag & ~CSIZE) | CS8; // 8-bit chars
     // disable IGNBRK for mismatched speed tests; otherwise receive break
@@ -321,7 +344,9 @@ bool TinyModbusRTU::open_device(const std::string& device, int _baud, bool _igno
     }
 
     if (tcsetattr(fd, TCSANOW, &tty) != 0) {
-        printf("Serial: error %d from tcsetattr\n", errno);
+        const auto saved_errno = errno;
+        close_device();
+        errno = saved_errno;
         return false;
     }
     return true;
@@ -353,9 +378,11 @@ int TinyModbusRTU::read_reply(uint8_t* rxbuf, int rxbuf_len) {
     while (true) {
         int rv = select(fd + 1, &set, NULL, NULL, &timeout);
         timeout = within_message_timeval;
-        if (rv == -1) { // error in select function call
-            perror("txrx: select:");
-            break;
+        if (rv == -1) {
+            if (errno == EINTR) {
+                continue;
+            }
+            throw std::system_error(errno, std::generic_category(), "Could not wait for Modbus reply");
         } else if (rv == 0) { // no more bytes to read within timeout, so transfer is complete
             break;
         } else { // received more bytes, add them to buffer
@@ -368,6 +395,11 @@ int TinyModbusRTU::read_reply(uint8_t* rxbuf, int rxbuf_len) {
             int bytes_read = read(fd, rxbuf + bytes_read_total, rxbuf_len - bytes_read_total);
             if (bytes_read > 0) {
                 bytes_read_total += bytes_read;
+            } else if (bytes_read == 0) {
+                // A tty only reports end of file after a hangup, i.e. the device is gone
+                throw std::system_error(EIO, std::generic_category(), "Serial device hung up");
+            } else if (errno != EAGAIN and errno != EINTR) {
+                throw std::system_error(errno, std::generic_category(), "Could not read Modbus reply");
             }
         }
     }

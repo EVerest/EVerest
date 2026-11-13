@@ -93,8 +93,13 @@ private:
 
     tiny_modbus::TinyModbusRTU modbus;
 
+    bool ensure_device_open();
+    void log_open_failure();
+
     std::mutex serial_mutex;
-    bool system_error_logged{false};
+    std::chrono::steady_clock::time_point last_open_attempt;
+    static constexpr std::chrono::seconds reopen_interval{1};
+    bool open_failure_logged{false};
     // ev@3370e4dd-95f4-47a9-aaec-ea76f34a66c9:v1
 };
 

@@ -5,6 +5,7 @@
 
 #include <chrono>
 #include <cstdint>
+#include <cstring>
 #include <date/date.h>
 #include <date/tz.h>
 #include <fmt/format.h>
@@ -81,13 +82,42 @@ void serial_communication_hubImpl::init() {
     rxtx_gpio_settings.line_number = config.rxtx_gpio_line;
     rxtx_gpio_settings.inverted = config.rxtx_gpio_tx_high;
 
-    system_error_logged = false;
-
-    if (!modbus.open_device(config.serial_port, config.baudrate, config.ignore_echo, rxtx_gpio_settings,
-                            static_cast<tiny_modbus::Parity>(config.parity), config.rtscts,
-                            milliseconds(config.initial_timeout_ms), milliseconds(config.within_message_timeout_ms))) {
-        EVLOG_error << fmt::format("Cannot open serial port {}, ModBus will not work.", config.serial_port);
+    if (modbus.open_device(config.serial_port, config.baudrate, config.ignore_echo, rxtx_gpio_settings,
+                           static_cast<tiny_modbus::Parity>(config.parity), config.rtscts,
+                           milliseconds(config.initial_timeout_ms), milliseconds(config.within_message_timeout_ms))) {
+        EVLOG_info << fmt::format("Serial port {} opened", config.serial_port);
+    } else {
+        log_open_failure();
     }
+    last_open_attempt = steady_clock::now();
+}
+
+void serial_communication_hubImpl::log_open_failure() {
+    if (not open_failure_logged) {
+        EVLOG_warning << fmt::format("Cannot open serial port {}: {}. Retrying while the port is unavailable.",
+                                     config.serial_port, strerror(errno));
+        open_failure_logged = true;
+    }
+}
+
+// Reopens the serial port after a failed open or a lost device, at most once per reopen_interval.
+bool serial_communication_hubImpl::ensure_device_open() {
+    using namespace std::chrono;
+    if (modbus.is_open()) {
+        return true;
+    }
+    const auto now = steady_clock::now();
+    if (now - last_open_attempt < reopen_interval) {
+        return false;
+    }
+    last_open_attempt = now;
+    if (not modbus.reopen_device()) {
+        log_open_failure();
+        return false;
+    }
+    EVLOG_info << fmt::format("Serial port {} opened", config.serial_port);
+    open_failure_logged = false;
+    return true;
 }
 
 void serial_communication_hubImpl::ready() {
@@ -103,7 +133,12 @@ serial_communication_hubImpl::perform_modbus_request(uint8_t device_address, tin
     auto retry_counter = config.retries + 1;
     bool last_error_was_timeout = false;
 
-    while (retry_counter > 0) {
+    if (not ensure_device_open()) {
+        result.status_code = types::serial_comm_hub_requests::StatusCodeEnum::Error;
+        return result;
+    }
+
+    while (retry_counter > 0 and modbus.is_open()) {
         auto current_trial = config.retries + 1 - retry_counter + 1;
 
         EVLOG_debug << fmt::format("Trial {}/{}: calling {}(id {} addr {}({:#06x}) len {})", current_trial,
@@ -139,12 +174,11 @@ serial_communication_hubImpl::perform_modbus_request(uint8_t device_address, tin
         } catch (const std::logic_error& e) {
             EVLOG_warning << "Logic error in Modbus implementation: " << e.what();
         } catch (const std::system_error& e) {
-            // FIXME: report this to the infrastructure, as soon as an error interface for this is available
-            // Log this only once, as we are convinced this will not go away
-            if (not system_error_logged) {
-                EVLOG_error << "System error in accessing Modbus: [" << e.code() << "] " << e.what();
-                system_error_logged = true;
-            }
+            // The device node is gone or broken, so drop it and reopen on the next request
+            EVLOG_warning << fmt::format("Serial port {} lost: [{}] {}", config.serial_port, e.code().value(),
+                                         e.what());
+            modbus.close_device();
+            last_open_attempt = std::chrono::steady_clock::now();
         }
 
         if (response.size() > 0)
@@ -157,7 +191,6 @@ serial_communication_hubImpl::perform_modbus_request(uint8_t device_address, tin
         EVLOG_debug << fmt::format("Process response (size {})", response.size());
         result.status_code = types::serial_comm_hub_requests::StatusCodeEnum::Success;
         result.value = vector_to_int(response);
-        system_error_logged = false; // reset after success
     } else {
         // If the last error was a timeout, return Timeout status, otherwise Error
         if (last_error_was_timeout) {
