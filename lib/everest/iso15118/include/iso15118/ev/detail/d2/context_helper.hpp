@@ -44,6 +44,17 @@ inline std::optional<Result> stop_before_start(Context& ctx) {
     return std::nullopt;
 }
 
+// [V2G2-359]/[V2G2-365] (Tables 93/96), [V2G2-679]: honor StopCharging within NotificationMaxDelay.
+// Before PowerDelivery(Start), terminate directly with SessionStop.
+inline std::optional<Result> charger_stop_before_start(Context& ctx,
+                                                       message_2::datatypes::EVSENotification notification) {
+    if (notification == message_2::datatypes::EVSENotification::StopCharging) {
+        ctx.feedback.stop_from_charger();
+        return Result{state::to_session_stop(ctx, session::StopReason::EvseTerminate)};
+    }
+    return std::nullopt;
+}
+
 inline bool is_dc_mode(message_2::datatypes::EnergyTransferMode mode) {
     using message_2::datatypes::EnergyTransferMode;
     return mode == EnergyTransferMode::DC_core or mode == EnergyTransferMode::DC_extended or

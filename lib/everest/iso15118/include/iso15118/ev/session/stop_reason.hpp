@@ -10,7 +10,8 @@ namespace iso15118::ev::session {
 // welding detection to SessionStop; a failed welding check replaces it with EvStop. A state before
 // PowerDelivery(Start) passes its reason straight to SessionStop instead: an EV stop or pause latched before
 // PowerDelivery(Start) (stop_before_start), an EV abort at -2 or DIN ServiceDiscovery, a DIN EVSE stop at
-// ChargeParameterDiscovery or CableCheck, or a -2 EV with no usable contract certificate and no ExternalPayment
+// ChargeParameterDiscovery or CableCheck, a -2 EVSE stop at ChargeParameterDiscovery, CableCheck or PreCharge,
+// or a -2 EV with no usable contract certificate and no ExternalPayment
 // offer after ServiceDetail (EvStop). SessionStop may only raise a pause to a stop (raise_to_latched_stop).
 // From SessionStopReq on the reason is fixed, so the request and the paused outcome cannot disagree.
 // -20 sends a pause latched before PowerDelivery(Start) as EvStop instead [V2G20-2644].
