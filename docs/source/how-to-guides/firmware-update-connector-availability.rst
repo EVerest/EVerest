@@ -66,7 +66,8 @@ one. The second is ``InstallScheduled``.
 "Connectors are disabled" means the OCPP module makes every connector without a running transaction unavailable,
 queues the same change for connectors that are still charging so it applies once their transaction ends, and
 calls ``allow_firmware_installation`` on the system once no connector is available any more. That call is made
-once per update cycle. The connectors are restored to their stored availability when the cycle ends with
+once per update cycle, and only for an install that disables the connectors: connectors that become unavailable
+for another reason earlier in the cycle, during the download for example, do not trigger it. The connectors are restored to their stored availability when the cycle ends with
 ``Installed``, ``InstallationFailed``, ``InstallVerificationFailed``, ``InvalidSignature``, ``DownloadFailed`` or
 ``Idle``. A status after ``Idle`` starts a new cycle, and so does a newly accepted update request (in OCPP 1.6
 the ``Downloading`` status of an unsigned update); connectors that an update which never reported its end left

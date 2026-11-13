@@ -472,7 +472,11 @@ TEST_F(FirmwareUpdateDeferredDownloadTest, LocalUnsignedCycleDisablesConnectorsA
 
 class FirmwareUpdateConnectorAvailabilityTest : public FirmwareUpdateDeferredDownloadTest {
 protected:
-    Availability real_availability{*fb_context, std::nullopt, std::nullopt};
+    Availability real_availability{*fb_context, std::nullopt, [this]() {
+                                       if (this->firmware_update_with_availability != nullptr) {
+                                           this->firmware_update_with_availability->on_all_connectors_unavailable();
+                                       }
+                                   }};
     std::function<UpdateFirmwareResponse(const UpdateFirmwareRequest&)> update_callback;
     std::unique_ptr<FirmwareUpdate> firmware_update_with_availability;
     testing::MockFunction<void()> all_connectors_unavailable;
@@ -598,6 +602,58 @@ TEST_F(FirmwareUpdateConnectorAvailabilityTest, StatusPublishedFromUpdateCallbac
     const auto notifications = firmware_status_notifications();
     ASSERT_EQ(notifications.size(), 1);
     EXPECT_EQ(notifications.front().at("status"), "Downloading");
+}
+
+TEST_F(FirmwareUpdateConnectorAvailabilityTest, InoperativeBeforeInstallDoesNotUseUpNotification) {
+    start_transaction();
+    ChangeAvailabilityRequest request;
+    request.operationalStatus = OperationalStatusEnum::Inoperative;
+    request.evse = EVSE{1};
+    bool transaction_active = false;
+    ASSERT_EQ(real_availability.change_availability_req(transaction_active, request).status,
+              ChangeAvailabilityStatusEnum::Scheduled);
+
+    EXPECT_CALL(all_connectors_unavailable, Call()).Times(0);
+    firmware_update_with_availability->on_firmware_update_status_notification(-1, FirmwareStatusEnum::Downloading);
+    end_transaction();
+    real_availability.handle_scheduled_change_availability_requests(1);
+    testing::Mock::VerifyAndClearExpectations(&all_connectors_unavailable);
+
+    EXPECT_CALL(all_connectors_unavailable, Call()).Times(1);
+    firmware_update_with_availability->on_firmware_update_status_notification(-1, FirmwareStatusEnum::Downloaded);
+}
+
+TEST_F(FirmwareUpdateConnectorAvailabilityTest, InstallDisableQueuedFromUpdateCallbackIsKept) {
+    start_transaction();
+    update_callback = [this](const UpdateFirmwareRequest& request) {
+        this->firmware_update_with_availability->on_firmware_update_status_notification(request.requestId,
+                                                                                        FirmwareStatusEnum::Downloaded);
+        UpdateFirmwareResponse response;
+        response.status = UpdateFirmwareStatusEnum::Accepted;
+        return response;
+    };
+
+    EXPECT_CALL(all_connectors_unavailable, Call()).Times(0);
+    firmware_update_with_availability->handle_message(make_update_firmware_message(7));
+    testing::Mock::VerifyAndClearExpectations(&all_connectors_unavailable);
+
+    end_transaction();
+    EXPECT_CALL(all_connectors_unavailable, Call()).Times(1);
+    real_availability.handle_scheduled_change_availability_requests(1);
+}
+
+TEST_F(FirmwareUpdateConnectorAvailabilityTest, UpdateEndedInsideCallbackDoesNotArmNotification) {
+    update_callback = [this](const UpdateFirmwareRequest& request) {
+        this->firmware_update_with_availability->on_firmware_update_status_notification(
+            request.requestId, FirmwareStatusEnum::DownloadFailed);
+        UpdateFirmwareResponse response;
+        response.status = UpdateFirmwareStatusEnum::Accepted;
+        return response;
+    };
+    firmware_update_with_availability->handle_message(make_update_firmware_message(7));
+
+    EXPECT_CALL(all_connectors_unavailable, Call()).Times(0);
+    firmware_update_with_availability->on_all_connectors_unavailable();
 }
 
 } // namespace

@@ -5,6 +5,8 @@
 /// \brief Tests of connector availability during a firmware update in ChargePointImpl.
 
 #include <atomic>
+#include <fstream>
+#include <set>
 
 #include "charge_point_test_base.hpp"
 
@@ -300,6 +302,22 @@ TEST_F(ChargePointSignedFirmwareConnectorsTest, IgnoredUpdateFirmwareRequestKeep
     charge_point->stop();
 }
 
+TEST_P(ChargePointFirmwareConnectorsTest, RepeatedStatusesDisableConnectorsOnce) {
+    const auto request_id = GetParam();
+    auto charge_point = make_booted_charge_point();
+
+    charge_point->on_firmware_update_status_notification(request_id, install_pending_status(request_id));
+    charge_point->on_firmware_update_status_notification(request_id, FirmwareStatusNotification::InstallScheduled,
+                                                         true);
+    charge_point->on_firmware_update_status_notification(request_id, FirmwareStatusNotification::Installing);
+    charge_point->on_firmware_update_status_notification(request_id, FirmwareStatusNotification::Installing);
+
+    EXPECT_EQ(disabled_connectors, 1);
+    EXPECT_EQ(install_allowed, 1);
+    EXPECT_TRUE(wait_for_all_answered());
+    charge_point->stop();
+}
+
 TEST_P(ChargePointFirmwareConnectorsTest, CsmsScheduledOperativeIsExecutedBesideFirmwareDisable) {
     const auto request_id = GetParam();
     auto charge_point = make_booted_charge_point();
@@ -327,6 +345,97 @@ TEST_P(ChargePointFirmwareConnectorsTest, CsmsScheduledOperativeIsExecutedBeside
     EXPECT_TRUE(wait_for_all_answered());
     charge_point->stop();
 }
+
+class ChargePointTwoConnectorFirmwareTest : public ChargePointFirmwareConnectorsTestBase,
+                                            public ::testing::WithParamInterface<int> {
+protected:
+    static constexpr std::int32_t SECOND_CONNECTOR = 2;
+    const std::string second_session_id = "session-2";
+
+    void SetUp() override {
+        ChargePointFirmwareConnectorsTestBase::SetUp();
+        std::ifstream ifs(CONFIG_FILE_LOCATION_V16);
+        auto config = nlohmann::json::parse(ifs);
+        config["Core"]["NumberOfConnectors"] = 2;
+        config["Core"]["ConnectorPhaseRotation"] = "0.RST,1.RST,2.RST";
+        this->configuration = std::make_unique<ChargePointConfiguration>(config.dump(), CONFIG_DIR_V16,
+                                                                         this->tmp_dir / "user_config.json");
+    }
+
+    nlohmann::json response_payload_for_locked(const std::string& action) override {
+        if (action == "StartTransaction") {
+            this->next_transaction_id += 1;
+            return nlohmann::json{{"idTagInfo", {{"status", "Accepted"}}},
+                                  {"transactionId", this->next_transaction_id}};
+        }
+        return ChargePointFirmwareConnectorsTestBase::response_payload_for_locked(action);
+    }
+
+    std::unique_ptr<ChargePointImpl> make_booted_two_connector_charge_point() {
+        auto charge_point = make_charge_point();
+        charge_point->register_disable_evse_callback([this](std::int32_t connector) {
+            this->disabled.insert(connector);
+            return true;
+        });
+        charge_point->register_all_connectors_unavailable_callback([this]() { this->install_allowed += 1; });
+        charge_point->start({{0, ChargePointStatus::Available},
+                             {CONNECTOR, ChargePointStatus::Available},
+                             {SECOND_CONNECTOR, ChargePointStatus::Available}},
+                            BootReasonEnum::PowerUp, {});
+        charge_point->on_websocket_connected(0, ocpp::v2::NetworkConnectionProfile{}, ocpp::OcppProtocolVersion::v16);
+        EXPECT_TRUE(wait_for_status("Available"));
+        EXPECT_TRUE(wait_for_all_answered());
+        this->install_allowed = 0;
+        return charge_point;
+    }
+
+    void start_transaction_on(ChargePointImpl& charge_point, const std::int32_t connector,
+                              const std::string& session_id, const std::size_t start_count) {
+        charge_point.on_session_started(connector, session_id, ocpp::SessionStartedReason::EVConnected, std::nullopt);
+        charge_point.on_transaction_started(connector, session_id, ID_TAG, /*meter_start=*/0.0,
+                                            /*reservation_id=*/std::nullopt, ocpp::DateTime(),
+                                            /*signed_meter_value=*/std::nullopt);
+        EXPECT_TRUE(wait_for_action_count("StartTransaction", start_count, WAIT_TIMEOUT));
+        EXPECT_TRUE(wait_for_all_answered());
+    }
+
+    static void stop_transaction_on(ChargePointImpl& charge_point, const std::int32_t connector,
+                                    const std::string& session_id) {
+        charge_point.on_transaction_stopped(connector, session_id, Reason::Local, ocpp::DateTime(),
+                                            /*energy_wh_import=*/1000.0F, /*id_tag_end=*/std::nullopt,
+                                            /*signed_meter_value=*/std::nullopt,
+                                            /*start_signed_meter_value=*/std::nullopt);
+    }
+
+    std::int32_t next_transaction_id{TRANSACTION_ID};
+    std::set<std::int32_t> disabled;
+};
+
+TEST_P(ChargePointTwoConnectorFirmwareTest, InstallWaitsForEveryBusyConnectorToBeDisabled) {
+    const auto request_id = GetParam();
+    auto charge_point = make_booted_two_connector_charge_point();
+    start_transaction_on(*charge_point, CONNECTOR, SESSION_ID, 1);
+    start_transaction_on(*charge_point, SECOND_CONNECTOR, second_session_id, 2);
+
+    charge_point->on_websocket_disconnected(0, ocpp::v2::NetworkConnectionProfile{});
+    charge_point->on_firmware_update_status_notification(request_id, install_pending_status(request_id));
+    EXPECT_TRUE(disabled.empty());
+
+    // The EV on the first connector stays plugged in, so its session is still open
+    stop_transaction_on(*charge_point, CONNECTOR, SESSION_ID);
+    stop_transaction_on(*charge_point, SECOND_CONNECTOR, second_session_id);
+    charge_point->on_session_stopped(SECOND_CONNECTOR, second_session_id);
+    EXPECT_EQ(disabled, std::set<std::int32_t>{SECOND_CONNECTOR});
+    EXPECT_EQ(install_allowed, 0) << "the installation is allowed while the first connector is still enabled";
+
+    charge_point->on_session_stopped(CONNECTOR, SESSION_ID);
+    EXPECT_EQ(disabled, (std::set<std::int32_t>{CONNECTOR, SECOND_CONNECTOR}));
+    EXPECT_EQ(install_allowed, 1);
+    charge_point->stop();
+}
+
+INSTANTIATE_TEST_SUITE_P(SignedAndUnsigned, ChargePointTwoConnectorFirmwareTest,
+                         ::testing::Values(PLAIN_REQUEST_ID, SIGNED_REQUEST_ID));
 
 } // namespace v16
 } // namespace ocpp

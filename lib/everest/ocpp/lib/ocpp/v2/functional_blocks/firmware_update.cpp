@@ -15,11 +15,13 @@
 
 namespace ocpp::v2 {
 
+namespace {
 bool is_firmware_status_end_state(const FirmwareStatusEnum& status) {
     return status == FirmwareStatusEnum::DownloadFailed or status == FirmwareStatusEnum::InstallationFailed or
            status == FirmwareStatusEnum::Installed or status == FirmwareStatusEnum::InstallVerificationFailed or
            status == FirmwareStatusEnum::InvalidSignature;
 }
+} // namespace
 
 FirmwareUpdate::FirmwareUpdate(const FunctionalBlockContext& functional_block_context,
                                AvailabilityInterface& availability, SecurityInterface& security,
@@ -55,6 +57,7 @@ void FirmwareUpdate::handle_message(const ocpp::EnhancedMessage<MessageType>& me
 void FirmwareUpdate::on_firmware_update_status_notification(std::int32_t request_id,
                                                             const FirmwareStatusEnum& firmware_update_status,
                                                             std::optional<bool> disable_connectors_during_install) {
+    const std::lock_guard<std::recursive_mutex> install_lock(this->install_mutex);
     const bool cycle_ended =
         is_firmware_status_end_state(firmware_update_status) or firmware_update_status == FirmwareStatusEnum::Idle;
 
@@ -66,11 +69,6 @@ void FirmwareUpdate::on_firmware_update_status_notification(std::int32_t request
         state.status_generation += 1;
         if (cycle_ended) {
             state.notification_state = InstallNotificationState::Idle;
-        } else if (firmware_update_status != FirmwareStatusEnum::DownloadScheduled and
-                   state.notification_state == InstallNotificationState::Idle) {
-            // A deferred download keeps the connectors unavailable long before the install, so it does not arm
-            // the notification
-            state.notification_state = InstallNotificationState::Waiting;
         }
         install_pending_status = status_before_installing(state, request_id);
         if (cycle_ended) {
@@ -148,6 +146,7 @@ void FirmwareUpdate::on_firmware_update_status_notification(std::int32_t request
 
             // Disabling the connectors right before installing is the default when the caller did not specify otherwise
             if (disable_connectors_during_install.value_or(true)) {
+                this->arm_install_notification();
                 this->change_all_connectors_to_unavailable_for_firmware_update();
             }
         }
@@ -156,6 +155,7 @@ void FirmwareUpdate::on_firmware_update_status_notification(std::int32_t request
     // Explicitly allow disabling the connectors when an update is scheduled
     if (firmware_update_status == FirmwareStatusEnum::InstallScheduled and
         disable_connectors_during_install.value_or(false)) {
+        this->arm_install_notification();
         this->change_all_connectors_to_unavailable_for_firmware_update();
     }
 }
@@ -211,9 +211,25 @@ void FirmwareUpdate::on_all_connectors_unavailable() {
             return;
         }
         handle->notification_state = InstallNotificationState::Notified;
-        handle->notified_generation = handle->status_generation;
+        handle->notification_generation = handle->status_generation;
     }
     this->all_connectors_unavailable_callback.value()();
+}
+
+void FirmwareUpdate::arm_install_notification() {
+    auto handle = this->cycle.handle();
+    if (handle->notification_state == InstallNotificationState::Idle) {
+        handle->notification_state = InstallNotificationState::Waiting;
+        handle->notification_generation = handle->status_generation;
+    }
+}
+
+void FirmwareUpdate::reset_install_notification_of_earlier_cycle(CycleState& state,
+                                                                 const std::uint64_t generation_before_request) {
+    if (state.notification_state != InstallNotificationState::Idle and
+        state.notification_generation <= generation_before_request) {
+        state.notification_state = InstallNotificationState::Idle;
+    }
 }
 
 FirmwareUpdate::RequestedUpdate FirmwareUpdate::to_requested_update(const UpdateFirmwareRequest& request) {
@@ -235,11 +251,7 @@ UpdateFirmwareResponse FirmwareUpdate::request_firmware_update(const UpdateFirmw
     handle->offered_update.reset();
     if (response.status == UpdateFirmwareStatusEnum::Accepted or
         response.status == UpdateFirmwareStatusEnum::AcceptedCanceled) {
-        const bool notified_by_this_update = handle->notification_state == InstallNotificationState::Notified and
-                                             handle->notified_generation > generation_before_callback;
-        if (!notified_by_this_update) {
-            handle->notification_state = InstallNotificationState::Waiting;
-        }
+        reset_install_notification_of_earlier_cycle(*handle, generation_before_callback);
     }
     return response;
 }
@@ -321,28 +333,30 @@ void FirmwareUpdate::handle_firmware_update_req(Call<UpdateFirmwareRequest> call
 
     if ((response.status == UpdateFirmwareStatusEnum::Accepted) or
         (response.status == UpdateFirmwareStatusEnum::AcceptedCanceled)) {
+        const std::lock_guard<std::recursive_mutex> install_lock(this->install_mutex);
+        bool cycle_started = false;
         bool restore_connectors = false;
         {
             auto handle = this->cycle.handle();
             auto& state = *handle;
             state.requested_update = to_requested_update(msg);
             state.requested_update_active = true;
-            // A status reported since the callback started already belongs to the accepted update and is kept
+            // A status reported since the callback started already belongs to the accepted update and is kept,
+            // together with whatever it did to the connectors
             if (state.status_generation == generation_before_callback) {
                 // Reset the last-seen firmware status to prevent accidental deduplication in a new update cycle
                 state.firmware_status = FirmwareStatusEnum::Idle;
                 state.firmware_status_id = std::nullopt;
+                reset_install_notification_of_earlier_cycle(state, generation_before_callback);
                 restore_connectors = state.connectors_disabled;
-            }
-            if (download_deferred) {
-                state.notification_state = InstallNotificationState::Idle;
+                cycle_started = true;
             }
         }
         // An update that never reported its end must not keep the connectors unavailable, nor force an EVSE
         // Inoperative once its transaction ends
         if (restore_connectors) {
             this->restore_all_connector_states();
-        } else {
+        } else if (cycle_started) {
             this->availability.drop_non_persistent_scheduled_changes();
         }
     }

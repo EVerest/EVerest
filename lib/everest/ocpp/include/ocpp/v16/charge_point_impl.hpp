@@ -121,6 +121,10 @@ private:
         std::set<std::int32_t> connectors_awaiting_disable;
     };
     everest::lib::util::monitor<FirmwareInstallState> firmware_install_state;
+    // Serialises applying a firmware status with starting a new update cycle and with the transaction-end checks,
+    // so a restore cannot undo a disable for a status reported concurrently. Lock it before pending_firmware_status
+    // and firmware_install_state; recursive because the callbacks it calls may report a status synchronously.
+    std::recursive_mutex firmware_install_mutex;
     // Counts the firmware statuses reported by the application; guarded by pending_firmware_status
     std::uint64_t firmware_status_generation{0};
 
@@ -285,7 +289,8 @@ private:
 
     /// \brief Applies what \p status means for the install: marks it pending (disabling the connectors unless
     /// \p disable_connectors_during_install says otherwise), opts into disabling on InstallScheduled, and clears the
-    /// pending state once the update has ended. Runs regardless of the CSMS registration state.
+    /// pending state and restores the connectors once the update cycle has ended. Runs regardless of the CSMS
+    /// registration state.
     void apply_firmware_install_state(std::int32_t request_id, FirmwareStatusNotification status,
                                       std::optional<bool> disable_connectors_during_install);
     void signed_firmware_update_status_notification(FirmwareStatusEnumType status, int requestId,
@@ -297,7 +302,7 @@ private:
     void change_all_connectors_to_unavailable_for_firmware_update();
 
     /// \brief Signals once per update cycle that the installation can proceed, if an install that needs the
-    /// connectors unavailable is pending and no transaction is running.
+    /// connectors unavailable is pending, no transaction is running and no connector is still waiting to be disabled.
     void allow_firmware_installation_if_no_transaction();
 
     bool firmware_install_needs_connectors_unavailable();

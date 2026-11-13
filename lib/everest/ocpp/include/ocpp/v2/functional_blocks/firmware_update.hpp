@@ -5,6 +5,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <mutex>
 
 #include <everest/util/async/monitor.hpp>
 
@@ -22,8 +23,6 @@ class SecurityInterface;
 using UpdateFirmwareRequestCallback = std::function<UpdateFirmwareResponse(const UpdateFirmwareRequest& request)>;
 using AllConnectorsUnavailableCallback = std::function<void()>;
 
-bool is_firmware_status_end_state(const FirmwareStatusEnum& status);
-
 class FirmwareUpdateInterface : public MessageHandlerInterface {
 public:
     ~FirmwareUpdateInterface() override = default;
@@ -36,7 +35,7 @@ public:
     virtual void on_registration_accepted() = 0;
 
     /// \brief Signals that no connector is available any more. Reaches the all_connectors_unavailable_callback once
-    /// per update cycle, and only while an update is in progress.
+    /// per update cycle, and only once the install is pending and the connectors are being disabled for it.
     virtual void on_all_connectors_unavailable() = 0;
 };
 
@@ -79,12 +78,16 @@ private: // Members
         // False once the requested update reported an end state
         bool requested_update_active{false};
         InstallNotificationState notification_state{InstallNotificationState::Idle};
-        // The status_generation at which notification_state became Notified
-        std::uint64_t notified_generation{0};
+        // The status_generation at which notification_state last became Waiting or Notified
+        std::uint64_t notification_generation{0};
         // Connectors were made unavailable for an update and not restored since
         bool connectors_disabled{false};
     };
     everest::lib::util::monitor<CycleState> cycle;
+    // Serialises applying a firmware status with starting a new update cycle, so a restore cannot undo a disable for
+    // a status reported concurrently. Lock it before cycle; recursive because the callbacks it calls may report a
+    // status synchronously.
+    std::recursive_mutex install_mutex;
 
     // Download deferred until the last transaction ends (L01.FR.13). This is memory-only and does
     // not survive a restart: after a reboot while in DownloadScheduled the CSMS must re-send
@@ -115,6 +118,13 @@ private: // Functions
     UpdateFirmwareResponse request_firmware_update(const UpdateFirmwareRequest& request);
 
     static RequestedUpdate to_requested_update(const UpdateFirmwareRequest& request);
+
+    /// \brief Arms the all-connectors-unavailable notification, unless it is armed or sent in this cycle already.
+    void arm_install_notification();
+
+    /// \brief Disarms a notification armed or sent before \p generation_before_request, which belongs to an earlier
+    /// update cycle.
+    static void reset_install_notification_of_earlier_cycle(CycleState& state, std::uint64_t generation_before_request);
 
     /// \brief The status after which the update reported with \p request_id is installed.
     static FirmwareStatusEnum status_before_installing(const CycleState& state, std::int32_t request_id);

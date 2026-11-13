@@ -1263,6 +1263,7 @@ void ChargePointImpl::change_all_connectors_to_unavailable_for_firmware_update()
                     << connector;
                 handle->connectors_awaiting_disable.insert(connector);
             } else {
+                handle->connectors_awaiting_disable.erase(connector);
                 idle_connectors.push_back(connector);
             }
         }
@@ -1286,7 +1287,8 @@ void ChargePointImpl::allow_firmware_installation_if_no_transaction() {
     }
     {
         auto handle = this->firmware_install_state.handle();
-        if (!handle->pending or !handle->disable_connectors or handle->notified) {
+        if (!handle->pending or !handle->disable_connectors or handle->notified or
+            !handle->connectors_awaiting_disable.empty()) {
             return;
         }
         handle->notified = true;
@@ -1350,6 +1352,10 @@ void ChargePointImpl::apply_firmware_install_state(const std::int32_t request_id
     const auto install_pending_status =
         request_id != -1 ? FirmwareStatusNotification::SignatureVerified : FirmwareStatusNotification::Downloaded;
 
+    const bool install_ended = status == FirmwareStatusNotification::InstallationFailed or
+                               status == FirmwareStatusNotification::Installed or
+                               status == FirmwareStatusNotification::InstallVerificationFailed;
+
     if (status == install_pending_status) {
         this->set_firmware_install_pending(disable_connectors_during_install.value_or(true));
     } else if (status == FirmwareStatusNotification::InstallScheduled) {
@@ -1361,9 +1367,15 @@ void ChargePointImpl::apply_firmware_install_state(const std::int32_t request_id
                status == FirmwareStatusNotification::Downloading) {
         // A download starts another cycle, so what an update that never reported its end left behind is void
         this->clear_firmware_install_pending();
+        // An ended install always restores the connectors. Any other end of the cycle (or Idle, which may be
+        // reported at any time) does so only if this cycle disabled them.
+        this->restore_connectors_after_firmware_update(!install_ended);
+        return;
     }
 
-    if (this->firmware_install_needs_connectors_unavailable()) {
+    // Once disabled, the connectors stay so until restored; a transaction ending disables its connector itself
+    const bool connectors_disabled = this->firmware_install_state.handle()->connectors_disabled;
+    if (this->firmware_install_needs_connectors_unavailable() and !connectors_disabled) {
         this->change_all_connectors_to_unavailable_for_firmware_update();
     }
 }
@@ -2576,6 +2588,7 @@ void ChargePointImpl::handleStopTransactionResponse(const EnhancedMessage<v16::M
     // when this transaction was stopped because of a Reset.req this signals that StopTransaction.conf has been received
     this->stop_transaction_cv.notify_one();
 
+    const std::lock_guard<std::recursive_mutex> firmware_install_lock(this->firmware_install_mutex);
     if (this->firmware_install_needs_connectors_unavailable()) {
         this->change_all_connectors_to_unavailable_for_firmware_update();
     }
@@ -3192,6 +3205,7 @@ void ChargePointImpl::handleSignedUpdateFirmware(ocpp::Call<SignedUpdateFirmware
 
         if (response.status == UpdateFirmwareStatusEnumType::Accepted or
             response.status == UpdateFirmwareStatusEnumType::AcceptedCanceled) {
+            const std::lock_guard<std::recursive_mutex> firmware_install_lock(this->firmware_install_mutex);
             bool cycle_started = false;
             {
                 auto handle = this->pending_firmware_status.handle();
@@ -4530,8 +4544,11 @@ void ChargePointImpl::on_session_started(std::int32_t connector, const std::stri
 void ChargePointImpl::on_session_stopped(const std::int32_t connector, const std::string& session_id) {
     this->execute_queued_availability_change(connector);
 
-    // The StopTransaction.conf may never arrive while offline, so the install must not wait for it
-    this->allow_firmware_installation_if_no_transaction();
+    {
+        // The StopTransaction.conf may never arrive while offline, so the install must not wait for it
+        const std::lock_guard<std::recursive_mutex> firmware_install_lock(this->firmware_install_mutex);
+        this->allow_firmware_installation_if_no_transaction();
+    }
 
     if (this->status->get_state(connector) != ChargePointStatus::Reserved &&
         this->status->get_state(connector) != ChargePointStatus::Unavailable) {
@@ -4847,6 +4864,7 @@ void ChargePointImpl::send_firmware_update_status_notification(const PendingFirm
 void ChargePointImpl::on_firmware_update_status_notification(
     std::int32_t request_id, const FirmwareStatusNotification firmware_update_status,
     const std::optional<bool> disable_connectors_during_install) {
+    const std::lock_guard<std::recursive_mutex> firmware_install_lock(this->firmware_install_mutex);
     {
         auto handle = this->pending_firmware_status.handle();
         auto& pending = *handle;
@@ -4874,19 +4892,6 @@ void ChargePointImpl::on_firmware_update_status_notification(
     }
 
     this->apply_firmware_install_state(request_id, firmware_update_status, disable_connectors_during_install);
-
-    // A status that ends the install restores the connectors. One that can end the cycle before the install
-    // (or Idle, which may be reported at any time) does so only if this cycle disabled them.
-    const bool install_ended = firmware_update_status == FirmwareStatusNotification::InstallationFailed or
-                               firmware_update_status == FirmwareStatusNotification::Installed or
-                               firmware_update_status == FirmwareStatusNotification::InstallVerificationFailed;
-    const bool cycle_ended = is_firmware_status_end_state(firmware_update_status) or
-                             firmware_update_status == FirmwareStatusNotification::Idle;
-    if (install_ended) {
-        this->restore_connectors_after_firmware_update(false);
-    } else if (cycle_ended or firmware_update_status == FirmwareStatusNotification::Downloading) {
-        this->restore_connectors_after_firmware_update(true);
-    }
 }
 
 void ChargePointImpl::reset_firmware_status_if_finished(std::int32_t request_id,
