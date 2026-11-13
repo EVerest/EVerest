@@ -31,6 +31,8 @@ using ::testing::Return;
 using ::testing::Throw;
 
 const ocpp::LeafCertificateType DEFAULT_LEAF_CERT_TYPE = ocpp::LeafCertificateType::MO;
+const std::vector<ocpp::LeafCertificateType> DEFAULT_LEAF_CERT_TYPES = {ocpp::LeafCertificateType::MO,
+                                                                        ocpp::LeafCertificateType::V2G};
 
 class AuthorizationTest : public ::testing::Test {
 public:
@@ -789,7 +791,7 @@ TEST_F(AuthorizationTest, validate_token_emaid_offline_no_certificate_contract_v
     EXPECT_CALL(this->connectivity_manager, is_websocket_connected()).WillRepeatedly(Return(false));
     // And offline contract validation is not allowed.
     this->set_allow_contract_validation_offline(this->device_model, false);
-    ON_CALL(this->evse_security, verify_certificate(_, DEFAULT_LEAF_CERT_TYPE))
+    ON_CALL(this->evse_security, verify_certificate(_, DEFAULT_LEAF_CERT_TYPES))
         .WillByDefault(Return(ocpp::CertificateValidationResult::Valid));
 
     IdToken id_token;
@@ -810,7 +812,7 @@ TEST_F(
     // And offline contract validation is not allowed.
     this->set_allow_contract_validation_offline(this->device_model, true);
     this->set_local_authorize_offline(this->device_model, false);
-    ON_CALL(this->evse_security, verify_certificate(_, DEFAULT_LEAF_CERT_TYPE))
+    ON_CALL(this->evse_security, verify_certificate(_, DEFAULT_LEAF_CERT_TYPES))
         .WillByDefault(Return(ocpp::CertificateValidationResult::Valid));
 
     IdToken id_token;
@@ -833,7 +835,7 @@ TEST_F(
     this->set_allow_contract_validation_offline(this->device_model, true);
     this->set_local_authorize_offline(this->device_model, true);
     this->set_local_auth_list_ctrlr_enabled(this->device_model, true);
-    ON_CALL(this->evse_security, verify_certificate(_, DEFAULT_LEAF_CERT_TYPE))
+    ON_CALL(this->evse_security, verify_certificate(_, DEFAULT_LEAF_CERT_TYPES))
         .WillByDefault(Return(ocpp::CertificateValidationResult::Valid));
 
     IdTokenInfo id_token_info_result;
@@ -859,8 +861,7 @@ TEST_F(AuthorizationTest,
     // And offline contract validation is not allowed.
     this->set_allow_contract_validation_offline(this->device_model, true);
     this->set_local_authorize_offline(this->device_model, false);
-    std::vector<ocpp::LeafCertificateType> types({ocpp::LeafCertificateType::MO, ocpp::LeafCertificateType::V2G});
-    ON_CALL(this->evse_security, verify_certificate(_, types))
+    ON_CALL(this->evse_security, verify_certificate(_, DEFAULT_LEAF_CERT_TYPES))
         .WillByDefault(Return(ocpp::CertificateValidationResult::Expired));
 
     IdToken id_token;
@@ -872,26 +873,42 @@ TEST_F(AuthorizationTest,
     EXPECT_EQ(response.certificateStatus, AuthorizeCertificateStatusEnum::CertificateExpired);
 }
 
-TEST_F(AuthorizationTest,
-       validate_token_emaid_offline_no_certificate_contract_validation_offline_allowed_certificate_invalid_signature) {
-    // The auth controller is enabled.
+using CertValidationErrorTestParams =
+    std::tuple<ocpp::CertificateValidationResult, AuthorizationStatusEnum, AuthorizeCertificateStatusEnum>;
+
+class AuthorizationTestCertValidationError : public AuthorizationTest,
+                                             public ::testing::WithParamInterface<CertValidationErrorTestParams> {};
+
+INSTANTIATE_TEST_SUITE_P(
+    OfflineContractValidationErrors, AuthorizationTestCertValidationError,
+    testing::Values(std::make_tuple(ocpp::CertificateValidationResult::InvalidSignature,
+                                    AuthorizationStatusEnum::Invalid, AuthorizeCertificateStatusEnum::SignatureError),
+                    std::make_tuple(ocpp::CertificateValidationResult::InvalidLeafSignature,
+                                    AuthorizationStatusEnum::Invalid, AuthorizeCertificateStatusEnum::CertChainError),
+                    std::make_tuple(ocpp::CertificateValidationResult::InvalidChain, AuthorizationStatusEnum::Invalid,
+                                    AuthorizeCertificateStatusEnum::CertChainError),
+                    std::make_tuple(ocpp::CertificateValidationResult::IssuerNotFound, AuthorizationStatusEnum::Invalid,
+                                    AuthorizeCertificateStatusEnum::CertChainError),
+                    std::make_tuple(ocpp::CertificateValidationResult::Unknown, AuthorizationStatusEnum::Invalid,
+                                    AuthorizeCertificateStatusEnum::CertChainError)));
+
+TEST_P(AuthorizationTestCertValidationError, validate_token_emaid_offline_contract_validation_cert_error) {
+    auto [validation_result, expected_auth_status, expected_cert_status] = GetParam();
+
     this->set_auth_ctrlr_enabled(this->device_model, true);
-    // The websocket is not connected.
     EXPECT_CALL(this->connectivity_manager, is_websocket_connected()).WillRepeatedly(Return(false));
-    // And offline contract validation is not allowed.
     this->set_allow_contract_validation_offline(this->device_model, true);
-    // Local authorize offline is not allowed.
     this->set_local_authorize_offline(this->device_model, false);
-    // The certificate has an invalid signature.
-    ON_CALL(this->evse_security, verify_certificate(_, DEFAULT_LEAF_CERT_TYPE))
-        .WillByDefault(Return(ocpp::CertificateValidationResult::InvalidSignature));
+    ON_CALL(this->evse_security, verify_certificate(_, DEFAULT_LEAF_CERT_TYPES))
+        .WillByDefault(Return(validation_result));
 
     IdToken id_token;
     id_token.type = IdTokenEnumStringType::eMAID;
     id_token.idToken = "test_token";
 
     const AuthorizeResponse response = authorization->validate_token(id_token, "", std::nullopt);
-    EXPECT_EQ(response.idTokenInfo.status, AuthorizationStatusEnum::Unknown);
+    EXPECT_EQ(response.idTokenInfo.status, expected_auth_status);
+    EXPECT_EQ(response.certificateStatus, expected_cert_status);
 }
 
 TEST_F(AuthorizationTest, validate_token_emaid_websocket_disconnected_certificate_no_value) {
@@ -912,7 +929,7 @@ TEST_F(AuthorizationTest, validate_token_emaid_no_ocsp_websocket_connected) {
     // The websocket is connected.
     EXPECT_CALL(this->connectivity_manager, is_websocket_connected()).WillRepeatedly(Return(true));
     // Certificate is valid according to 'verify_certificate'.
-    ON_CALL(this->evse_security, verify_certificate(_, DEFAULT_LEAF_CERT_TYPE))
+    ON_CALL(this->evse_security, verify_certificate(_, DEFAULT_LEAF_CERT_TYPES))
         .WillByDefault(Return(ocpp::CertificateValidationResult::Valid));
     std::vector<ocpp::OCSPRequestData> ocsp_request_data;
     ocpp::OCSPRequestData d;
@@ -942,7 +959,7 @@ TEST_F(AuthorizationTest,
     // Do not allow central contract validation.
     this->set_allow_central_contract_validation(this->device_model, false);
     // Certificate is valid according to 'verify_certificate'.
-    ON_CALL(this->evse_security, verify_certificate(_, DEFAULT_LEAF_CERT_TYPE))
+    ON_CALL(this->evse_security, verify_certificate(_, DEFAULT_LEAF_CERT_TYPES))
         .WillByDefault(Return(ocpp::CertificateValidationResult::Valid));
     std::vector<ocpp::OCSPRequestData> ocsp_request_data;
     EXPECT_CALL(this->evse_security, get_mo_ocsp_request_data(_)).WillOnce(Return(ocsp_request_data));
@@ -961,7 +978,7 @@ TEST_F(AuthorizationTest,
     // Do not allow central contract validation.
     this->set_allow_central_contract_validation(this->device_model, true);
     // Certificate is valid according to 'verify_certificate'.
-    ON_CALL(this->evse_security, verify_certificate(_, DEFAULT_LEAF_CERT_TYPE))
+    ON_CALL(this->evse_security, verify_certificate(_, DEFAULT_LEAF_CERT_TYPES))
         .WillByDefault(Return(ocpp::CertificateValidationResult::Valid));
     std::vector<ocpp::OCSPRequestData> ocsp_request_data;
     EXPECT_CALL(this->evse_security, get_mo_ocsp_request_data(_)).WillOnce(Return(ocsp_request_data));
@@ -982,7 +999,7 @@ TEST_F(AuthorizationTest,
     // The websocket is connected.
     EXPECT_CALL(this->connectivity_manager, is_websocket_connected()).WillRepeatedly(Return(true));
     // Certificate is valid according to 'verify_certificate'.
-    ON_CALL(this->evse_security, verify_certificate(_, DEFAULT_LEAF_CERT_TYPE))
+    ON_CALL(this->evse_security, verify_certificate(_, DEFAULT_LEAF_CERT_TYPES))
         .WillByDefault(Return(ocpp::CertificateValidationResult::IssuerNotFound));
     // Do not allow central contract validation.
     set_allow_central_contract_validation(this->device_model, false);
@@ -999,7 +1016,7 @@ TEST_F(AuthorizationTest,
     // The websocket is connected.
     EXPECT_CALL(this->connectivity_manager, is_websocket_connected()).WillRepeatedly(Return(true));
     // Certificate is valid according to 'verify_certificate'.
-    ON_CALL(this->evse_security, verify_certificate(_, DEFAULT_LEAF_CERT_TYPE))
+    ON_CALL(this->evse_security, verify_certificate(_, DEFAULT_LEAF_CERT_TYPES))
         .WillByDefault(Return(ocpp::CertificateValidationResult::IssuerNotFound));
     // Allow central contract validation.
     set_allow_central_contract_validation(this->device_model, true);

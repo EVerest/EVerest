@@ -2909,8 +2909,7 @@ void ChargePointImpl::sign_certificate(const ocpp::CertificateSigningUseEnum& ce
         this->configuration.getChargeBoxSerialNumber(), use_tpm);
 
     if (response.status != GetCertificateSignRequestStatus::Accepted || !response.csr.has_value()) {
-        EVLOG_error << "Create CSR (TPM=" << use_tpm << ")"
-                    << " failed for:"
+        EVLOG_error << "Create CSR (TPM=" << use_tpm << ")" << " failed for:"
                     << ocpp::conversions::certificate_signing_use_enum_to_string(certificate_signing_use);
 
         std::string gen_error =
@@ -3825,10 +3824,10 @@ ocpp::v2::AuthorizeResponse ChargePointImpl::data_transfer_pnc_authorize(
             // C07.FR.08: CS shall try to validate the contract locally
             if (contract_validation_offline) {
                 EVLOG_info << "Offline: contract " << local_verify_result;
-                switch (local_verify_result) {
+                const auto status_result = map_certificate_validation_to_status(local_verify_result);
                 // C07.FR.09: CS shall lookup the eMAID in Local Auth List or Auth Cache when
                 // local validation succeeded
-                case CertificateValidationResult::Valid:
+                if (status_result.check_local_auth_list) {
                     // In C07.FR.09 LocalAuthorizeOffline is mentioned, this seems to be a generic config item
                     // that applies to Local Auth List and Auth Cache, but since there are no requirements about
                     // it, lets check it here
@@ -3837,21 +3836,12 @@ ocpp::v2::AuthorizeResponse ChargePointImpl::data_transfer_pnc_authorize(
                     } else {
                         // No requirement states what to do when ContractValidationOffline is true
                         // and LocalAuthorizeOffline is false
-                        authorize_response.idTokenInfo.status = ocpp::v2::AuthorizationStatusEnum::Unknown;
-                        authorize_response.certificateStatus = ocpp::v2::AuthorizeCertificateStatusEnum::Accepted;
+                        authorize_response.idTokenInfo.status = status_result.authorization_status;
+                        authorize_response.certificateStatus = status_result.certificate_status;
                     }
-                    break;
-                case CertificateValidationResult::Expired:
-                    authorize_response.idTokenInfo.status = ocpp::v2::AuthorizationStatusEnum::Expired;
-                    authorize_response.certificateStatus = ocpp::v2::AuthorizeCertificateStatusEnum::CertificateExpired;
-                    break;
-                case CertificateValidationResult::InvalidSignature:
-                case CertificateValidationResult::IssuerNotFound:
-                case CertificateValidationResult::InvalidLeafSignature:
-                case CertificateValidationResult::InvalidChain:
-                case CertificateValidationResult::Unknown:
-                    authorize_response.idTokenInfo.status = ocpp::v2::AuthorizationStatusEnum::Unknown;
-                    break;
+                } else {
+                    authorize_response.idTokenInfo.status = status_result.authorization_status;
+                    authorize_response.certificateStatus = status_result.certificate_status;
                 }
             } else {
                 EVLOG_warning << "Offline: ContractValidationOffline is disabled. Validation not allowed";
