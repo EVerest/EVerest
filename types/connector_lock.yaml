@@ -1,0 +1,13 @@
+description: Connector lock types
+types:
+  LockState:
+    description: >-
+      Physical state of the connector lock as reported by its feedback.
+        Unknown: The lock state cannot be determined
+        Unlocked: The lock is open, the plug can be removed
+        Locked: The lock is closed and confirmed by feedback, the plug cannot be removed
+    type: string
+    enum:
+      - Unknown
+      - Unlocked
+      - Locked

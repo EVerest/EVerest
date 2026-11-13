@@ -19,6 +19,8 @@ std::string serialize(Reason val) noexcept;
 std::string serialize(PowerOnOff const& val) noexcept;
 std::string serialize(Ampacity val) noexcept;
 std::string serialize(ProximityPilot const& val) noexcept;
+std::string serialize(LockState val) noexcept;
+std::string serialize(LockStatus const& val) noexcept;
 
 std::ostream& operator<<(std::ostream& os, Event const& val);
 std::ostream& operator<<(std::ostream& os, BspEvent const& val);
@@ -30,6 +32,8 @@ std::ostream& operator<<(std::ostream& os, Reason const& val);
 std::ostream& operator<<(std::ostream& os, PowerOnOff const& val);
 std::ostream& operator<<(std::ostream& os, Ampacity const& val);
 std::ostream& operator<<(std::ostream& os, ProximityPilot const& val);
+std::ostream& operator<<(std::ostream& os, LockState const& val);
+std::ostream& operator<<(std::ostream& os, LockStatus const& val);
 
 #include <everest_api_types/utilities/deserialize_templates.inc>
 

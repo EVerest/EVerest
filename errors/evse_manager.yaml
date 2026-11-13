@@ -13,6 +13,8 @@ errors:
     description: Over voltage event
   - name: MREC9AuthorizationTimeout
     description: No authorization was provided within timeout after plugin
+  - name: ConnectorLockConfirmationTimeout
+    description: The connector lock did not report Locked within connector_lock_confirmation_timeout_ms after authorization
   - name: PowermeterTransactionStartFailed
     description: Transaction could not be started at the powermeter
   - name: Inoperative

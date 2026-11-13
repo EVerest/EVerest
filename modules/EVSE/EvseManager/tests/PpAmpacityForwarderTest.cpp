@@ -5,13 +5,15 @@
 
 #include <vector>
 
-#include "pp_ampacity_forwarder.hpp"
+#include "latest_value_forwarder.hpp"
+
+#include <generated/types/board_support_common.hpp>
 
 namespace {
 
-using module::PpAmpacityForwarder;
 using types::board_support_common::Ampacity;
 using types::board_support_common::ProximityPilot;
+using PpAmpacityForwarder = module::LatestValueForwarder<ProximityPilot>;
 
 ProximityPilot pp(Ampacity a) {
     ProximityPilot p;
@@ -65,6 +67,14 @@ TEST(PpAmpacityForwarderTest, values_after_connect_are_forwarded_in_order) {
     EXPECT_EQ(received[0], Ampacity::A_13);
     EXPECT_EQ(received[1], Ampacity::A_20);
     EXPECT_EQ(received[2], Ampacity::None);
+}
+
+TEST(PpAmpacityForwarderTest, publish_reports_whether_the_sink_received_the_value) {
+    PpAmpacityForwarder forwarder;
+    EXPECT_FALSE(forwarder.publish(pp(Ampacity::A_13)));
+
+    forwarder.connect([](const ProximityPilot&) {});
+    EXPECT_TRUE(forwarder.publish(pp(Ampacity::A_20)));
 }
 
 } // namespace
