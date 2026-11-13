@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
+#include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <exception>
+#include <limits>
 #include <string_view>
 
 #include <everest/date/date.hpp>
@@ -43,6 +46,26 @@ void preload_tzdb() {
 
 std::string to_rfc3339(const std::chrono::time_point<date::utc_clock>& t) {
     return everest::lib::datetime::to_rfc3339(t);
+}
+
+std::string seconds_from_now_to_rfc3339(std::uint32_t seconds) {
+    return to_rfc3339(date::utc_clock::now() + std::chrono::seconds(seconds));
+}
+
+std::uint32_t clamp_to_seconds(double seconds) {
+    // Written as not(> 0) so that NaN is rejected too
+    if (not(seconds > 0.0)) {
+        return 0;
+    }
+    constexpr auto max_seconds = static_cast<double>(std::numeric_limits<std::uint32_t>::max());
+    return static_cast<std::uint32_t>(std::round(std::min(seconds, max_seconds)));
+}
+
+std::int32_t rfc3339_to_seconds_from_now(const std::string& t) {
+    const auto time_until = from_rfc3339(t) - date::utc_clock::now();
+    const auto seconds = std::chrono::duration_cast<std::chrono::seconds>(time_until).count();
+    return static_cast<std::int32_t>(std::clamp<std::int64_t>(seconds, std::numeric_limits<std::int32_t>::min(),
+                                                              std::numeric_limits<std::int32_t>::max()));
 }
 
 std::optional<std::chrono::time_point<date::utc_clock>> try_from_rfc3339(const std::string& t) {

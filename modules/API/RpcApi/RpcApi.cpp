@@ -218,6 +218,14 @@ void RpcApi::subscribe_evse_manager(const std::unique_ptr<evse_managerIntf>& evs
             display_parameters.present_soc = std::lround(ev_info.soc.value());
         }
 
+        if (ev_info.target_soc.has_value()) {
+            display_parameters.target_soc = std::lround(ev_info.target_soc.value());
+        }
+
+        if (ev_info.battery_full_soc.has_value()) {
+            display_parameters.maximum_soc = std::lround(ev_info.battery_full_soc.value());
+        }
+
         if (ev_info.battery_capacity.has_value()) {
             display_parameters.battery_energy_capacity = ev_info.battery_capacity;
         }
@@ -225,9 +233,7 @@ void RpcApi::subscribe_evse_manager(const std::unique_ptr<evse_managerIntf>& evs
         if (ev_info.estimated_time_full.has_value()) {
             // calculate the distance of estimated_time_full to now, and if greater 0,
             // report it
-            const auto time_until =
-                Everest::Date::from_rfc3339(ev_info.estimated_time_full.value()) - date::utc_clock::now();
-            const auto secs = std::chrono::duration_cast<std::chrono::seconds>(time_until).count();
+            const auto secs = Everest::Date::rfc3339_to_seconds_from_now(ev_info.estimated_time_full.value());
             if (secs > 0) {
                 display_parameters.remaining_time_to_maximum_soc = secs;
             }
