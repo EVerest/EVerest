@@ -4,6 +4,8 @@ This directory contains useful scripts for working with EVerest and meta-everest
 
 _cargolock2bb.py_ converts a Cargo.lock file, that can also be loaded via an URL, into a .bb file
 
+_check_asyncapi_compat.py_ compares the EVerest AsyncAPI specifications in `docs/source/reference/EVerest_API/` with a git ref (e.g. the last stable release), classifies each change as breaking, additive or documentation-only following the breaking change definition in `docs/source/project/releases/breaking-changes.rst`, and suggests a version bump per specification. Commits whose findings were reviewed as not breaking are listed in `docs/source/project/releases/asyncapi_compat_acknowledged.yaml`
+
 _check_dependency_versions.py_ parses a snapshot.yaml file and checks if there are new versions of the listed dependencies available
 
 _check_mod_update.py_ runs `ev-cli mod update --force` on every module and reports modules whose generated files do not regenerate cleanly
