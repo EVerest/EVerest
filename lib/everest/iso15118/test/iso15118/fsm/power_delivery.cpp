@@ -17,8 +17,7 @@ using namespace iso15118;
 
 namespace dt = message_20::datatypes;
 
-const auto WAIT_OUT_CONTACTOR_TIMEOUT =
-    std::chrono::milliseconds(session::EvseSetupConfig{}.ac_close_contactor_timeout_ms + 100);
+constexpr auto WAIT_OUT_CONTACTOR_TIMEOUT = std::chrono::milliseconds(d20::TIMEOUT_AC_CONTACTOR_CLOSE + 100);
 
 SCENARIO("ISO15118-20 power delivery contactor handling") {
 

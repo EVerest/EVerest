@@ -11,6 +11,7 @@
 #include <iso15118/d20/config.hpp>
 #include <iso15118/d20/control_event.hpp>
 #include <iso15118/d20/limits.hpp>
+#include <iso15118/d20/timeout.hpp>
 #include <iso15118/message/common_types.hpp>
 #include <iso15118/message/shared_datatypes.hpp>
 #include <iso15118/message_2/common_types.hpp>
@@ -82,10 +83,10 @@ struct EvseSetupConfig {
     uint32_t auth_timeout_eim_s{300};
     uint32_t auth_timeout_pnc_s{55};
 
-    // How long an AC PowerDeliveryReq(Start) waits for the closed contactor before FAILED_ContactorError
-    // ([V2G20-862]). The default keeps 100 ms of the 1.5 s V2G_SECC_Msg_Performance_Time (Table 215) for
-    // sending the response; larger values tolerate slow contactors at the cost of conformance.
-    uint32_t ac_close_contactor_timeout_ms{1400};
+    // How long an AC PowerDeliveryReq(Start) waits for the closed contactor before FAILED_ContactorError.
+    // Values above the conformant d20::TIMEOUT_AC_CONTACTOR_CLOSE tolerate slow contactors at the cost of
+    // conformance.
+    uint32_t ac_close_contactor_timeout_ms{d20::TIMEOUT_AC_CONTACTOR_CLOSE};
 };
 
 struct SessionConfig {
@@ -149,7 +150,7 @@ struct SessionConfig {
     std::vector<VasService> pre20_vas_services{};
     uint32_t auth_timeout_eim_s{300};
     uint32_t auth_timeout_pnc_s{55};
-    uint32_t ac_close_contactor_timeout_ms{1400};
+    uint32_t ac_close_contactor_timeout_ms{d20::TIMEOUT_AC_CONTACTOR_CLOSE};
 };
 
 // Saturates instead of wrapping: a configured value beyond ~49 days would overflow the uint32_t

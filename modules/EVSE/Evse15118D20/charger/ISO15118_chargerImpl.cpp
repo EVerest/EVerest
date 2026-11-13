@@ -23,6 +23,7 @@
 #include <everest/util/misc/container.hpp>
 
 #include <iso15118/config.hpp>
+#include <iso15118/d20/timeout.hpp>
 #include <iso15118/detail/d20/config_validation.hpp>
 
 #include <iso15118/io/logging.hpp>
@@ -723,13 +724,12 @@ void ISO15118_chargerImpl::ready() {
                                      MAX_AC_CLOSE_CONTACTOR_TIMEOUT_MS, contactor_timeout_ms);
     }
     setup_config.ac_close_contactor_timeout_ms = static_cast<uint32_t>(contactor_timeout_ms);
-    const auto conformant_contactor_timeout_ms = iso15118::session::EvseSetupConfig{}.ac_close_contactor_timeout_ms;
-    if (setup_config.ac_close_contactor_timeout_ms > conformant_contactor_timeout_ms) {
+    if (setup_config.ac_close_contactor_timeout_ms > iso15118::d20::TIMEOUT_AC_CONTACTOR_CLOSE) {
         EVLOG_warning << fmt::format(
             "Evse15118D20: ac_close_contactor_timeout_ms is {} ms, above the conformant {} ms; ISO 15118-20 AC "
             "PowerDeliveryRes may miss the 1.5 s V2G_SECC_Msg_Performance_Time ([V2G20-861/862]) and the EV's 2 s "
             "message timeout",
-            setup_config.ac_close_contactor_timeout_ms, conformant_contactor_timeout_ms);
+            setup_config.ac_close_contactor_timeout_ms, iso15118::d20::TIMEOUT_AC_CONTACTOR_CLOSE);
     }
 
     {

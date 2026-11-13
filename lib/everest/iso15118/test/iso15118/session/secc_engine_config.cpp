@@ -490,7 +490,7 @@ SCENARIO("ISO 15118-20 AC contactor-close timeout") {
     GIVEN("The default") {
         const session::SessionConfig config(setup);
         THEN("it keeps 100 ms of the 1.5 s PowerDelivery performance time for the response") {
-            REQUIRE(config.ac_close_contactor_timeout_ms == 1400);
+            REQUIRE(config.ac_close_contactor_timeout_ms == d20::TIMEOUT_AC_CONTACTOR_CLOSE);
         }
     }
 
