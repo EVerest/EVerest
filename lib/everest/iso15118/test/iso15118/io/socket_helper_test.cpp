@@ -6,11 +6,16 @@
 #include <atomic>
 #include <cerrno>
 #include <chrono>
+#include <cstdint>
 #include <cstring>
+#include <string>
 #include <thread>
 #include <vector>
 
+#include <arpa/inet.h>
 #include <dirent.h>
+#include <net/if.h>
+#include <netdb.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <unistd.h>
@@ -155,4 +160,46 @@ TEST_CASE("socket_helper: write_all surfaces a closed peer as EPIPE instead of r
     CHECK(errno == EPIPE);
 
     close(fds[0]);
+}
+
+TEST_CASE("socket_helper: sockaddr_in6_to_name formats the address like getnameinfo(NI_NUMERICHOST)") {
+    const auto loopback_index = if_nametoindex("lo");
+    REQUIRE(loopback_index != 0);
+    constexpr std::uint32_t no_such_interface = 9999;
+    char scope_name[IF_NAMESIZE];
+    REQUIRE(if_indextoname(no_such_interface, scope_name) == nullptr);
+
+    struct Case {
+        const char* address;
+        std::uint32_t scope_id;
+        std::string expected;
+    };
+    const auto loopback_number = "%" + std::to_string(loopback_index);
+    const std::vector<Case> cases{
+        {"2001:db8::1", 0, "2001:db8::1"},
+        // link-local: the interface name, or the index if there is no such interface
+        {"fe80::1", loopback_index, "fe80::1%lo"},
+        {"fe80::1", no_such_interface, "fe80::1%9999"},
+        {"ff02::1", loopback_index, "ff02::1%lo"},
+        // any other scope: always the index
+        {"2001:db8::1", loopback_index, "2001:db8::1" + loopback_number},
+        {"ff05::1", loopback_index, "ff05::1" + loopback_number},
+    };
+
+    for (auto const& c : cases) {
+        INFO(c.address << " with scope " << c.scope_id);
+        sockaddr_in6 address{};
+        address.sin6_family = AF_INET6;
+        address.sin6_scope_id = c.scope_id;
+        REQUIRE(inet_pton(AF_INET6, c.address, &address.sin6_addr) == 1);
+
+        char reference[NI_MAXHOST];
+        REQUIRE(getnameinfo(reinterpret_cast<const sockaddr*>(&address), sizeof(address), reference, sizeof(reference),
+                            nullptr, 0, NI_NUMERICHOST) == 0);
+
+        const auto name = iso15118::io::sockaddr_in6_to_name(address);
+        REQUIRE(name != nullptr);
+        CHECK(std::string(name.get()) == reference);
+        CHECK(std::string(name.get()) == c.expected);
+    }
 }
