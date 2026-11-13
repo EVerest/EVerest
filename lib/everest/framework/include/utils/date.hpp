@@ -31,8 +31,11 @@ std::string to_rfc3339(const std::chrono::time_point<date::utc_clock>& t);
 /// absolute RFC3339 UTC timestamp
 std::string seconds_from_now_to_rfc3339(std::uint32_t seconds);
 
+/// \brief Round \p seconds to whole seconds, saturating to the uint32_t range. NaN and values <= 0 yield 0.
+std::uint32_t clamp_to_seconds(double seconds);
+
 /// \brief Convert an RFC3339 timestamp into the number of seconds from now, the inverse of
-/// seconds_from_now_to_rfc3339(). Negative for timestamps in the past.
+/// seconds_from_now_to_rfc3339(). Negative for timestamps in the past, saturating to the int32_t range.
 std::int32_t rfc3339_to_seconds_from_now(const std::string& t);
 
 /// \brief Strict parsing of RFC 3339 date-time (YYYY-MM-DDTHH:MM:SS[.frac](Z|+HH:MM|-HH:MM)), see

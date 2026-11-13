@@ -12,7 +12,6 @@
 #include <algorithm>
 #include <cstdint>
 #include <iterator>
-#include <limits>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -38,15 +37,6 @@ std::mutex GEL; // Global EVerest Lock
 namespace dt = iso15118::message_20::datatypes;
 
 namespace {
-
-// The EV reports these times as physical values, so a negative or out of range value has to be handled here
-std::uint32_t remaining_time_to_seconds(float seconds) {
-    if (not(seconds > 0.0f)) {
-        return 0;
-    }
-    return static_cast<std::uint32_t>(
-        std::min(static_cast<double>(seconds), static_cast<double>(std::numeric_limits<std::uint32_t>::max())));
-}
 
 iso15118::config::TlsNegotiationStrategy convert_tls_negotiation_strategy(const std::string& strategy) {
     using Strategy = iso15118::config::TlsNegotiationStrategy;
@@ -1145,11 +1135,11 @@ iso15118::session::feedback::Callbacks ISO15118_chargerImpl::create_callbacks() 
             types::iso15118::DcEvRemainingTime remaining_time;
             if (progress.remaining_time_to_full_soc.has_value()) {
                 remaining_time.ev_remaining_time_to_full_soc = Everest::Date::seconds_from_now_to_rfc3339(
-                    remaining_time_to_seconds(progress.remaining_time_to_full_soc.value()));
+                    Everest::Date::clamp_to_seconds(progress.remaining_time_to_full_soc.value()));
             }
             if (progress.remaining_time_to_bulk_soc.has_value()) {
                 remaining_time.ev_remaining_time_to_full_bulk_soc = Everest::Date::seconds_from_now_to_rfc3339(
-                    remaining_time_to_seconds(progress.remaining_time_to_bulk_soc.value()));
+                    Everest::Date::clamp_to_seconds(progress.remaining_time_to_bulk_soc.value()));
             }
             publish_dc_ev_remaining_time(remaining_time);
         }

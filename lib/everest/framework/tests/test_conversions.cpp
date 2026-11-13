@@ -5,6 +5,7 @@
 #include <atomic>
 #include <chrono>
 #include <iostream>
+#include <limits>
 #include <thread>
 #include <vector>
 
@@ -89,6 +90,24 @@ SCENARIO("Relative seconds are converted to an absolute rfc3339 timestamp", "[!t
     }
 }
 
+SCENARIO("Floating point seconds are clamped to the uint32_t range", "[date]") {
+    using Everest::Date::clamp_to_seconds;
+    CHECK(clamp_to_seconds(42.4) == 42);
+    CHECK(clamp_to_seconds(42.5) == 43);
+    CHECK(clamp_to_seconds(42.9) == 43);
+    CHECK(clamp_to_seconds(0.2) == 0);
+    CHECK(clamp_to_seconds(0.0) == 0);
+    CHECK(clamp_to_seconds(-5.0) == 0);
+    CHECK(clamp_to_seconds(std::numeric_limits<double>::quiet_NaN()) == 0);
+    CHECK(clamp_to_seconds(-std::numeric_limits<double>::infinity()) == 0);
+    CHECK(clamp_to_seconds(4294967294.4) == 4294967294);
+    CHECK(clamp_to_seconds(4294967294.5) == std::numeric_limits<std::uint32_t>::max());
+    CHECK(clamp_to_seconds(4294967295.4) == std::numeric_limits<std::uint32_t>::max());
+    CHECK(clamp_to_seconds(3.0e10f) == std::numeric_limits<std::uint32_t>::max());
+    CHECK(clamp_to_seconds(1e12) == std::numeric_limits<std::uint32_t>::max());
+    CHECK(clamp_to_seconds(std::numeric_limits<double>::infinity()) == std::numeric_limits<std::uint32_t>::max());
+}
+
 SCENARIO("An rfc3339 timestamp is converted to relative seconds from now", "[!throws]") {
     GIVEN("A timestamp one hour from now") {
         const auto timestamp = Everest::Date::seconds_from_now_to_rfc3339(3600);
@@ -105,6 +124,16 @@ SCENARIO("An rfc3339 timestamp is converted to relative seconds from now", "[!th
 
         THEN("It is negative") {
             CHECK(Everest::Date::rfc3339_to_seconds_from_now(timestamp) < 0);
+        }
+    }
+
+    GIVEN("A timestamp beyond the int32_t range") {
+        const auto far_future = Everest::Date::seconds_from_now_to_rfc3339(std::numeric_limits<std::uint32_t>::max());
+        const auto far_past = Everest::Date::to_rfc3339(date::utc_clock::now() - std::chrono::hours(24 * 365 * 100));
+
+        THEN("It saturates") {
+            CHECK(Everest::Date::rfc3339_to_seconds_from_now(far_future) == std::numeric_limits<std::int32_t>::max());
+            CHECK(Everest::Date::rfc3339_to_seconds_from_now(far_past) == std::numeric_limits<std::int32_t>::min());
         }
     }
 }

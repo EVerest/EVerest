@@ -533,7 +533,7 @@ void EvseManager::ready() {
             }
             if (p.remaining_time_to_maximum_soc.has_value()) {
                 ev_info.estimated_time_full = Everest::Date::seconds_from_now_to_rfc3339(
-                    static_cast<std::uint32_t>(p.remaining_time_to_maximum_soc.value()));
+                    Everest::Date::clamp_to_seconds(p.remaining_time_to_maximum_soc.value()));
             }
             if (p.battery_energy_capacity.has_value()) {
                 ev_info.battery_capacity = p.battery_energy_capacity.value();
@@ -614,7 +614,7 @@ void EvseManager::ready() {
                     ev_info.min_energy_request = values.min_energy_request;
                     if (values.departure_time.has_value()) {
                         ev_info.departure_time = Everest::Date::seconds_from_now_to_rfc3339(
-                            static_cast<std::uint32_t>(values.departure_time.value()));
+                            Everest::Date::clamp_to_seconds(values.departure_time.value()));
                     }
                     // TODO(SL): Missing max_v2x_energy_request & min_v2x_energy_request
                     p_evse->publish_ev_info(ev_info);
