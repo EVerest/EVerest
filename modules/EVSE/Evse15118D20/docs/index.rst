@@ -467,8 +467,9 @@ response reports the voltage source EvseManager selected for welding detection, 
 after the request (IEC 61851-23:2023 CC.6.3, CC.7.6.17, Table CC.9 t105 to t106): the
 first value after the request can still be a measurement taken just before it, the
 second was taken after it. With one value at the deadline the response carries it
-(info), with none the last present voltage (warning). A request parked when the session
-ends gets no answer.
+(info), with none the last present voltage (warning), or, with
+``welding_detection_on_missing_voltage: failed``, ResponseCode FAILED, which ends the
+session. A request parked when the session ends gets no answer.
 
 In scheduled control mode, a ``PowerDeliveryReq`` with ``Start`` whose EV power
 profile asks for more charge or discharge power than the selected schedule offers

@@ -751,6 +751,18 @@ SCENARIO("ISO 15118-2 SECC welding detection phase") {
                         REQUIRE(dt::from_physical_value(res->evse_present_voltage) == 398.0);
                     }
                 }
+
+                AND_WHEN("No second one arrives in time and FAILED is configured for a missing voltage") {
+                    secc.fsm.context().session_config.welding_detection_on_missing_voltage_failed = true;
+                    secc.fsm.timeout(d20::TimeoutType::WELDING_VOLTAGE);
+
+                    THEN("It is still answered OK with the one that arrived") {
+                        const auto res = secc.fsm.response<message_2::WeldingDetectionResponse>();
+                        REQUIRE(res.has_value());
+                        REQUIRE(res->response_code == dt::ResponseCode::OK);
+                        REQUIRE(dt::from_physical_value(res->evse_present_voltage) == 398.0);
+                    }
+                }
             }
 
             AND_WHEN("No welding detection voltage arrives in time") {
@@ -762,6 +774,18 @@ SCENARIO("ISO 15118-2 SECC welding detection phase") {
                     REQUIRE(res.has_value());
                     REQUIRE(res->response_code == dt::ResponseCode::OK);
                     REQUIRE(dt::from_physical_value(res->evse_present_voltage) == 900.0);
+                }
+            }
+
+            AND_WHEN("No welding detection voltage arrives in time and FAILED is configured for it") {
+                secc.fsm.context().session_config.welding_detection_on_missing_voltage_failed = true;
+                secc.fsm.timeout(d20::TimeoutType::WELDING_VOLTAGE);
+
+                THEN("It is answered FAILED and the session ends") {
+                    const auto res = secc.fsm.response<message_2::WeldingDetectionResponse>();
+                    REQUIRE(res.has_value());
+                    REQUIRE(res->response_code == dt::ResponseCode::FAILED);
+                    REQUIRE(secc.fsm.context().session_stopped);
                 }
             }
 

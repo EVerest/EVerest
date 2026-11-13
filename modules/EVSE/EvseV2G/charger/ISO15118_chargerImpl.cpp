@@ -59,6 +59,7 @@ void ISO15118_chargerImpl::init() {
 
     v2g_ctx->terminate_connection_on_failed_response = mod->config.terminate_connection_on_failed_response;
     v2g_ctx->dc_stop_contactor_open_timeout_failed = mod->config.dc_stop_contactor_open_timeout_response == "failed";
+    v2g_ctx->welding_detection_on_missing_voltage_failed = mod->config.welding_detection_on_missing_voltage == "failed";
 
     v2g_ctx->tls_key_logging = mod->config.tls_key_logging;
     v2g_ctx->tls_key_logging_path = mod->config.tls_key_logging_path;

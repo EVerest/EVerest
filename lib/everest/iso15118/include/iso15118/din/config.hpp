@@ -48,6 +48,7 @@ struct SessionConfig {
 
     // See session::EvseSetupConfig.
     bool dc_stop_contactor_open_timeout_failed{false};
+    bool welding_detection_on_missing_voltage_failed{false};
 };
 
 } // namespace iso15118::din

@@ -716,6 +716,8 @@ void ISO15118_chargerImpl::ready() {
     setup_config.auth_timeout_pnc_s = auth_timeout_seconds(mod->config.auth_timeout_pnc, "auth_timeout_pnc");
     setup_config.dc_stop_contactor_open_timeout_failed =
         mod->config.dc_stop_contactor_open_timeout_response == "failed";
+    setup_config.welding_detection_on_missing_voltage_failed =
+        mod->config.welding_detection_on_missing_voltage == "failed";
 
     const auto configured_contactor_timeout_ms = mod->config.ac_close_contactor_timeout_ms;
     const auto contactor_timeout_ms = std::clamp(configured_contactor_timeout_ms, MIN_AC_CLOSE_CONTACTOR_TIMEOUT_MS,

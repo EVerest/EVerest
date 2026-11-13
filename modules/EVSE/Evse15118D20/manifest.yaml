@@ -119,6 +119,23 @@ config:
     - ok_with_warning
     - failed
     default: ok_with_warning
+  welding_detection_on_missing_voltage:
+    description: >-
+      DC only. Every WeldingDetectionRes waits up to 1.4 s for values of the welding detection voltage
+      source that EvseManager reports after the request. This selects the response if no value arrived
+      at all. last_value: ResponseCode OK with the last present voltage, which can be an old sample or
+      the power supply output from before welding detection, and a warning in the log. failed:
+      ResponseCode FAILED, which ends the session, so that a stalled source is not reported as a valid
+      voltage. With one value at the deadline the response is still OK with that value, which can have
+      been taken up to one poll interval of the source before the request. FAILED skips the rest of
+      welding detection and raises no error on the station side. To also keep EvseManager from falling
+      back to the power supply as source, set its welding_detection_voltage_fallback_to_power_supply to
+      false. Behind IsoMux, set it in both EvseV2G and Evse15118D20 to cover all protocols.
+    type: string
+    enum:
+    - last_value
+    - failed
+    default: last_value
   enable_ssl_logging:
     description: Verbosely log the ssl/tls connection
     type: boolean

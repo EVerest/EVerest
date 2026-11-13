@@ -70,4 +70,5 @@ for two ``update_dc_present_values`` with ``welding_detection`` set after its re
 1.4 s, so it reports the voltage source EvseManager selected for welding detection, measured after
 the request (CC.6.3, CC.7.6.17, Table CC.9 t105 to t106): the first value after the request can still
 be a measurement taken just before it, the second was taken after it. With one value at the deadline
-the response carries it (info), with none the last present voltage (warning).
+the response carries it (info), with none the last present voltage (warning), or ResponseCode
+FAILED with ``welding_detection_on_missing_voltage: failed``.

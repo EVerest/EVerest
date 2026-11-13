@@ -1151,10 +1151,11 @@ enum v2g_event states::handle_din_welding_detection(struct v2g_connection* conn)
     /* TODO: Waiting for CP-State B [V2G-DC-556]. */
 
     /* A voltage measured after the request [IEC 61851-23:2023 CC.6.3, Table CC.9 t105 to t106]. */
-    v2g_ctx_wait_for_welding_voltage(conn->ctx);
+    const bool voltage_missing =
+        not v2g_ctx_wait_for_welding_voltage(conn->ctx) and conn->ctx->welding_detection_on_missing_voltage_failed;
 
     /* Now fill the evse response message */
-    res->ResponseCode = din_responseCodeType_OK; // [V2G-DC-388]
+    res->ResponseCode = voltage_missing ? din_responseCodeType_FAILED : din_responseCodeType_OK; // [V2G-DC-388]
 
     res->DC_EVSEStatus.EVSEIsolationStatus = (din_isolationLevelType)conn->ctx->evse_v2g_data.evse_isolation_status;
     res->DC_EVSEStatus.EVSEIsolationStatus_isUsed = conn->ctx->evse_v2g_data.evse_isolation_status_is_used;

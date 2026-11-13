@@ -128,6 +128,7 @@ struct Conf {
     bool hack_skoda_enyaq;
     int hack_present_current_offset;
     std::string welding_detection_voltage_source;
+    bool welding_detection_voltage_fallback_to_power_supply;
     bool hack_pause_imd_during_precharge;
     bool hack_allow_bpt_with_iso2;
     bool hack_simplified_mode_limit_10A;
@@ -503,6 +504,9 @@ private:
     // Side B voltage reported during DC welding detection, see welding_detection_voltage_source
     std::unique_ptr<WeldingDetectionVoltage> welding_detection_voltage;
     std::atomic<float> present_current_A{0};
+    // Resolved in init(), so that a configuration error stops the module before it is wired up.
+    WeldingDetectionVoltageSource welding_detection_source{WeldingDetectionVoltageSource::PowerSupply};
+    void select_welding_detection_voltage_source();
     void setup_welding_detection_voltage();
     void end_welding_detection_phase();
     bool welding_detection_holds(WeldingDetectionVoltageSource source) const;

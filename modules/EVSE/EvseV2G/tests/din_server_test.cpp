@@ -28,6 +28,7 @@ void log_selected_energy_transfer_type(int selected_energy_transfer_mode) {
 
 namespace {
 int welding_voltage_waits{0};
+bool welding_voltage_arrived{true};
 } // namespace
 
 void v2g_ctx_start_welding_detection(struct v2g_context* const ctx) {
@@ -38,8 +39,9 @@ void v2g_ctx_finish_welding_detection(struct v2g_context* const ctx) {
     ctx->session.welding_detection_active = false;
 }
 
-void v2g_ctx_wait_for_welding_voltage(struct v2g_context* const) {
+bool v2g_ctx_wait_for_welding_voltage(struct v2g_context* const) {
     ++welding_voltage_waits;
+    return welding_voltage_arrived;
 }
 
 bool v2g_ctx_wait_contactor_open(struct v2g_context* const ctx, int) {
@@ -824,6 +826,60 @@ TEST_F(DinServerPowerDeliveryTest, welding_detection_after_stop_reports_ready_st
     EXPECT_EQ(res.DC_EVSEStatus.EVSEStatusCode, din_DC_EVSEStatusCodeType_EVSE_Ready);
     EXPECT_EQ(ctx->state, WAIT_FOR_WELDINGDETECTION_SESSIONSTOP);
     EXPECT_EQ(module::stub::get_logs(dloglevel_t::DLOG_LEVEL_ERROR).size(), 0);
+}
+
+class DinServerWeldingDetectionTest : public DinServerPowerDeliveryTest {
+protected:
+    void SetUp() override {
+        DinServerPowerDeliveryTest::SetUp();
+        set_power_delivery_req(false);
+        states::handle_din_power_delivery(conn.get());
+
+        exi_in->V2G_Message.Body.PowerDeliveryReq_isUsed = false;
+        exi_in->V2G_Message.Body.WeldingDetectionReq_isUsed = true;
+        init_din_WeldingDetectionReqType(&exi_in->V2G_Message.Body.WeldingDetectionReq);
+        set_dc_ev_status(exi_in->V2G_Message.Body.WeldingDetectionReq.DC_EVStatus, false);
+
+        exi_out->V2G_Message.Body.PowerDeliveryRes_isUsed = 0u;
+        exi_out->V2G_Message.Body.WeldingDetectionRes_isUsed = 1u;
+        init_din_WeldingDetectionResType(&exi_out->V2G_Message.Body.WeldingDetectionRes);
+
+        ctx->last_v2g_msg = V2G_POWER_DELIVERY_MSG;
+        ctx->current_v2g_msg = V2G_WELDING_DETECTION_MSG;
+    }
+
+    void TearDown() override {
+        welding_voltage_arrived = true;
+    }
+};
+
+TEST_F(DinServerWeldingDetectionTest, no_voltage_answers_ok_by_default) {
+    // welding_detection_on_missing_voltage: last_value
+    welding_voltage_arrived = false;
+    ctx->welding_detection_on_missing_voltage_failed = false;
+
+    EXPECT_EQ(states::handle_din_welding_detection(conn.get()), V2G_EVENT_NO_EVENT);
+
+    EXPECT_EQ(exi_out->V2G_Message.Body.WeldingDetectionRes.ResponseCode, din_responseCodeType_OK);
+}
+
+TEST_F(DinServerWeldingDetectionTest, no_voltage_answers_failed_if_configured) {
+    // welding_detection_on_missing_voltage: failed
+    welding_voltage_arrived = false;
+    ctx->welding_detection_on_missing_voltage_failed = true;
+
+    states::handle_din_welding_detection(conn.get());
+
+    EXPECT_EQ(exi_out->V2G_Message.Body.WeldingDetectionRes.ResponseCode, din_responseCodeType_FAILED);
+}
+
+TEST_F(DinServerWeldingDetectionTest, fresh_voltage_answers_ok_if_failed_configured) {
+    welding_voltage_arrived = true;
+    ctx->welding_detection_on_missing_voltage_failed = true;
+
+    EXPECT_EQ(states::handle_din_welding_detection(conn.get()), V2G_EVENT_NO_EVENT);
+
+    EXPECT_EQ(exi_out->V2G_Message.Body.WeldingDetectionRes.ResponseCode, din_responseCodeType_OK);
 }
 
 TEST_F(DinServerPowerDeliveryTest, power_delivery_start_keeps_ready_status_code) {

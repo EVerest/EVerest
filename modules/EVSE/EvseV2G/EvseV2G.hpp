@@ -37,6 +37,7 @@ struct Conf {
     std::string tls_security;
     bool terminate_connection_on_failed_response;
     std::string dc_stop_contactor_open_timeout_response;
+    std::string welding_detection_on_missing_voltage;
     bool tls_key_logging;
     std::string tls_key_logging_path;
     int tls_timeout;

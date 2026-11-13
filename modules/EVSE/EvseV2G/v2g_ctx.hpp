@@ -99,8 +99,10 @@ void v2g_ctx_finish_welding_detection(struct v2g_context* const ctx);
  * V2G_WELDING_VOLTAGE_TIMEOUT: the first value after the request can still be a measurement taken just before it, the
  * second was taken after it [IEC 61851-23:2023 CC.6.3, Table CC.9 t105 to t106]. Does nothing outside the phase.
  * \param ctx is a pointer of type \c v2g_context.
+ * \return false if no value arrived within V2G_WELDING_VOLTAGE_TIMEOUT, so the present voltage was not measured after
+ * the request.
  */
-void v2g_ctx_wait_for_welding_voltage(struct v2g_context* const ctx);
+bool v2g_ctx_wait_for_welding_voltage(struct v2g_context* const ctx);
 
 /*!
  * \brief v2g_ctx_wait_contactor_open This function blocks a DC PowerDeliveryRes(Stop) until the board support reported

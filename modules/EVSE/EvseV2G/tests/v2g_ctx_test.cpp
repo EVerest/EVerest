@@ -241,7 +241,7 @@ TEST_F(V2gCtxWeldingDetectionTest, wait_returns_on_the_second_value_after_the_re
         deliver_welding_voltage();
     });
     const auto start = std::chrono::steady_clock::now();
-    v2g_ctx_wait_for_welding_voltage(ctx.get());
+    EXPECT_TRUE(v2g_ctx_wait_for_welding_voltage(ctx.get()));
     const auto waited = std::chrono::steady_clock::now() - start;
     mqtt.join();
 
@@ -256,9 +256,19 @@ TEST_F(V2gCtxWeldingDetectionTest, wait_times_out_and_warns_without_any_value) {
     v2g_ctx_start_welding_detection(ctx.get());
 
     const auto start = std::chrono::steady_clock::now();
-    v2g_ctx_wait_for_welding_voltage(ctx.get());
+    EXPECT_FALSE(v2g_ctx_wait_for_welding_voltage(ctx.get()));
     EXPECT_GE(std::chrono::steady_clock::now() - start, std::chrono::milliseconds(V2G_WELDING_VOLTAGE_TIMEOUT));
     EXPECT_EQ(module::stub::get_logs(dloglevel_t::DLOG_LEVEL_WARNING).size(), 1);
+}
+
+TEST_F(V2gCtxWeldingDetectionTest, wait_times_out_without_any_value_and_logs_failed_if_configured) {
+    // welding_detection_on_missing_voltage: failed
+    ctx->welding_detection_on_missing_voltage_failed = true;
+    v2g_ctx_start_welding_detection(ctx.get());
+
+    EXPECT_FALSE(v2g_ctx_wait_for_welding_voltage(ctx.get()));
+    EXPECT_EQ(module::stub::get_logs(dloglevel_t::DLOG_LEVEL_WARNING).size(), 0);
+    EXPECT_EQ(module::stub::get_logs(dloglevel_t::DLOG_LEVEL_ERROR).size(), 1);
 }
 
 TEST_F(V2gCtxWeldingDetectionTest, wait_times_out_with_one_value_and_logs_info) {
@@ -269,7 +279,7 @@ TEST_F(V2gCtxWeldingDetectionTest, wait_times_out_with_one_value_and_logs_info) 
         deliver_welding_voltage();
     });
     const auto start = std::chrono::steady_clock::now();
-    v2g_ctx_wait_for_welding_voltage(ctx.get());
+    EXPECT_TRUE(v2g_ctx_wait_for_welding_voltage(ctx.get()));
     mqtt.join();
     EXPECT_GE(std::chrono::steady_clock::now() - start, std::chrono::milliseconds(V2G_WELDING_VOLTAGE_TIMEOUT));
     EXPECT_EQ(module::stub::get_logs(dloglevel_t::DLOG_LEVEL_WARNING).size(), 0);
@@ -296,7 +306,7 @@ TEST_F(V2gCtxWeldingDetectionTest, every_request_waits) {
 
 TEST_F(V2gCtxWeldingDetectionTest, wait_outside_the_phase_returns_at_once) {
     const auto start = std::chrono::steady_clock::now();
-    v2g_ctx_wait_for_welding_voltage(ctx.get());
+    EXPECT_TRUE(v2g_ctx_wait_for_welding_voltage(ctx.get()));
     EXPECT_LT(std::chrono::steady_clock::now() - start, std::chrono::milliseconds(V2G_WELDING_VOLTAGE_TIMEOUT));
 }
 

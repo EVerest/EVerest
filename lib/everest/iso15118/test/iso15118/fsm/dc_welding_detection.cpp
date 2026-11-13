@@ -99,6 +99,22 @@ SCENARIO("ISO15118-20 DC welding detection phase") {
         // Drop the PowerDeliveryRes, as the session does once it is sent.
         state_helper.get_message_exchange().check_and_clear_response();
 
+        WHEN("A DC_WeldingDetectionReq with an unknown session id gets no voltage and FAILED is configured") {
+            ctx.session_config.welding_detection_on_missing_voltage_failed = true;
+            auto req = make_welding_detection(ctx.session, dt::Processing::Ongoing);
+            req.header.session_id[0] ^= 0xFF;
+            state_helper.handle_request(req);
+            fsm.feed(d20::Event::V2GTP_MESSAGE);
+            ctx.set_active_timeout(d20::TimeoutType::WELDING_VOLTAGE);
+            fsm.feed(d20::Event::TIMEOUT);
+
+            THEN("It keeps FAILED_UnknownSession") {
+                const auto res = ctx.get_response<message_20::DC_WeldingDetectionResponse>();
+                REQUIRE(res.has_value());
+                REQUIRE(res->response_code == dt::ResponseCode::FAILED_UnknownSession);
+            }
+        }
+
         WHEN("The first DC_WeldingDetectionReq arrives") {
             // A marked value from before the request does not count: the EV may have switched its
             // disconnection device since (Table CC.9 t105 to t106).
@@ -162,6 +178,19 @@ SCENARIO("ISO15118-20 DC welding detection phase") {
                         REQUIRE(volts(res->present_voltage) == 398.0f);
                     }
                 }
+
+                AND_WHEN("No second one arrives in time and FAILED is configured for a missing voltage") {
+                    ctx.session_config.welding_detection_on_missing_voltage_failed = true;
+                    ctx.set_active_timeout(d20::TimeoutType::WELDING_VOLTAGE);
+                    fsm.feed(d20::Event::TIMEOUT);
+
+                    THEN("It is still answered OK with the one that arrived") {
+                        const auto res = ctx.get_response<message_20::DC_WeldingDetectionResponse>();
+                        REQUIRE(res.has_value());
+                        REQUIRE(res->response_code == dt::ResponseCode::OK);
+                        REQUIRE(volts(res->present_voltage) == 398.0f);
+                    }
+                }
             }
 
             AND_WHEN("No welding detection voltage arrives in time") {
@@ -173,6 +202,19 @@ SCENARIO("ISO15118-20 DC welding detection phase") {
                     REQUIRE(res.has_value());
                     REQUIRE(res->response_code == dt::ResponseCode::OK);
                     REQUIRE(volts(res->present_voltage) == 900.0f);
+                }
+            }
+
+            AND_WHEN("No welding detection voltage arrives in time and FAILED is configured for it") {
+                ctx.session_config.welding_detection_on_missing_voltage_failed = true;
+                ctx.set_active_timeout(d20::TimeoutType::WELDING_VOLTAGE);
+                fsm.feed(d20::Event::TIMEOUT);
+
+                THEN("It is answered FAILED and the session ends") {
+                    const auto res = ctx.get_response<message_20::DC_WeldingDetectionResponse>();
+                    REQUIRE(res.has_value());
+                    REQUIRE(res->response_code == dt::ResponseCode::FAILED);
+                    REQUIRE(ctx.session_stopped);
                 }
             }
 

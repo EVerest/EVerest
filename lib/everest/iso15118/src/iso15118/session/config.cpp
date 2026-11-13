@@ -268,7 +268,8 @@ SessionConfig::SessionConfig(EvseSetupConfig config) :
     auth_timeout_eim_s(config.auth_timeout_eim_s),
     auth_timeout_pnc_s(config.auth_timeout_pnc_s),
     ac_close_contactor_timeout_ms(config.ac_close_contactor_timeout_ms),
-    dc_stop_contactor_open_timeout_failed(config.dc_stop_contactor_open_timeout_failed) {
+    dc_stop_contactor_open_timeout_failed(config.dc_stop_contactor_open_timeout_failed),
+    welding_detection_on_missing_voltage_failed(config.welding_detection_on_missing_voltage_failed) {
 
     set_supported_energy_transfer_services(std::move(config.supported_energy_services));
 

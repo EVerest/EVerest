@@ -43,6 +43,7 @@ struct Conf {
     int auth_timeout_pnc;
     int ac_close_contactor_timeout_ms;
     std::string dc_stop_contactor_open_timeout_response;
+    std::string welding_detection_on_missing_voltage;
     bool enable_ssl_logging;
     bool enable_tls_key_logging;
     std::string tls_key_logging_path;
