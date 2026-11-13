@@ -88,8 +88,8 @@ void Context::log_error(const std::string& text) {
     invoke_callback(callbacks.log_error, text);
 }
 
-void Context::telemetry(const std::string& block, const std::string& key, const std::string& value) {
-    invoke_callback(callbacks.pub_telemetry, block, key, value);
+void Context::telemetry(const SlacFsmState& fsm_state) {
+    invoke_callback(callbacks.pub_telemetry, fsm_state, status);
 }
 
 } // namespace everest::lib::slac::fsm::evse

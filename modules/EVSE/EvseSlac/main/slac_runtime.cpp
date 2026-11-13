@@ -227,16 +227,17 @@ void SlacRuntime::configure_callbacks() {
     callbacks.log_info = [this](const std::string& text) { log(LogLevel::Info, text); };
     callbacks.log_warn = [this](const std::string& text) { log(LogLevel::Warning, text); };
     callbacks.log_error = [this](const std::string& text) { log(LogLevel::Error, text); };
-    callbacks.pub_telemetry = [this](const std::string& block, const std::string& key, const std::string& value) {
+    callbacks.pub_telemetry = [this](const everest::lib::slac::SlacFsmState& fsm_state,
+                                     const everest::lib::slac::SlacTelemetry& status) {
         if (!config.telemetry_enabled) {
             return;
         }
         // Runs inside the state machine's event processing. A telemetry failure is a telemetry
         // defect, not a PLC fault, and must not take matching down with it.
         try {
-            sink.publish_telemetry(block, key, value);
+            sink.publish_telemetry(fsm_state, status);
         } catch (const std::exception& e) {
-            log(LogLevel::Warning, fmt::format("SLAC telemetry {}/{} not published: {}", block, key, e.what()));
+            log(LogLevel::Warning, fmt::format("SLAC telemetry not published: {}", e.what()));
         }
     };
     if (config.publish_mac_on_first_parm_req) {

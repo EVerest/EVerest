@@ -8,22 +8,17 @@
 #include <stdexcept>
 #include <utility>
 
-#include <everest_api_types/telemetry/codec.hpp>
 #include <everest_api_types/telemetry/json_codec.hpp>
 #include <fmt/format.h>
 
 #include "everest/logging.hpp"
 #include "slac_io.hpp"
+#include "slac_telemetry.hpp"
 
 namespace module {
 namespace main {
 
 namespace {
-namespace api_telemetry = everest::lib::API::V1_0::types::telemetry;
-
-template <typename T> nlohmann::json to_telemetry_json(std::string const& value) {
-    return api_telemetry::deserialize<T>(value);
-}
 
 // Converts the library's framework-agnostic D3State into the generated slac interface enum.
 // The mapping is total: D3State and types::slac::State share the same three matching states.
@@ -83,16 +78,10 @@ void slacImpl::FrameworkSink::clear_fault(std::string const& type) {
     }
 }
 
-void slacImpl::FrameworkSink::publish_telemetry(std::string const& block, std::string const& key,
-                                                std::string const& value) {
-    if (block == "generic" && key == "status") {
-        telemetry_generic[block][key] = to_telemetry_json<api_telemetry::SlacStatus>(value);
-    } else if (block == "FSM" && key == "state") {
-        telemetry_generic[block][key] = to_telemetry_json<api_telemetry::SlacFsmState>(value);
-    } else {
-        telemetry_generic[block][key] = value;
-    }
-    owner.mod->telemetry.publish("Slac", block, telemetry_generic[block]);
+void slacImpl::FrameworkSink::publish_telemetry(everest::lib::slac::SlacFsmState const& fsm_state,
+                                                everest::lib::slac::SlacTelemetry const& status) {
+    owner.mod->telemetry.publish("Slac", "FSM", {{"state", nlohmann::json(to_api(fsm_state))}});
+    owner.mod->telemetry.publish("Slac", "generic", {{"status", nlohmann::json(to_api(status))}});
 }
 
 void slacImpl::FrameworkSink::log(LogLevel level, std::string const& text) {

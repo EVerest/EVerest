@@ -234,7 +234,8 @@ TEST(RxDispatch, AFailureOnTheReceivePathPropagatesInsteadOfReachingTheFatalHand
         monitor_free_in_handler = rig.lifecycle.handle(50ms).has_value();
     });
     rig.ctx->slac_config.provide_telemetry = true;
-    rig.callbacks.pub_telemetry = [](std::string const&, std::string const&, std::string const&) {
+    rig.callbacks.pub_telemetry = [](everest::lib::slac::SlacFsmState const&,
+                                     everest::lib::slac::SlacTelemetry const&) {
         throw std::runtime_error("publisher exploded");
     };
     EvMac ev_mac = {0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0x04};

@@ -30,8 +30,9 @@ public:
     virtual void raise_fault(std::string const& type, std::string const& sub_type, std::string const& message) = 0;
     virtual void clear_fault(std::string const& type) = 0;
 
-    // Serialised telemetry value for \p block / \p key; the module decodes and publishes it.
-    virtual void publish_telemetry(std::string const& block, std::string const& key, std::string const& value) = 0;
+    // Telemetry from the state machine; the module encodes and publishes it.
+    virtual void publish_telemetry(everest::lib::slac::SlacFsmState const& fsm_state,
+                                   everest::lib::slac::SlacTelemetry const& status) = 0;
 
     virtual void log(LogLevel level, std::string const& text) = 0;
 };

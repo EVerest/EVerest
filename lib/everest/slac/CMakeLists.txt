@@ -19,7 +19,6 @@ target_sources(slac
     src/HomeplugMessage.cpp
     src/EvseSlacConfig.cpp
     src/MatchingSessionData.cpp
-    src/telemetry.cpp
     src/fsm/misc.cpp
     src/fsm/ev/context.cpp
     src/fsm/evse/context.cpp
@@ -46,9 +45,6 @@ target_link_libraries(slac
         everest::io
         everest::tls
         Boost::boost
-    PRIVATE
-        everest::everest_api_types
-        nlohmann_json::nlohmann_json
 )
 
 if(BUILD_TESTING)

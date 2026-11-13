@@ -160,7 +160,9 @@ struct ContextCallbacks {
     std::function<void(const std::string&)> log_info{nullptr};
     std::function<void(const std::string&)> log_warn{nullptr};
     std::function<void(const std::string&)> log_error{nullptr};
-    std::function<void(const std::string&, const std::string&, const std::string&)> pub_telemetry{nullptr};
+    // Telemetry (EvseSlacConfig::provide_telemetry), on every state change: the active states of the
+    // state machine and the status.
+    std::function<void(const SlacFsmState&, const SlacTelemetry&)> pub_telemetry{nullptr};
     // Time source for every timer in the state machine; steady_clock when unset. Tests inject a
     // controllable clock here so timeouts are driven, not waited for.
     std::function<timer::tp()> now{nullptr};
@@ -233,7 +235,7 @@ struct Context {
     void log_info(const std::string& text);
     void log_warn(const std::string& text);
     void log_error(const std::string& text);
-    void telemetry(const std::string& block, const std::string& key, const std::string& value);
+    void telemetry(const SlacFsmState& fsm_state);
 
     defs::ModemVendor modem_vendor{defs::ModemVendor::Unknown};
     bool clock_seeded_nmk_reported{false};
