@@ -37,13 +37,28 @@ if (DISABLE_EDM)
 endif()
 
 option(LIBEVSE_CRYPTO_SUPPLIER_OPENSSL "Default OpenSSL cryptography supplier" ON)
-
 # dependencies
 if (LIBEVSE_CRYPTO_SUPPLIER_OPENSSL)
     find_package(OpenSSL 3 REQUIRED)
 endif()
 
 add_subdirectory(lib)
+
+
+# Stage Security_Profiles into the build tree so they are usable
+# at build/test time without requiring an install step.
+set(SECURITY_PROFILES_BUILD_DIR
+    "${CMAKE_CURRENT_BINARY_DIR}/share/everest/Security_Profiles")
+
+file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/Security_Profiles/"
+     DESTINATION "${SECURITY_PROFILES_BUILD_DIR}")
+
+if(EVSE_SECURITY_INSTALL)
+    install(
+        DIRECTORY Security_Profiles/
+        DESTINATION share/everest/Security_Profiles
+    )
+endif()
 
 # packaging
 install(

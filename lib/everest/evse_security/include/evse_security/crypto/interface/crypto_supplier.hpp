@@ -19,6 +19,79 @@ public:
     /// @brief Name of supplier, char is not required to be released
     static const char* get_supplier_name();
 
+    /// @brief Get the Organization (O) from a certificate
+    /// @param handle Certificate handle
+    /// @return Organization string or empty if not present
+    static std::string x509_get_organization(X509Handle* handle);
+
+    /// @brief Get the Organizational Unit (OU) from a certificate
+    /// @param handle Certificate handle
+    /// @return Organizational Unit string or empty if not present
+    static std::string x509_get_organizational_unit(X509Handle* handle);
+
+    /// @brief Get the Country (C) from a certificate
+    /// @param handle Certificate handle
+    /// @return Country string or empty if not present
+    static std::string x509_get_country(X509Handle* handle);
+
+    /// @brief Get the State/Province (ST) from a certificate
+    /// @param handle Certificate handle
+    /// @return State string or empty if not present
+    static std::string x509_get_state(X509Handle* handle);
+
+    /// @brief Get the Locality (L) from a certificate
+    /// @param handle Certificate handle
+    /// @return Locality string or empty if not present
+    static std::string x509_get_locality(X509Handle* handle);
+
+    /// @brief Get the Domain Component (DC) from a certificate
+    /// @param handle Certificate handle
+    /// @return Domain Component string or empty if not present
+    static std::string x509_get_domain_component(X509Handle* handle);
+
+    /// @brief Get the Key Usage extension from a certificate
+    /// @param handle Certificate handle
+    /// @return Comma-separated list of key usage names, or empty if not present
+    static std::string x509_get_key_usage(X509Handle* handle);
+
+    /// @brief Get the Basic Constraints extension from a certificate
+    /// @param handle Certificate handle
+    /// @return String representation (e.g. "CA:TRUE" or "CA:FALSE"), or empty if not present
+    static std::string x509_get_basic_constraints(X509Handle* handle);
+
+    /// @brief Get the Subject Key Identifier extension from a certificate
+    /// @param handle Certificate handle
+    /// @return Subject Key Identifier string, or empty if not present
+    static std::string x509_get_subject_key_identifier(X509Handle* handle);
+
+    /// @brief Get the Authority Key Identifier extension from a certificate
+    /// @param handle Certificate handle
+    /// @return Authority Key Identifier string, or empty if not present
+    static std::string x509_get_authority_key_identifier(X509Handle* handle);
+
+    /// @brief Get the CRL Distribution Points extension from a certificate
+    /// @param handle Certificate handle
+    /// @return Comma-separated list of CRL distribution point URIs, or empty if not present
+    static std::string x509_get_crl_distribution_points(X509Handle* handle);
+
+    /// @brief Get the notBefore validity field as ISO 8601 UTC (e.g. "2026-09-29T08:20:03Z"), or empty if not present
+    static std::string x509_get_not_before(X509Handle* handle);
+
+    /// @brief Get the notAfter validity field as ISO 8601 UTC, or empty if not present
+    static std::string x509_get_not_after(X509Handle* handle);
+
+    /// @brief Get the Subject Public Key size in bits as a decimal string, or empty
+    static std::string x509_get_public_key_bits(X509Handle* handle);
+
+    /// @brief Get the Extended Key Usage extension as a comma-separated OID list, or empty if not present
+    static std::string x509_get_extended_key_usage(X509Handle* handle);
+
+    /// @brief Get the Certificate Policies extension as a comma-separated OID list, or empty if not present
+    static std::string x509_get_certificate_policies(X509Handle* handle);
+
+    /// @brief Get the Authority Information Access extension as a comma-separated URI list, or empty if not present
+    static std::string x509_get_authority_info_access(X509Handle* handle);
+
     /// @brief If any TPM operations are supported
     static bool supports_tpm();
     static bool supports_tpm_key_creation();
@@ -41,6 +114,15 @@ public:
     static std::string x509_get_serial_number(X509Handle* handle);
     static std::string x509_get_issuer_name_hash(X509Handle* handle);
     static std::string x509_get_common_name(X509Handle* handle);
+    static std::string x509_get_issuer_common_name(X509Handle* handle);
+    static std::string x509_get_issuer_organization(X509Handle* handle);
+    static std::string x509_get_issuer_organizational_unit(X509Handle* handle);
+    static std::string x509_get_issuer_country(X509Handle* handle);
+    static std::string x509_get_issuer_state(X509Handle* handle);
+    static std::string x509_get_issuer_locality(X509Handle* handle);
+    static std::string x509_get_issuer_domain_component(X509Handle* handle);
+    static bool x509_has_extension(X509Handle* handle, const std::string& name);
+    static bool x509_is_extension_critical(X509Handle* handle, const std::string& name);
 
     /// @brief Returns the time validity for a certificate
     /// @param out_valid_in Valid in amount of seconds. A negative value is in the past, a positive one is in the future
