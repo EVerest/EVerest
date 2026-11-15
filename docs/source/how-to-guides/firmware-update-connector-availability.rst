@@ -23,9 +23,9 @@ module to the update mechanism over MQTT. Its topics are below ``everest_api/1/s
 ``<module_id>`` is the module's id in the EVerest configuration.
 
 - **The CSMS** sends ``UpdateFirmware`` (or ``SignedUpdateFirmware`` in OCPP 1.6 with the Security Whitepaper).
-- **The OCPP module** (``OCPP``, ``OCPP201`` or ``OCPPmulti``) forwards the request to the API client as an
-  ``e2m/update_firmware`` request, sends each reported status to the CSMS as a ``FirmwareStatusNotification``, and
-  manages connector availability for the install.
+- **The OCPP module** forwards the request to the API client as an ``e2m/update_firmware`` request, sends each
+  reported status to the CSMS as a ``FirmwareStatusNotification``, and manages connector availability for the
+  install.
 - **The API client** downloads and installs the package. It reports progress by publishing to
   ``m2e/firmware_update_status`` and waits for ``e2m/allow_firmware_installation`` before it installs anything that
   needs the connectors out of service.
