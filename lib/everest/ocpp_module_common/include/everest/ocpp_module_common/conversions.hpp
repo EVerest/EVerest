@@ -43,6 +43,9 @@ namespace conversions {
 /// \brief Converts a given types::system::FirmwareUpdateStatusEnum \p status to a ocpp::v2::FirmwareStatusEnum.
 ocpp::v2::FirmwareStatusEnum to_ocpp_firmware_status_enum(const types::system::FirmwareUpdateStatusEnum status);
 
+/// \brief The disable_connectors_during_install flag of \p status , unset if the system did not specify it.
+std::optional<bool> get_disable_connectors_during_install(const types::system::FirmwareUpdateStatus& status);
+
 /// \brief Converts a given types::ocpp::DataTransferStatus \p status to a ocpp::v2::DataTransferStatusEnum.
 ocpp::v2::DataTransferStatusEnum to_ocpp_data_transfer_status_enum(types::ocpp::DataTransferStatus status);
 

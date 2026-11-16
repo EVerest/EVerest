@@ -37,6 +37,7 @@ target_sources(libocpp_unit_tests PRIVATE
         test_charge_point_stop_transaction_auth_cache.cpp
         test_charge_point_change_configuration.cpp
         test_charge_point_firmware_status.cpp
+        test_charge_point_firmware_connectors.cpp
         test_config_validation.cpp
         utils_tests.cpp
         test_configuration.cpp

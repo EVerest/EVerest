@@ -14,6 +14,13 @@
 
 namespace ocpp_module_common {
 namespace conversions {
+std::optional<bool> get_disable_connectors_during_install(const types::system::FirmwareUpdateStatus& status) {
+    if (!status.firmware_update_metadata.has_value()) {
+        return std::nullopt;
+    }
+    return status.firmware_update_metadata->disable_connectors_during_install;
+}
+
 ocpp::v2::FirmwareStatusEnum to_ocpp_firmware_status_enum(const types::system::FirmwareUpdateStatusEnum status) {
     switch (status) {
     case types::system::FirmwareUpdateStatusEnum::Downloaded:

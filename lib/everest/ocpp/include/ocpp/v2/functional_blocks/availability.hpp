@@ -3,6 +3,10 @@
 
 #pragma once
 
+#include <map>
+
+#include <everest/util/async/monitor.hpp>
+
 #include <ocpp/v2/message_handler.hpp>
 
 #include <ocpp/v2/messages/ChangeAvailability.hpp>
@@ -50,12 +54,18 @@ public:
 
     ///
     /// \brief Set scheduled change availability requests, that should be sent later (for example because of a
-    ///        firmware update).
+    ///        firmware update). A request with persist == false is queued alongside a persistent one for the
+    ///        same EVSE; neither replaces the other and both are executed.
     /// \param evse_id              The evse id.
     /// \param availability_change  The availability change request.
     ///
     virtual void set_scheduled_change_availability_requests(const std::int32_t evse_id,
                                                             AvailabilityChange availability_change) = 0;
+
+    ///
+    /// \brief Drop every scheduled change availability request that was queued with persist == false.
+    ///
+    virtual void drop_non_persistent_scheduled_changes() = 0;
 
     ///
     /// \brief Set the heartbeat timer interval.
@@ -96,7 +106,13 @@ private: // Members
 
     std::chrono::time_point<std::chrono::steady_clock> heartbeat_request_time;
 
-    std::map<std::int32_t, AvailabilityChange> scheduled_change_availability_requests;
+    // Changes waiting for a transaction to end, by EVSE id. A non-persistent change is queued alongside a
+    // persistent one for the same EVSE, so neither replaces the other.
+    struct ScheduledChanges {
+        std::map<std::int32_t, AvailabilityChange> persistent;
+        std::map<std::int32_t, AvailabilityChange> non_persistent;
+    };
+    everest::lib::util::monitor<ScheduledChanges> scheduled_changes;
     Everest::SteadyTimer heartbeat_timer;
 
 public:
@@ -115,6 +131,7 @@ public:
     void handle_scheduled_change_availability_requests(const std::int32_t evse_id) override;
     void set_scheduled_change_availability_requests(const std::int32_t evse_id,
                                                     AvailabilityChange availability_change) override;
+    void drop_non_persistent_scheduled_changes() override;
 
     void set_heartbeat_timer_interval(const std::chrono::seconds& interval) override;
     void stop_heartbeat_timer() override;

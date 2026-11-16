@@ -37,6 +37,7 @@
 #include <ocpp/v2/messages/LogStatusNotification.hpp>
 #include <ocpp/v2/messages/RequestStopTransaction.hpp>
 #include <ocpp/v2/messages/TriggerMessage.hpp>
+#include <ocpp/v2/messages/UpdateFirmware.hpp>
 
 #include <optional>
 #include <stdexcept>
@@ -190,7 +191,7 @@ void ChargePoint::on_network_disconnected(OCPPInterfaceEnum ocpp_interface) {
 
 void ChargePoint::on_firmware_update_status_notification(std::int32_t request_id,
                                                          const FirmwareStatusEnum& firmware_update_status,
-                                                         const bool disable_connectors_during_install) {
+                                                         std::optional<bool> disable_connectors_during_install) {
     this->firmware_update->on_firmware_update_status_notification(request_id, firmware_update_status,
                                                                   disable_connectors_during_install);
 }
@@ -672,8 +673,16 @@ void ChargePoint::initialize(const std::map<std::int32_t, std::int32_t>& evse_co
 
     this->meter_values = std::make_unique<MeterValues>(*this->functional_block_context);
 
+    // The firmware update block limits the callback to once per update cycle
+    std::optional<AllConnectorsUnavailableCallback> guarded_all_connectors_unavailable_callback;
+    if (this->callbacks.all_connectors_unavailable_callback.has_value()) {
+        guarded_all_connectors_unavailable_callback = [this]() {
+            this->firmware_update->on_all_connectors_unavailable();
+        };
+    }
+
     this->availability = std::make_unique<Availability>(*functional_block_context, this->callbacks.time_sync_callback,
-                                                        this->callbacks.all_connectors_unavailable_callback);
+                                                        guarded_all_connectors_unavailable_callback);
 
     if (this->callbacks.configure_network_connection_profile_callback.has_value()) {
         this->connectivity_manager->set_configure_network_connection_profile_callback(
