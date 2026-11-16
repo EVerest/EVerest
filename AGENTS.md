@@ -29,8 +29,10 @@ module's public behavior (interface or type YAML, config keys, state machines, e
 semantics), check the module's `docs/index.rst` and any `docs/source/` page describing
 that behavior, and fix what went stale. Libraries document themselves in
 `lib/everest/<lib>/README.md` and their own doc trees (`docs/` usually, `doc/` in
-libocpp); internal library changes count too when they touch documented behavior. A
-change to build, run, test or codegen mechanics means updating this file as well.
+libocpp); internal library changes count too when they touch documented behavior. When
+a change to build, run, test or codegen mechanics makes this file wrong, fix it here.
+Put new detail in the docs that own it, and add a pointer here only when agents would
+otherwise miss it.
 
 ## Build
 
@@ -50,13 +52,10 @@ Pass `-j` yourself, since generator defaults are either the whole machine or a s
 job. When several agents share a host, cap the total to the core count.
 
 Dependencies are pinned in `dependencies.yaml` and fetched by edm at configure time;
-`-DDISABLE_EDM=ON` uses system packages. `ISO15118_2_GENERATE_AND_INSTALL_CERTIFICATES`
-defaults to ON. With that option ON, edm enabled (packaging builds set `DISABLE_EDM`
-and must not ship the development keys) and one of Ev15118, EvseV2G or Evse15118D20
-built, CMake runs the vendored `cmake/assets/iso15118-pki/create_certs.sh`
-from a build-directory copy and writes the development PKI into the gitignored
-`config/certs` tree for installation; a failed generation fails configure. Default
-builds need no extra flag.
+`-DDISABLE_EDM=ON` uses system packages. Configure generates a development ISO 15118
+PKI into the gitignored `config/certs` tree, but never with `DISABLE_EDM`, so packaging
+builds do not ship its keys; a failed generation fails configure. Conditions and
+outputs are in `cmake/assets/iso15118-pki/README.md`.
 
 To iterate faster, build one module (`cmake --build build --target OCPPmulti`) or skip
 heavy ones with `-DEVEREST_EXCLUDE_MODULES="EvseSlac;EvseV2G;IsoMux"`, quoting the
@@ -70,13 +69,10 @@ directory and the generated cargo config (linker, jobs) live in `build/rust_work
 cargo builds in release profile for every build type but Debug. Cross builds set
 `EVEREST_RS_TARGET_TRIPLE` and `EVEREST_RS_LINKER`; the defaults are
 `<CMAKE_SYSTEM_PROCESSOR>-unknown-linux-gnu` and `CMAKE_CXX_COMPILER`.
-`modules/Cargo.lock` pins the crates for Bazel, CMake and Yocto alike:
-after editing a Rust module's `Cargo.toml`, update it (`cargo update` in `modules/`),
-regenerate `yocto/meta-everest-common/recipes-core/everest/everest-core-crates.inc`
-with `bitbake -c update_crates everest-core`, and mirror a new zvt revision in the
-`SRCREV` of `everest-core-rust.inc` next to it. `bazel test //yocto:rust_pins_test` checks
-that manifests, lock file and recipe name the same zvt revision, and that
-`everest-core-crates.inc` fetches exactly the crates.io crates the lock pins.
+`modules/Cargo.lock` pins the crates for Bazel, CMake and Yocto alike, so editing a
+Rust module's `Cargo.toml` also means updating the lock file and the Yocto crate list,
+as `docs/source/explanation/linux-yocto/building-yocto.rst` describes.
+`bazel test //yocto:rust_pins_test` checks that they agree.
 
 The Yocto layers `yocto/<release>/meta-everest` build everest-core from this tree. Recipes
 and classes they share live in the layer `yocto/meta-everest-common`, which a
@@ -140,7 +136,7 @@ CI runs the unit tests in parallel (`ctest -j "$(nproc)"` in
 `.ci/build-kit/scripts/run_unit_tests.sh`), so a test must not depend on running alone.
 Prefer port 0 and per-test temporary directories. Tests that share a fixed resource (a
 port, a file path, a PKI or database directory) get a common `RESOURCE_LOCK`, as the libtls
-and io TLS tests do with `tls_pki`; a test that must not run next to any other gets
+tests do with `tls_pki`; a test that must not run next to any other gets
 `RUN_SERIAL`, as the iso15118 tests on the fixed port 50000 do. With
 `catch_discover_tests` or `gtest_discover_tests`, set them through `PROPERTIES` so they
 apply to every discovered test. Check new tests with `ctest -j` locally.
@@ -162,10 +158,7 @@ OCPP suites also need the pip packages built into the venv once:
 
 The OCPP Plug and Charge tests load the installed `libcbv2g_json_wrapper.so`;
 keep `EVEREST_BUILD_APPLICATIONS=ON` (the default) when building their prefix.
-`ocpp_tests/test_sets/ocpp201/test_exi_generator.py` checks the response bytes,
-four signed fragment digests and SignedInfo signature against an independent
-wire capture in `lib/everest/iso15118/test/data/`, which libiso15118's tests share.
-It runs with the OCPP 2.0.1 suite, without starting EVerest.
+`tests/README.md` covers the suite prerequisites and what `test_exi_generator.py` checks.
 
 ISO 15118 has no dedicated suite. It is covered by `tests/core_tests/smoke_tests.py`
 (AC and DC end to end), CSMS-side helpers in
