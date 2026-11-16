@@ -12,4 +12,8 @@ void ErrorHistory::ready() {
     invoke_ready(*p_error_history);
 }
 
+void ErrorHistory::shutdown() {
+    invoke_shutdown(*p_error_history);
+}
+
 } // namespace module
