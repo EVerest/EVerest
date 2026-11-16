@@ -323,8 +323,9 @@ private:
     bool locked{false};
     mutex_type& mutex;
 
-    // This should be lower then command timeouts from framework (by default 300s)
-    static constexpr auto deadlock_timeout = std::chrono::seconds(120);
+    // Below the framework command timeout (120 s) and above the EVerestAPI reply timeout (100 s),
+    // as some commands are called while a lock is held.
+    static constexpr auto deadlock_timeout = std::chrono::seconds(110);
 };
 } // namespace Everest
 

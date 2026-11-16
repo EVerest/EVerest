@@ -35,7 +35,7 @@ using json = nlohmann::json;
 using json_uri = nlohmann::json_uri;
 using json_validator = nlohmann::json_schema::json_validator;
 
-const auto remote_cmd_res_timeout_seconds = 300;
+const auto remote_cmd_res_timeout_seconds = 120;
 const auto remote_cmd_res_timeout_step = std::chrono::seconds(1);
 const std::array<std::string_view, 3> TELEMETRY_RESERVED_KEYS = {{"connector_id"}};
 constexpr auto ensure_ready_timeout_ms = 100;
