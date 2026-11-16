@@ -27,15 +27,15 @@ void ocpp_device_model_API::init() {
     comm_params.request_reply_timeout_s = config.cfg_request_reply_to_s;
     helper.init(comm_params);
 
-    // get_registrations may be called before ready(): the registrations answering its prompt must not be lost
+    // get_registrations may be called before ready(): the registrations and value changes answering its prompt must
+    // not be lost
     generate_api_var_registration();
+    generate_api_var_value_changed();
 }
 
 void ocpp_device_model_API::ready() {
     invoke_ready(*p_main);
     invoke_ready(*p_generic_error);
-
-    generate_api_var_value_changed();
 
     helper.generate_api_var_communication_check(&comm_check);
     comm_check.start(config.cfg_communication_check_to_s);

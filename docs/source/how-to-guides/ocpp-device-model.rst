@@ -299,6 +299,10 @@ The result names the ``owner`` of the registration, or the module id when it nam
 object, or whose ``owner`` is not a non-empty string, cannot be attributed to an owner and gets no result. The module
 logs every such message.
 
+Every application connected to the module instance receives every result on the same topic, so an application picks
+its own by ``owner``. A malformed registration is answered ``Invalid`` for the owner it names, even one that another
+application holds, and changes nothing; an application ignores an ``Invalid`` it did not cause.
+
 Register several owners
 =======================
 

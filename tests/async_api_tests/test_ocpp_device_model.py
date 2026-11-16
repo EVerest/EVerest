@@ -248,3 +248,27 @@ async def test_undecodable_registration_is_answered_invalid(
     await publish(client, everest_core, "m2e/registration", {"owner": "", "components": []})
     with pytest.raises(asyncio.TimeoutError):
         await asyncio.wait_for(results.get(), 1)
+
+
+@pytest.mark.asyncio
+@pytest.mark.everest_core_config('probe-ocpp-device-model.yaml')
+async def test_value_changed_during_collection_is_passed_on(
+        everest_core: EverestCore, client: AsyncApiMqttHandler, probe_module: ProbeModule):
+    changes = probe_module.subscribe_variable_to_queue(CONNECTION, "value_changed")
+    change = {
+        "owner": "meter_1",
+        "component": {"name": "Powermeter", "evse": {"id": 1}},
+        "variable": {"name": "Enabled"},
+        "value": "false",
+    }
+
+    async def on_prompt(payload: str):
+        await publish(client, everest_core, "m2e/registration", registration("meter_1"))
+        await publish(client, everest_core, "m2e/value_changed", change)
+
+    await client.register_handler(topic(everest_core, "e2m/get_registrations"), on_prompt)
+
+    result = await probe_module.call_command(CONNECTION, "get_registrations", {})
+
+    assert owners_of(result) == ["meter_1"]
+    assert await asyncio.to_thread(changes.get, timeout=5) == change

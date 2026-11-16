@@ -31,6 +31,9 @@ At startup, the module answers ``get_registrations`` from the registrations clie
   ``cfg_expected_owners_timeout_s``, and logs the owners still missing.
 - Otherwise it collects registrations for ``cfg_registration_timeout_s``.
 
+Connect the module to one OCPP module. Each ``get_registrations`` call starts a collection, and while one runs, the
+registrations clients publish are kept for its answer and passed on to no OCPP module.
+
 After the answer, each registration is passed on at once. It may reach the OCPP module before the answer itself, so
 a client replaces or releases an owner registered at startup only after it received the owner's
 ``e2m/set_registration_result``.

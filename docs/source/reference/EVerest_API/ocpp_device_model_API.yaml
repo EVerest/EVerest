@@ -185,6 +185,8 @@ components:
         module, at startup and at runtime. No reply is expected. A registration that does not match the schema is
         answered with Invalid by this module, for its owner, or for the module id when it names none; one whose owner
         cannot be read, because it is not a JSON object or its owner is not a non-empty string, gets no answer.
+        Every client of the module receives every result, so a client picks its own by owner; an Invalid for an owner
+        the client holds may come from another client's malformed registration naming it, which changes nothing.
       contentType: application/json
       payload:
         $ref: '#/components/schemas/RegistrationResult'
