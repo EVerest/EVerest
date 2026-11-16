@@ -203,6 +203,101 @@ map_v2g_message_to_hlc_failed_reason(const iso15118::V2gMessageType& type) {
     return std::visit([](auto&& concrete) { return map_v2g_message_to_hlc_failed_reason(concrete); }, type);
 }
 
+// The message type enums of all three protocols name these messages alike.
+template <typename Type> constexpr bool is_session_stop_message(Type type) {
+    return type == Type::SessionStopReq or type == Type::SessionStopRes;
+}
+
+inline bool is_session_stop_message(const iso15118::V2gMessageType& type) {
+    return std::visit([](auto&& concrete) { return is_session_stop_message(concrete); }, type);
+}
+
+template <typename Type> constexpr bool is_power_delivery_message(Type type) {
+    return type == Type::PowerDeliveryReq or type == Type::PowerDeliveryRes;
+}
+
+inline bool is_power_delivery_message(const iso15118::V2gMessageType& type) {
+    return std::visit([](auto&& concrete) { return is_power_delivery_message(concrete); }, type);
+}
+
+// The messages of a session as hlc_failed_reason_at_teardown reads them. A request the SECC rejects as out of
+// sequence is not a phase the session reached, so it is left out. The sequence error ends the session, so
+// nothing after it is recorded either. A rejected SessionStopReq stays: it is classified as a SessionStop.
+class HlcMessageHistory {
+public:
+    void record(const iso15118::V2gMessageType& message) {
+        if (m_ended_by_sequence_error) {
+            return;
+        }
+        m_before_last_message = m_current;
+        m_current.last_message = message;
+        if (not is_session_stop_message(message)) {
+            m_current.last_message_before_session_stop = message;
+        }
+    }
+
+    // The message recorded last is a request the SECC answers with a sequence error.
+    void reject_last_request() {
+        if (m_current.last_message.has_value() and is_session_stop_message(*m_current.last_message)) {
+            return;
+        }
+        m_current = m_before_last_message;
+        m_ended_by_sequence_error = true;
+    }
+
+    void reset() {
+        *this = HlcMessageHistory{};
+    }
+
+    const std::optional<iso15118::V2gMessageType>& last_message() const {
+        return m_current.last_message;
+    }
+
+    const std::optional<iso15118::V2gMessageType>& last_message_before_session_stop() const {
+        return m_current.last_message_before_session_stop;
+    }
+
+private:
+    struct Messages {
+        std::optional<iso15118::V2gMessageType> last_message;
+        std::optional<iso15118::V2gMessageType> last_message_before_session_stop;
+    };
+    Messages m_current;
+    Messages m_before_last_message;
+    bool m_ended_by_sequence_error{false};
+};
+
+// Reason to publish as hlc_session_failed when a data link ends, from the last message handled and the last
+// one outside the SessionStop exchange. A connection that closed without SessionStopReq is classified by the
+// message in flight. A SessionStopReq is reported when it follows protocol negotiation, authorization, cable
+// check or pre-charge, e.g. when the V2G_EVCC_Ongoing_Timer expired while AuthorizationReq was still answered
+// with Ongoing. Who caused the stop is not considered: an EV that follows the EVSE's shutdown status during
+// cable check or pre-charge is reported alike. Elsewhere it is not reported. During service and charge
+// parameter negotiation the preceding message alone cannot tell an EV that gave up from a regular end, since
+// the charge parameter responses carry the EVSE's own stop notifications. After any PowerDelivery, the charge
+// loop or welding detection it is the regular end.
+inline std::optional<types::evse_manager::HlcSessionFailedReasonEnum>
+hlc_failed_reason_at_teardown(const std::optional<iso15118::V2gMessageType>& last_message,
+                              const std::optional<iso15118::V2gMessageType>& last_message_before_session_stop) {
+    using Reason = types::evse_manager::HlcSessionFailedReasonEnum;
+    if (not last_message.has_value()) {
+        return std::nullopt;
+    }
+    if (not is_session_stop_message(*last_message)) {
+        return map_v2g_message_to_hlc_failed_reason(*last_message);
+    }
+    if (not last_message_before_session_stop.has_value() or
+        is_power_delivery_message(*last_message_before_session_stop)) {
+        return std::nullopt;
+    }
+    const auto reason = map_v2g_message_to_hlc_failed_reason(*last_message_before_session_stop);
+    if (reason == Reason::ProtocolNegotiationFailed or reason == Reason::AuthorizationFailed or
+        reason == Reason::EnergyTransferSetupFailed) {
+        return reason;
+    }
+    return std::nullopt;
+}
+
 std::optional<float> convert_from_optional(const std::optional<dt::RationalNumber>& in);
 std::optional<dt::RationalNumber> convert_from_optional(const std::optional<float>& in);
 std::optional<float> convert_from_optional(const std::optional<uint32_t>& in);

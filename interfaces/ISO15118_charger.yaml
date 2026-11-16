@@ -464,9 +464,11 @@ vars:
     $ref: /iso15118#/DcEvRemainingTime
   hlc_session_failed:
     description: >-
-      Published by the HLC module whenever an HLC session failure is detected,
-      immediately when it occurs. Provides a protocol-agnostic reason for the
-      failure independently of the EvseManager state machine transitions.
+      Published by the HLC module when the connection of an HLC session closes and
+      the session's end counts as a failure. Provides a protocol-agnostic reason that
+      names the phase in which the session ended, independently of the EvseManager
+      state machine transitions. See HlcSessionFailedReasonEnum for which session
+      ends are reported.
     type: string
     $ref: /evse_manager#/HlcSessionFailedReasonEnum
   session_stop_res_sent:

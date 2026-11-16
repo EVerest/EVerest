@@ -158,6 +158,7 @@ void respond_and_terminate(Context& ctx, const message_din::Variant& received, d
 } // namespace
 
 void respond_sequence_error(Context& ctx, const message_din::Variant& received) {
+    ctx.feedback.request_out_of_sequence();
     respond_and_terminate(ctx, received, dt::ResponseCode::FAILED_SequenceError);
 }
 

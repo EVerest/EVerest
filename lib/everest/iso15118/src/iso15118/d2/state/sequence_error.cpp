@@ -257,6 +257,7 @@ void respond_and_terminate(Context& ctx, message_2::Type received_type, dt::Resp
 } // namespace
 
 void respond_sequence_error(Context& ctx, message_2::Type received_type) {
+    ctx.feedback.request_out_of_sequence();
     respond_and_terminate(ctx, received_type, dt::ResponseCode::FAILED_SequenceError);
 }
 

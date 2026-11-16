@@ -106,6 +106,17 @@ class DcConfigAdjustmentStrategy(EverestConfigAdjustmentStrategy):
         return adjusted_config
 
 
+class RejectAuthorizationAdjustmentStrategy(EverestConfigAdjustmentStrategy):
+    """
+    Adjustment strategy to reject every token, so the EV stays in the authorization loop
+    """
+
+    def adjust_everest_configuration(self, everest_config: Dict):
+        adjusted_config = deepcopy(everest_config)
+        adjusted_config["active_modules"]["token_validator"]["config_implementation"]["main"]["validation_result"] = "Invalid"
+        return adjusted_config
+
+
 class DcSupplyZeroMinCurrentAdjustmentStrategy(EverestConfigAdjustmentStrategy):
     """
     Adjustment strategy to let the simulated DC supply output 0 A instead of its 1 A minimum
@@ -534,6 +545,16 @@ async def run_basic_session(test_controller: TestController, session_event_mock,
     
     if finish_with_plug_out:
         await end_session(test_controller, session_event_mock)
+
+async def wait_for_mock_called(mock, timeout=30):
+    """Wait until the mock was called at least once."""
+    start_time = asyncio.get_event_loop().time()
+    while asyncio.get_event_loop().time() - start_time < timeout:
+        if mock.called:
+            return
+        await asyncio.sleep(0.1)
+    raise TimeoutError("Timeout waiting for a publication")
+
 
 async def wait_for_hlc_session_failed_with_reason(mock, expected_reason, timeout=30):
     """Wait for an hlc_session_failed publication with a specific reason.
@@ -1831,6 +1852,83 @@ async def test_iso15118_pnc_only_ev_authorization_failed(
 
     await wait_for_hlc_session_failed_with_reason(hlc_session_failed_mock, "AuthorizationFailed")
     test_controller.plug_out()
+
+def hlc_stack_params(*extra_strategies):
+    """The DC SIL setups covering both SECC stacks: Evse15118D20 with ISO 15118-2 and -20, EvseV2G with ISO 15118-2."""
+    setups = [
+        ("evse15118d20_iso2", "config-sil-dc.yaml", DcConfigAdjustmentStrategy()),
+        ("evse15118d20_iso20", "config-sil-dc-d20.yaml", D20TlsConfigAdjustmentStrategy(tls13=False)),
+        ("evsev2g_iso2", "config-sil-dc-evsev2g.yaml", DcConfigAdjustmentStrategy()),
+    ]
+    return [
+        pytest.param(
+            name,
+            marks=[
+                pytest.mark.everest_core_config(config),
+                pytest.mark.everest_config_adaptions(strategy, *extra_strategies),
+            ],
+            id=name,
+        )
+        for name, config, strategy in setups
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.xdist_group(name="ISO15118")
+@pytest.mark.probe_module(
+    connections={
+        "evse_manager": [Requirement("evse_manager", "evse")],
+        "charger": [Requirement("iso15118_charger", "charger")],
+    }
+)
+@pytest.mark.parametrize("hlc_stack", hlc_stack_params(RejectAuthorizationAdjustmentStrategy()))
+async def test_iso15118_dc_session_stop_during_authorization_reports_authorization_failed(
+    hlc_stack, test_controller: TestController, everest_core: EverestCore
+):
+    """
+    Test that an EV giving up in the authorization loop with a regular SessionStopReq, as it does
+    when its V2G_EVCC_Ongoing_Timer expires, results in AuthorizationFailed.
+    """
+    probe_module, _, _, hlc_session_failed_mock = await setup_session_mocks(
+        test_controller, everest_core
+    )
+    require_auth_eim_mock = Mock()
+    probe_module.subscribe_variable("charger", "require_auth_eim", require_auth_eim_mock)
+
+    test_controller.plug_in_dc_iso()
+    await wait_for_mock_called(require_auth_eim_mock)
+    # Let the EV repeat its authorization request, so the SessionStopReq follows one.
+    await asyncio.sleep(1)
+    assert not hlc_session_failed_mock.called
+
+    test_controller.plug_out_iso()
+
+    await wait_for_hlc_session_failed_with_reason(hlc_session_failed_mock, "AuthorizationFailed")
+
+
+@pytest.mark.asyncio
+@pytest.mark.xdist_group(name="ISO15118")
+@pytest.mark.probe_module(
+    connections={"evse_manager": [Requirement("evse_manager", "evse")]}
+)
+@pytest.mark.parametrize("hlc_stack", hlc_stack_params())
+async def test_iso15118_dc_session_stopped_by_ev_reports_no_hlc_session_failure(
+    hlc_stack, test_controller: TestController, everest_core: EverestCore
+):
+    """Test that a charging session the EV ends regularly publishes no hlc_session_failed."""
+    _, session_event_mock, powermeter_mock, hlc_session_failed_mock = await setup_session_mocks(
+        test_controller, everest_core
+    )
+
+    await run_basic_session(
+        test_controller, session_event_mock, powermeter_mock, "plug_in_dc_iso", finish_with_plug_out=False
+    )
+    test_controller.plug_out_iso()
+    await wait_for_session_events(session_event_mock, SESSION_END_EVENTS)
+    await asyncio.sleep(2)
+
+    assert not hlc_session_failed_mock.called, hlc_session_failed_mock.call_args_list
+
 
 @pytest.mark.asyncio
 @pytest.mark.xdist_group(name="ISO15118")

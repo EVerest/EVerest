@@ -120,6 +120,7 @@ public:
     int setpoints_forwarded{0};
     // Reported as StateBase::feed() consumes the request, so this also proves each frame is consumed once.
     std::vector<iso15118::V2gMessageType> v2g_messages;
+    int out_of_sequence_requests{0};
     D2SeccFsm fsm;
     dt::SessionId session_id{};
 
@@ -130,6 +131,7 @@ private:
         callbacks.v2g_message = [this](const iso15118::V2gMessageType& type, const iso15118::io::StreamInputView&) {
             v2g_messages.push_back(type);
         };
+        callbacks.request_out_of_sequence = [this] { ++out_of_sequence_requests; };
         callbacks.selected_payment_option = [this](shared_datatypes::PaymentOption option) {
             selected_payment_option = option;
         };
@@ -318,6 +320,7 @@ SCENARIO("ISO 15118-2 SECC handshake state transitions") {
                 const std::vector<iso15118::V2gMessageType> expected{message_2::Type::SessionSetupReq,
                                                                      message_2::Type::ServiceDiscoveryReq};
                 REQUIRE(secc.v2g_messages == expected);
+                REQUIRE(secc.out_of_sequence_requests == 0);
             }
         }
 
@@ -329,6 +332,7 @@ SCENARIO("ISO 15118-2 SECC handshake state transitions") {
                 const auto res = secc.fsm.response<message_2::CurrentDemandResponse>();
                 REQUIRE(res.has_value());
                 REQUIRE(res->response_code == dt::ResponseCode::FAILED_SequenceError);
+                REQUIRE(secc.out_of_sequence_requests == 1);
                 REQUIRE(secc.fsm.context().session_stopped);
             }
         }

@@ -255,7 +255,11 @@ struct v2g_context {
     /* actual charging state */
     enum V2gMsgTypeId last_v2g_msg;    /* holds the current v2g msg type */
     enum V2gMsgTypeId current_v2g_msg; /* holds the last v2g msg type */
-    int state;                         /* holds the current state id */
+    /* last request that was allowed in the state it arrived in; a request answered with SequenceError does not
+     * move it */
+    enum V2gMsgTypeId last_in_sequence_v2g_msg;
+    bool current_v2g_msg_out_of_sequence; /* the request being handled is answered with SequenceError */
+    int state;                            /* holds the current state id */
     bool is_dc_charger; /* Is set to true if it is a DC charger. Value is configured after configuration of the
                            supported energy type */
     bool is_fake_dc;    /* Is set to true if fake DC (AC with SoC) is active */
@@ -421,8 +425,10 @@ struct v2g_connection {
     struct v2g_context* ctx;
 
     bool is_tls_connection;
-    bool tls_handshake_failed;               /* true when accept() never returned success */
-    V2gMsgTypeId last_v2g_msg_at_disconnect; /* last V2G message before connection teardown */
+    bool tls_handshake_failed;                /* true when accept() never returned success */
+    V2gMsgTypeId last_v2g_msg_at_disconnect;  /* last V2G message before connection teardown */
+    V2gMsgTypeId v2g_msg_before_session_stop; /* the last in-sequence request before SessionStopReq, recorded by the
+                                                 session-stop handlers */
 
     // used for non-TLS connections
     struct {

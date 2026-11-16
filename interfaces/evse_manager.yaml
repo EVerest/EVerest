@@ -157,7 +157,9 @@ vars:
     $ref: /evse_manager#/SessionEvent
   hlc_session_failed:
     description: >-
-      Published whenever an HLC session failure occurs and the connection is terminated.
+      Published when an HLC session ends in a way that counts as a failure. The reason
+      names the phase in which the session ended; see HlcSessionFailedReasonEnum for
+      which session ends are reported.
       Uses the uuid field to correlate with session_event. Not used with basic charging.
     type: object
     $ref: /evse_manager#/HlcSessionFailedEvent
