@@ -697,3 +697,108 @@ TEST_F(ExternalOwnersTest, AnsweredRegistrationsAreNotAnsweredAgain) {
     EXPECT_EQ(this->first->results.size(), 1u);
     EXPECT_EQ(this->read("AuxMeter", "Energy"), "5");
 }
+
+TEST_F(ExternalOwnersTest, ValueChangeBeforeARuntimeRegistrationIsApplied) {
+    this->start({});
+
+    // registration and value_changed are separate vars, so the change may be handled first
+    this->owners->on_value_changed(0, make_change("meter", "AuxMeter", "Energy", "8"));
+    this->owners->on_registration(0, make_registration("meter", "AuxMeter", "Energy", "5"));
+
+    ASSERT_EQ(this->first->results.size(), 1u);
+    EXPECT_EQ(this->first->results.at(0).status, dm_types::RegistrationStatus::Accepted);
+    EXPECT_EQ(this->read("AuxMeter", "Energy"), "8");
+}
+
+TEST_F(ExternalOwnersTest, ValueChangeDuringARuntimeRegistrationIsAppliedAfterIt) {
+    WrappingRegistry registry(*this->device_model);
+    this->owners->set_startup_registrations(
+        0, make_registrations({make_registration("meter", "AuxMeter", "Energy", "5")}));
+    this->owners->set_startup_registrations(1, {});
+    this->owners->register_with(registry);
+
+    auto registration = make_registration("meter", "AuxMeter", "Energy", "5");
+    auto power = registration.components.at(0).variables.at(0);
+    power.variable.name = "Power";
+    power.attributes.at(0).value = "1";
+    registration.components.at(0).variables.push_back(power);
+
+    std::promise<void> open;
+    registry.register_gate = open.get_future().share();
+    auto registering =
+        std::async(std::launch::async, [this, &registration]() { this->owners->on_registration(0, registration); });
+    registry.register_entered.get_future().wait();
+    registry.register_gate.reset();
+
+    this->owners->on_value_changed(0, make_change("meter", "AuxMeter", "Power", "9"));
+    open.set_value();
+    registering.get();
+
+    EXPECT_EQ(this->first->results.size(), 2u);
+    EXPECT_EQ(this->read("AuxMeter", "Power"), "9");
+    this->owners->detach();
+}
+
+TEST_F(ExternalOwnersTest, ValueChangeForARefusedOwnerIsDropped) {
+    this->start({});
+
+    this->owners->on_value_changed(1, make_change("meter", "AuxMeter", "Energy", "8"));
+    this->owners->on_registration(0, make_registration("meter", "AuxMeter", "Energy", "5"));
+    EXPECT_EQ(this->read("AuxMeter", "Energy"), "5");
+
+    this->owners->on_registration(1, make_registration("meter", "AuxMeter", "Energy", "6"));
+    ASSERT_EQ(this->second->results.size(), 1u);
+    EXPECT_EQ(this->second->results.at(0).status, dm_types::RegistrationStatus::OwnerInUse);
+
+    this->owners->on_registration(0, make_release("meter"));
+    this->owners->on_registration(1, make_registration("meter", "AuxMeter", "Energy", "7"));
+    ASSERT_EQ(this->second->results.size(), 2u);
+    EXPECT_EQ(this->second->results.at(1).status, dm_types::RegistrationStatus::Accepted);
+    EXPECT_EQ(this->read("AuxMeter", "Energy"), "7");
+}
+
+TEST_F(ExternalOwnersTest, ValueChangesForUnregisteredOwnersAreBounded) {
+    this->start({});
+
+    this->owners->on_value_changed(0, make_change("oldest", "AuxMeter", "Energy", "8"));
+    for (std::size_t i = 0; i < dm::ExternalOwners::max_unclaimed_values; ++i) {
+        this->owners->on_value_changed(0, make_change("owner_" + std::to_string(i), "OtherMeter", "Energy", "9"));
+    }
+
+    this->owners->on_registration(0, make_registration("oldest", "AuxMeter", "Energy", "5"));
+    EXPECT_EQ(this->read("AuxMeter", "Energy"), "5");
+    const auto newest = "owner_" + std::to_string(dm::ExternalOwners::max_unclaimed_values - 1);
+    this->owners->on_registration(0, make_registration(newest, "OtherMeter", "Energy", "5"));
+    EXPECT_EQ(this->read("OtherMeter", "Energy"), "9");
+}
+
+TEST_F(ExternalOwnersTest, DetachWaitsForHeldValueChanges) {
+    WrappingRegistry registry(*this->device_model);
+    this->owners->set_startup_registrations(0, {});
+    this->owners->set_startup_registrations(1, {});
+    this->owners->register_with(registry);
+
+    this->owners->on_value_changed(0, make_change("meter", "AuxMeter", "Energy", "8"));
+    std::promise<void> open;
+    registry.gate = open.get_future().share();
+    auto registering = std::async(std::launch::async, [this]() {
+        this->owners->on_registration(0, make_registration("meter", "AuxMeter", "Energy", "5"));
+    });
+    const bool held = registry.entered.get_future().wait_for(std::chrono::seconds(5)) == std::future_status::ready;
+    EXPECT_TRUE(held);
+    registry.gate.reset();
+    if (not held) {
+        registering.get();
+        this->owners->detach();
+        return;
+    }
+
+    auto detach = std::async(std::launch::async, [this]() { this->owners->detach(); });
+    EXPECT_EQ(detach.wait_for(std::chrono::milliseconds(200)), std::future_status::timeout);
+    open.set_value();
+    registering.get();
+    detach.get();
+
+    this->owners->register_with(*this->device_model);
+    EXPECT_EQ(this->read("AuxMeter", "Energy"), "8");
+}

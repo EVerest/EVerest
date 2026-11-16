@@ -466,8 +466,15 @@ Without ``owner``, a report belongs to the owner named by the module id.
 A report is applied as it arrives, so a write that is in progress when the device changes the value may overwrite
 it.
 
+The OCPP module handles registrations and reports in parallel, so a report published right after a registration may
+reach it first. Such a report is kept and applied once the registration is, also when the registration adds the
+variable. A kept report is dropped when the registration of its owner is refused or releases the owner. Each module
+instance keeps at most 64 reports, the latest per variable, for owners that are not registered; beyond that the
+oldest one is dropped.
+
 A report of a value that does not fit the data type or the ``values_list`` of the variable is ignored, and so is a
-report for an owner the module instance did not register. A report has no reply, so the rejection is only logged.
+report for an owner that another module instance holds or that is never registered. A report has no reply, so the
+rejection is only logged.
 ``min_limit`` and ``max_limit`` bound the writes of the CSMS, not the reports of the owner.
 
 Replace or release an owner

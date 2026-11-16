@@ -41,9 +41,13 @@ types::ocpp_device_model::RejectedVariable to_everest_rejected_variable(const oc
 /// name to the connection that registered it first, until that connection releases it, registers the owners with a
 /// device model, routes the writes to their variables to the owning connection and reports the values the owners
 /// change. Registrations and value changes arriving while no device model is attached are kept and applied when one
-/// is.
+/// is. A value change for an owner whose registration has not been applied yet, which the framework may deliver
+/// before the registration, is kept and applied once it is.
 class ExternalOwners {
 public:
+    /// \brief Per connection, the most value changes kept for owners it has not registered yet
+    static constexpr std::size_t max_unclaimed_values = 64;
+
     explicit ExternalOwners(std::vector<std::shared_ptr<DeviceModelOwnerConnection>> connections);
     ~ExternalOwners();
     ExternalOwners(const ExternalOwners&) = delete;
@@ -61,7 +65,9 @@ public:
     void on_registration(std::size_t index, const types::ocpp_device_model::Registration& registration);
 
     /// \brief Reports a value that an owner of the connection \p index changed. A change for an owner of another
-    /// connection is ignored.
+    /// connection is ignored. A change during the owner's registration is reported after it. A change for an owner
+    /// that no connection holds is kept, up to max_unclaimed_values per connection, until the connection registers
+    /// that owner, and dropped when the registration is refused or releases the owner.
     void on_value_changed(std::size_t index, const types::ocpp_device_model::ValueChange& change);
 
     /// \brief Registers every owner with \p registry and answers each registration not answered yet. Connections
@@ -86,6 +92,8 @@ private:
         bool releasing{false};
         /// \brief Whether the registration in components has been answered
         bool answered{false};
+        /// \brief The latest change of each attribute that arrived while the registration was being applied
+        std::vector<types::ocpp_device_model::ValueChange> held_values;
     };
 
     using PendingResult = std::pair<std::size_t, types::ocpp_device_model::RegistrationResult>;
@@ -99,6 +107,9 @@ private:
         std::vector<std::vector<types::ocpp_device_model::Registration>> early;
         /// \brief Per connection, the value changes published before its startup registrations arrived
         std::vector<std::vector<types::ocpp_device_model::ValueChange>> early_values;
+        /// \brief Per connection, the latest change of each attribute of owners that no connection holds, oldest
+        /// first
+        std::vector<std::deque<types::ocpp_device_model::ValueChange>> unclaimed_values;
         /// \brief Results in the order they were decided, sent while a registry is attached
         std::deque<PendingResult> outbox;
         /// \brief Whether a thread is sending the outbox
@@ -122,6 +133,20 @@ private:
     };
 
     std::string owner_of(std::size_t index, const std::optional<std::string>& owner) const;
+    /// \brief Whether \p first and \p second of the connection \p index change the same attribute of the same owner
+    bool is_same_attribute(std::size_t index, const types::ocpp_device_model::ValueChange& first,
+                           const types::ocpp_device_model::ValueChange& second) const;
+    /// \brief Adds \p change to \p changes, replacing an earlier change of the same attribute
+    template <class Changes>
+    void keep_latest(Changes& changes, std::size_t index, const types::ocpp_device_model::ValueChange& change) const;
+    /// \brief Keeps \p change for an owner that no connection holds, dropping the oldest kept change beyond
+    /// max_unclaimed_values
+    void hold_unclaimed(State& state, std::size_t index, const types::ocpp_device_model::ValueChange& change) const;
+    /// \brief Removes and returns the changes kept for \p owner of the connection \p index
+    std::vector<types::ocpp_device_model::ValueChange> take_unclaimed(State& state, std::size_t index,
+                                                                      const std::string& owner) const;
+    /// \brief Drops the changes kept for \p owner of the connection \p index, whose registration did not claim it
+    void drop_unclaimed(State& state, std::size_t index, const std::string& owner) const;
     /// \brief Applies \p registration to \p state, leaving the call to an attached registry to the caller
     /// \param claimed The owners already registered by the same get_registrations answer
     Applied apply(State& state, std::size_t index, const types::ocpp_device_model::Registration& registration,
@@ -132,6 +157,10 @@ private:
     /// \brief Keeps \p change in the registration of its owner for the next register_with
     /// \returns false if the owner did not register the attribute
     static bool store(State& state, const std::string& owner, const types::ocpp_device_model::ValueChange& change);
+    /// \brief Reports \p change of \p owner to \p registry without the lock, and keeps it for the next registration
+    /// when accepted. The caller counted the call in registry_calls_in_progress.
+    void report(ocpp::v2::DeviceModelRegistryInterface& registry, std::size_t index, const std::string& owner,
+                const types::ocpp_device_model::ValueChange& change);
     /// \brief Unregisters \p owner, which is marked releasing, from \p registry and drops it
     void unregister(ocpp::v2::DeviceModelRegistryInterface& registry, const std::string& owner);
     /// \brief Sends the outbox while a registry is attached, unless another thread is sending it already

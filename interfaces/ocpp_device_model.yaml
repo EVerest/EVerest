@@ -64,7 +64,10 @@ vars:
     description: >-
       Published when the owner changed a value of a registered variable itself. Every change is reported: the OCPP
       service holds the values in memory and serves reads from there. A report is applied as it arrives, so a write in
-      progress may overwrite it. A report of a value that does not fit the variable, or for an owner that the module
-      did not register, is ignored and logged by the OCPP module.
+      progress may overwrite it. A report that arrives before the registration of its owner is applied, which the
+      framework allows because registration and value_changed are separate vars, is kept and applied after it, up to
+      64 reports per module for owners that are not registered. A report of a value that does not fit the variable, or
+      for an owner that another module holds or whose registration is refused, is ignored and logged by the OCPP
+      module.
     type: object
     $ref: /ocpp_device_model#/ValueChange

@@ -241,6 +241,7 @@ ExternalOwners::ExternalOwners(std::vector<std::shared_ptr<DeviceModelOwnerConne
     handle->answered.resize(this->connections.size(), false);
     handle->early.resize(this->connections.size());
     handle->early_values.resize(this->connections.size());
+    handle->unclaimed_values.resize(this->connections.size());
 }
 
 ExternalOwners::~ExternalOwners() {
@@ -249,6 +250,65 @@ ExternalOwners::~ExternalOwners() {
 
 std::string ExternalOwners::owner_of(const std::size_t index, const std::optional<std::string>& owner) const {
     return owner.value_or(this->connections.at(index)->module_id());
+}
+
+bool ExternalOwners::is_same_attribute(const std::size_t index, const dm_types::ValueChange& first,
+                                       const dm_types::ValueChange& second) const {
+    try {
+        return this->owner_of(index, first.owner) == this->owner_of(index, second.owner) and
+               to_ocpp_component(first.component) == to_ocpp_component(second.component) and
+               to_ocpp_variable(first.variable) == to_ocpp_variable(second.variable) and
+               first.attribute_type.value_or(types::ocpp::AttributeEnum::Actual) ==
+                   second.attribute_type.value_or(types::ocpp::AttributeEnum::Actual);
+    } catch (const std::exception&) {
+        return false;
+    }
+}
+
+template <class Changes>
+void ExternalOwners::keep_latest(Changes& changes, const std::size_t index, const dm_types::ValueChange& change) const {
+    const auto earlier = std::find_if(changes.begin(), changes.end(),
+                                      [&](const auto& kept) { return this->is_same_attribute(index, kept, change); });
+    if (earlier != changes.end()) {
+        *earlier = change;
+    } else {
+        changes.push_back(change);
+    }
+}
+
+void ExternalOwners::hold_unclaimed(State& state, const std::size_t index, const dm_types::ValueChange& change) const {
+    auto& unclaimed = state.unclaimed_values.at(index);
+    this->keep_latest(unclaimed, index, change);
+    if (unclaimed.size() > max_unclaimed_values) {
+        const auto& oldest = unclaimed.front();
+        EVLOG_warning << "Value change of " << oldest.component.name << "." << oldest.variable.name
+                      << " ignored: owner " << this->owner_of(index, oldest.owner) << " is not registered by "
+                      << this->connections.at(index)->module_id();
+        unclaimed.pop_front();
+    }
+}
+
+std::vector<dm_types::ValueChange> ExternalOwners::take_unclaimed(State& state, const std::size_t index,
+                                                                  const std::string& owner) const {
+    std::vector<dm_types::ValueChange> taken;
+    auto& unclaimed = state.unclaimed_values.at(index);
+    for (auto it = unclaimed.begin(); it != unclaimed.end();) {
+        if (this->owner_of(index, it->owner) == owner) {
+            taken.push_back(std::move(*it));
+            it = unclaimed.erase(it);
+        } else {
+            ++it;
+        }
+    }
+    return taken;
+}
+
+void ExternalOwners::drop_unclaimed(State& state, const std::size_t index, const std::string& owner) const {
+    for (const auto& change : this->take_unclaimed(state, index, owner)) {
+        EVLOG_warning << "Value change of " << change.component.name << "." << change.variable.name
+                      << " ignored: owner " << owner << " is not registered by "
+                      << this->connections.at(index)->module_id();
+    }
 }
 
 void ExternalOwners::set_startup_registrations(const std::size_t index, const dm_types::Registrations& registrations) {
@@ -305,6 +365,7 @@ void ExternalOwners::on_registration(const std::size_t index, const dm_types::Re
         this->state.handle()->outbox.push_back(std::move(applied.result.value()));
         EVLOG_info << "Owner " << applied.owner << " released";
     } else if (applied.call == RegistryCall::Register) {
+        std::vector<dm_types::ValueChange> held;
         std::optional<ocpp::v2::ComponentRegistrationResult> result;
         try {
             result = registry->register_components(applied.owner, components, provider);
@@ -315,8 +376,11 @@ void ExternalOwners::on_registration(const std::size_t index, const dm_types::Re
             auto handle = this->state.handle();
             auto& owned = handle->owners.at(applied.owner);
             if (result.has_value()) {
-                --handle->registry_calls_in_progress;
                 owned.answered = true;
+                held = std::exchange(owned.held_values, {});
+                // The registry call ends here, the reports of the held changes follow as calls of their own
+                handle->registry_calls_in_progress += held.size();
+                --handle->registry_calls_in_progress;
                 handle->outbox.emplace_back(index, make_result(applied.owner, dm_types::RegistrationStatus::Accepted,
                                                                owned.unconvertible, result.value()));
             } else {
@@ -327,6 +391,9 @@ void ExternalOwners::on_registration(const std::size_t index, const dm_types::Re
         this->state.notify_all();
         if (not result.has_value()) {
             this->unregister(*registry, applied.owner);
+        }
+        for (const auto& change : held) {
+            this->report(*registry, index, applied.owner, change);
         }
     }
 
@@ -344,38 +411,20 @@ void ExternalOwners::on_value_changed(const std::size_t index, const dm_types::V
         EVLOG_warning << "Value change of owner " << owner << " ignored: " << e.what();
         return;
     }
-    const auto attribute = change.attribute_type.has_value() ? to_ocpp_attribute_enum(change.attribute_type.value())
-                                                             : ocpp::v2::AttributeEnum::Actual;
-    const auto is_registered_by_connection = [&](const State& state) {
-        const auto entry = state.owners.find(owner);
-        return entry != state.owners.end() and entry->second.connection == index and not entry->second.releasing;
-    };
-
     ocpp::v2::DeviceModelRegistryInterface* registry{nullptr};
     {
         auto handle = this->state.handle();
         if (not handle->answered.at(index)) {
-            // A change replaces the earlier ones of its attribute, so only the latest is kept
-            auto& early = handle->early_values.at(index);
-            const auto same_attribute = std::find_if(early.begin(), early.end(), [&](const auto& earlier) {
-                try {
-                    return this->owner_of(index, earlier.owner) == owner and
-                           to_ocpp_component(earlier.component) == component and
-                           to_ocpp_variable(earlier.variable) == variable and
-                           earlier.attribute_type.value_or(types::ocpp::AttributeEnum::Actual) ==
-                               change.attribute_type.value_or(types::ocpp::AttributeEnum::Actual);
-                } catch (const std::exception&) {
-                    return false;
-                }
-            });
-            if (same_attribute != early.end()) {
-                *same_attribute = change;
-            } else {
-                early.push_back(change);
-            }
+            this->keep_latest(handle->early_values.at(index), index, change);
             return;
         }
-        if (not is_registered_by_connection(*handle)) {
+        const auto entry = handle->owners.find(owner);
+        if (entry == handle->owners.end()) {
+            // The registration of the owner may be handled after the change
+            this->hold_unclaimed(*handle, index, change);
+            return;
+        }
+        if (entry->second.connection != index or entry->second.releasing) {
             EVLOG_warning << "Value change of " << component << "." << variable << " ignored: owner " << owner
                           << " is not registered by " << this->connections.at(index)->module_id();
             return;
@@ -387,26 +436,41 @@ void ExternalOwners::on_value_changed(const std::size_t index, const dm_types::V
             }
             return;
         }
+        if (not entry->second.answered) {
+            // The registration is being applied and may add the attribute
+            this->keep_latest(entry->second.held_values, index, change);
+            return;
+        }
         registry = handle->registry;
         ++handle->registry_calls_in_progress;
     }
+    this->report(*registry, index, owner, change);
+}
 
+void ExternalOwners::report(ocpp::v2::DeviceModelRegistryInterface& registry, const std::size_t index,
+                            const std::string& owner, const dm_types::ValueChange& change) {
     // Without the lock: the device model evaluates the monitors of the variable and notifies its listeners
     auto status = ocpp::v2::SetVariableStatusEnum::Rejected;
     try {
-        status = registry->notify_value_changed(component, variable, attribute, change.value, owner);
+        const auto component = to_ocpp_component(change.component);
+        const auto variable = to_ocpp_variable(change.variable);
+        const auto attribute = change.attribute_type.has_value() ? to_ocpp_attribute_enum(change.attribute_type.value())
+                                                                 : ocpp::v2::AttributeEnum::Actual;
+        status = registry.notify_value_changed(component, variable, attribute, change.value, owner);
         if (status != ocpp::v2::SetVariableStatusEnum::Accepted) {
             EVLOG_warning << "Value change of " << component << "." << variable << " of owner " << owner
                           << " ignored: " << status;
         }
     } catch (const std::exception& e) {
-        EVLOG_warning << "Value change of " << component << "." << variable << " of owner " << owner
-                      << " ignored: " << e.what();
+        EVLOG_warning << "Value change of " << change.component.name << "." << change.variable.name << " of owner "
+                      << owner << " ignored: " << e.what();
     }
     {
         auto handle = this->state.handle();
         --handle->registry_calls_in_progress;
-        if (status == ocpp::v2::SetVariableStatusEnum::Accepted and is_registered_by_connection(*handle)) {
+        const auto entry = handle->owners.find(owner);
+        if (status == ocpp::v2::SetVariableStatusEnum::Accepted and entry != handle->owners.end() and
+            entry->second.connection == index and not entry->second.releasing) {
             store(*handle, owner, change);
         }
     }
@@ -487,6 +551,7 @@ ExternalOwners::Applied ExternalOwners::apply(State& state, const std::size_t in
         (entry != state.owners.end() and (entry->second.connection != index or entry->second.releasing))) {
         EVLOG_warning << "Registration of owner " << owner << " by " << this->connections.at(index)->module_id()
                       << " refused: the owner is in use";
+        this->drop_unclaimed(state, index, owner);
         return {owner, PendingResult{index, make_result(owner, dm_types::RegistrationStatus::OwnerInUse)},
                 RegistryCall::None};
     }
@@ -495,6 +560,7 @@ ExternalOwners::Applied ExternalOwners::apply(State& state, const std::size_t in
     }
 
     if (registration.components.empty()) {
+        this->drop_unclaimed(state, index, owner);
         Applied applied{owner, PendingResult{index, make_result(owner, dm_types::RegistrationStatus::Accepted)},
                         RegistryCall::None};
         if (entry == state.owners.end()) {
@@ -519,8 +585,18 @@ ExternalOwners::Applied ExternalOwners::apply(State& state, const std::size_t in
     if (owned.provider == nullptr) {
         owned.provider = std::make_shared<OwnerProvider>(this->connections.at(index), owner);
     }
+    const auto unclaimed = this->take_unclaimed(state, index, owner);
     if (state.registry == nullptr) {
+        for (const auto& change : unclaimed) {
+            if (not store(state, owner, change)) {
+                EVLOG_warning << "Value change of " << change.component.name << "." << change.variable.name
+                              << " ignored: owner " << owner << " did not register it";
+            }
+        }
         return {owner, std::nullopt, RegistryCall::None};
+    }
+    for (const auto& change : unclaimed) {
+        this->keep_latest(owned.held_values, index, change);
     }
     ++state.registry_calls_in_progress;
     return {owner, std::nullopt, RegistryCall::Register};

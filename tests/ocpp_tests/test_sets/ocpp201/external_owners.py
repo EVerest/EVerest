@@ -240,3 +240,26 @@ async def test_value_change_of_the_owner_triggers_a_monitor(
 
     assert await wait_for_and_validate(test_utility, charge_point, "NotifyEvent", {}, validate_event, timeout=30)
     assert (await read(charge_point))["attribute_value"] == "75"
+
+
+@pytest.mark.asyncio
+@pytest.mark.ocpp_version("ocpp2.0.1")
+@pytest.mark.everest_core_config("everest-config-ocpp201-probe-module.yaml")
+@pytest.mark.probe_module
+@pytest.mark.everest_config_adaptions(DeviceModelConnectionAdjustment())
+async def test_value_change_ahead_of_its_registration_is_applied(probe_module, central_system: CentralSystem):
+    owner = Owner(probe_module, [])
+    charge_point = await start(probe_module, central_system)
+
+    # registration and value_changed are separate vars, so the OCPP module may handle the change first
+    probe_module.publish_variable(
+        IMPLEMENTATION_ID,
+        "value_changed",
+        {"owner": "aux", "component": {"name": "AuxCtrlr"}, "variable": {"name": "FanSpeed"}, "value": "55"},
+    )
+    probe_module.publish_variable(
+        IMPLEMENTATION_ID, "registration", fan_speed_registration("10", owner="aux", component="AuxCtrlr")
+    )
+    await wait_for_calls(owner.registration_results, 1)
+    assert owner.registration_results.call_args.args[0] == {"owner": "aux", "status": "Accepted", "rejected": []}
+    assert (await read(charge_point, "AuxCtrlr"))["attribute_value"] == "55"
