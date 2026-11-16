@@ -1678,7 +1678,6 @@ bool Charger::resume_charging() {
         return true;
     }
     return false;
-    return true;
 }
 
 // The HLC session was ended by the EV because the EVSE paused it, and the user pause has been lifted.
