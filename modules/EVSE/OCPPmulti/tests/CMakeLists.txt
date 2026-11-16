@@ -74,6 +74,14 @@ target_compile_definitions(${TEST_TARGET_NAME}
     UNIT_TESTS
 )
 
+# generic_ocpp.hpp pulls in the framework, the generated interfaces and libocpp, about 10 s per source
+target_precompile_headers(${TEST_TARGET_NAME}
+    PRIVATE
+    <gmock/gmock.h>
+    <gtest/gtest.h>
+    "${CMAKE_CURRENT_SOURCE_DIR}/../generic_ocpp.hpp"
+)
+
 # Relative to the WORKING_DIRECTORY, so the compile flags don't differ between build trees.
 file(RELATIVE_PATH LIBOCPP_COMPONENT_CONFIG_DIR ${CMAKE_CURRENT_BINARY_DIR}
     ${PROJECT_SOURCE_DIR}/lib/everest/ocpp/config/common/component_config)
