@@ -246,7 +246,10 @@ Keep these rules in mind when choosing names:
 Check the result
 ================
 
-The OCPP module answers each registration on ``e2m/set_registration_result``, at startup and at runtime. The
+The OCPP module answers each registration it applies on ``e2m/set_registration_result``, at startup and at
+runtime. A registration replaced by a newer one of the same owner before it was applied, at startup or before the
+OCPP service started, is answered only through the newer one. A registration the device model fails to apply, when
+its storage fails for example, is logged by the OCPP module and not answered, and its owner is dropped. The
 application does not reply. Here ``cooling_unit`` is accepted, and ``meter-1`` is refused because another module
 instance holds that owner name, see `Register several owners`_:
 

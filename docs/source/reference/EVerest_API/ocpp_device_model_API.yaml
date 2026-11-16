@@ -181,8 +181,10 @@ components:
       name: receive_set_registration_result
       title: 'Result of a registration'
       summary: >-
-        The outcome of one registration, published once for every registration the OCPP service received from this
-        module, at startup and at runtime. No reply is expected. A registration that does not match the schema is
+        The outcome of one registration, published once for every registration the OCPP service applied, at startup
+        and at runtime. A registration replaced by a newer one of the same owner before it was applied, at startup
+        or before the OCPP service started, is answered only through the newer one. A registration the device model
+        fails to apply is logged and not answered, and its owner is dropped. No reply is expected. A registration that does not match the schema is
         answered with Invalid by this module, for its owner, or for the module id when it names none; one whose owner
         cannot be read, because it is not a JSON object or its owner is not a non-empty string, gets no answer.
         Every client of the module receives every result, so a client picks its own by owner; an Invalid for an owner
