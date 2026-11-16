@@ -65,9 +65,9 @@ public:
     void on_registration(std::size_t index, const types::ocpp_device_model::Registration& registration);
 
     /// \brief Reports a value that an owner of the connection \p index changed. A change for an owner of another
-    /// connection is ignored. A change during the owner's registration is reported after it. A change for an owner
-    /// that no connection holds is kept, up to max_unclaimed_values per connection, until the connection registers
-    /// that owner, and dropped when the registration is refused or releases the owner.
+    /// connection is ignored. A change during the owner's registration is reported after it, in the order of arrival. A
+    /// change for an owner that no connection holds is kept, up to max_unclaimed_values per connection, until the
+    /// connection registers that owner, and dropped when the registration is refused or releases the owner.
     void on_value_changed(std::size_t index, const types::ocpp_device_model::ValueChange& change);
 
     /// \brief Registers every owner with \p registry and answers each registration not answered yet. Connections
@@ -90,9 +90,11 @@ private:
         std::shared_ptr<ocpp::v2::VariableValueProvider> provider;
         /// \brief Being unregistered after a release or a failed registration; the name stays in use until then
         bool releasing{false};
-        /// \brief Whether the registration in components has been answered
+        /// \brief Whether the registration in components has been answered, which happens once the changes held
+        /// during it are reported
         bool answered{false};
-        /// \brief The latest change of each attribute that arrived while the registration was being applied
+        /// \brief The latest change of each attribute that arrived while the registration was being applied or its
+        /// held changes were being reported, oldest first
         std::vector<types::ocpp_device_model::ValueChange> held_values;
     };
 
@@ -133,9 +135,11 @@ private:
     };
 
     std::string owner_of(std::size_t index, const std::optional<std::string>& owner) const;
-    /// \brief Whether \p first and \p second of the connection \p index change the same attribute of the same owner
-    bool is_same_attribute(std::size_t index, const types::ocpp_device_model::ValueChange& first,
-                           const types::ocpp_device_model::ValueChange& second) const;
+    /// \brief Whether \p kept changes the same attribute of \p owner as \p change, with \p module_id as the owner of a
+    /// change that names none
+    static bool is_same_attribute(const std::string& owner, const std::string& module_id,
+                                  const types::ocpp_device_model::ValueChange& kept,
+                                  const types::ocpp_device_model::ValueChange& change);
     /// \brief Adds \p change to \p changes, replacing an earlier change of the same attribute
     template <class Changes>
     void keep_latest(Changes& changes, std::size_t index, const types::ocpp_device_model::ValueChange& change) const;
@@ -157,6 +161,10 @@ private:
     /// \brief Keeps \p change in the registration of its owner for the next register_with
     /// \returns false if the owner did not register the attribute
     static bool store(State& state, const std::string& owner, const types::ocpp_device_model::ValueChange& change);
+    /// \brief Reports the changes held for \p owner during its registration, which \p result answers once none is
+    /// left, and ends the registration's call counted in registry_calls_in_progress
+    void report_held(ocpp::v2::DeviceModelRegistryInterface& registry, std::size_t index, const std::string& owner,
+                     const ocpp::v2::ComponentRegistrationResult& result);
     /// \brief Reports \p change of \p owner to \p registry without the lock, and keeps it for the next registration
     /// when accepted. The caller counted the call in registry_calls_in_progress.
     void report(ocpp::v2::DeviceModelRegistryInterface& registry, std::size_t index, const std::string& owner,

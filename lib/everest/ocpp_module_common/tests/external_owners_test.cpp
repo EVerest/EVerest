@@ -802,3 +802,51 @@ TEST_F(ExternalOwnersTest, DetachWaitsForHeldValueChanges) {
     this->owners->register_with(*this->device_model);
     EXPECT_EQ(this->read("AuxMeter", "Energy"), "8");
 }
+
+TEST_F(ExternalOwnersTest, ValueChangeWhileHeldChangesAreReportedIsReportedAfterThem) {
+    auto registration = make_registration("meter", "AuxMeter", "Energy", "5");
+    auto power = registration.components.at(0).variables.at(0);
+    power.variable.name = "Power";
+    power.attributes.at(0).value = "1";
+    registration.components.at(0).variables.push_back(power);
+
+    WrappingRegistry registry(*this->device_model);
+    this->owners->set_startup_registrations(0, make_registrations({registration}));
+    this->owners->set_startup_registrations(1, {});
+    this->owners->register_with(registry);
+
+    std::promise<void> open_registration;
+    registry.register_gate = open_registration.get_future().share();
+    auto registering =
+        std::async(std::launch::async, [this, &registration]() { this->owners->on_registration(0, registration); });
+    registry.register_entered.get_future().wait();
+    registry.register_gate.reset();
+    this->owners->on_value_changed(0, make_change("meter", "AuxMeter", "Energy", "6"));
+    this->owners->on_value_changed(0, make_change("meter", "AuxMeter", "Power", "7"));
+
+    // The report of the first held change waits while a newer change of the second arrives
+    std::promise<void> open_report;
+    registry.gate = open_report.get_future().share();
+    open_registration.set_value();
+    const bool reporting = registry.entered.get_future().wait_for(std::chrono::seconds(5)) == std::future_status::ready;
+    EXPECT_TRUE(reporting);
+    registry.gate.reset();
+    if (reporting) {
+        this->owners->on_value_changed(0, make_change("meter", "AuxMeter", "Power", "8"));
+        open_report.set_value();
+    }
+    registering.get();
+
+    EXPECT_EQ(this->read("AuxMeter", "Energy"), "6");
+    EXPECT_EQ(this->read("AuxMeter", "Power"), "8");
+    EXPECT_EQ(this->first->results.size(), 2u);
+    this->owners->detach();
+}
+
+TEST_F(ExternalOwnersTest, ValueChangeBeforeTheStartupAnswerForALaterRegistrationIsApplied) {
+    this->owners->on_value_changed(0, make_change("meter", "AuxMeter", "Energy", "8"));
+    this->start({});
+
+    this->owners->on_registration(0, make_registration("meter", "AuxMeter", "Energy", "5"));
+    EXPECT_EQ(this->read("AuxMeter", "Energy"), "8");
+}

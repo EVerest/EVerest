@@ -253,23 +253,34 @@ std::string ExternalOwners::owner_of(const std::size_t index, const std::optiona
     return owner.value_or(this->connections.at(index)->module_id());
 }
 
-bool ExternalOwners::is_same_attribute(const std::size_t index, const dm_types::ValueChange& first,
-                                       const dm_types::ValueChange& second) const {
-    try {
-        return this->owner_of(index, first.owner) == this->owner_of(index, second.owner) and
-               to_ocpp_component(first.component) == to_ocpp_component(second.component) and
-               to_ocpp_variable(first.variable) == to_ocpp_variable(second.variable) and
-               first.attribute_type.value_or(types::ocpp::AttributeEnum::Actual) ==
-                   second.attribute_type.value_or(types::ocpp::AttributeEnum::Actual);
-    } catch (const std::exception&) {
-        return false;
-    }
+bool ExternalOwners::is_same_attribute(const std::string& owner, const std::string& module_id,
+                                       const dm_types::ValueChange& kept, const dm_types::ValueChange& change) {
+    const auto same_evse = [](const std::optional<types::ocpp::EVSE>& first,
+                              const std::optional<types::ocpp::EVSE>& second) {
+        if (not first.has_value() or not second.has_value()) {
+            return first.has_value() == second.has_value();
+        }
+        return first->id == second->id and first->connector_id == second->connector_id;
+    };
+    const auto same_instance = [](const std::optional<std::string>& first, const std::optional<std::string>& second) {
+        return ocpp::iequals(first.value_or(""), second.value_or(""));
+    };
+    return kept.owner.value_or(module_id) == owner and ocpp::iequals(kept.component.name, change.component.name) and
+           same_instance(kept.component.instance, change.component.instance) and
+           same_evse(kept.component.evse, change.component.evse) and
+           ocpp::iequals(kept.variable.name, change.variable.name) and
+           same_instance(kept.variable.instance, change.variable.instance) and
+           kept.attribute_type.value_or(types::ocpp::AttributeEnum::Actual) ==
+               change.attribute_type.value_or(types::ocpp::AttributeEnum::Actual);
 }
 
 template <class Changes>
 void ExternalOwners::keep_latest(Changes& changes, const std::size_t index, const dm_types::ValueChange& change) const {
-    const auto earlier = std::find_if(changes.begin(), changes.end(),
-                                      [&](const auto& kept) { return this->is_same_attribute(index, kept, change); });
+    const auto module_id = this->connections.at(index)->module_id();
+    const auto owner = change.owner.value_or(module_id);
+    const auto earlier = std::find_if(changes.begin(), changes.end(), [&](const auto& kept) {
+        return is_same_attribute(owner, module_id, kept, change);
+    });
     if (earlier != changes.end()) {
         *earlier = change;
     } else {
@@ -366,35 +377,19 @@ void ExternalOwners::on_registration(const std::size_t index, const dm_types::Re
         this->state.handle()->outbox.push_back(std::move(applied.result.value()));
         EVLOG_info << "Owner " << applied.owner << " released";
     } else if (applied.call == RegistryCall::Register) {
-        std::vector<dm_types::ValueChange> held;
         std::optional<ocpp::v2::ComponentRegistrationResult> result;
         try {
             result = registry->register_components(applied.owner, components, provider);
         } catch (const std::exception& e) {
             EVLOG_error << "Registering owner " << applied.owner << " failed, the owner is dropped: " << e.what();
         }
-        {
-            auto handle = this->state.handle();
-            auto& owned = handle->owners.at(applied.owner);
-            if (result.has_value()) {
-                owned.answered = true;
-                held = std::exchange(owned.held_values, {});
-                // The registry call ends here, the reports of the held changes follow as calls of their own
-                handle->registry_calls_in_progress += held.size();
-                --handle->registry_calls_in_progress;
-                handle->outbox.emplace_back(index, make_result(applied.owner, dm_types::RegistrationStatus::Accepted,
-                                                               owned.unconvertible, result.value()));
-            } else {
-                // The device model may hold parts of the registration or the previous one: removed like a release
-                owned.releasing = true;
-            }
-        }
-        this->state.notify_all();
-        if (not result.has_value()) {
+        if (result.has_value()) {
+            this->report_held(*registry, index, applied.owner, result.value());
+        } else {
+            // The device model may hold parts of the registration or the previous one: removed like a release, which
+            // ends the registry call
+            this->state.handle()->owners.at(applied.owner).releasing = true;
             this->unregister(*registry, applied.owner);
-        }
-        for (const auto& change : held) {
-            this->report(*registry, index, applied.owner, change);
         }
     }
 
@@ -446,6 +441,31 @@ void ExternalOwners::on_value_changed(const std::size_t index, const dm_types::V
         ++handle->registry_calls_in_progress;
     }
     this->report(*registry, index, owner, change);
+}
+
+void ExternalOwners::report_held(ocpp::v2::DeviceModelRegistryInterface& registry, const std::size_t index,
+                                 const std::string& owner, const ocpp::v2::ComponentRegistrationResult& result) {
+    while (true) {
+        std::vector<dm_types::ValueChange> held;
+        {
+            auto handle = this->state.handle();
+            auto& owned = handle->owners.at(owner);
+            held = std::exchange(owned.held_values, {});
+            if (held.empty()) {
+                owned.answered = true;
+                --handle->registry_calls_in_progress;
+                handle->outbox.emplace_back(
+                    index, make_result(owner, dm_types::RegistrationStatus::Accepted, owned.unconvertible, result));
+                break;
+            }
+            // Changes arriving meanwhile are held behind these, so that none is overwritten by an older one
+            handle->registry_calls_in_progress += held.size();
+        }
+        for (const auto& change : held) {
+            this->report(registry, index, owner, change);
+        }
+    }
+    this->state.notify_all();
 }
 
 void ExternalOwners::report(ocpp::v2::DeviceModelRegistryInterface& registry, const std::size_t index,
@@ -618,7 +638,10 @@ void ExternalOwners::replay_early(State& state, const std::size_t index) {
     for (const auto& change : early_values) {
         const auto owner = this->owner_of(index, change.owner);
         const auto entry = state.owners.find(owner);
-        if (entry == state.owners.end() or entry->second.connection != index or not store(state, owner, change)) {
+        if (entry == state.owners.end()) {
+            // The registration of the owner may be handled after the change
+            this->hold_unclaimed(state, index, change);
+        } else if (entry->second.connection != index or not store(state, owner, change)) {
             EVLOG_warning << "Value change of " << change.component.name << "." << change.variable.name
                           << " ignored: owner " << owner << " did not register it";
         }
