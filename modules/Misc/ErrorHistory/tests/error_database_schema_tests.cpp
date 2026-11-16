@@ -83,6 +83,39 @@ SCENARIO("Opening an existing ErrorDatabaseSqlite database", "[!throws]") {
         }
     }
 
+    GIVEN("A database with the base columns, an unknown NOT NULL one without a default and an error in it") {
+        const auto db_path = create_database(base_schema + ", unknown TEXT NOT NULL);");
+        {
+            everest::db::sqlite::Connection connection(db_path);
+            REQUIRE(connection.open_connection());
+            REQUIRE(connection.execute_statement(
+                "INSERT INTO errors VALUES('uuid', 'type', 'description', 'message', 'module', "
+                "'implementation', '2026-11-09T10:00:00.000Z', 'High', 'Active', 'sub_type', 'vendor', 'value');"));
+        }
+        TestDatabase db(db_path);
+        WHEN("Adding an error") {
+            const auto test_errors = get_test_errors();
+            db.add_error(test_errors.at(0));
+            THEN("The database was reset and stores the error") {
+                check_expected_errors_in_list({test_errors.at(0)}, db.get_errors({}));
+            }
+        }
+    }
+
+    GIVEN("A database with the base columns, an unknown NOT NULL one with a default and an error in it") {
+        const auto db_path = create_database(base_schema + ", unknown TEXT NOT NULL DEFAULT '');");
+        const auto stored_error = get_test_errors().at(1);
+        insert_base_row(db_path, *stored_error);
+        TestDatabase db(db_path);
+        WHEN("Adding an error") {
+            const auto test_errors = get_test_errors();
+            db.add_error(test_errors.at(0));
+            THEN("The database and its errors are kept") {
+                check_expected_errors_in_list({stored_error, test_errors.at(0)}, db.get_errors({}));
+            }
+        }
+    }
+
     GIVEN("A database without an errors table") {
         const auto db_path = create_database("CREATE TABLE other(id INTEGER);");
         TestDatabase db(db_path);

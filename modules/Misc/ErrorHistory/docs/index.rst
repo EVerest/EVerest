@@ -18,7 +18,8 @@ The module checks the schema of an existing database at startup:
   whose ``errors`` table lacks one of the columns the module needs, is reset. Its stored
   errors are lost.
 - Additional columns, for example from a newer version of the module, are ignored and
-  kept.
+  kept, unless they are ``NOT NULL`` without a default. The module could not store errors
+  in such a database, so it is reset as well.
 - If the check itself fails, for example because the database is locked or can not be
   read, the database is kept as it is and the error is logged.
 

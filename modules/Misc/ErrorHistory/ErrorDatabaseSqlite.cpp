@@ -12,10 +12,12 @@
 
 #include <algorithm>
 #include <array>
+#include <cstdint>
 #include <fstream>
 #include <set>
 #include <stdexcept>
 #include <string_view>
+#include <variant>
 
 namespace module {
 
@@ -41,6 +43,27 @@ std::set<std::string> get_column_names(everest::db::sqlite::ConnectionInterface&
     int status;
     while ((status = stmt->step()) == SQLITE_ROW) {
         columns.insert(std::get<std::string>(stmt->column_variant("name")));
+    }
+    if (status != SQLITE_DONE) {
+        throw everest::db::QueryExecutionException(db.get_error_message());
+    }
+    return columns;
+}
+
+/// columns that need a value in every row: NOT NULL ones without a default
+std::set<std::string> get_columns_needing_a_value(everest::db::sqlite::ConnectionInterface& db) {
+    auto stmt = db.new_statement("PRAGMA table_info(errors);");
+    std::set<std::string> columns;
+    int status;
+    while ((status = stmt->step()) == SQLITE_ROW) {
+        const auto not_null = stmt->column_variant("notnull");
+        const auto default_value = stmt->column_variant("dflt_value");
+        const bool is_not_null = std::holds_alternative<int64_t>(not_null) and std::get<int64_t>(not_null) != 0;
+        const bool has_default = !std::holds_alternative<std::monostate>(default_value) and
+                                 default_value != decltype(default_value){std::string("NULL")};
+        if (is_not_null and !has_default) {
+            columns.insert(std::get<std::string>(stmt->column_variant("name")));
+        }
     }
     if (status != SQLITE_DONE) {
         throw everest::db::QueryExecutionException(db.get_error_message());
@@ -116,6 +139,11 @@ void ErrorDatabaseSqlite::check_database() {
     const auto columns = get_column_names(*db);
     if (!std::includes(columns.begin(), columns.end(), required_columns.begin(), required_columns.end())) {
         throw IncompatibleSchema("Errors table does not contain all required columns");
+    }
+    for (const auto& column : get_columns_needing_a_value(*db)) {
+        if (required_columns.count(column) == 0) {
+            throw IncompatibleSchema("Errors table contains the unknown column " + column + " that needs a value");
+        }
     }
     for (const auto& column : columns) {
         if (required_columns.count(column) == 0) {
