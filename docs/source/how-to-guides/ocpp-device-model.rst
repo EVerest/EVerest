@@ -221,10 +221,14 @@ monitoring level and base the CSMS set, and queued while offline up to ``Offline
 is not told about the events.
 
 The CSMS cannot clear a monitor of either kind. It may change a ``PreconfiguredMonitor`` with a
-SetVariableMonitoring.req that names its id. The monitor keeps its id and stays preconfigured. A registration
-matches stored monitors by type and severity, so a threshold the CSMS changed to 75 is kept when the application
-registers the variable again, even though the registration still lists 70. A changed severity is not kept: the
-registration then sets up the monitor with severity 4 again.
+SetVariableMonitoring.req that names its id. The monitor keeps its id but becomes a custom monitor (N04.FR.15), which
+belongs to the CSMS: the CSMS can clear it, and a SetMonitoringBase.req with ``FactoryDefault`` or ``HardWiredOnly``
+deletes it like any custom monitor. A registration matches stored monitors by type and severity and keeps a matched
+custom monitor in place of the preconfigured one it lists, so a threshold the CSMS changed to 75 is kept when the
+application registers the variable again, even though the registration still lists 70. Once the CSMS cleared or the
+monitoring base deleted the custom monitor, the next registration sets up the preconfigured monitor with 70 again.
+If the CSMS changed the severity, nothing matches: the registration sets up the preconfigured monitor with severity 4
+again, next to the custom one.
 A ``HardWiredMonitor`` cannot be changed: a SetVariableMonitoring.req with its id is rejected. It also stays active
 when the CSMS sets the monitoring base to ``HardWiredOnly``, which deactivates preconfigured monitors.
 

@@ -435,8 +435,9 @@ components:
         Kind of a monitor that an owner declares with a variable. The CSMS cannot clear either kind.
         - HardWiredMonitor: Built in by the manufacturer. The CSMS cannot change it, and it stays active under every
           monitoring base.
-        - PreconfiguredMonitor: Preconfigured by the manufacturer. The CSMS may change it; it keeps its id and kind.
-          It is not active under the monitoring base HardWiredOnly.
+        - PreconfiguredMonitor: Preconfigured by the manufacturer. The CSMS may change it; it keeps its id but
+          becomes a custom monitor, which the CSMS can clear and which is kept when the owner registers the variable
+          again with the same type and severity. It is not active under the monitoring base HardWiredOnly.
       type: string
       enum:
         - HardWiredMonitor

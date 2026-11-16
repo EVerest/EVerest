@@ -62,9 +62,10 @@ types:
         with its id is rejected. It stays active under every monitoring base, and its events are reported as
         HardWiredMonitor.
       PreconfiguredMonitor: A monitor that the manufacturer preconfigured. The CSMS may change it with a
-        SetVariableMonitoring with its id; it keeps its id and stays a PreconfiguredMonitor. A registration matches
-        stored monitors by type and severity, so a changed value or transaction flag is kept when the owner registers
-        the variable again, but a changed severity is not. It stays active under the monitoring bases All and FactoryDefault but
+        SetVariableMonitoring with its id; it keeps its id but becomes a custom monitor (N04.FR.15), which the CSMS
+        can clear and SetMonitoringBase FactoryDefault or HardWiredOnly deletes. A registration matches stored
+        monitors by type and severity and keeps a matched custom monitor, so a changed value or transaction flag is
+        kept when the owner registers the variable again, but a changed severity is not. It stays active under the monitoring bases All and FactoryDefault but
         not HardWiredOnly, and its events are reported as PreconfiguredMonitor.
     type: string
     enum:
