@@ -53,13 +53,13 @@ One model for OCPP 1.6 and OCPP 2.x
 
 The device model backs configuration and telemetry of both protocol versions. OCPP 2.x addresses it directly with
 ``GetVariables``, ``SetVariables`` and ``GetBaseReport``. OCPP 1.6 knows only configuration keys, so OCPPmulti maps
-each key onto a component and variable: a built-in mapping for the standard keys, custom mappings from
-``Ocpp16KeyMappingsPath``, and the ``OCPP16LegacyCtrlr`` component for keys without a standardized counterpart.
-``GetConfiguration`` and ``ChangeConfiguration`` read and write the mapped variables. A custom mapping names a
-variable of the component configuration: a variable that is registered at runtime, such as a module configuration
-view, cannot be mapped. A variable without a mapping is invisible to an OCPP 1.6 CSMS. OCPP 1.6 has no variable monitoring, so
-telemetry such as ``EVSE`` / ``Power`` reaches a 1.6 CSMS only through ``MeterValues``. The ``ocpp`` interface
-sees every variable in both modes.
+each key onto a component and variable: a built-in mapping for the standard keys, custom mappings from the
+experimental ``Ocpp16KeyMappingsPath``, and the ``OCPP16LegacyCtrlr`` component for keys without a standardized
+counterpart. ``GetConfiguration`` and ``ChangeConfiguration`` read and write the mapped variables. A custom mapping
+names a variable of the component configuration: a variable that is registered at runtime, such as a module
+configuration view, cannot be mapped. A variable without a mapping is invisible to an OCPP 1.6 CSMS. OCPP 1.6 has no
+variable monitoring, so telemetry such as ``EVSE`` / ``Power`` reaches a 1.6 CSMS only through ``MeterValues``. The
+``ocpp`` interface sees every variable in both modes.
 
 Who contributes
 ---------------

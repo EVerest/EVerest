@@ -90,7 +90,8 @@ config:
   Ocpp16KeyMappingsPath:
     description: >-
       OCPP 1.6
-      Optional path to a YAML file that maps further OCPP 1.6 configuration keys to device model variables.
+      Experimental: Optional path to a YAML file that maps further OCPP 1.6 configuration keys to device model
+      variables. The file format and its behavior may change without further notice.
       Relative paths are resolved against this module's share path.
       Applied both when migrating the legacy OCPP 1.6 JSON config into the device model and when
       serving the device-model-backed configuration at runtime.
