@@ -85,14 +85,6 @@ target_sources(libocpp_test_authorization PRIVATE
 
 target_link_libraries(libocpp_test_authorization PRIVATE libocpp_test_functional_block_objects)
 
-target_include_directories(libocpp_test_authorization PUBLIC
-        ${LIBOCPP_INCLUDE_PATH}
-        ${LIBOCPP_3RDPARTY_PATH}
-        ${CMAKE_CURRENT_SOURCE_DIR}/../mocks
-        ${CMAKE_CURRENT_SOURCE_DIR}/../../common/mocks
-        ${LIBOCPP_TESTS_V2_ROOT_DIR}
-)
-
 set(TEST_AVAILABILITY_SOURCES
             ${LIBOCPP_LIB_PATH}/ocpp/v2/functional_blocks/availability.cpp
             ${LIBOCPP_LIB_PATH}/ocpp/v2/messages/ChangeAvailability.cpp
@@ -104,14 +96,6 @@ target_sources(libocpp_test_availability PRIVATE
         ${TEST_AVAILABILITY_SOURCES})
 
 target_link_libraries(libocpp_test_availability PRIVATE libocpp_test_functional_block_objects)
-
-target_include_directories(libocpp_test_availability PUBLIC
-        ${LIBOCPP_INCLUDE_PATH}
-        ${LIBOCPP_3RDPARTY_PATH}
-        ${CMAKE_CURRENT_SOURCE_DIR}/../mocks
-        ${CMAKE_CURRENT_SOURCE_DIR}/../../common/mocks
-        ${LIBOCPP_TESTS_V2_ROOT_DIR}
-)
 
 set(TEST_REMOTE_TRANSACTION_CONTROL_SOURCES
             ${LIBOCPP_LIB_PATH}/ocpp/v2/functional_blocks/remote_transaction_control.cpp
@@ -145,14 +129,6 @@ target_sources(libocpp_test_remote_transaction_control PRIVATE
 
 target_link_libraries(libocpp_test_remote_transaction_control PRIVATE libocpp_test_functional_block_objects)
 
-target_include_directories(libocpp_test_remote_transaction_control PUBLIC
-        ${LIBOCPP_INCLUDE_PATH}
-        ${LIBOCPP_3RDPARTY_PATH}
-        ${CMAKE_CURRENT_SOURCE_DIR}/../mocks
-        ${CMAKE_CURRENT_SOURCE_DIR}/../../common/mocks
-        ${LIBOCPP_TESTS_V2_ROOT_DIR}
-)
-
 set(TEST_TARIFF_AND_COST_SOURCES
             ${LIBOCPP_LIB_PATH}/ocpp/v2/functional_blocks/tariff_and_cost.cpp
             ${LIBOCPP_LIB_PATH}/ocpp/v2/functional_blocks/display_message.cpp
@@ -168,11 +144,3 @@ target_sources(libocpp_test_tariff_and_cost PRIVATE
         ${TEST_TARIFF_AND_COST_SOURCES})
 
 target_link_libraries(libocpp_test_tariff_and_cost PRIVATE libocpp_test_functional_block_objects)
-
-target_include_directories(libocpp_test_tariff_and_cost PUBLIC
-        ${LIBOCPP_INCLUDE_PATH}
-        ${LIBOCPP_3RDPARTY_PATH}
-        ${CMAKE_CURRENT_SOURCE_DIR}/../mocks
-        ${CMAKE_CURRENT_SOURCE_DIR}/../../common/mocks
-        ${LIBOCPP_TESTS_V2_ROOT_DIR}
-)
