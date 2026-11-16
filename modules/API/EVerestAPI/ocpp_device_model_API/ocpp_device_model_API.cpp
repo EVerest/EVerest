@@ -54,6 +54,13 @@ void ocpp_device_model_API::generate_api_var_registration() {
     helper.subscribe_api_topic("registration", [this](std::string const& data) {
         API_types_ext::Registration payload;
         if (not deserialize(data, payload)) {
+            if (const auto owner = owner_of_undecodable(data, info.id)) {
+                API_types_ext::RegistrationResult result;
+                result.owner = owner.value();
+                result.status = API_types_ext::RegistrationStatus::Invalid;
+                mqtt_v.publish(helper.get_topics().everest_to_extern("set_registration_result"),
+                               API_types_ext::serialize(result));
+            }
             return false;
         }
         if (collector->add(payload)) {

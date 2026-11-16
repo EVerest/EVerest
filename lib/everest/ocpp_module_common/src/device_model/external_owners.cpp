@@ -101,7 +101,8 @@ dm_types::RejectedVariable make_unconvertible(const types::ocpp::Component& comp
 }
 
 /// \brief Converts the components of a registration, leaving out the variables that do not fit the OCPP types and
-/// adding them to \p unconvertible
+/// adding them to \p unconvertible. Only a module that provides ocpp_device_model itself can send these, while EVerest
+/// does not validate the schema; the ocpp_device_model_API module answers them with Invalid.
 std::vector<ocpp::v2::RegisteredComponent>
 to_registered_components(const std::string& owner, const std::vector<dm_types::RegisteredComponent>& components,
                          std::vector<dm_types::RejectedVariable>& unconvertible) {

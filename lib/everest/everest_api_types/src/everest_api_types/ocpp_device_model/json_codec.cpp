@@ -155,9 +155,10 @@ const EnumNames<RegisteredMonitorType, 2> registered_monitor_type_names{{
     {RegisteredMonitorType::PreconfiguredMonitor, "PreconfiguredMonitor"},
 }};
 
-const EnumNames<RegistrationStatus, 2> registration_status_names{{
+const EnumNames<RegistrationStatus, 3> registration_status_names{{
     {RegistrationStatus::Accepted, "Accepted"},
     {RegistrationStatus::OwnerInUse, "OwnerInUse"},
+    {RegistrationStatus::Invalid, "Invalid"},
 }};
 
 const EnumNames<RegistrationRejectionReason, 5> registration_rejection_reason_names{{

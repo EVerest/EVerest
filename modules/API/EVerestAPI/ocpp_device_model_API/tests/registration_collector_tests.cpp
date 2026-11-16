@@ -15,6 +15,7 @@
 namespace {
 
 using namespace std::chrono_literals;
+using module::owner_of_undecodable;
 using module::parse_owner_list;
 using module::RegistrationCollector;
 using Registration = RegistrationCollector::Registration;
@@ -265,3 +266,18 @@ TEST(RegistrationCollector, collect_after_cancel_does_not_wait) {
 }
 
 } // namespace
+
+TEST(OwnerOfUndecodable, names_the_owner_of_the_registration) {
+    EXPECT_EQ(owner_of_undecodable(R"({"owner": "meter_1", "components": 5})", module_id), "meter_1");
+}
+
+TEST(OwnerOfUndecodable, a_registration_without_owner_belongs_to_the_module_id) {
+    EXPECT_EQ(owner_of_undecodable(R"({"components": [], "unknown": true})", module_id), module_id);
+}
+
+TEST(OwnerOfUndecodable, no_owner_when_it_cannot_be_told) {
+    EXPECT_EQ(owner_of_undecodable("not json", module_id), std::nullopt);
+    EXPECT_EQ(owner_of_undecodable(R"(["meter_1"])", module_id), std::nullopt);
+    EXPECT_EQ(owner_of_undecodable(R"({"owner": ""})", module_id), std::nullopt);
+    EXPECT_EQ(owner_of_undecodable(R"({"owner": 5})", module_id), std::nullopt);
+}

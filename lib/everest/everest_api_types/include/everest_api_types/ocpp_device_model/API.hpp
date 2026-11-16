@@ -43,6 +43,7 @@ enum class RegisteredMonitorType {
 enum class RegistrationStatus {
     Accepted,
     OwnerInUse,
+    Invalid,
 };
 
 enum class RegistrationRejectionReason {

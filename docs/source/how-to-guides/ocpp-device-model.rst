@@ -236,8 +236,8 @@ Keep these rules in mind when choosing names:
 
 - An ``instance`` is either absent or not empty. A component or variable with an empty instance is rejected with
   ``InvalidNameKey``, because monitors and stored values key an absent instance as an empty one.
-- A name or value that does not fit the OCPP types, a name longer than 50 characters for example, is rejected with
-  ``InvalidNameKey`` as well. The schema of the API checks these lengths already.
+- A name or value longer than the OCPP types allow, a name longer than 50 characters for example, makes the whole
+  registration ``Invalid``, see `Check the result`_.
 - An attribute without ``mutability`` cannot be written.
 - The variables that the OCPP service writes from its own state are rejected with ``ReservedVariable``, for example
   ``AuthCacheCtrlr.Storage``, the ``AvailabilityState`` of an EVSE and every variable of a ``NetworkConfiguration``
@@ -287,8 +287,17 @@ names the owner of the definition:
 
 The application receives no writes to a rejected variable and does not report its values.
 
-The module ignores and logs a registration that does not fit the types, a ``unit`` of more than 16 characters or a
-component name of more than 50 for example. Such a registration gets no result.
+A registration that does not match the schema of the API, a ``unit`` of more than 16 characters, a component name of
+more than 50 or an unknown property for example, is answered by the API module with ``Invalid`` and not passed on.
+An earlier registration of the owner stays in place:
+
+.. code-block:: json
+
+   { "owner": "cooling_unit", "status": "Invalid", "rejected": [] }
+
+The result names the ``owner`` of the registration, or the module id when it names none. A message that is not a JSON
+object, or whose ``owner`` is not a non-empty string, cannot be attributed to an owner and gets no result. The module
+logs every such message.
 
 Register several owners
 =======================

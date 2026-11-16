@@ -7,6 +7,7 @@
 
 #include <chrono>
 #include <map>
+#include <optional>
 #include <set>
 #include <string>
 #include <vector>
@@ -15,6 +16,10 @@ namespace module {
 
 /// \brief Splits a comma separated list of owner names, ignoring whitespace around names and empty entries
 std::set<std::string> parse_owner_list(std::string const& list);
+
+/// \brief The owner of a registration that cannot be decoded: its owner when that is a non-empty string, \p module_id
+/// when it names none, and none when \p data is not a JSON object or its owner is not a non-empty string
+std::optional<std::string> owner_of_undecodable(std::string const& data, std::string const& module_id);
 
 /// \brief Collects the registrations that API clients publish, and answers get_registrations from them
 class RegistrationCollector {

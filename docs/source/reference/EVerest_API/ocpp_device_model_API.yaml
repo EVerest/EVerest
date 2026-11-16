@@ -182,7 +182,9 @@ components:
       title: 'Result of a registration'
       summary: >-
         The outcome of one registration, published once for every registration the OCPP service received from this
-        module, at startup and at runtime. No reply is expected.
+        module, at startup and at runtime. No reply is expected. A registration that does not match the schema is
+        answered with Invalid by this module, for its owner, or for the module id when it names none; one whose owner
+        cannot be read, because it is not a JSON object or its owner is not a non-empty string, gets no answer.
       contentType: application/json
       payload:
         $ref: '#/components/schemas/RegistrationResult'
@@ -204,6 +206,11 @@ components:
           payload:
             owner: meter_2
             status: OwnerInUse
+            rejected: []
+        - summary: "Registration that does not match the schema"
+          payload:
+            owner: meter_3
+            status: Invalid
             rejected: []
 
     receive_request_set_value:
@@ -596,10 +603,14 @@ components:
         Whether a registration was passed on to the device model
         - Accepted: Passed on; single variables may still be rejected
         - OwnerInUse: Another module uses the owner name already. Nothing of the registration was passed on.
+        - Invalid: The registration does not match this schema, a name longer than 50 characters or an unknown
+          property for example. This module answers it itself; nothing was passed on, and an earlier registration
+          of the owner stays in place.
       type: string
       enum:
         - Accepted
         - OwnerInUse
+        - Invalid
     RegistrationRejectionReason:
       description: >-
         Why a variable of a registration was rejected
@@ -607,8 +618,8 @@ components:
           defines it twice
         - NoAttributes: The variable has no attributes
         - ReservedOwner: The owner is COMPONENT_CONFIG
-        - InvalidNameKey: The component or the variable has an empty instance, the component an EVSE or connector id
-          of 0, or a name or value of the variable does not fit the OCPP types, by its length for example
+        - InvalidNameKey: The component or the variable has an empty instance, or the component an EVSE or
+          connector id of 0. A name or value beyond its length is answered with the status Invalid instead.
         - ReservedVariable: Only the component config may define the variable, as the OCPP service writes it from its
           own state
       type: string

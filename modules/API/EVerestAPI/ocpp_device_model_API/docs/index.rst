@@ -45,9 +45,11 @@ client publishes their registration again or EVerest restarts.
 A write to a registered variable is answered ``Rejected`` when the client does not reply within
 ``cfg_request_reply_to_s``.
 
-The three timeouts are at most 240 s each, below the 300 s after which EVerest aborts a command. A registration or
-value change that does not fit the types of the specification, a string beyond its maximum length for example, is
-ignored and logged.
+The three timeouts are at most 240 s each, below the 300 s after which EVerest aborts a command. A registration that
+does not fit the types of the specification, a string beyond its maximum length for example, is not passed on; the
+module answers it on ``e2m/set_registration_result`` with ``Invalid`` for its owner, or for the module id when it names
+none, unless the message is not a JSON object or its owner is not a non-empty string. A value change that does not
+fit the types is ignored and logged.
 
 Communication supervision is per module instance, not per client or owner. ``e2m/heartbeat`` is one heartbeat that
 every client can subscribe to, and ``m2e/communication_check`` feeds one timer:

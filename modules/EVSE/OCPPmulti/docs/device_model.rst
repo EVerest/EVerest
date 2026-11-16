@@ -292,7 +292,9 @@ answers with the registrations it collected, after waiting for the owners in its
 that, the application publishes a registration whenever its devices change, and each one is applied at once. A
 registration replaces everything its owner registered before; one without components releases the owner. An owner
 name belongs to the module that registered it first until it is released, and a registration of another module for
-it is refused with ``OwnerInUse``. Each registration is answered with the variables the device model rejected.
+it is refused with ``OwnerInUse``. Each registration is answered with the variables the device model rejected. A
+registration that does not match the schema of the API never reaches OCPPmulti: the API module answers it with
+``Invalid``.
 
 A write from the CSMS, already validated against the registered characteristics, is handed to the owner, which
 answers ``Accepted``, ``RebootRequired`` or ``Rejected``. A value the owner changes itself is reported to the device

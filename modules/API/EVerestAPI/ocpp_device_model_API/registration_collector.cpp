@@ -2,6 +2,8 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 #include "registration_collector.hpp"
 
+#include <nlohmann/json.hpp>
+
 #include <algorithm>
 #include <cctype>
 #include <sstream>
@@ -19,6 +21,21 @@ std::string trim(std::string const& text) {
 }
 
 } // namespace
+
+std::optional<std::string> owner_of_undecodable(std::string const& data, std::string const& module_id) {
+    const auto parsed = nlohmann::json::parse(data, nullptr, false);
+    if (not parsed.is_object()) {
+        return std::nullopt;
+    }
+    const auto owner = parsed.find("owner");
+    if (owner == parsed.end()) {
+        return module_id;
+    }
+    if (not owner->is_string() or owner->get_ref<std::string const&>().empty()) {
+        return std::nullopt;
+    }
+    return owner->get<std::string>();
+}
 
 std::set<std::string> parse_owner_list(std::string const& list) {
     std::set<std::string> owners;

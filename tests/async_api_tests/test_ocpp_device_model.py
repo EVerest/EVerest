@@ -116,8 +116,8 @@ async def test_get_registrations_answers_when_every_expected_owner_registered(
 async def test_get_registrations_answers_without_missing_owner_at_deadline(
         everest_core: EverestCore, client: AsyncApiMqttHandler, probe_module: ProbeModule):
     registrations = probe_module.subscribe_variable_to_queue(CONNECTION, "registration")
-    # a registration beyond a length limit of the interface is dropped instead of being part of the answer,
-    # which fails as a whole when EVerest validates it (validate_schema)
+    # a registration beyond a length limit of the interface is answered Invalid instead of being part of the
+    # answer, which fails as a whole when EVerest validates it (validate_schema)
     too_long = registration("meter_2", evse_id=2)
     too_long["components"][0]["variables"][0]["characteristics"]["unit"] = "x" * 17
     await publish(client, everest_core, "m2e/registration", too_long)
@@ -224,3 +224,27 @@ async def test_value_changed_is_passed_on(
     await publish(client, everest_core, "m2e/value_changed", change)
 
     assert await asyncio.to_thread(changes.get, timeout=5) == change
+
+
+@pytest.mark.asyncio
+@pytest.mark.everest_core_config('probe-ocpp-device-model.yaml')
+async def test_undecodable_registration_is_answered_invalid(
+        everest_core: EverestCore, client: AsyncApiMqttHandler, probe_module: ProbeModule):
+    results = await capture(client, everest_core, "e2m/set_registration_result")
+
+    too_long = registration("meter_1")
+    too_long["components"][0]["variables"][0]["variable"]["name"] = "x" * 51
+    await publish(client, everest_core, "m2e/registration", too_long)
+    assert await asyncio.wait_for(results.get(), 5) == {"owner": "meter_1", "status": "Invalid", "rejected": []}
+
+    without_owner = registration("meter_1")
+    del without_owner["owner"]
+    without_owner["unknown"] = True
+    await publish(client, everest_core, "m2e/registration", without_owner)
+    assert await asyncio.wait_for(results.get(), 5) == {
+        "owner": "device_model_api", "status": "Invalid", "rejected": []}
+
+    # nothing to address the result to
+    await publish(client, everest_core, "m2e/registration", {"owner": "", "components": []})
+    with pytest.raises(asyncio.TimeoutError):
+        await asyncio.wait_for(results.get(), 1)

@@ -127,3 +127,10 @@ TEST(ocpp_device_model, severity_and_max_elements_are_bounded) {
 }
 
 } // namespace
+
+TEST(ocpp_device_model, invalid_registration_result_round_trips) {
+    const auto text = json::parse(R"({"owner": "meter_1", "status": "Invalid", "rejected": []})");
+    RegistrationResult parsed;
+    ASSERT_TRUE(deserialize(text.dump(), parsed));
+    EXPECT_EQ(json::parse(serialize(parsed)), text);
+}
