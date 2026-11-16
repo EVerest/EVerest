@@ -132,6 +132,7 @@ struct TestAttr {
     config_path: syn::LitStr,
     module_name: syn::LitStr,
     harness: bool,
+    setup: Option<syn::Path>,
 }
 
 impl syn::parse::Parse for TestAttr {
@@ -139,6 +140,7 @@ impl syn::parse::Parse for TestAttr {
         let mut config_path = None;
         let mut module_name = None;
         let mut harness = false;
+        let mut setup = None;
 
         while !input.is_empty() {
             let ident: syn::Ident = input.parse()?;
@@ -153,11 +155,14 @@ impl syn::parse::Parse for TestAttr {
                 "harness" => {
                     harness = input.parse::<syn::LitBool>()?.value;
                 }
+                "setup" => {
+                    setup = Some(input.parse::<syn::Path>()?);
+                }
                 other => {
                     return Err(syn::Error::new(
                         ident.span(),
                         format!(
-                            "unknown attribute `{other}`, expected `config`, `module`, or `harness`"
+                            "unknown attribute `{other}`, expected `config`, `module`, `harness`, or `setup`"
                         ),
                     ));
                 }
@@ -176,6 +181,7 @@ impl syn::parse::Parse for TestAttr {
             config_path,
             module_name,
             harness,
+            setup,
         })
     }
 }
@@ -240,6 +246,34 @@ impl syn::parse::Parse for TestAttr {
 /// async fn my_test(module: &Module) {
 /// }
 /// ```
+///
+/// # Setup
+///
+/// `setup` names a function that prepares the test before the manager starts. It
+/// gets the [`everestrs::manager::TestSetup`] of the test: a directory of its own
+/// with a copy of the config and its user-config, which the manager loads. The
+/// setup writes into that directory, e.g. the user-config, and may return anything
+/// the test needs, e.g. a server on a free port it wrote into the user-config. The
+/// test takes what the setup returns as its second parameter, or leaves that out;
+/// The directory lives until the manager has stopped as well.
+///
+/// ```ignore
+/// fn with_server(setup: &everestrs::manager::TestSetup) -> TcpListener {
+///     let server = TcpListener::bind("127.0.0.1:0").unwrap();
+///     let port = server.local_addr().unwrap().port();
+///     std::fs::write(
+///         setup.user_config(),
+///         format!("active_modules: {{client: {{config_module: {{port: {port}}}}}}}"),
+///     )
+///     .unwrap();
+///     server
+/// }
+///
+/// #[everestrs::test(config = "config.yaml", module = "example_1", setup = with_server)]
+/// fn test_a(module: &Module, server: TcpListener) { ... }
+/// ```
+///
+/// The path to the function resolves where the test body does.
 #[proc_macro_attribute]
 pub fn test(attr: TokenStream, item: TokenStream) -> TokenStream {
     let test_attr = parse_macro_input!(attr as TestAttr);
@@ -253,7 +287,7 @@ pub fn test(attr: TokenStream, item: TokenStream) -> TokenStream {
     }
 }
 
-fn test_validate(input: &ItemFn) -> Result<(), syn::Error> {
+fn test_validate(input: &ItemFn, attr: &TestAttr) -> Result<(), syn::Error> {
     if !input.sig.generics.params.is_empty() {
         return Err(syn::Error::new(
             input.sig.generics.span(),
@@ -261,18 +295,24 @@ fn test_validate(input: &ItemFn) -> Result<(), syn::Error> {
         ));
     }
 
-    if input.sig.inputs.len() != 1 {
+    let has_setup = attr.setup.is_some();
+    let max_params = if has_setup { 2 } else { 1 };
+    if input.sig.inputs.is_empty() || input.sig.inputs.len() > max_params {
         return Err(syn::Error::new(
             input.sig.inputs.span(),
-            "#[everestrs::test] function must have exactly one parameter",
+            if has_setup {
+                "#[everestrs::test] function with `setup` must have one or two parameters: the module, and what the setup returns"
+            } else {
+                "#[everestrs::test] function must have exactly one parameter"
+            },
         ));
     }
 
-    let param = &input.sig.inputs[0];
-    match param {
+    let module_param = &input.sig.inputs[0];
+    match module_param {
         syn::FnArg::Receiver(_) => {
             return Err(syn::Error::new(
-                param.span(),
+                module_param.span(),
                 "#[everestrs::test] function must not take `self`",
             ));
         }
@@ -299,7 +339,7 @@ fn test_validate(input: &ItemFn) -> Result<(), syn::Error> {
 
 fn test_impl(attr: &TestAttr, item_fn: ItemFn) -> Result<proc_macro2::TokenStream, syn::Error> {
     // Sanity checks.
-    test_validate(&item_fn)?;
+    test_validate(&item_fn, attr)?;
 
     // Forward all attributes from the user function to the generated #[test] fn
     // (e.g. #[should_panic], #[ignore], #[allow(...)]).
@@ -307,7 +347,8 @@ fn test_impl(attr: &TestAttr, item_fn: ItemFn) -> Result<proc_macro2::TokenStrea
 
     let sig = &item_fn.sig;
     let ident = &sig.ident;
-    let param = &sig.inputs[0];
+    let module_param = &sig.inputs[0];
+    let setup_param = sig.inputs.iter().nth(1);
     let ret = &sig.output;
     let body = &item_fn.block;
     // Check if someone else after us might emit #[test]. `rstest` does
@@ -330,8 +371,8 @@ fn test_impl(attr: &TestAttr, item_fn: ItemFn) -> Result<proc_macro2::TokenStrea
     let maybe_await = maybe_async.as_ref().map(|_| quote! {.await});
     let module = &attr.module_name;
 
-    // Extract the parameter name and inner type from `name: &Type`.
-    let (param_name, inner_ty) = match param {
+    // Extract the name and the inner type of the module parameter, `name: &Type`.
+    let (module_param_name, module_ty) = match module_param {
         syn::FnArg::Typed(pat_type) => {
             let name = &pat_type.pat;
             match pat_type.ty.as_ref() {
@@ -350,6 +391,21 @@ fn test_impl(attr: &TestAttr, item_fn: ItemFn) -> Result<proc_macro2::TokenStrea
         .to_string_lossy()
         .into_owned();
 
+    // The test runs the setup, if any, before starting the manager, which then
+    // loads the config in the directory of the test. The directory and what the
+    // setup returned are declared before the manager, so they are dropped after it
+    // stopped, unless the test takes the latter.
+    let setup = attr.setup.as_ref().map(|setup_fn| {
+        quote! {
+            let __everest_setup_dir = ::everestrs::manager::TestSetup::new(prefix.clone(), &config)
+                .expect("Failed to create the directory of the test");
+            let __everest_setup = #setup_fn(&__everest_setup_dir);
+            let config = __everest_setup_dir.config().to_path_buf();
+        }
+    });
+    let setup_arg = setup_param.map(|_| quote! { , __everest_setup });
+    let setup_param = setup_param.map(|param| quote! { , #param });
+
     // The function we would like to emit
     let test_fn = quote! {
         #maybe_test
@@ -357,14 +413,11 @@ fn test_impl(attr: &TestAttr, item_fn: ItemFn) -> Result<proc_macro2::TokenStrea
         #maybe_async fn #ident() #ret {
             let prefix = std::env::current_dir().expect("Failed to get current directory");
             let config = prefix.join(format!("etc/everest/{}", #config_basename));
+            #setup
 
             // Each test gets a unique MQTT prefix so tests can run in parallel
-            // without topic collisions.
-            let __mqtt_prefix = format!(
-                "everest_test_{:?}_{:?}/",
-                std::process::id(),
-                std::thread::current().id(),
-            );
+            // without topic collisions, also with the tests of other binaries.
+            let __mqtt_prefix = ::everestrs::manager::unique_mqtt_prefix();
 
             // Start the manager, telling it not to spawn the module under test.
             // Blocks until the manager signals readiness via --status-fifo.
@@ -382,13 +435,13 @@ fn test_impl(attr: &TestAttr, item_fn: ItemFn) -> Result<proc_macro2::TokenStrea
                 mqtt_external_prefix: "".to_string(),
             };
 
-            let #param_name = #inner_ty::new_with_args(args);
+            let #module_param_name = #module_ty::new_with_args(args);
             let __everest_result = {
-                #maybe_async fn __everest_test(#param_name: &#inner_ty) #ret
+                #maybe_async fn __everest_test(#module_param_name: &#module_ty #setup_param) #ret
                     #body
-                __everest_test(&#param_name) #maybe_await
+                __everest_test(&#module_param_name #setup_arg) #maybe_await
             };
-            drop(#param_name);
+            drop(#module_param_name);
             __everest_result
         }
     };
@@ -493,6 +546,12 @@ fn generate_harness_tokens(attr: &TestAttr) -> Result<proc_macro2::TokenStream, 
 pub fn harness(attr: TokenStream, item: TokenStream) -> TokenStream {
     let test_attr = parse_macro_input!(attr as TestAttr);
     let item_mod = parse_macro_input!(item as ItemMod);
+
+    if let Some(setup) = &test_attr.setup {
+        return syn::Error::new_spanned(setup, "`setup` applies to `#[everestrs::test]` only")
+            .to_compile_error()
+            .into();
+    }
 
     match harness_impl(&test_attr, item_mod) {
         Ok(tokens) => tokens.into(),
