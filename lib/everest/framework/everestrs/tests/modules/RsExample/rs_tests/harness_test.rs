@@ -94,6 +94,41 @@ mod some_module {
             .expect("Timed out waiting for on_max_current");
     }
 
+    /// Writes a user-config into the directory of the test, and hands the directory to
+    /// the test.
+    fn with_user_config(setup: &everestrs::manager::TestSetup) -> std::path::PathBuf {
+        std::fs::write(
+            setup.user_config(),
+            "active_modules: {example_0: {config_module: {some_number_config: 7}}}",
+        )
+        .unwrap();
+        setup.test_dir().to_path_buf()
+    }
+
+    #[everestrs::test(config = "config_probe.yaml", module = "example_1", setup = with_user_config)]
+    fn test_harness_with_setup(module: &Module, dir: std::path::PathBuf) {
+        let (tx, rx) = channel();
+        let dummy = Arc::new(Dummy(tx, 123.));
+        let _pub = module.start(dummy.clone(), dummy.clone(), dummy.clone());
+
+        // The manager runs on the config in the directory of the setup, which the test
+        // gets.
+        rx.recv_timeout(std::time::Duration::from_secs(5))
+            .expect("Timed out waiting for on_max_current");
+        assert!(dir.join("config_probe.yaml").is_file());
+    }
+
+    // The test leaves out what the setup returns.
+    #[everestrs::test(config = "config_probe.yaml", module = "example_1", setup = with_user_config)]
+    fn test_harness_with_setup_only(module: &Module) {
+        let (tx, rx) = channel();
+        let dummy = Arc::new(Dummy(tx, 123.));
+        let _pub = module.start(dummy.clone(), dummy.clone(), dummy.clone());
+
+        rx.recv_timeout(std::time::Duration::from_secs(5))
+            .expect("Timed out waiting for on_max_current");
+    }
+
     #[everestrs::test(config = "config_probe.yaml", module = "example_1")]
     #[should_panic]
     fn test_harness_with_panic(module: &Module) {
