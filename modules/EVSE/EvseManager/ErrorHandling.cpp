@@ -32,21 +32,7 @@ std::string generate_description(const Everest::error::Error& error) {
 
 namespace module {
 
-using ErrorList = std::list<Everest::error::ErrorType>;
-static const struct IgnoreErrors {
-    // p_evse. We need to ignore Inoperative here as this is the result of this check.
-    ErrorList evse{"evse_manager/Inoperative"};
-    ErrorList bsp{"evse_board_support/MREC3HighTemperature", "evse_board_support/MREC18CableOverTempDerate",
-                  "evse_board_support/VendorWarning", "ac_rcd/VendorWarning"};
-    ErrorList connector_lock{"connector_lock/VendorWarning"};
-    ErrorList ac_rcd{"ac_rcd/VendorWarning"};
-    ErrorList imd{"isolation_monitor/VendorWarning"};
-    ErrorList powersupply{"power_supply_DC/VendorWarning"};
-    ErrorList powermeter{"powermeter/VendorWarning"};
-    ErrorList slac{"generic/VendorWarning"};
-    ErrorList hlc{"generic/VendorWarning"};
-    ErrorList over_voltage_monitor{"over_voltage_monitor/VendorWarning"};
-} ignore_errors;
+const IgnoreErrors ignore_errors{};
 
 ErrorHandling::ErrorHandling(const std::unique_ptr<evse_board_supportIntf>& _r_bsp,
                              const std::vector<std::unique_ptr<ISO15118_chargerIntf>>& _r_hlc,

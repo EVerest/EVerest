@@ -18,6 +18,7 @@
 #include "ld-ev.hpp"
 
 #include <chrono>
+#include <list>
 #include <mutex>
 #include <queue>
 #include <set>
@@ -60,6 +61,24 @@ enum class ShutdownType {
     ErrorShutdown,
     EmergencyShutdown
 };
+
+// Error types that do not block charging, per source. error_classification.yaml publishes the same lists.
+struct IgnoreErrors {
+    using ErrorList = std::list<Everest::error::ErrorType>;
+    // p_evse. We need to ignore Inoperative here as this is the result of this check.
+    ErrorList evse{"evse_manager/Inoperative"};
+    ErrorList bsp{"evse_board_support/MREC3HighTemperature", "evse_board_support/MREC18CableOverTempDerate",
+                  "evse_board_support/VendorWarning", "ac_rcd/VendorWarning"};
+    ErrorList connector_lock{"connector_lock/VendorWarning"};
+    ErrorList ac_rcd{"ac_rcd/VendorWarning"};
+    ErrorList imd{"isolation_monitor/VendorWarning"};
+    ErrorList powersupply{"power_supply_DC/VendorWarning"};
+    ErrorList powermeter{"powermeter/VendorWarning"};
+    ErrorList slac{"generic/VendorWarning"};
+    ErrorList hlc{"generic/VendorWarning"};
+    ErrorList over_voltage_monitor{"over_voltage_monitor/VendorWarning"};
+};
+extern const IgnoreErrors ignore_errors;
 
 class ErrorHandling {
 

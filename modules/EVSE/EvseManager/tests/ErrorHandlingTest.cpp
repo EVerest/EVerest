@@ -5,10 +5,14 @@
 #include "EvseManagerStub.hpp"
 #include "evse_board_supportIntfStub.hpp"
 
+#include <everest/utils/yaml_loader.hpp>
 #include <gtest/gtest.h>
 
+#include <filesystem>
+#include <map>
 #include <memory>
 #include <set>
+#include <string>
 
 namespace Everest::error {
 bool operator<(const Error& lhs, const Error& rhs) {
@@ -641,6 +645,76 @@ TEST_F(ErrorHandlingTesting, RefreshWhenACauseClears) {
     EXPECT_EQ(error.message, cause_b.type);
     EXPECT_EQ(error.vendor_id, cause_b.vendor_id);
     EXPECT_EQ(error.description, "type-b/sub-b");
+}
+
+struct ErrorClassificationFile : public testing::Test {
+    using ErrorTypes = std::set<std::string>;
+
+    const std::filesystem::path module_dir{EVSE_MANAGER_SOURCE_DIR};
+    const nlohmann::ordered_json classification = Everest::load_yaml(module_dir / "error_classification.yaml");
+    const nlohmann::ordered_json manifest = Everest::load_yaml(module_dir / "manifest.yaml");
+
+    static std::map<std::string, ErrorTypes> non_blocking(const nlohmann::ordered_json& sources) {
+        std::map<std::string, ErrorTypes> result;
+        for (const auto& [id, source] : sources.items()) {
+            result[id] = source.at("non_blocking").get<ErrorTypes>();
+        }
+        return result;
+    }
+
+    static ErrorTypes as_set(const module::IgnoreErrors::ErrorList& list) {
+        return {list.begin(), list.end()};
+    }
+};
+
+TEST_F(ErrorClassificationFile, Version) {
+    EXPECT_EQ(classification.at("version"), 1);
+}
+
+TEST_F(ErrorClassificationFile, ImplementationsMatchIgnoreLists) {
+    const auto& implementations = classification.at("implementations");
+    ASSERT_EQ(implementations.size(), 1);
+    const auto& evse = implementations.at("evse");
+
+    auto ignored = evse.at("non_blocking").get<ErrorTypes>();
+    ignored.insert(evse.at("result").get<std::string>());
+    EXPECT_EQ(ignored, as_set(module::ignore_errors.evse));
+    EXPECT_EQ(evse.at("result"), "evse_manager/Inoperative");
+}
+
+TEST_F(ErrorClassificationFile, RequirementsMatchIgnoreLists) {
+    const auto& ignore = module::ignore_errors;
+    const std::map<std::string, ErrorTypes> expected{
+        {"bsp", as_set(ignore.bsp)},
+        {"connector_lock", as_set(ignore.connector_lock)},
+        {"ac_rcd", as_set(ignore.ac_rcd)},
+        {"imd", as_set(ignore.imd)},
+        {"powersupply_DC", as_set(ignore.powersupply)},
+        {"powermeter_car_side", as_set(ignore.powermeter)},
+        {"powermeter_grid_side", as_set(ignore.powermeter)},
+        {"slac", as_set(ignore.slac)},
+        {"hlc", as_set(ignore.hlc)},
+        {"over_voltage_monitor", as_set(ignore.over_voltage_monitor)},
+    };
+    EXPECT_EQ(non_blocking(classification.at("requirements")), expected);
+}
+
+TEST_F(ErrorClassificationFile, IdsAndConditionsExistInManifest) {
+    for (const auto& [id, source] : classification.at("implementations").items()) {
+        EXPECT_TRUE(manifest.at("provides").contains(id)) << id;
+    }
+    for (const auto& [id, source] : classification.at("requirements").items()) {
+        EXPECT_TRUE(manifest.at("requires").contains(id)) << id;
+        if (source.contains("monitored_if_config")) {
+            const auto key = source.at("monitored_if_config").get<std::string>();
+            ASSERT_TRUE(manifest.at("config").contains(key)) << key;
+            EXPECT_EQ(manifest.at("config").at(key).at("type"), "boolean") << key;
+        }
+        if (source.contains("monitored_if_unconnected")) {
+            const auto other = source.at("monitored_if_unconnected").get<std::string>();
+            EXPECT_TRUE(manifest.at("requires").contains(other)) << other;
+        }
+    }
 }
 
 } // namespace
