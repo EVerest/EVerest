@@ -294,7 +294,9 @@ registration replaces everything its owner registered before; one without compon
 name belongs to the module that registered it first until it is released, and a registration of another module for
 it is refused with ``OwnerInUse``. Each registration is answered with the variables the device model rejected. A
 registration that does not match the schema of the API never reaches OCPPmulti: the API module answers it with
-``Invalid``.
+``Invalid``. A module that provides ``ocpp_device_model`` itself, while EVerest does not validate the schema, can
+send a variable that does not fit the OCPP types; OCPPmulti then answers the whole registration ``Invalid``, lists
+the variable with ``InvalidNameKey`` and keeps the owner's earlier registration.
 
 A write from the CSMS, already validated against the registered characteristics, is handed to the owner, which
 answers ``Accepted``, ``RebootRequired`` or ``Rejected``. A value the owner changes itself is reported to the device

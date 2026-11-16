@@ -448,7 +448,7 @@ TEST_F(ExternalOwnersTest, EndingTheRegistrationsDetachesTheOwners) {
     EXPECT_EQ(this->read("AuxMeter", "Energy"), "8");
 }
 
-TEST_F(ExternalOwnersTest, VariablesThatDoNotFitOcppAreRejected) {
+TEST_F(ExternalOwnersTest, RegistrationWithVariablesThatDoNotFitOcppIsInvalid) {
     auto registration = make_registration("cooling", "CoolingCtrlr", "FanSpeed", "40");
     auto long_unit = registration.components.at(0).variables.at(0);
     long_unit.variable.name = "Temperature";
@@ -459,9 +459,10 @@ TEST_F(ExternalOwnersTest, VariablesThatDoNotFitOcppAreRejected) {
     registration.components.push_back(long_name);
     this->start(make_registrations({registration}));
 
-    EXPECT_EQ(this->read("CoolingCtrlr", "FanSpeed"), "40");
+    EXPECT_EQ(this->read("CoolingCtrlr", "FanSpeed"), std::nullopt);
     EXPECT_EQ(this->read("CoolingCtrlr", "Temperature"), std::nullopt);
     ASSERT_EQ(this->first->results.size(), 1u);
+    EXPECT_EQ(this->first->results.at(0).status, dm_types::RegistrationStatus::Invalid);
     const auto& rejected = this->first->results.at(0).rejected;
     ASSERT_EQ(rejected.size(), 3u);
     EXPECT_EQ(rejected.at(0).variable.name, "Temperature");
@@ -469,9 +470,8 @@ TEST_F(ExternalOwnersTest, VariablesThatDoNotFitOcppAreRejected) {
         EXPECT_EQ(variable.reason, dm_types::RegistrationRejectionReason::InvalidNameKey);
     }
 
-    // A value change after a rejected variable reaches the stored registration without failing
     this->owners->on_value_changed(0, make_change("cooling", "CoolingCtrlr", "FanSpeed", "50"));
-    EXPECT_EQ(this->read("CoolingCtrlr", "FanSpeed"), "50");
+    EXPECT_EQ(this->read("CoolingCtrlr", "FanSpeed"), std::nullopt);
 }
 
 TEST_F(ExternalOwnersTest, ValueThatDoesNotFitOcppIsIgnoredBeforeTheStart) {
@@ -610,22 +610,43 @@ TEST_F(ExternalOwnersTest, ValueReportBlocksNoOtherConnection) {
     EXPECT_EQ(this->read("AuxMeter", "Energy"), "6");
 }
 
-TEST_F(ExternalOwnersTest, ComponentWithoutVariablesLeftIsNotRegistered) {
+TEST_F(ExternalOwnersTest, InvalidRegistrationAtRuntimeKeepsTheEarlierOne) {
     WrappingRegistry registry(*this->device_model);
-    auto registration = make_registration("meter", "AuxMeter", "Energy", "5");
-    auto rejected_only = registration.components.at(0);
-    rejected_only.component.name = "OtherCtrlr";
-    rejected_only.variables.at(0).variable.name = std::string(51, 'V');
-    registration.components.push_back(rejected_only);
-    this->owners->set_startup_registrations(0, make_registrations({registration}));
+    this->owners->set_startup_registrations(
+        0, make_registrations({make_registration("meter", "AuxMeter", "Energy", "5")}));
     this->owners->set_startup_registrations(1, {});
     this->owners->register_with(registry);
+    const auto registered = registry.registered;
 
-    ASSERT_EQ(registry.registered.size(), 1u);
-    EXPECT_EQ(registry.registered.at(0).component.name.get(), "AuxMeter");
-    ASSERT_EQ(this->first->results.size(), 1u);
-    EXPECT_EQ(this->first->results.at(0).rejected.size(), 1u);
+    auto registration = make_registration("meter", "AuxMeter", "Energy", "6");
+    auto long_name = registration.components.at(0).variables.at(0);
+    long_name.variable.name = std::string(51, 'V');
+    registration.components.at(0).variables.push_back(long_name);
+    this->owners->on_registration(0, registration);
+
+    ASSERT_EQ(this->first->results.size(), 2u);
+    EXPECT_EQ(this->first->results.at(1).status, dm_types::RegistrationStatus::Invalid);
+    ASSERT_EQ(this->first->results.at(1).rejected.size(), 1u);
+    EXPECT_EQ(this->first->results.at(1).rejected.at(0).reason, dm_types::RegistrationRejectionReason::InvalidNameKey);
+    EXPECT_EQ(registry.registered.size(), registered.size());
+    EXPECT_EQ(this->read("AuxMeter", "Energy"), "5");
+    EXPECT_EQ(this->write("AuxMeter", "Energy", "7"), SetVariableStatusEnum::Accepted);
     this->owners->detach();
+}
+
+TEST_F(ExternalOwnersTest, InvalidRegistrationOfANewOwnerLeavesTheNameFree) {
+    this->start({});
+
+    auto registration = make_registration("meter", "AuxMeter", "Energy", "5");
+    registration.components.at(0).variables.at(0).variable.name = std::string(51, 'V');
+    this->owners->on_registration(0, registration);
+    ASSERT_EQ(this->first->results.size(), 1u);
+    EXPECT_EQ(this->first->results.at(0).status, dm_types::RegistrationStatus::Invalid);
+
+    this->owners->on_registration(1, make_registration("meter", "AuxMeter", "Energy", "6"));
+    ASSERT_EQ(this->second->results.size(), 1u);
+    EXPECT_EQ(this->second->results.at(0).status, dm_types::RegistrationStatus::Accepted);
+    EXPECT_EQ(this->read("AuxMeter", "Energy"), "6");
 }
 
 TEST_F(ExternalOwnersTest, ValueChangeBeforeTheStartupAnswerIsApplied) {

@@ -102,7 +102,7 @@ dm_types::RejectedVariable make_unconvertible(const types::ocpp::Component& comp
 
 /// \brief Converts the components of a registration, leaving out the variables that do not fit the OCPP types and
 /// adding them to \p unconvertible. Only a module that provides ocpp_device_model itself can send these, while EVerest
-/// does not validate the schema; the ocpp_device_model_API module answers them with Invalid.
+/// does not validate the schema.
 std::vector<ocpp::v2::RegisteredComponent>
 to_registered_components(const std::string& owner, const std::vector<dm_types::RegisteredComponent>& components,
                          std::vector<dm_types::RejectedVariable>& unconvertible) {
@@ -128,20 +128,18 @@ to_registered_components(const std::string& owner, const std::vector<dm_types::R
                 unconvertible.push_back(make_unconvertible(component.component, variable.variable));
             }
         }
-        if (not registered.variables.empty()) {
-            result.push_back(std::move(registered));
-        }
+        result.push_back(std::move(registered));
     }
     return result;
 }
 
 dm_types::RegistrationResult make_result(const std::string& owner, const dm_types::RegistrationStatus status,
-                                         const std::vector<dm_types::RejectedVariable>& unconvertible = {},
+                                         const std::vector<dm_types::RejectedVariable>& rejected = {},
                                          const ocpp::v2::ComponentRegistrationResult& registration = {}) {
     dm_types::RegistrationResult result;
     result.owner = owner;
     result.status = status;
-    result.rejected = unconvertible;
+    result.rejected = rejected;
     for (const auto& rejected : registration.rejected) {
         result.rejected.push_back(to_everest_rejected_variable(rejected));
     }
@@ -454,8 +452,8 @@ void ExternalOwners::report_held(ocpp::v2::DeviceModelRegistryInterface& registr
             if (held.empty()) {
                 owned.answered = true;
                 --handle->registry_calls_in_progress;
-                handle->outbox.emplace_back(
-                    index, make_result(owner, dm_types::RegistrationStatus::Accepted, owned.unconvertible, result));
+                handle->outbox.emplace_back(index,
+                                            make_result(owner, dm_types::RegistrationStatus::Accepted, {}, result));
                 break;
             }
             // Changes arriving meanwhile are held behind these, so that none is overwritten by an older one
@@ -515,9 +513,8 @@ std::vector<OwnerRegistrationResult> ExternalOwners::register_with(ocpp::v2::Dev
                 results.push_back({owner, result});
                 if (not entry.answered) {
                     entry.answered = true;
-                    handle->outbox.emplace_back(
-                        entry.connection,
-                        make_result(owner, dm_types::RegistrationStatus::Accepted, entry.unconvertible, result));
+                    handle->outbox.emplace_back(entry.connection,
+                                                make_result(owner, dm_types::RegistrationStatus::Accepted, {}, result));
                 }
             } catch (const std::exception& e) {
                 EVLOG_error << "Registering owner " << owner << " failed, the owner is dropped: " << e.what();
@@ -576,11 +573,10 @@ ExternalOwners::Applied ExternalOwners::apply(State& state, const std::size_t in
         return {owner, PendingResult{index, make_result(owner, dm_types::RegistrationStatus::OwnerInUse)},
                 RegistryCall::None};
     }
-    if (claimed != nullptr) {
-        claimed->push_back(owner);
-    }
-
     if (registration.components.empty()) {
+        if (claimed != nullptr) {
+            claimed->push_back(owner);
+        }
         this->drop_unclaimed(state, index, owner);
         Applied applied{owner, PendingResult{index, make_result(owner, dm_types::RegistrationStatus::Accepted)},
                         RegistryCall::None};
@@ -598,11 +594,23 @@ ExternalOwners::Applied ExternalOwners::apply(State& state, const std::size_t in
         return applied;
     }
 
+    std::vector<dm_types::RejectedVariable> unconvertible;
+    auto components = to_registered_components(owner, registration.components, unconvertible);
+    if (not unconvertible.empty()) {
+        EVLOG_warning << "Registration of owner " << owner << " by " << this->connections.at(index)->module_id()
+                      << " is invalid: " << unconvertible.size() << " variables do not fit the OCPP types";
+        this->drop_unclaimed(state, index, owner);
+        return {owner, PendingResult{index, make_result(owner, dm_types::RegistrationStatus::Invalid, unconvertible)},
+                RegistryCall::None};
+    }
+    if (claimed != nullptr) {
+        claimed->push_back(owner);
+    }
+
     auto& owned = state.owners[owner];
     owned.connection = index;
     owned.answered = false;
-    owned.unconvertible.clear();
-    owned.components = to_registered_components(owner, registration.components, owned.unconvertible);
+    owned.components = std::move(components);
     if (owned.provider == nullptr) {
         owned.provider = std::make_shared<OwnerProvider>(this->connections.at(index), owner);
     }

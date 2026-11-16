@@ -266,8 +266,9 @@ types:
       OwnerInUse: Another module, or another registration of the same call, uses the owner name already. Nothing of
         the registration was passed on.
       Invalid: The registration does not match the schema of the API, a name longer than 50 characters for example.
-        Sent by the API module that received it, not by the OCPP service. Nothing of the registration was passed on,
-        and an earlier registration of the owner stays in place.
+        Sent by the API module that received it, and by the OCPP service, when EVerest does not validate the schema,
+        for a registration with a variable that does not fit the OCPP types, which it lists with InvalidNameKey.
+        Nothing of the registration was passed on, and an earlier registration of the owner stays in place.
     type: string
     enum:
       - Accepted
@@ -282,7 +283,7 @@ types:
       ReservedOwner: The owner is COMPONENT_CONFIG, which is reserved for the OCPP service
       InvalidNameKey: The component or the variable has an empty instance, the component an EVSE or connector id of
         0, or, when EVerest does not validate the schema, a name or value of the variable does not fit the OCPP
-        types, by its length for example
+        types, by its length for example, which makes the whole registration Invalid
       ReservedVariable: The OCPP service writes the variable from its own state, AuthCacheCtrlr.Storage or the
         variables of a NetworkConfiguration slot for example, so only the component config defines it
     type: string

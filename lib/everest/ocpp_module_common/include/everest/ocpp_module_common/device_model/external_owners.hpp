@@ -61,7 +61,8 @@ public:
 
     /// \brief Applies a registration that the connection \p index published. Registrations of one connection must
     /// not be applied concurrently, which the framework ensures for the publications of one variable. A registration
-    /// the device model fails to apply is logged and not answered, and its owner is dropped, which frees its name.
+    /// the device model fails to apply is logged and not answered, and its owner is dropped, which frees its name. A
+    /// registration with a variable that does not fit the OCPP types is answered Invalid and changes nothing.
     void on_registration(std::size_t index, const types::ocpp_device_model::Registration& registration);
 
     /// \brief Reports a value that an owner of the connection \p index changed. A change for an owner of another
@@ -85,8 +86,6 @@ private:
     struct Owner {
         std::size_t connection;
         std::vector<ocpp::v2::RegisteredComponent> components;
-        /// \brief The variables of the registration that do not fit the OCPP types, rejected with InvalidNameKey
-        std::vector<types::ocpp_device_model::RejectedVariable> unconvertible;
         std::shared_ptr<ocpp::v2::VariableValueProvider> provider;
         /// \brief Being unregistered after a release or a failed registration; the name stays in use until then
         bool releasing{false};
