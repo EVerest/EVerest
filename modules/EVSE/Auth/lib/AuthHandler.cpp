@@ -36,15 +36,37 @@ std::string token_handling_result_to_string(const TokenHandlingResult& result) {
 }
 } // namespace conversions
 
+namespace {
+// Two tokens belong together if they are equal, if one is the parent of the other, or if they share a parent.
+bool is_same_token_or_group(const IdToken& id_token, const std::optional<IdToken>& parent_id_token,
+                            const IdToken& other_id_token, const std::optional<IdToken>& other_parent_id_token) {
+    return is_equal_case_insensitive(id_token, other_id_token) ||
+           (parent_id_token.has_value() && is_equal_case_insensitive(parent_id_token.value(), other_id_token)) ||
+           (other_parent_id_token.has_value() && is_equal_case_insensitive(id_token, other_parent_id_token.value())) ||
+           (parent_id_token.has_value() && other_parent_id_token.has_value() &&
+            is_equal_case_insensitive(parent_id_token.value(), other_parent_id_token.value()));
+}
+
+// Only provided tokens with type RFID or BankCard can be used to stop a transaction or deauthorize. Bank card tokens
+// can only match if the token provider publishes a stable, card-derived id_token; providers that publish a fresh token
+// per presentation (e.g. per-session invoice tokens) never match an active transaction and are unaffected.
+bool can_stop_or_deauthorize(const ProvidedIdToken& provided_token) {
+    return provided_token.authorization_type == AuthorizationType::RFID ||
+           provided_token.authorization_type == AuthorizationType::BankCard;
+}
+} // namespace
+
 AuthHandler::AuthHandler(const SelectionAlgorithm& selection_algorithm, const int connection_timeout,
                          bool plug_in_timeout_enabled, bool prioritize_authorization_over_stopping_transaction,
-                         bool ignore_faults, bool stop_transaction_on_reswipe, const std::string& id, kvsIntf* store) :
+                         bool ignore_faults, bool stop_transaction_on_reswipe, bool deauthorize_on_reswipe,
+                         const std::string& id, kvsIntf* store) :
     selection_algorithm(selection_algorithm),
     connection_timeout(connection_timeout),
     plug_in_timeout_enabled(plug_in_timeout_enabled),
     prioritize_authorization_over_stopping_transaction(prioritize_authorization_over_stopping_transaction),
     ignore_faults(ignore_faults),
     stop_transaction_on_reswipe(stop_transaction_on_reswipe),
+    deauthorize_on_reswipe(deauthorize_on_reswipe),
     reservation_handler(evses, id, store) {
 }
 
@@ -110,9 +132,19 @@ TokenHandlingResult AuthHandler::on_token(const ProvidedIdToken& provided_token)
     const auto referenced_evses = this->get_referenced_evses(provided_token);
     const bool already_in_process = this->is_token_already_in_process(provided_token, referenced_evses);
 
+    // if exact same token is already in process and deauthorization on reswipe is enabled,
+    // attempt to withdraw pending authorization
+    if (already_in_process && this->deauthorize_on_reswipe && can_stop_or_deauthorize(provided_token) &&
+        this->is_authorization_pending(provided_token, referenced_evses)) {
+        const bool withdrawn = this->withdraw_pending_authorization({provided_token.id_token, std::nullopt}, lk);
+        EVLOG_info << "Token " << everest::helpers::redact(provided_token.id_token.value)
+                   << " presented again: " << (withdrawn ? "Authorization withdrawn" : "No authorization to withdraw");
+        return withdrawn ? TokenHandlingResult::WITHDRAWN : TokenHandlingResult::ALREADY_IN_PROCESS;
+    }
+
     if (!already_in_process) {
         // process token if not already in process
-        this->tokens_in_process.insert(provided_token);
+        this->tokens_in_process.emplace(provided_token.id_token, TokenInProcess{provided_token});
         this->publish_token_validation_status(provided_token, TokenValidationStatus::Processing);
         result = this->handle_token(provided_token_copy, lk);
     } else {
@@ -147,7 +179,7 @@ TokenHandlingResult AuthHandler::on_token(const ProvidedIdToken& provided_token)
     }
 
     if (!already_in_process) {
-        this->tokens_in_process.erase(provided_token);
+        this->tokens_in_process.erase(provided_token.id_token);
     }
 
     EVLOG_info << "Result for token: " << everest::helpers::redact(provided_token.id_token.value) << ": "
@@ -185,19 +217,23 @@ void AuthHandler::handle_token_validation_result_update(const ValidationResultUp
 TokenHandlingResult AuthHandler::handle_token(ProvidedIdToken& provided_token, std::unique_lock<std::mutex>& lk) {
     std::vector<int> referenced_evses = this->get_referenced_evses(provided_token);
 
-    // Only provided tokens with type RFID or BankCard can be used to stop a transaction. Bank card tokens can only
-    // match if the token provider publishes a stable, card-derived id_token; providers that publish a fresh token per
-    // presentation (e.g. per-session invoice tokens) never match an active transaction and are unaffected.
-    if (provided_token.authorization_type == AuthorizationType::RFID or
-        provided_token.authorization_type == AuthorizationType::BankCard) {
-        // check if id_token is used for an active transaction
+    if (can_stop_or_deauthorize(provided_token)) {
+        // check if id_token or parent id token is used for an authorization or an active transaction
         const auto evse_used_for_transaction =
             this->used_for_transaction(referenced_evses, provided_token.id_token.value);
         if (evse_used_for_transaction != -1) {
+            const auto& evse_used = this->evses.at(evse_used_for_transaction);
+            if (this->deauthorize_on_reswipe && !evse_used->transaction_active) {
+                // the token is the owner of an authorization that has no transaction yet
+                const PendingAuthorization pending{evse_used->identifier->id_token, evse_used_for_transaction};
+                if (this->withdraw_pending_authorization(pending, lk)) {
+                    provided_token.connectors = std::vector<int32_t>{evse_used_for_transaction};
+                    return TokenHandlingResult::WITHDRAWN;
+                }
+            }
             if (!this->stop_transaction_on_reswipe) {
-                if (this->evses.at(evse_used_for_transaction)->identifier->parent_id_token.has_value()) {
-                    provided_token.parent_id_token =
-                        this->evses.at(evse_used_for_transaction)->identifier->parent_id_token.value();
+                if (evse_used->identifier->parent_id_token.has_value()) {
+                    provided_token.parent_id_token = evse_used->identifier->parent_id_token.value();
                 }
                 provided_token.connectors = std::vector<int32_t>{evse_used_for_transaction};
                 EVLOG_info << "Transaction was not stopped by renewed presentation of id_token for evse#"
@@ -207,12 +243,11 @@ TokenHandlingResult AuthHandler::handle_token(ProvidedIdToken& provided_token, s
             StopTransactionRequest req;
             req.reason = StopTransactionReason::Local;
             req.id_tag.emplace(provided_token);
-            this->stop_transaction_callback(this->evses.at(evse_used_for_transaction)->evse_index, req);
+            this->stop_transaction_callback(evse_used->evse_index, req);
             EVLOG_info << "Transaction was stopped because id_token was used for transaction for evse#"
                        << evse_used_for_transaction;
-            if (this->evses.at(evse_used_for_transaction)->identifier->parent_id_token.has_value()) {
-                provided_token.parent_id_token =
-                    this->evses.at(evse_used_for_transaction)->identifier->parent_id_token.value();
+            if (evse_used->identifier->parent_id_token.has_value()) {
+                provided_token.parent_id_token = evse_used->identifier->parent_id_token.value();
             }
             provided_token.connectors = std::vector<int32_t>{evse_used_for_transaction};
             return TokenHandlingResult::USED_TO_STOP_TRANSACTION;
@@ -222,11 +257,10 @@ TokenHandlingResult AuthHandler::handle_token(ProvidedIdToken& provided_token, s
     /** Check if validation of token shall be requested. In some situations its not useful to validate
      * the token because either no evse is available anyways or the provided token does not match a present
      * reservation. Yet it has to be checked if the incoming token can be used to stop an active transaction or if the
-     * parent id of the token (that is only known after validation) can be used to stop or start transactions
-     */
+     * parent id of the token (that is only known after validation) can be used to stop or start transactions */
 
     /* If no evse is available AND no parent_id is deposited at any evse and no master pass group id is
-    configured, we can immediately respond with NO_CONNECTOR_AVAILABLE */
+     * configured, we can immediately respond with NO_CONNECTOR_AVAILABLE */
     if (!this->any_evse_available(referenced_evses) and !this->any_parent_id_present(referenced_evses) and
         !this->master_pass_group_id.has_value()) {
         return TokenHandlingResult::NO_CONNECTOR_AVAILABLE;
@@ -282,6 +316,74 @@ TokenHandlingResult AuthHandler::handle_token(ProvidedIdToken& provided_token, s
         lk.lock();
     }
 
+    /* A master pass token always deauthorizes pending authorizations and stops active transactions, independent of
+     * deauthorize_on_reswipe, stop_transaction_on_reswipe and prioritize_authorization_over_stopping_transaction */
+    const auto master_pass_result =
+        std::find_if(validation_results.begin(), validation_results.end(), [this](const ValidationResult& result) {
+            return result.authorization_status == AuthorizationStatus::Accepted &&
+                   this->equals_master_pass_group_id(result.parent_id_token);
+        });
+    if (master_pass_result != validation_results.end()) {
+        EVLOG_info << "Provided parent_id_token is equal to master_pass_group_id. Withdrawing pending authorizations "
+                      "and stopping all active transactions!";
+        std::vector<int32_t> connectors;
+        bool withdrawn_any = false;
+        for (const auto& pending : this->get_pending_authorizations(referenced_evses)) {
+            // each withdrawal releases the lock, so an earlier one may have changed the remaining entries
+            if (!this->is_still_pending(pending, referenced_evses)) {
+                continue;
+            }
+            if (this->withdraw_pending_authorization(pending, lk)) {
+                withdrawn_any = true;
+                if (pending.evse_id.has_value()) {
+                    connectors.emplace_back(pending.evse_id.value());
+                }
+            }
+        }
+        bool stopped_any = false;
+        for (const auto evse_id : referenced_evses) {
+            if (this->evses[evse_id]->transaction_active) {
+                stopped_any = true;
+                StopTransactionRequest req;
+                req.reason = StopTransactionReason::MasterPass;
+                req.id_tag.emplace(provided_token);
+                this->stop_transaction_callback(this->evses.at(evse_id)->evse_index, req);
+                connectors.emplace_back(evse_id);
+            }
+        }
+        // TOOD: Add handling in case there is a display which can be used which transaction should stop
+        // (see C16 of OCPP2.0.1 spec)
+        provided_token.parent_id_token = master_pass_result->parent_id_token.value();
+        provided_token.connectors = connectors;
+        if (withdrawn_any && !stopped_any) {
+            return TokenHandlingResult::WITHDRAWN;
+        }
+        return TokenHandlingResult::USED_TO_STOP_TRANSACTION;
+    }
+
+    /* Check if the provided token should deauthorize any pending authorizations based on the parent ID token */
+    if (this->deauthorize_on_reswipe) {
+        const auto accepted_result =
+            std::find_if(validation_results.begin(), validation_results.end(), [](const ValidationResult& result) {
+                return result.authorization_status == AuthorizationStatus::Accepted;
+            });
+        if (accepted_result != validation_results.end()) {
+            const auto pending = this->find_pending_authorization(provided_token.id_token,
+                                                                  accepted_result->parent_id_token, referenced_evses);
+            if (pending.has_value()) {
+                EVLOG_info << "Token " << everest::helpers::redact(provided_token.id_token.value)
+                           << " shares its id or group id with a pending authorization: deauthorizing";
+                if (this->withdraw_pending_authorization(pending.value(), lk)) {
+                    if (pending->evse_id.has_value()) {
+                        provided_token.connectors = std::vector<int32_t>{pending->evse_id.value()};
+                    }
+                    return TokenHandlingResult::WITHDRAWN;
+                }
+            }
+        }
+    }
+
+    /* Determine if we should attempt to stop a transaction using the parent ID token */
     bool attempt_stop_with_parent_id_token = false;
     if (this->prioritize_authorization_over_stopping_transaction) {
         // check if any evse is available
@@ -297,27 +399,6 @@ TokenHandlingResult AuthHandler::handle_token(ProvidedIdToken& provided_token, s
         for (const auto& validation_result : validation_results) {
             if (validation_result.authorization_status == AuthorizationStatus::Accepted &&
                 validation_result.parent_id_token.has_value()) {
-                // check if parent_id_token is equal to master_pass_group_id
-                if (this->equals_master_pass_group_id(validation_result.parent_id_token)) {
-                    EVLOG_info << "Provided parent_id_token is equal to master_pass_group_id. Stopping all active "
-                                  "transactions!";
-                    std::vector<int32_t> connectors;
-                    for (const auto evse_id : referenced_evses) {
-                        if (this->evses[evse_id]->transaction_active) {
-                            StopTransactionRequest req;
-                            req.reason = StopTransactionReason::MasterPass;
-                            req.id_tag.emplace(provided_token);
-                            this->stop_transaction_callback(this->evses.at(evse_id)->evse_index, req);
-                            connectors.emplace_back(evse_id);
-                        }
-                    }
-                    // TOOD: Add handling in case there is a display which can be used which transaction should stop
-                    // (see C16 of OCPP2.0.1 spec)
-                    provided_token.parent_id_token = validation_result.parent_id_token.value();
-                    provided_token.connectors = connectors;
-                    return TokenHandlingResult::USED_TO_STOP_TRANSACTION;
-                }
-
                 const auto evse_used_for_transaction =
                     this->used_for_transaction(referenced_evses, validation_result.parent_id_token.value().value);
                 if (evse_used_for_transaction != -1) {
@@ -374,6 +455,7 @@ TokenHandlingResult AuthHandler::handle_token(ProvidedIdToken& provided_token, s
                 if (validation_result.parent_id_token.has_value()) {
                     provided_token.parent_id_token = validation_result.parent_id_token.value();
                 }
+                this->tokens_in_process.at(provided_token.id_token) = {provided_token, true};
                 this->publish_token_validation_status(provided_token,
                                                       types::authorization::TokenValidationStatus::Accepted,
                                                       validation_result.tariff_messages);
@@ -505,22 +587,102 @@ int AuthHandler::used_for_transaction(const std::vector<int>& evse_ids, const st
 
 bool AuthHandler::is_token_already_in_process(const ProvidedIdToken& provided_id_token,
                                               const std::vector<int>& referenced_evses) {
+    // checks if the token is currently already processed by the module (because already swiped) or was already used
+    // to authorize an evse but no transaction has been started yet
+    return this->tokens_in_process.find(provided_id_token.id_token) != this->tokens_in_process.end() ||
+           this->is_authorized_without_transaction(provided_id_token.id_token, referenced_evses);
+}
 
-    // checks if the token is currently already processed by the module (because already swiped)
-    if (this->tokens_in_process.find(provided_id_token) != this->tokens_in_process.end()) {
-        return true;
-    } else {
-        // check if id_token was already used to authorize evse but no transaction has been started yet
-        for (const auto evse_id : referenced_evses) {
-            const auto& evse = this->evses.at(evse_id);
-            if (evse->identifier.has_value() &&
-                is_equal_case_insensitive(evse->identifier.value().id_token, provided_id_token.id_token) &&
-                !evse->transaction_active) {
-                return true;
-            }
+bool AuthHandler::is_authorized_without_transaction(const IdToken& id_token, const std::vector<int>& evse_ids) {
+    return std::any_of(evse_ids.begin(), evse_ids.end(), [this, &id_token](const int evse_id) {
+        const auto& evse = this->evses.at(evse_id);
+        return evse->identifier.has_value() && !evse->transaction_active &&
+               is_equal_case_insensitive(evse->identifier->id_token, id_token);
+    });
+}
+
+bool AuthHandler::is_authorization_pending(const ProvidedIdToken& provided_id_token,
+                                           const std::vector<int>& referenced_evses) {
+    const auto token_in_process = this->tokens_in_process.find(provided_id_token.id_token);
+    return (token_in_process != this->tokens_in_process.end() && token_in_process->second.accepted) ||
+           this->is_authorized_without_transaction(provided_id_token.id_token, referenced_evses);
+}
+
+bool AuthHandler::references_any_evse(const ProvidedIdToken& provided_id_token, const std::vector<int>& evse_ids) {
+    const auto token_evses = this->get_referenced_evses(provided_id_token);
+    return std::any_of(token_evses.begin(), token_evses.end(), [&evse_ids](const int evse_id) {
+        return std::find(evse_ids.begin(), evse_ids.end(), evse_id) != evse_ids.end();
+    });
+}
+
+std::optional<AuthHandler::PendingAuthorization>
+AuthHandler::find_pending_authorization(const IdToken& id_token, const std::optional<IdToken>& parent_id_token,
+                                        const std::vector<int>& referenced_evses) {
+    for (const auto evse_id : referenced_evses) {
+        const auto& evse = this->evses.at(evse_id);
+        if (evse->identifier.has_value() && !evse->transaction_active &&
+            is_same_token_or_group(id_token, parent_id_token, evse->identifier->id_token,
+                                   evse->identifier->parent_id_token)) {
+            return PendingAuthorization{evse->identifier->id_token, evse_id};
         }
     }
-    return false;
+    for (const auto& [token_id, token_in_process] : this->tokens_in_process) {
+        const auto& accepted_token = token_in_process.token;
+        // withdrawing the handled token itself would wait for this very thread to finish
+        if (!token_in_process.accepted || is_equal_case_insensitive(accepted_token.id_token, id_token) ||
+            !this->references_any_evse(accepted_token, referenced_evses)) {
+            continue;
+        }
+        if (is_same_token_or_group(id_token, parent_id_token, accepted_token.id_token,
+                                   accepted_token.parent_id_token)) {
+            return PendingAuthorization{accepted_token.id_token, std::nullopt};
+        }
+    }
+    return std::nullopt;
+}
+
+std::vector<AuthHandler::PendingAuthorization>
+AuthHandler::get_pending_authorizations(const std::vector<int>& referenced_evses) {
+    std::vector<PendingAuthorization> pending;
+    for (const auto evse_id : referenced_evses) {
+        const auto& evse = this->evses.at(evse_id);
+        if (evse->identifier.has_value() && !evse->transaction_active) {
+            pending.push_back({evse->identifier->id_token, evse_id});
+        }
+    }
+    const auto is_authorized_at_any_evse = [this](const IdToken& id_token) {
+        return std::any_of(this->evses.begin(), this->evses.end(), [&id_token](const auto& entry) {
+            return entry.second->identifier.has_value() && !entry.second->transaction_active &&
+                   is_equal_case_insensitive(entry.second->identifier->id_token, id_token);
+        });
+    };
+    for (const auto& [token_id, token_in_process] : this->tokens_in_process) {
+        // a token that already authorized an evse is covered by the evse entry above or is not at referenced_evses
+        if (token_in_process.accepted && this->references_any_evse(token_in_process.token, referenced_evses) &&
+            !is_authorized_at_any_evse(token_id)) {
+            pending.push_back({token_id, std::nullopt});
+        }
+    }
+    return pending;
+}
+
+bool AuthHandler::is_still_pending(const PendingAuthorization& pending, const std::vector<int>& referenced_evses) {
+    const auto current = this->get_pending_authorizations(referenced_evses);
+    return std::any_of(current.begin(), current.end(), [&pending](const PendingAuthorization& entry) {
+        return entry.evse_id == pending.evse_id && is_equal_case_insensitive(entry.id_token, pending.id_token);
+    });
+}
+
+bool AuthHandler::withdraw_pending_authorization(const PendingAuthorization& pending,
+                                                 std::unique_lock<std::mutex>& lk) {
+    // handle_withdraw_authorization acquires the event_mutex and waits for the processing threads
+    lk.unlock();
+    WithdrawAuthorizationRequest request;
+    request.evse_id = pending.evse_id;
+    request.id_token = pending.id_token;
+    const auto result = this->handle_withdraw_authorization(request);
+    lk.lock();
+    return result == WithdrawAuthorizationResult::Accepted;
 }
 
 bool AuthHandler::any_evse_available(const std::vector<int>& evse_ids) {
@@ -1034,6 +1196,11 @@ void AuthHandler::set_stop_transaction_on_reswipe(bool stop_transaction_on_reswi
     this->stop_transaction_on_reswipe = stop_transaction_on_reswipe;
 }
 
+void AuthHandler::set_deauthorize_on_reswipe(bool deauthorize_on_reswipe) {
+    std::lock_guard<std::mutex> lk(this->event_mutex);
+    this->deauthorize_on_reswipe = deauthorize_on_reswipe;
+}
+
 void AuthHandler::register_notify_evse_callback(
     const std::function<void(const int evse_index, const ProvidedIdToken& provided_token,
                              const ValidationResult& validation_result)>& callback) {
@@ -1102,9 +1269,9 @@ WithdrawAuthorizationResult AuthHandler::handle_withdraw_authorization(const Wit
     std::unique_lock lock(this->event_mutex);
 
     const auto is_withdraw_request_targeting_token_in_process = [this](const WithdrawAuthorizationRequest& request) {
-        for (const auto& token_in_process : this->tokens_in_process) {
-            auto referenced_evses = this->get_referenced_evses(token_in_process);
-            if (does_withdraw_request_match(request, referenced_evses, token_in_process.id_token)) {
+        for (const auto& [token_id, token_in_process] : this->tokens_in_process) {
+            auto referenced_evses = this->get_referenced_evses(token_in_process.token);
+            if (does_withdraw_request_match(request, referenced_evses, token_id)) {
                 return true;
             }
         }
