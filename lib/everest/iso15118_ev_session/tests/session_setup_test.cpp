@@ -2,6 +2,8 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 #include <gtest/gtest.h>
 
+#include "value_of.hpp"
+
 #include <string>
 #include <vector>
 
@@ -18,7 +20,7 @@ TEST(SupportedProtocols, KeepTheConfiguredPriorityOrder) {
     std::string error;
     const auto protocols = session::parse_supported_protocols(" DIN70121 ,ISO15118_20", error);
     ASSERT_TRUE(protocols.has_value()) << error;
-    EXPECT_EQ(*protocols, (std::vector<ProtocolId>{ProtocolId::DIN70121, ProtocolId::ISO15118_20}));
+    EXPECT_EQ(value_of(protocols), (std::vector<ProtocolId>{ProtocolId::DIN70121, ProtocolId::ISO15118_20}));
 }
 
 TEST(SupportedProtocols, RejectAnEmptyUnknownOrRepeatedList) {
@@ -33,16 +35,16 @@ TEST(DerIecFunctions, SetTheNamedFlagsOnly) {
     std::string error;
     const auto functions = session::parse_der_iec_functions("WattCosPhiMode, VoltVarMode", error);
     ASSERT_TRUE(functions.has_value()) << error;
-    EXPECT_TRUE(functions->watt_cos_phi_mode);
-    EXPECT_TRUE(functions->volt_var_mode);
-    EXPECT_EQ(functions->to_bitset().count(), 2U);
+    EXPECT_TRUE(value_of(functions).watt_cos_phi_mode);
+    EXPECT_TRUE(value_of(functions).volt_var_mode);
+    EXPECT_EQ(value_of(functions).to_bitset().count(), 2U);
 }
 
 TEST(DerIecFunctions, AnEmptyListDeclaresNone) {
     std::string error;
     const auto functions = session::parse_der_iec_functions("", error);
     ASSERT_TRUE(functions.has_value()) << error;
-    EXPECT_TRUE(functions->to_bitset().none());
+    EXPECT_TRUE(value_of(functions).to_bitset().none());
 }
 
 TEST(DerIecFunctions, RejectAnUnknownOrRepeatedName) {
@@ -67,13 +69,14 @@ TEST(SessionRequest, CarriesTheStartInTheSessionsTerms) {
     const auto request = session::make_session_request(EnergyTransferMode::AC_BPT, {ProtocolId::ISO15118_20}, true,
                                                        false, 0, 25500.5, "test");
     ASSERT_TRUE(request.has_value());
-    EXPECT_EQ(request->energy_service, dt::ServiceCategory::AC_BPT);
-    EXPECT_EQ(request->iso2_transfer_mode, iso15118::shared_datatypes::EnergyTransferMode::AC_three_phase_core);
-    EXPECT_TRUE(request->eim_requested);
-    EXPECT_FALSE(request->enforce_contract);
+    EXPECT_EQ(value_of(request).energy_service, dt::ServiceCategory::AC_BPT);
+    EXPECT_EQ(value_of(request).iso2_transfer_mode,
+              iso15118::shared_datatypes::EnergyTransferMode::AC_three_phase_core);
+    EXPECT_TRUE(value_of(request).eim_requested);
+    EXPECT_FALSE(value_of(request).enforce_contract);
     // Wh in, Wh on the wire.
-    EXPECT_EQ(request->energy_request.energy_wh, 25500.5F);
-    EXPECT_FALSE(request->energy_request.departure.has_value());
+    EXPECT_EQ(value_of(request).energy_request.energy_wh, 25500.5F);
+    EXPECT_FALSE(value_of(request).energy_request.departure.has_value());
 }
 
 TEST(SessionRequest, NoneForAModeNoSessionRuns) {
@@ -91,7 +94,7 @@ TEST(SessionFiles, AResumePresentsTheContractItsPausedSessionInstalled) {
     installed.emaid = "installed";
     const auto files = session::make_session_files(config, material, installed, "test");
     ASSERT_TRUE(files.pnc.contract.has_value());
-    EXPECT_EQ(files.pnc.contract->emaid, "installed");
+    EXPECT_EQ(value_of(files.pnc.contract).emaid, "installed");
 }
 
 TEST(SessionFiles, AFreshSessionPresentsTheConfiguredContract) {
@@ -101,7 +104,7 @@ TEST(SessionFiles, AFreshSessionPresentsTheConfiguredContract) {
     material.contract->emaid = "configured";
     const auto files = session::make_session_files(config, material, std::nullopt, "test");
     ASSERT_TRUE(files.pnc.contract.has_value());
-    EXPECT_EQ(files.pnc.contract->emaid, "configured");
+    EXPECT_EQ(value_of(files.pnc.contract).emaid, "configured");
 }
 
 TEST(SeedSessionParams, SinglePhaseAsksForAThirdOfTheConfiguredPower) {
@@ -143,9 +146,9 @@ TEST(ApplyPresentValues, StoresTheCarriedFieldsAndKeepsTheRest) {
     session::apply_present_values(values, ac, dc, nullptr, "test");
     EXPECT_FLOAT_EQ(dc.present_voltage, 230.5f);
     ASSERT_TRUE(ac.present_voltage.has_value());
-    EXPECT_FLOAT_EQ(*ac.present_voltage, 230.5f);
+    EXPECT_FLOAT_EQ(value_of(ac.present_voltage), 230.5f);
     ASSERT_TRUE(ac.present_frequency.has_value());
-    EXPECT_FLOAT_EQ(*ac.present_frequency, 49.9f);
+    EXPECT_FLOAT_EQ(value_of(ac.present_frequency), 49.9f);
     EXPECT_FLOAT_EQ(ac.present_active_power, 7.0f);
     EXPECT_EQ(ac.der_alarm_status, 5U);
 }

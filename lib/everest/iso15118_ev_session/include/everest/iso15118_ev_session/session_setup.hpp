@@ -29,6 +29,7 @@ namespace everest::lib::iso15118_ev {
 
 // The vehicle configuration, as configured. The EV modules' manifest keys of the same names; an empty
 // certificate or key path resolves under pki_path, or under etc/certs when pki_path is empty.
+// NOLINTNEXTLINE(clang-analyzer-optin.performance.Padding): fields grouped by meaning; padding irrelevant here
 struct VehicleConfig {
     std::string evcc_id;
     int response_timeout_ms{0};

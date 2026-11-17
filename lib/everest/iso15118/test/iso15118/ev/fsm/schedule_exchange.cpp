@@ -8,6 +8,7 @@
 #include <stdexcept>
 
 #include "helper.hpp"
+#include "value_of.hpp"
 
 #include <iso15118/ev/d20/state/dc_charge_parameter_discovery.hpp>
 #include <iso15118/ev/d20/state/schedule_exchange.hpp>
@@ -293,7 +294,7 @@ SCENARIO("ISO15118-20 EV ScheduleExchange's ScheduleTupleID reaches PowerDeliver
     feed_expecting(primed, Event::V2GTP_MESSAGE, StateID::DC_CableCheck);
     // [V2G20-1546]: the Context holds the pick from here on, for Start, Stop and Standby.
     REQUIRE(primed.ctx.selected_schedule().has_value());
-    REQUIRE(primed.ctx.selected_schedule()->tuple_id == 4);
+    REQUIRE(value_of(primed.ctx.selected_schedule()).tuple_id == 4);
 
     primed.ctx.set_cp_state(true);
     feed_expecting(primed, Event::CONTROL_MESSAGE, StateID::DC_CableCheck);

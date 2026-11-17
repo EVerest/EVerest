@@ -7,6 +7,7 @@
 #include <catch2/generators/catch_generators.hpp>
 
 #include "helper.hpp"
+#include "value_of.hpp"
 
 #include <iso15118/ev/d20/state/power_delivery.hpp>
 #include <iso15118/ev/d20/state/schedule_exchange.hpp>
@@ -587,8 +588,8 @@ SCENARIO("ISO15118-20 EV PowerDelivery ends its profile within the selected sche
     const auto request =
         sent_entering(ServiceCategory::DC, seed, PowerDelivery::Start{}).get<message_20::PowerDeliveryRequest>();
     REQUIRE(request.has_value());
-    REQUIRE(request->power_profile.has_value());
-    const auto& profile = *request->power_profile;
+    REQUIRE(value_of(request).power_profile.has_value());
+    const auto& profile = value_of(value_of(request).power_profile);
     REQUIRE(profile.entries.size() == 1);
     REQUIRE(profile.time_anchor / 1'000'000 == 16);
     REQUIRE(profile.entries[0].duration == 86394);
@@ -618,9 +619,9 @@ SCENARIO("ISO15118-20 EV PowerDelivery zeroes power when less than one schedule 
     REQUIRE(dt::from_RationalNumber(entry.power) == 0.0f);
     if (service == ServiceCategory::AC) {
         REQUIRE(entry.power_l2.has_value());
-        REQUIRE(dt::from_RationalNumber(*entry.power_l2) == 0.0f);
+        REQUIRE(dt::from_RationalNumber(value_of(entry.power_l2)) == 0.0f);
         REQUIRE(entry.power_l3.has_value());
-        REQUIRE(dt::from_RationalNumber(*entry.power_l3) == 0.0f);
+        REQUIRE(dt::from_RationalNumber(value_of(entry.power_l3)) == 0.0f);
     }
     REQUIRE(logs.has_warning_containing("schedule has ended"));
 }
@@ -639,8 +640,8 @@ SCENARIO("ISO15118-20 EV PowerDelivery re-anchors a schedule received with a sec
     const auto request =
         sent_entering(ServiceCategory::DC, seed, PowerDelivery::Start{}).get<message_20::PowerDeliveryRequest>();
     REQUIRE(request.has_value());
-    REQUIRE(request->power_profile.has_value());
-    const auto& profile = *request->power_profile;
+    REQUIRE(value_of(request).power_profile.has_value());
+    const auto& profile = value_of(value_of(request).power_profile);
     REQUIRE(profile.entries.size() == 1);
     CHECK(dt::from_RationalNumber(profile.entries[0].power) == 11000.0f);
     CHECK(profile.entries[0].duration == 86394);

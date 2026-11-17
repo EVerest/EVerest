@@ -79,7 +79,7 @@ void set_loop_body(LoopBody body) {
 void set_paused_session(std::optional<iso15118::ev::config::PausedSession> paused) {
     auto& s = script();
     std::lock_guard lock(s.mutex);
-    s.paused = std::move(paused);
+    s.paused = paused;
 }
 
 void set_throw_on_construct(bool fail, std::function<void()> on_reported) {
@@ -203,8 +203,8 @@ Controller::Controller(config::EvConfig config_, feedback::Callbacks callbacks_,
                        params::DcChargeParams initial_dc_params, params::AcChargeParams initial_ac_params) :
     config(std::move(config_)),
     feedback(std::move(callbacks_)),
-    dc_params(std::move(initial_dc_params)),
-    ac_params(std::move(initial_ac_params)) {
+    dc_params(initial_dc_params),
+    ac_params(initial_ac_params) {
     auto& s = fake_controller::script();
     std::lock_guard lock(s.mutex);
     if (s.throw_on_construct) {

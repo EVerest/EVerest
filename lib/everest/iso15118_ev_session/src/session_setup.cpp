@@ -4,14 +4,15 @@
 
 #include <algorithm>
 #include <cctype>
+#include <charconv>
 #include <chrono>
 #include <cmath>
-#include <cstdio>
 #include <fstream>
 #include <iterator>
 #include <limits>
 #include <sstream>
 #include <string_view>
+#include <system_error>
 #include <utility>
 
 #include <everest/logging.hpp>
@@ -177,11 +178,22 @@ std::optional<std::array<std::uint8_t, 6>> read_interface_mac(const std::string&
     std::string line;
     std::getline(file, line);
 
-    // %2hhx: each field is exactly one byte, so an out-of-range value cannot fold into the array.
+    // At most two hex digits a field, so an out-of-range value cannot fold into the array.
     std::array<std::uint8_t, 6> mac{};
-    if (std::sscanf(line.c_str(), "%2hhx:%2hhx:%2hhx:%2hhx:%2hhx:%2hhx", &mac[0], &mac[1], &mac[2], &mac[3], &mac[4],
-                    &mac[5]) != 6) {
-        return std::nullopt;
+    std::string_view rest{line};
+    for (std::size_t i = 0; i < mac.size(); ++i) {
+        if (i > 0) {
+            if (rest.empty() or rest.front() != ':') {
+                return std::nullopt;
+            }
+            rest.remove_prefix(1);
+        }
+        const auto field = rest.substr(0, 2);
+        const auto [end, ec] = std::from_chars(field.data(), field.data() + field.size(), mac[i], 16);
+        if (ec != std::errc{}) {
+            return std::nullopt;
+        }
+        rest.remove_prefix(static_cast<std::size_t>(end - field.data()));
     }
     return mac;
 }
@@ -377,13 +389,11 @@ iso15118::shared_datatypes::EnergyTransferMode to_iso2_transfer_mode(types::iso1
         return Out::DC_combo_core;
     case In::DC_unique:
         return Out::DC_unique;
+    case In::DC_BPT:
     // ISO 15118-2 and DIN SPEC 70121 have no megawatt service. This mapping is only reached when a
     // pre-20 protocol is offered alongside MCS, and the nearest DC equivalent is then the only thing
     // that can be advertised.
     case In::MCS_BPT:
-        warn_unidirectional();
-        return Out::DC_extended;
-    case In::DC_BPT:
         warn_unidirectional();
         return Out::DC_extended;
     case In::DC:

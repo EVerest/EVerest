@@ -3,6 +3,8 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
+#include "value_of.hpp"
+
 #include <algorithm>
 #include <cstdint>
 #include <cstdlib>
@@ -91,7 +93,7 @@ protected:
         SCOPED_TRACE(key + " = " + json_value);
         const auto profile = parse("{\"" + key + "\": " + json_value + "}");
         ASSERT_TRUE(profile.has_value()) << error;
-        const auto problems = iso15118::ev::config::validate_sae_profile(*profile);
+        const auto problems = iso15118::ev::config::validate_sae_profile(value_of(profile));
         EXPECT_TRUE(std::any_of(problems.begin(), problems.end(), [&key](const auto& problem) {
             return problem.find(key) != std::string::npos;
         })) << testing::PrintToString(problems);
@@ -101,7 +103,7 @@ protected:
         SCOPED_TRACE(content);
         const auto profile = parse(content);
         ASSERT_TRUE(profile.has_value()) << error;
-        const auto problems = iso15118::ev::config::validate_sae_profile(*profile);
+        const auto problems = iso15118::ev::config::validate_sae_profile(value_of(profile));
         EXPECT_TRUE(problems.empty()) << testing::PrintToString(problems);
     }
 
@@ -116,11 +118,11 @@ TEST_F(SaeProfileConfigTest, EmptyPathReturnsDefaultsWithoutError) {
     EXPECT_TRUE(error.empty());
 
     const SaeInverterProfile defaults{};
-    EXPECT_EQ(profile->inverter_manufacturer, defaults.inverter_manufacturer);
-    EXPECT_EQ(profile->inverter_model, defaults.inverter_model);
-    EXPECT_EQ(profile->supported_modes, defaults.supported_modes);
-    EXPECT_FLOAT_EQ(profile->nominal_voltage_v, defaults.nominal_voltage_v);
-    EXPECT_EQ(profile->operational_state, defaults.operational_state);
+    EXPECT_EQ(value_of(profile).inverter_manufacturer, defaults.inverter_manufacturer);
+    EXPECT_EQ(value_of(profile).inverter_model, defaults.inverter_model);
+    EXPECT_EQ(value_of(profile).supported_modes, defaults.supported_modes);
+    EXPECT_FLOAT_EQ(value_of(profile).nominal_voltage_v, defaults.nominal_voltage_v);
+    EXPECT_EQ(value_of(profile).operational_state, defaults.operational_state);
 }
 
 TEST_F(SaeProfileConfigTest, MissingPathOrDirectoryFailsNamingThePath) {
@@ -144,8 +146,8 @@ TEST_F(SaeProfileConfigTest, EmptyObjectKeepsDefaults) {
     const auto profile = parse("{}");
 
     ASSERT_TRUE(profile.has_value()) << error;
-    EXPECT_EQ(profile->supported_modes, SaeInverterProfile{}.supported_modes);
-    EXPECT_FALSE(profile->inverter_hw_version.has_value());
+    EXPECT_EQ(value_of(profile).supported_modes, SaeInverterProfile{}.supported_modes);
+    EXPECT_FALSE(value_of(profile).inverter_hw_version.has_value());
 }
 
 TEST_F(SaeProfileConfigTest, UnknownOrRepeatedKeyFailsNamingTheKey) {
@@ -176,11 +178,11 @@ TEST_F(SaeProfileConfigTest, Uint32FieldsAcceptTheirBoundsAndRejectBeyond) {
 
         auto profile = parse("{\"" + key + "\": 0}");
         ASSERT_TRUE(profile.has_value()) << error;
-        EXPECT_EQ((*profile).*field, 0u);
+        EXPECT_EQ(value_of(profile).*field, 0u);
 
         profile = parse("{\"" + key + "\": 4294967295}");
         ASSERT_TRUE(profile.has_value()) << error;
-        EXPECT_EQ((*profile).*field, 4294967295u);
+        EXPECT_EQ(value_of(profile).*field, 4294967295u);
 
         // A silent narrowing would wrap 4294967296 to 0.
         expect_rejected(key, "4294967296");
@@ -191,11 +193,11 @@ TEST_F(SaeProfileConfigTest, Uint32FieldsAcceptTheirBoundsAndRejectBeyond) {
 TEST_F(SaeProfileConfigTest, CertificationDateAcceptsTheFullUint64Range) {
     auto profile = parse(R"({"j3072_certification_date": 5000000000})");
     ASSERT_TRUE(profile.has_value()) << error;
-    EXPECT_EQ(profile->j3072_certification_date, 5000000000ull);
+    EXPECT_EQ(value_of(profile).j3072_certification_date, 5000000000ull);
 
     profile = parse(R"({"j3072_certification_date": 18446744073709551615})");
     ASSERT_TRUE(profile.has_value()) << error;
-    EXPECT_EQ(profile->j3072_certification_date, 18446744073709551615ull);
+    EXPECT_EQ(value_of(profile).j3072_certification_date, 18446744073709551615ull);
 
     expect_rejected("j3072_certification_date", "18446744073709551616");
     expect_rejected("j3072_certification_date", "-1");
@@ -211,18 +213,18 @@ TEST_F(SaeProfileConfigTest, PartialObjectOverridesOnlyNamedKeys) {
 
     ASSERT_TRUE(profile.has_value()) << error;
     EXPECT_TRUE(error.empty());
-    EXPECT_EQ(profile->inverter_model, "TestModel");
-    EXPECT_FLOAT_EQ(profile->nominal_frequency_hz, 60.0f);
-    ASSERT_TRUE(profile->inverter_hw_version.has_value());
-    EXPECT_EQ(profile->inverter_hw_version.value(), "hw-1");
-    EXPECT_TRUE(profile->j3072_certified);
+    EXPECT_EQ(value_of(profile).inverter_model, "TestModel");
+    EXPECT_FLOAT_EQ(value_of(profile).nominal_frequency_hz, 60.0f);
+    ASSERT_TRUE(value_of(profile).inverter_hw_version.has_value());
+    EXPECT_EQ(value_of(value_of(profile).inverter_hw_version), "hw-1");
+    EXPECT_TRUE(value_of(profile).j3072_certified);
 
     const SaeInverterProfile defaults{};
-    EXPECT_EQ(profile->inverter_manufacturer, defaults.inverter_manufacturer);
-    EXPECT_EQ(profile->inverter_serial_number, defaults.inverter_serial_number);
-    EXPECT_FLOAT_EQ(profile->nominal_voltage_v, defaults.nominal_voltage_v);
-    EXPECT_EQ(profile->supported_modes, defaults.supported_modes);
-    EXPECT_EQ(profile->useable_watt_hours, defaults.useable_watt_hours);
+    EXPECT_EQ(value_of(profile).inverter_manufacturer, defaults.inverter_manufacturer);
+    EXPECT_EQ(value_of(profile).inverter_serial_number, defaults.inverter_serial_number);
+    EXPECT_FLOAT_EQ(value_of(profile).nominal_voltage_v, defaults.nominal_voltage_v);
+    EXPECT_EQ(value_of(profile).supported_modes, defaults.supported_modes);
+    EXPECT_EQ(value_of(profile).useable_watt_hours, defaults.useable_watt_hours);
 }
 
 TEST_F(SaeProfileConfigTest, EveryStringFieldOverridesItsDefault) {
@@ -234,10 +236,10 @@ TEST_F(SaeProfileConfigTest, EveryStringFieldOverridesItsDefault) {
     })");
 
     ASSERT_TRUE(profile.has_value()) << error;
-    EXPECT_EQ(profile->inverter_sw_version, "1.2.3");
-    EXPECT_EQ(profile->inverter_manufacturer, "Acme");
-    EXPECT_EQ(profile->inverter_model, "M-1");
-    EXPECT_EQ(profile->inverter_serial_number, "SN-9");
+    EXPECT_EQ(value_of(profile).inverter_sw_version, "1.2.3");
+    EXPECT_EQ(value_of(profile).inverter_manufacturer, "Acme");
+    EXPECT_EQ(value_of(profile).inverter_model, "M-1");
+    EXPECT_EQ(value_of(profile).inverter_serial_number, "SN-9");
 }
 
 TEST_F(SaeProfileConfigTest, EveryNumericFieldOverridesItsDefault) {
@@ -250,7 +252,7 @@ TEST_F(SaeProfileConfigTest, EveryNumericFieldOverridesItsDefault) {
             ASSERT_NE(defaults.*field, expected);
             const auto profile = parse("{\"" + key + "\": " + literal + "}");
             ASSERT_TRUE(profile.has_value()) << error;
-            EXPECT_FLOAT_EQ((*profile).*field, expected);
+            EXPECT_FLOAT_EQ(value_of(profile).*field, expected);
         }
     }
     for (const auto& [key, field] : UINT32_FIELDS) {
@@ -258,13 +260,13 @@ TEST_F(SaeProfileConfigTest, EveryNumericFieldOverridesItsDefault) {
         ASSERT_NE(defaults.*field, 1234u);
         const auto profile = parse("{\"" + key + "\": 1234}");
         ASSERT_TRUE(profile.has_value()) << error;
-        EXPECT_EQ((*profile).*field, 1234u);
+        EXPECT_EQ(value_of(profile).*field, 1234u);
     }
 
     ASSERT_NE(defaults.j3072_certification_date, 1767225600u);
     const auto profile = parse(R"({"j3072_certification_date": 1767225600})");
     ASSERT_TRUE(profile.has_value()) << error;
-    EXPECT_EQ(profile->j3072_certification_date, 1767225600u);
+    EXPECT_EQ(value_of(profile).j3072_certification_date, 1767225600u);
 }
 
 // The parsed profile goes through validate_sae_profile, as init() does: an absent key keeps its
@@ -300,14 +302,14 @@ TEST_F(SaeProfileConfigTest, SupportedModesBuildTheExpectedBitmask) {
     const auto expected = sae_function_bit(DerBitMapFunctions::ChargeFunction) |
                           sae_function_bit(DerBitMapFunctions::DischargeFunction) |
                           sae_function_bit(DerBitMapFunctions::VoltVarFunction);
-    EXPECT_EQ(profile->supported_modes, expected);
+    EXPECT_EQ(value_of(profile).supported_modes, expected);
 }
 
 TEST_F(SaeProfileConfigTest, EmptyModesParseToAnEmptyBitmap) {
     const auto profile = parse(R"({"supported_modes": []})");
 
     ASSERT_TRUE(profile.has_value()) << error;
-    EXPECT_EQ(profile->supported_modes, 0u);
+    EXPECT_EQ(value_of(profile).supported_modes, 0u);
 }
 
 TEST_F(SaeProfileConfigTest, UnknownModeNameFailsNamingIt) {
@@ -338,8 +340,8 @@ TEST_F(SaeProfileConfigTest, EveryNamedModeSetsItsBit) {
     const auto profile = parse(modes);
 
     ASSERT_TRUE(profile.has_value()) << error;
-    EXPECT_EQ(profile->supported_modes, expected);
-    EXPECT_EQ(profile->supported_modes, iso15118::sae::SAE_MODE_BITMAP_MASK);
+    EXPECT_EQ(value_of(profile).supported_modes, expected);
+    EXPECT_EQ(value_of(profile).supported_modes, iso15118::sae::SAE_MODE_BITMAP_MASK);
 }
 
 TEST_F(SaeProfileConfigTest, ErrorIsClearedOnEachCall) {
@@ -361,7 +363,7 @@ TEST_F(SaeProfileConfigTest, Ieee1547NormalCategoryAcceptsLegalStringsOnly) {
                                       std::pair{"CategoryB", sae_types::IEEE1547NormalCategory::CategoryB}}) {
         const auto profile = parse(std::string(R"({"ieee1547_normal_category": ")") + name + "\"}");
         ASSERT_TRUE(profile.has_value()) << error;
-        EXPECT_EQ(profile->ieee1547_normal_category, value);
+        EXPECT_EQ(value_of(profile).ieee1547_normal_category, value);
     }
     expect_rejected("ieee1547_normal_category", "\"CategoryC\"");
     expect_rejected("ieee1547_normal_category", "\"categorya\"");
@@ -373,7 +375,7 @@ TEST_F(SaeProfileConfigTest, Ieee1547AbnormalCategoryAcceptsLegalStringsOnly) {
                                       std::pair{"CategoryIII", sae_types::IEEE1547AbnormalCategory::CategoryIII}}) {
         const auto profile = parse(std::string(R"({"ieee1547_abnormal_category": ")") + name + "\"}");
         ASSERT_TRUE(profile.has_value()) << error;
-        EXPECT_EQ(profile->ieee1547_abnormal_category, value);
+        EXPECT_EQ(value_of(profile).ieee1547_abnormal_category, value);
     }
     expect_rejected("ieee1547_abnormal_category", "\"CategoryIV\"");
 }
@@ -383,7 +385,7 @@ TEST_F(SaeProfileConfigTest, OperationalStateAcceptsLegalStringsOnly) {
          {std::pair{"On", sae_types::DEROperationalState::On}, std::pair{"Off", sae_types::DEROperationalState::Off}}) {
         const auto profile = parse(std::string(R"({"operational_state": ")") + name + "\"}");
         ASSERT_TRUE(profile.has_value()) << error;
-        EXPECT_EQ(profile->operational_state, value);
+        EXPECT_EQ(value_of(profile).operational_state, value);
     }
     expect_rejected("operational_state", "\"Standby\"");
 }
@@ -393,7 +395,7 @@ TEST_F(SaeProfileConfigTest, ConnectionStatusAcceptsLegalStringsOnly) {
                                       std::pair{"Disconnected", sae_types::DERConnectionStatus::Disconnected}}) {
         const auto profile = parse(std::string(R"({"connection_status": ")") + name + "\"}");
         ASSERT_TRUE(profile.has_value()) << error;
-        EXPECT_EQ(profile->connection_status, value);
+        EXPECT_EQ(value_of(profile).connection_status, value);
     }
     expect_rejected("connection_status", "\"Pending\"");
     EXPECT_NE(error.find("expected one of Disconnected, Connected"), std::string::npos) << error;
@@ -449,7 +451,7 @@ TEST_F(SaeProfileConfigTest, FullProfilePassesValidateConfig) {
     })");
 
     ASSERT_TRUE(profile.has_value()) << error;
-    const auto problems = iso15118::ev::config::validate_config(sae_config(*profile));
+    const auto problems = iso15118::ev::config::validate_config(sae_config(value_of(profile)));
     EXPECT_TRUE(problems.empty()) << problems.front();
 }
 
@@ -458,7 +460,7 @@ TEST_F(SaeProfileConfigTest, WellFormedButUnusableProfileIsLeftToValidateConfig)
     const auto profile = parse(R"({"supported_modes": ["charge"], "over_excited_power_factor": 1.5})");
 
     ASSERT_TRUE(profile.has_value()) << error;
-    const auto problems = iso15118::ev::config::validate_config(sae_config(*profile));
+    const auto problems = iso15118::ev::config::validate_config(sae_config(value_of(profile)));
     EXPECT_THAT(problems, ::testing::Contains(::testing::HasSubstr("supported_modes")));
     EXPECT_THAT(problems, ::testing::Contains(::testing::HasSubstr("over_excited_power_factor")));
 }
