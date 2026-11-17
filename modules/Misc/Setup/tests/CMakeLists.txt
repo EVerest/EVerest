@@ -1,7 +1,13 @@
 set(TEST_TARGET_NAME ${PROJECT_NAME}_setup_tests)
 add_executable(${TEST_TARGET_NAME})
 
-target_include_directories(${TEST_TARGET_NAME} PUBLIC ${GTEST_INCLUDE_DIRS} . ..)
+# RunApplicationStub.cpp replaces the library's implementation, so take only its headers
+target_include_directories(${TEST_TARGET_NAME} PUBLIC
+    ${GTEST_INCLUDE_DIRS}
+    .
+    ..
+    $<TARGET_PROPERTY:everest::run_application,INTERFACE_INCLUDE_DIRECTORIES>
+)
 
 target_sources(${TEST_TARGET_NAME} PRIVATE
     RunApplicationStub.cpp
@@ -12,7 +18,6 @@ target_sources(${TEST_TARGET_NAME} PRIVATE
 target_link_libraries(${TEST_TARGET_NAME} PRIVATE
     GTest::gtest_main
     nlohmann_json::nlohmann_json
-    everest::run_application
 )
 
 add_test(${TEST_TARGET_NAME} ${TEST_TARGET_NAME})
