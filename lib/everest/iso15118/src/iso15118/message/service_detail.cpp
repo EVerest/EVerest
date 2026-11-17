@@ -39,7 +39,7 @@ ParameterSet::ParameterSet(uint16_t _id, const AcBptParameterList& list) : id(_i
     parameter.push_back({"Pricing", static_cast<int32_t>(list.pricing)});
     parameter.push_back({"BPTChannel", static_cast<int32_t>(list.bpt_channel)});
     parameter.push_back({"GeneratorMode", static_cast<int32_t>(list.generator_mode)});
-    parameter.push_back({"DetectionMethodGridCodeIslanding", static_cast<int32_t>(list.grid_code_detection_method)});
+    parameter.push_back({"GridCodeIslandingDetectionMethod", static_cast<int32_t>(list.grid_code_detection_method)});
 }
 
 ParameterSet::ParameterSet(uint16_t _id, const AcDerParameterList& list) : id(_id) {
