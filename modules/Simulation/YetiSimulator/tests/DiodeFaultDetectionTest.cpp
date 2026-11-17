@@ -18,25 +18,25 @@ using Action = DiodeFaultLatch::Action;
 // car is connected (State B/C/D), that makes cpHi + cpLo == 0, which must be read
 // as a diode fault.
 TEST_CASE("diode fault is detected for a connected car with mirrored CP halves", "[yetisim][diode]") {
-    CHECK(is_diode_fault(/*pwm_running=*/true, /*latched=*/false, /*cpHi=*/9.0, /*cpLo=*/-9.0));
-    CHECK(is_diode_fault(/*pwm_running=*/true, /*latched=*/false, /*cpHi=*/6.0, /*cpLo=*/-6.0));
+    CHECK(is_diode_fault(/*pwm_running=*/true, /*latched=*/false, /*cp_hi=*/9.0, /*cp_lo=*/-9.0));
+    CHECK(is_diode_fault(/*pwm_running=*/true, /*latched=*/false, /*cp_hi=*/6.0, /*cp_lo=*/-6.0));
 }
 
 TEST_CASE("diode fault clears once the negative CP half is restored", "[yetisim][diode]") {
-    CHECK_FALSE(is_diode_fault(/*pwm_running=*/true, /*latched=*/false, /*cpHi=*/9.0, /*cpLo=*/-12.0));
-    CHECK_FALSE(is_diode_fault(/*pwm_running=*/true, /*latched=*/true, /*cpHi=*/6.0, /*cpLo=*/-12.0));
+    CHECK_FALSE(is_diode_fault(/*pwm_running=*/true, /*latched=*/false, /*cp_hi=*/9.0, /*cp_lo=*/-12.0));
+    CHECK_FALSE(is_diode_fault(/*pwm_running=*/true, /*latched=*/true, /*cp_hi=*/6.0, /*cp_lo=*/-12.0));
 }
 
 TEST_CASE("CP-PE short is not reported as a diode fault", "[yetisim][diode]") {
-    CHECK_FALSE(is_diode_fault(/*pwm_running=*/true, /*latched=*/false, /*cpHi=*/0.0, /*cpLo=*/0.0));
-    CHECK_FALSE(is_diode_fault(/*pwm_running=*/false, /*latched=*/true, /*cpHi=*/0.0, /*cpLo=*/0.0));
+    CHECK_FALSE(is_diode_fault(/*pwm_running=*/true, /*latched=*/false, /*cp_hi=*/0.0, /*cp_lo=*/0.0));
+    CHECK_FALSE(is_diode_fault(/*pwm_running=*/false, /*latched=*/true, /*cp_hi=*/0.0, /*cp_lo=*/0.0));
 }
 
 // The diode is only tested by the PWM negative half, as on the real board.
 TEST_CASE("a mirrored sample before any PWM raises nothing", "[yetisim][diode]") {
     DiodeFaultLatch latch;
-    CHECK(latch.step(/*pwm_running=*/false, /*cpHi=*/9.0, /*cpLo=*/-9.0, /*active=*/false) == Action::None);
-    CHECK(latch.step(/*pwm_running=*/true, /*cpHi=*/9.0, /*cpLo=*/-9.0, /*active=*/false) == Action::Raise);
+    CHECK(latch.step(/*pwm_running=*/false, /*cp_hi=*/9.0, /*cp_lo=*/-9.0, /*active=*/false) == Action::None);
+    CHECK(latch.step(/*pwm_running=*/true, /*cp_hi=*/9.0, /*cp_lo=*/-9.0, /*active=*/false) == Action::Raise);
 }
 
 // EvseManager stops the PWM in response to the raised fault; the fault stays

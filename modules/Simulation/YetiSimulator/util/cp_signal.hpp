@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include <cstdint>
+
 namespace module::cp_signal {
 
 /// Decides whether the simulated control-pilot signal currently represents a
@@ -19,7 +21,7 @@ bool is_diode_fault(bool pwm_running, bool latched, double cp_hi, double cp_lo);
 /// DiodeFault raised through the error API stays set until disconnect.
 class DiodeFaultLatch {
 public:
-    enum class Action {
+    enum class Action : std::uint8_t {
         None,
         Raise,
         Clear
