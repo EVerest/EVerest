@@ -98,7 +98,7 @@ public:
     // True until the EV has opened TCP/TLS to the endpoint announced in the SDP response. While it is,
     // a repeated SDP request means the EV has not received the response yet.
     bool awaiting_connection() const {
-        return not connection_established_time.has_value();
+        return not connection_accepted_time.has_value();
     }
 
     void close();
@@ -155,6 +155,7 @@ private:
     // Only set for the duration of the on_packet() call; the packet buffer is reused afterwards.
     io::StreamInputView current_request_frame{};
 
+    std::optional<TimePoint> connection_accepted_time{std::nullopt};
     std::optional<TimePoint> connection_established_time{std::nullopt};
     bool dlink_setup_timer_anchor{false};
 
