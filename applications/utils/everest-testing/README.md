@@ -16,6 +16,9 @@ The utilities are seperated into
 - `plug_in_ac_iso` and `plug_in_dc_iso` require a nonempty `payment_type`.
   Use `payment_type="eim"` for external payment or `payment_type="contract"`
   for Plug and Charge. Missing or empty values raise `ValueError`.
+- `plug_in_ac_iso` and `plug_in_dc_iso` offer ISO 15118-20 only when called
+  with `iso15118_20=True`, whatever the EV's `supported_protocols` lists first.
+  `energy_mode="dc_bpt"` always runs ISO 15118-20.
 
 ## Core Utils
 

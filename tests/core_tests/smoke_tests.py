@@ -537,9 +537,9 @@ NO_ENERGY_SESSION_START_SEQUENCE = [
 SESSION_END_EVENTS = ["TransactionFinished", "SessionFinished"]
 
 
-async def run_basic_session(test_controller: TestController, session_event_mock, powermeter_mock, plug_in_method: str, finish_with_plug_out=True):
+async def run_basic_session(test_controller: TestController, session_event_mock, powermeter_mock, plug_in_method: str, finish_with_plug_out=True, iso15118_20=False):
     """Run a complete basic charging session and verify events."""
-    kwargs = {"payment_type": "eim"} if plug_in_method in ("plug_in_ac_iso", "plug_in_dc_iso") else {}
+    kwargs = {"payment_type": "eim", "iso15118_20": iso15118_20} if plug_in_method in ("plug_in_ac_iso", "plug_in_dc_iso") else {}
     getattr(test_controller, plug_in_method)(**kwargs)
     await wait_for_session_events(session_event_mock, BASIC_SESSION_START_SEQUENCE)
 
@@ -770,7 +770,7 @@ async def test_iso15118_dc_session(
     selected_protocol_mock = Mock()
     probe_module.subscribe_variable("charger", "selected_protocol", selected_protocol_mock)
 
-    await run_basic_session(test_controller, session_event_mock, powermeter_mock, "plug_in_dc_iso")
+    await run_basic_session(test_controller, session_event_mock, powermeter_mock, "plug_in_dc_iso", iso15118_20=iso15118_version == "iso15118_dc_d20")
 
     expected_protocol = "ISO15118-2-2013" if iso15118_version == "iso15118_dc_d2" else "ISO15118-20:DC"
     assert selected_protocol_mock.call_args[0][0] == expected_protocol
@@ -818,7 +818,7 @@ async def test_iso15118_20_dc_session_over_tls(
         test_controller, everest_core
     )
 
-    await run_basic_session(test_controller, session_event_mock, powermeter_mock, "plug_in_dc_iso")
+    await run_basic_session(test_controller, session_event_mock, powermeter_mock, "plug_in_dc_iso", iso15118_20=True)
 
 
 async def run_tls_version_auto_session(
@@ -830,7 +830,7 @@ async def run_tls_version_auto_session(
     selected_protocol_mock = Mock()
     probe_module.subscribe_variable("charger", "selected_protocol", selected_protocol_mock)
 
-    await run_basic_session(test_controller, session_event_mock, powermeter_mock, "plug_in_dc_iso")
+    await run_basic_session(test_controller, session_event_mock, powermeter_mock, "plug_in_dc_iso", iso15118_20=True)
 
     assert selected_protocol_mock.call_args[0][0] == expected_protocol
 
@@ -995,7 +995,7 @@ async def test_iso15118_dc_session_stop_by_evse(
         test_controller, everest_core
     )
 
-    await run_basic_session(test_controller, session_event_mock, powermeter_mock, "plug_in_dc_iso", finish_with_plug_out=False)
+    await run_basic_session(test_controller, session_event_mock, powermeter_mock, "plug_in_dc_iso", finish_with_plug_out=False, iso15118_20=iso15118_version == "iso15118_dc_d20")
 
     await probe_module.call_command(
         "evse_manager",
@@ -1055,7 +1055,7 @@ async def test_iso15118_dc_session_error_before_session(
 
     await asyncio.sleep(1) # Give EvseManager some time to process error
 
-    test_controller.plug_in_dc_iso(payment_type="eim")
+    test_controller.plug_in_dc_iso(payment_type="eim", iso15118_20=iso15118_version == "iso15118_dc_d20")
 
     await assert_no_events(session_event_mock, ["SessionStarted"], wait_time=10)
     assert (
@@ -1276,7 +1276,7 @@ async def test_iso15118_dc_session_no_energy_before_session_no_pause(
 
     await set_external_limits(probe_module, "gcp", 0, 0)
     # even with no energy we go should go to Chargeloop
-    await start_session(test_controller, session_event_mock, partial(test_controller.plug_in_dc_iso, payment_type="eim"))
+    await start_session(test_controller, session_event_mock, partial(test_controller.plug_in_dc_iso, payment_type="eim", iso15118_20=iso15118_version == "iso15118_dc_d20"))
     # Allow 5Wh for cable check
     await assert_energy_below(powermeter_mock, energy_threshold_wh=5, timeout=15)
     await set_external_limits(probe_module, "gcp", 10000, 10000)
@@ -1397,7 +1397,7 @@ async def test_iso15118_dc_session_no_energy_during_session(
         test_controller, everest_core
     )
     
-    await start_session(test_controller, session_event_mock, partial(test_controller.plug_in_dc_iso, payment_type="eim"))
+    await start_session(test_controller, session_event_mock, partial(test_controller.plug_in_dc_iso, payment_type="eim", iso15118_20=iso15118_version == "iso15118_dc_d20"))
     await assert_energy_exceeds(powermeter_mock, energy_threshold_wh=10, timeout=15)
     await set_external_limits(probe_module, "gcp", 0, 0)
     await assert_energy_below(powermeter_mock, energy_threshold_wh=30, timeout=5)
@@ -1438,7 +1438,7 @@ async def test_iso15118_dc_session_no_energy_during_session_timeout_triggers(
         test_controller, everest_core
     )
     
-    await start_session(test_controller, session_event_mock, partial(test_controller.plug_in_dc_iso, payment_type="eim"))
+    await start_session(test_controller, session_event_mock, partial(test_controller.plug_in_dc_iso, payment_type="eim", iso15118_20=iso15118_version == "iso15118_dc_d20"))
     await assert_energy_exceeds(powermeter_mock, energy_threshold_wh=10, timeout=15)
     await set_external_limits(probe_module, "gcp", 0, 0)
     await assert_power_below(powermeter_mock, power_threshold_w=10, timeout=10)
@@ -1566,7 +1566,7 @@ async def test_iso15118_20_dc_session_paused_by_ev(
     v2g_messages_mock = Mock()
     probe_module.subscribe_variable("ev", "v2g_messages", v2g_messages_mock)
 
-    await start_session(test_controller, session_event_mock, partial(test_controller.plug_in_dc_iso, payment_type="eim"))
+    await start_session(test_controller, session_event_mock, partial(test_controller.plug_in_dc_iso, payment_type="eim", iso15118_20=True))
     await assert_energy_exceeds(powermeter_mock, energy_threshold_wh=10, timeout=15)
     test_controller.pause_iso_session()
     await wait_for_session_events(session_event_mock, ["ChargingPausedEV"])
@@ -1606,7 +1606,7 @@ async def test_iso15118_20_dc_session_paused_by_evse(
     v2g_messages_mock = Mock()
     probe_module.subscribe_variable("ev", "v2g_messages", v2g_messages_mock)
 
-    await start_session(test_controller, session_event_mock, partial(test_controller.plug_in_dc_iso, payment_type="eim"))
+    await start_session(test_controller, session_event_mock, partial(test_controller.plug_in_dc_iso, payment_type="eim", iso15118_20=True))
     await assert_energy_exceeds(powermeter_mock, energy_threshold_wh=10, timeout=15)
     await probe_module.call_command(
         "evse_manager",
@@ -1801,7 +1801,7 @@ async def test_iso15118_protocol_negotiation_failed(
         test_controller, everest_core
     )
 
-    test_controller.plug_in_dc_iso(payment_type="eim")
+    test_controller.plug_in_dc_iso(payment_type="eim", iso15118_20=True)
 
     await wait_for_hlc_session_failed_with_reason(hlc_session_failed_mock, "ProtocolNegotiationFailed")
     test_controller.plug_out()
@@ -1924,7 +1924,7 @@ async def test_iso15118_dc_session_stop_during_authorization_reports_authorizati
     require_auth_eim_mock = Mock()
     probe_module.subscribe_variable("charger", "require_auth_eim", require_auth_eim_mock)
 
-    test_controller.plug_in_dc_iso(payment_type="eim")
+    test_controller.plug_in_dc_iso(payment_type="eim", iso15118_20=hlc_stack == "evse15118d20_iso20")
     await wait_for_mock_called(require_auth_eim_mock)
     # Let the EV repeat its authorization request, so the SessionStopReq follows one.
     await asyncio.sleep(1)
@@ -1950,7 +1950,7 @@ async def test_iso15118_dc_session_stopped_by_ev_reports_no_hlc_session_failure(
     )
 
     await run_basic_session(
-        test_controller, session_event_mock, powermeter_mock, "plug_in_dc_iso", finish_with_plug_out=False
+        test_controller, session_event_mock, powermeter_mock, "plug_in_dc_iso", finish_with_plug_out=False, iso15118_20=hlc_stack == "evse15118d20_iso20"
     )
     test_controller.plug_out_iso()
     await wait_for_session_events(session_event_mock, SESSION_END_EVENTS)

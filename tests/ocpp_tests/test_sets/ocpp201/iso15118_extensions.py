@@ -45,7 +45,7 @@ class TestIso15118ExtenstionsOcppIntegration:
         test_config,
         test_utility: TestUtility,
     ):
-        test_controller.plug_in_dc_iso(payment_type="eim")
+        test_controller.plug_in_dc_iso(payment_type="eim", iso15118_20=True)
 
         assert await wait_for_and_validate(
             test_utility,

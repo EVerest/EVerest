@@ -242,6 +242,39 @@ def test_plug_in_dc_iso_maps_the_energy_mode(controller_with_driver, energy_mode
     assert payloads[0]["params"].get("bpt") == expected_bpt
 
 
+@pytest.mark.parametrize(
+    "supported_protocols,helper,iso15118_20,expected_mode",
+    [
+        ("ISO15118_20,ISO15118_2", "plug_in_dc_iso", False, "DcIso2"),
+        ("ISO15118_20,ISO15118_2", "plug_in_ac_iso", False, "AcIso2"),
+        (None, "plug_in_dc_iso", False, "DcIso2"),
+        ("ISO15118_2,ISO15118_20", "plug_in_dc_iso", True, "DcIsoD20"),
+        ("ISO15118_2,ISO15118_20", "plug_in_ac_iso", True, "AcIsoD20"),
+    ],
+)
+def test_iso_plug_helpers_run_iso15118_20_only_on_request(
+    monkeypatch, tmp_path, fake_client, supported_protocols, helper, iso15118_20, expected_mode
+):
+    car = {"connector_id": 7}
+    if supported_protocols is not None:
+        car["supported_protocols"] = supported_protocols
+    cfg = tmp_path / "car.yaml"
+    cfg.write_text(yaml.safe_dump({"active_modules": {
+        "world": {"module": "EvDriverSim", "config_module": {"ev_controller_module_id": "car"}},
+        "car": {"module": "EvController", "config_module": car},
+    }}))
+    ctrl = _started(monkeypatch, cfg, fake_client)
+    fake_client.deliver_heartbeats()
+    fake_client.auto_configure_ack = True
+    fake_client.published.clear()
+    try:
+        getattr(ctrl, helper)(connector_id=7, iso15118_20=iso15118_20, **_plug_helper_kwargs(helper))
+        payloads = [json.loads(p) for t, p in fake_client.published if t.endswith("/configure_session")]
+        assert [p["mode"] for p in payloads] == [expected_mode]
+    finally:
+        ctrl.stop()
+
+
 def test_plug_in_dc_iso_rejects_an_unknown_energy_mode(controller_with_driver):
     ctrl = controller_with_driver
     ctrl._registry._ready = True

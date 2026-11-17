@@ -58,11 +58,14 @@ _EV_MANAGER_BPT = {
 }
 
 
-def _dc_session_for_energy_mode(energy_mode: str, params: dict) -> tuple:
-    """Map an EvManager iso_start_v2g_session energy mode to an EvController session."""
+def _dc_session_for_energy_mode(energy_mode: str, params: dict, iso15118_20: bool) -> tuple:
+    """Map an EvManager iso_start_v2g_session energy mode to an EvController session.
+
+    iso15118_20 picks the ISO 15118-20 mode for DC.
+    """
     key = energy_mode.strip().lower()
     if key == "dc":
-        return "DcIso2", params
+        return ("DcIsoD20" if iso15118_20 else "DcIso2"), params
     if key == "dc_bpt":
         return "DcIsoD20", {**params, "bpt": dict(_EV_MANAGER_BPT)}
     raise ValueError(f"unknown energy_mode {energy_mode!r}; expected DC or dc_bpt (case-insensitive)")
@@ -157,8 +160,8 @@ class EverestTestController(TestController):
         drv.configure_session("AcIec", {"charging_current_a": 32.0, "three_phases": False})
         world.plug()
 
-    def plug_in_ac_iso(self, connector_id=1, payment_type=""):
-        """Plug in using AC ISO15118.
+    def plug_in_ac_iso(self, connector_id=1, payment_type="", iso15118_20=False):
+        """Plug in using AC ISO15118, ISO 15118-20 when iso15118_20 is set.
 
         Raises ValueError if payment_type is missing, empty, or unsupported.
         """
@@ -167,11 +170,11 @@ class EverestTestController(TestController):
         params: dict = {"charging_current_a": 16.0, "three_phases": True,
                         "departure_time_s": 86400, "e_amount_wh": 0}
         params["payment"] = _normalize_payment_option(payment_type)
-        drv.configure_session("AcIso2", params)
+        drv.configure_session("AcIsoD20" if iso15118_20 else "AcIso2", params)
         world.plug()
 
-    def plug_in_dc_iso(self, connector_id=1, payment_type="", energy_mode="DC"):
-        """Plug in using DC ISO15118.
+    def plug_in_dc_iso(self, connector_id=1, payment_type="", energy_mode="DC", iso15118_20=False):
+        """Plug in using DC ISO15118, ISO 15118-20 when iso15118_20 is set.
 
         Raises ValueError if payment_type is missing, empty, or unsupported.
         """
@@ -179,7 +182,7 @@ class EverestTestController(TestController):
         world = self._world_drv(connector_id)
         params: dict = {"departure_time_s": 86400, "e_amount_wh": 0}
         params["payment"] = _normalize_payment_option(payment_type)
-        drv.configure_session(*_dc_session_for_energy_mode(energy_mode, params))
+        drv.configure_session(*_dc_session_for_energy_mode(energy_mode, params, iso15118_20))
         world.plug()
 
     def plug_out(self, connector_id=1, abrupt=False):
