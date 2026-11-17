@@ -248,6 +248,11 @@ void FailedState::enter() {
 FSMSimpleState::HandleEventReturnType FailedState::handle_event(AllocatorType& sa, Event ev) {
     if (ev == Event::RESET) {
         return sa.create_simple<ResetState>(ctx);
+    } else if (ev == Event::LEAVE_BCD) {
+        // Leave FailedState on unplug or E/F as well, not only on RESET, so the next
+        // ENTER_BCD starts matching again
+        ctx.log_info("Leaving BCD in failed state -> reset");
+        return sa.create_simple<ResetState>(ctx);
     } else {
         return sa.PASS_ON;
     }
