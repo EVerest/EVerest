@@ -869,6 +869,32 @@ TEST_F(DeviceModelTest, test_set_monitor_with_id_of_other_variable_is_rejected) 
     EXPECT_EQ(update_results[0].status, SetMonitoringStatusEnum::Accepted);
 }
 
+/// N04.FR.18: an id that belongs to a hardwired monitor is rejected, and the monitor is not replaced
+TEST_F(DeviceModelTest, test_set_monitor_with_id_of_hardwired_monitor_is_rejected) {
+    const auto& interval = ControllerComponentVariables::AlignedDataInterval;
+    clear_all_monitors(*dm, interval.component, interval.variable.value());
+
+    const auto set_results = dm->set_monitors(
+        {make_monitor_request(interval.component, interval.variable.value(), MonitorEnum::UpperThreshold, 1000.0F, 3)},
+        VariableMonitorType::HardWiredMonitor);
+    ASSERT_EQ(set_results.size(), 1);
+    ASSERT_EQ(set_results[0].status, SetMonitoringStatusEnum::Accepted);
+    const auto monitor_id = set_results[0].id.value();
+
+    auto update_request =
+        make_monitor_request(interval.component, interval.variable.value(), MonitorEnum::UpperThreshold, 1200.0F, 3);
+    update_request.id = monitor_id;
+    const auto update_results = dm->set_monitors({update_request});
+    ASSERT_EQ(update_results.size(), 1);
+    EXPECT_EQ(update_results[0].status, SetMonitoringStatusEnum::Rejected);
+
+    const auto meta = dm->get_variable_meta_data(interval.component, interval.variable.value());
+    ASSERT_TRUE(meta.has_value());
+    ASSERT_EQ(meta->monitors.count(monitor_id), 1);
+    EXPECT_EQ(meta->monitors.at(monitor_id).type, VariableMonitorType::HardWiredMonitor);
+    EXPECT_EQ(meta->monitors.at(monitor_id).monitor.value, 1000.0F);
+}
+
 /// N07.FR.18: a numeric Delta monitor measures from the value of its last trigger
 TEST_F(DeviceModelTest, test_numeric_delta_monitor_reference_follows_trigger) {
     const auto& interval = ControllerComponentVariables::AlignedDataInterval;
