@@ -29,6 +29,7 @@ static void log_status_on_fail(const std::string& msg, CanBroker::AccessReturnTy
         break;
     case ReturnStatus::TIMEOUT:
         reason = "timeout";
+        break;
     default:
         return;
     }
