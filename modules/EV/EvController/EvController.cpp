@@ -74,7 +74,7 @@ void EvController::ready() {
     // moving register_or_throw into ready() would terminate identically).
     // Contain any throw here so a failed fd registration / FSM construction
     // degrades to an inert loop instead of a process crash, reported by a
-    // stopped heartbeat and a CommunicationFault.
+    // stopped heartbeat.
     loop_thread = std::thread([this] {
         try {
             runtime->run(loop_online);
@@ -90,8 +90,6 @@ void EvController::ready() {
 void EvController::on_loop_abort(const std::string& reason) {
     EVLOG_error << "EvController: loop thread aborting: " << reason;
     loop_online = false;
-    p_ev_manager->raise_error(p_ev_manager->error_factory->create_error(
-        "generic/CommunicationFault", "loop_thread", "loop thread aborted: " + reason, Everest::error::Severity::High));
 }
 
 void EvController::shutdown() {

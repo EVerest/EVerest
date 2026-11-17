@@ -39,8 +39,8 @@ The runtime is built and the peer and ``m2e`` subscriptions are registered in
 on the queue until the loop starts. With ``enabled_at_startup`` the enable is
 queued ahead of it.
 
-If the loop thread aborts, the heartbeat stops and ``generic/CommunicationFault``
-is raised on ``ev_manager`` with the reason in its message.
+If the loop thread aborts, the heartbeat stops for good; clients detect the
+abort by the missing heartbeat.
 
 High level
 ----------
