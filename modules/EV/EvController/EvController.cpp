@@ -118,9 +118,9 @@ void EvController::setup_heartbeat_generator() {
     auto topic = topics.everest_to_extern("heartbeat");
     // MqttProvider::publish() returns void; the framework treats publishes
     // as fire-and-forget, so a transport-level failure is not observable
-    // here. The one failure we can surface to comm_check is an exception out
-    // of publish/serialize: report it as a failed heartbeat instead of
-    // unconditionally claiming success.
+    // here. A false return, after a publish/serialize exception or once the
+    // loop thread is gone, ends the heartbeat thread for good, so clients see
+    // the failure as missing heartbeats.
     auto action = [this, topic]() {
         if (!loop_online) {
             return false;
