@@ -37,6 +37,12 @@ namespace spec_drift {
 
 using json = nlohmann::json;
 
+template <class... Parts> std::string concat(Parts const&... parts) {
+    std::string out;
+    (out += ... += parts);
+    return out;
+}
+
 struct ChannelCodec {
     // Deserializes a payload with the codec and serializes the result again. Empty when the module
     // reads or writes the payload without a codec.
@@ -175,8 +181,8 @@ public:
         }
         if (schema.contains("properties")) {
             for (auto const& [key, sub] : schema.at("properties").items()) {
-                out.insert(pointer + "/properties/" + key);
-                properties(pointer + "/properties/" + key, out, enums, visited);
+                out.insert(concat(pointer, "/properties/", key));
+                properties(concat(pointer, "/properties/", key), out, enums, visited);
             }
         }
         if (schema.contains("items")) {
@@ -275,13 +281,14 @@ private:
             }
             for (auto const& [key, sub] : value.items()) {
                 if (not declared.contains(key)) {
-                    errors.push_back(where + ": " + key + " is not declared in " + pointer);
+                    errors.push_back(concat(where, ": ", key, " is not declared in ", pointer));
                     continue;
                 }
-                walk.seen.insert(pointer + "/properties/" + key);
+                walk.seen.insert(concat(pointer, "/properties/", key));
                 walk.keys.push_back(
                     {at_value / key, std::find(required.begin(), required.end(), key) != required.end()});
-                validate(pointer + "/properties/" + key, sub, at_value / key, where + "/" + key, errors, walk);
+                validate(concat(pointer, "/properties/", key), sub, at_value / key, concat(where, "/", key), errors,
+                         walk);
             }
         }
     }
@@ -419,12 +426,12 @@ inline std::vector<std::string> check_api(std::filesystem::path const& spec_path
         }
         for (auto const& value : in_spec) {
             if (in_codec.count(value) == 0) {
-                errors.push_back(pointer + ": " + value + " is not a codec value");
+                errors.push_back(concat(pointer, ": ", value, " is not a codec value"));
             }
         }
         for (auto const& value : in_codec) {
             if (in_spec.count(value) == 0) {
-                errors.push_back(pointer + ": codec value " + value + " is missing");
+                errors.push_back(concat(pointer, ": codec value ", value, " is missing"));
             }
         }
     }

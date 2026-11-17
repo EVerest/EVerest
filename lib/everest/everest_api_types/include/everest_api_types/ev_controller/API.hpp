@@ -11,6 +11,7 @@
 
 namespace everest::lib::API::V1_0::types::ev_controller {
 
+// NOLINTBEGIN(performance-enum-size): matches trunk's API types convention
 enum class FsmState {
     Disabled,
     Unplugged,
@@ -84,6 +85,7 @@ enum class SlacStateKind {
     Matching,
     Matched,
 };
+// NOLINTEND(performance-enum-size)
 
 // 1:1 with types::iso15118::DcEvBPTParameters
 struct BptParams {
@@ -227,10 +229,12 @@ struct BcbToggleParams {
     std::optional<int32_t> count;
 };
 
+// NOLINTBEGIN(performance-enum-size): matches trunk's API types convention
 enum class DerControlSource {
     ChargeParameterDiscovery,
     ChargeLoop,
 };
+// NOLINTEND(performance-enum-size)
 
 struct DerNegotiatedFunctions {
     DerFlavor flavor;

@@ -24,6 +24,7 @@ std::string serialize(CommandAckStatus val) {
     return nlohmann::json(val).dump(json_indent);
 }
 
+// NOLINTBEGIN(bugprone-exception-escape): matches trunk's API types convention
 std::string serialize(InjectFaultParams const& val) noexcept {
     return nlohmann::json(val).dump(json_indent);
 }
@@ -35,6 +36,7 @@ std::string serialize(WorldState const& val) noexcept {
 std::string serialize(CommandAck const& val) noexcept {
     return nlohmann::json(val).dump(json_indent);
 }
+// NOLINTEND(bugprone-exception-escape)
 
 std::ostream& operator<<(std::ostream& os, WorldFault const& val) {
     os << serialize(val);
@@ -94,6 +96,7 @@ std::string serialize(ScenarioName val) {
     return nlohmann::json(val).dump(json_indent);
 }
 
+// NOLINTBEGIN(bugprone-exception-escape): matches trunk's API types convention
 std::string serialize(ScenarioTimingOverrides const& val) noexcept {
     return nlohmann::json(val).dump(json_indent);
 }
@@ -101,6 +104,7 @@ std::string serialize(ScenarioTimingOverrides const& val) noexcept {
 std::string serialize(RunScenarioParams const& val) noexcept {
     return nlohmann::json(val).dump(json_indent);
 }
+// NOLINTEND(bugprone-exception-escape)
 
 std::ostream& operator<<(std::ostream& os, ScenarioName const& val) {
     os << serialize(val);
@@ -139,6 +143,7 @@ std::ostream& operator<<(std::ostream& os, ScenarioEventKind const& val) {
 template <> ScenarioEventKind deserialize(std::string_view val) {
     return utilities::parse_json<ScenarioEventKind>(val);
 }
+// NOLINTNEXTLINE(bugprone-exception-escape): matches trunk's API types convention
 std::string serialize(ScenarioEvent const& val) noexcept {
     return nlohmann::json(val).dump(json_indent);
 }

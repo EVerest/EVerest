@@ -6,6 +6,7 @@
 #include "everest_api_types/ev_driver_sim/API.hpp"
 #include "everest_api_types/ev_driver_sim/codec.hpp"
 #include "nlohmann/json.hpp"
+#include "value_of.hpp"
 #include <gtest/gtest.h>
 #include <sstream>
 #include <string>
@@ -24,7 +25,7 @@ TEST(ev_driver_sim, WorldFault_roundtrip) {
         EXPECT_EQ(nlohmann::json::parse(encoded), spelling);
         const auto decoded = try_deserialize<WorldFault>(encoded);
         ASSERT_TRUE(decoded);
-        EXPECT_EQ(*decoded, value);
+        EXPECT_EQ(value_of(decoded), value);
         std::ostringstream stream;
         stream << value;
         EXPECT_EQ(stream.str(), encoded);
@@ -41,7 +42,7 @@ TEST(ev_driver_sim, PilotState_roundtrip) {
         EXPECT_EQ(nlohmann::json::parse(encoded), spelling);
         const auto decoded = try_deserialize<PilotState>(encoded);
         ASSERT_TRUE(decoded);
-        EXPECT_EQ(*decoded, value);
+        EXPECT_EQ(value_of(decoded), value);
         std::ostringstream stream;
         stream << value;
         EXPECT_EQ(stream.str(), encoded);
@@ -58,7 +59,7 @@ TEST(ev_driver_sim, CommandAckStatus_roundtrip) {
         EXPECT_EQ(nlohmann::json::parse(encoded), spelling);
         const auto decoded = try_deserialize<CommandAckStatus>(encoded);
         ASSERT_TRUE(decoded);
-        EXPECT_EQ(*decoded, value);
+        EXPECT_EQ(value_of(decoded), value);
         std::ostringstream stream;
         stream << value;
         EXPECT_EQ(stream.str(), encoded);
@@ -149,14 +150,14 @@ TEST(ev_driver_sim, CommandAck_payloads_match_ev_controller) {
         const auto payload = controller::serialize(original);
         const auto decoded = try_deserialize<CommandAck>(payload);
         ASSERT_TRUE(decoded);
-        EXPECT_EQ(decoded->message, original.reason);
-        const auto encoded = serialize(*decoded);
+        EXPECT_EQ(value_of(decoded).message, original.reason);
+        const auto encoded = serialize(value_of(decoded));
         EXPECT_EQ(nlohmann::json::parse(encoded), nlohmann::json::parse(payload));
         const auto restored = controller::try_deserialize<controller::CommandAck>(encoded);
         ASSERT_TRUE(restored);
-        EXPECT_EQ(restored->command, original.command);
-        EXPECT_EQ(restored->status, original.status);
-        EXPECT_EQ(restored->reason, original.reason);
+        EXPECT_EQ(value_of(restored).command, original.command);
+        EXPECT_EQ(value_of(restored).status, original.status);
+        EXPECT_EQ(value_of(restored).reason, original.reason);
     }
 }
 
@@ -189,7 +190,7 @@ TEST(ev_driver_sim, RunScenarioParams_roundtrip) {
     const auto decoded =
         codec_test(RunScenarioParams{ScenarioName::DcIsoD20Basic, ScenarioTimingOverrides{10, 20, 30, 40, 50, 60}});
     ASSERT_TRUE(decoded.timing);
-    EXPECT_EQ(decoded.timing->stop_after_ms, 30);
+    EXPECT_EQ(value_of(decoded.timing).stop_after_ms, 30);
     EXPECT_EQ(nlohmann::json::parse(serialize(RunScenarioParams{ScenarioName::AcIecBasic, {}})),
               nlohmann::json::parse(R"({"name":"AcIecBasic"})"));
     EXPECT_FALSE(try_deserialize<RunScenarioParams>("{}"));

@@ -595,6 +595,7 @@ template <class T> void get_opt_number(json const& j, char const* key, std::opti
 
 } // namespace
 
+// NOLINTNEXTLINE(bugprone-exception-escape): matches trunk's API types convention
 void to_json(json& j, SessionConfigParams const& k) noexcept {
     json params = json::object();
     std::visit(
@@ -604,14 +605,8 @@ void to_json(json& j, SessionConfigParams const& k) noexcept {
                 put_current(params, v.charging_current_a);
                 put_three_phases(params, v.three_phases);
                 put_curve(params, v.curve);
-            } else if constexpr (std::is_same_v<T, AcIso2SessionParams>) {
-                put_payment(params, v.payment);
-                put_departure(params, v.departure_time_s);
-                put_e_amount(params, v.e_amount_wh);
-                put_current(params, v.charging_current_a);
-                put_three_phases(params, v.three_phases);
-                put_curve(params, v.curve);
-            } else if constexpr (std::is_same_v<T, AcIsoD20DerIecSessionParams> ||
+            } else if constexpr (std::is_same_v<T, AcIso2SessionParams> ||
+                                 std::is_same_v<T, AcIsoD20DerIecSessionParams> ||
                                  std::is_same_v<T, AcIsoD20DerSaeSessionParams>) {
                 put_payment(params, v.payment);
                 put_departure(params, v.departure_time_s);

@@ -9,6 +9,7 @@
 
 namespace everest::lib::API::V1_0::types::ev_driver_sim {
 
+// NOLINTBEGIN(performance-enum-size): matches trunk's API types convention
 enum class WorldFault {
     DiodeFail,
     RcdError,
@@ -77,6 +78,7 @@ enum class ScenarioEventKind {
     Finished,
     Rejected,
 };
+// NOLINTEND(performance-enum-size)
 
 struct ScenarioEvent {
     ScenarioName name;

@@ -96,6 +96,7 @@ std::string serialize(SlacStateKind val) {
     return nlohmann::json(val).dump(json_indent);
 }
 
+// NOLINTBEGIN(bugprone-exception-escape): matches trunk's API types convention
 std::string serialize(BptParams const& val) noexcept {
     return nlohmann::json(val).dump(json_indent);
 }
@@ -163,6 +164,7 @@ std::string serialize(FaultReport const& val) noexcept {
 std::string serialize(CommandAck const& val) noexcept {
     return nlohmann::json(val).dump(json_indent);
 }
+// NOLINTEND(bugprone-exception-escape)
 
 std::ostream& operator<<(std::ostream& os, FsmState const& val) {
     os << serialize(val);

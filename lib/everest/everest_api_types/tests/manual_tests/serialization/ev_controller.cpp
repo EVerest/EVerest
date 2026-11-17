@@ -5,6 +5,7 @@
 #include "everest_api_types/ev_controller/API.hpp"
 #include "everest_api_types/ev_controller/codec.hpp"
 #include "nlohmann/json.hpp"
+#include "value_of.hpp"
 #include <gtest/gtest.h>
 #include <stdexcept>
 #include <string>
@@ -134,10 +135,10 @@ TEST(ev_controller, SessionConfigParams_roundtrip_ac_iso2_with_curve_and_optiona
     expect_opt_eq(v.departure_time_s, d.departure_time_s);
     expect_opt_eq(v.e_amount_wh, d.e_amount_wh);
     ASSERT_TRUE(d.charging_current_a.has_value());
-    EXPECT_FLOAT_EQ(v.charging_current_a.value(), d.charging_current_a.value());
+    EXPECT_FLOAT_EQ(v.charging_current_a.value(), value_of(d.charging_current_a));
     expect_opt_eq(v.three_phases, d.three_phases);
     ASSERT_TRUE(d.curve.has_value());
-    expect_curve_eq(v.curve.value(), d.curve.value());
+    expect_curve_eq(v.curve.value(), value_of(d.curve));
 }
 
 TEST(ev_controller, SessionConfigParams_roundtrip_ac_iec_mode_only) {
@@ -170,10 +171,10 @@ TEST(ev_controller, SessionConfigParams_roundtrip_dc_iso_d20_bpt_and_mcs) {
     ASSERT_TRUE(std::holds_alternative<DcIsoD20SessionParams>(des));
     const auto& d = std::get<DcIsoD20SessionParams>(des);
     ASSERT_TRUE(d.bpt.has_value());
-    EXPECT_FLOAT_EQ(v.bpt->discharge_max_current_limit, d.bpt->discharge_max_current_limit);
-    EXPECT_FLOAT_EQ(v.bpt->discharge_max_power_limit, d.bpt->discharge_max_power_limit);
-    EXPECT_FLOAT_EQ(v.bpt->discharge_target_current, d.bpt->discharge_target_current);
-    EXPECT_FLOAT_EQ(v.bpt->discharge_minimal_soc, d.bpt->discharge_minimal_soc);
+    EXPECT_FLOAT_EQ(v.bpt->discharge_max_current_limit, value_of(d.bpt).discharge_max_current_limit);
+    EXPECT_FLOAT_EQ(v.bpt->discharge_max_power_limit, value_of(d.bpt).discharge_max_power_limit);
+    EXPECT_FLOAT_EQ(v.bpt->discharge_target_current, value_of(d.bpt).discharge_target_current);
+    EXPECT_FLOAT_EQ(v.bpt->discharge_minimal_soc, value_of(d.bpt).discharge_minimal_soc);
     EXPECT_TRUE(d.mcs_enabled);
     EXPECT_FALSE(d.curve.has_value());
 }
@@ -210,7 +211,7 @@ TEST(ev_controller, SessionConfigParams_roundtrip_ac_iso_d20_bpt) {
     ASSERT_TRUE(std::holds_alternative<AcIsoD20SessionParams>(des));
     const auto& d = std::get<AcIsoD20SessionParams>(des);
     ASSERT_TRUE(d.bpt.has_value());
-    EXPECT_FLOAT_EQ(v.bpt->discharge_target_current, d.bpt->discharge_target_current);
+    EXPECT_FLOAT_EQ(v.bpt->discharge_target_current, value_of(d.bpt).discharge_target_current);
     expect_opt_eq(v.three_phases, d.three_phases);
 }
 
@@ -229,7 +230,7 @@ TEST(ev_controller, SessionConfigParams_foreign_field_in_params_is_ignored) {
     ASSERT_TRUE(std::holds_alternative<AcIecSessionParams>(des));
     const auto& d = std::get<AcIecSessionParams>(des);
     ASSERT_TRUE(d.charging_current_a.has_value());
-    EXPECT_FLOAT_EQ(16.0f, d.charging_current_a.value());
+    EXPECT_FLOAT_EQ(16.0f, value_of(d.charging_current_a));
 }
 
 TEST(ev_controller, ChargerFault_roundtrip) {
