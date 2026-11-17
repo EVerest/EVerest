@@ -21,6 +21,7 @@ target_sources(${TEST_TARGET_NAME}
     grid_support_conversions_test.cpp
     meter_value_conversions_test.cpp
     network_conversions_test.cpp
+    no_authorization_test.cpp
     transaction_handler_tests.cpp
 )
 
