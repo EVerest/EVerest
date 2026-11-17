@@ -136,7 +136,7 @@ TEST_CASE("EvController pilot faults stop power and report a charger fault", "[e
     const auto report = api::deserialize<api::FaultReport>(payload_for(fx.sink, fault_topic));
     CHECK(report.type == api::FaultType::ChargerFault);
     REQUIRE(report.message.has_value());
-    CHECK(*report.message == (pilot == Pilot::E ? "pilot E" : "pilot F"));
+    CHECK(value_of(report.message) == (pilot == Pilot::E ? "pilot E" : "pilot F"));
 }
 
 TEST_CASE("EvController pilot fault before a pending start enters ChargerFault", "[evctl][pilot-start]") {

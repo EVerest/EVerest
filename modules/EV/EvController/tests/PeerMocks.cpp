@@ -152,7 +152,7 @@ bool MockEvSlac::call_trigger_matching() {
 
 // ---- MockKvs ------------------------------------------------------------
 
-void MockKvs::call_store(const std::string& key, Value /*value*/) {
+void MockKvs::call_store(const std::string& key, const Value& /*value*/) {
     records.emplace_back("store(key=" + key + ")");
 }
 

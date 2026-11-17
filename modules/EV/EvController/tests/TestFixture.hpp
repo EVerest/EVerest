@@ -16,6 +16,8 @@
 
 #include <algorithm>
 #include <memory>
+#include <optional>
+#include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
@@ -23,6 +25,21 @@
 namespace module::test {
 
 // Shared record/sink inspection helpers used across the FsmContext test TUs.
+
+// The value of `opt`. Throws, and so fails the running test, when `opt` is empty.
+template <typename T> const T& value_of(const std::optional<T>& opt) {
+    if (!opt.has_value()) {
+        throw std::logic_error("expected a value, got an empty optional");
+    }
+    return *opt;
+}
+
+template <typename T> T value_of(std::optional<T>&& opt) {
+    if (!opt.has_value()) {
+        throw std::logic_error("expected a value, got an empty optional");
+    }
+    return std::move(*opt);
+}
 
 inline bool contains_substr(const std::vector<std::string>& records, const std::string& needle) {
     return std::any_of(records.begin(), records.end(),

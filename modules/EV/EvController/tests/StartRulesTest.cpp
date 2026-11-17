@@ -94,8 +94,8 @@ TEST_CASE("EvController nominal PWM bounds the DC ISO wait", "[evctl][start-rule
     machine.feed(Event{StateDeadlineEvt{}});
     CHECK(machine.get_current_state_id() == api::FsmState::Faulted);
     REQUIRE(ctx->vars.last_fault);
-    CHECK(ctx->vars.last_fault->type == api::FaultType::Internal);
-    CHECK(ctx->vars.last_fault->message == "no 5 % PWM");
+    CHECK(value_of(ctx->vars.last_fault).type == api::FaultType::Internal);
+    CHECK(value_of(ctx->vars.last_fault).message == "no 5 % PWM");
     CHECK_FALSE(contains_substr(fx.mocks.bsp.records, "allow_power_on(value=true)"));
     CHECK(fx.mocks.slac.records.empty());
     CHECK_FALSE(contains_substr(fx.mocks.iso.records, "start_charging"));
@@ -158,7 +158,7 @@ TEST_CASE("EvController restarts 2 s after a charger stop on PWM still running",
     CHECK(fx.timer.state_timer_arms.back() == std::chrono::seconds{2});
     CHECK_FALSE(ctx->vars.hold_session);
     REQUIRE(ctx->vars.charge_mode() == api::ChargeMode::DcIso2);
-    CHECK(ctx->vars.session->payment == api::PaymentOption::ExternalPayment);
+    CHECK(value_of(ctx->vars.session).payment == api::PaymentOption::ExternalPayment);
     CHECK(fx.mocks.slac.records == std::vector<std::string>{"reset()"});
     // Running PWM during the settle starts nothing.
     machine.feed(pwm(5.0f));
@@ -314,6 +314,7 @@ TEST_CASE("EvController pilot MCS wakes before matching", "[evctl][start-rules]"
 
 namespace module {
 static EvController* test_module;
+// NOLINTNEXTLINE(performance-unnecessary-value-param): signature fixed by ev-cli's generated ld-ev.hpp
 void LdEverest::init(ModuleConfigs, const ModuleInfo&) {
     test_module->init();
 }
@@ -674,6 +675,7 @@ TEST_CASE("EvController DER publications convert every ISO flavor", "[evctl][der
                   .flavor == expected);
     }
     ::types::iso15118::DerNegotiatedFunctions invalid{};
+    // NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange): deliberately invalid value to test rejection
     invalid.flavor = static_cast<IsoFlavor>(-1);
     CHECK_THROWS_AS(ctx->publish_e2m_der_negotiated_functions(invalid), std::out_of_range);
 }
@@ -693,6 +695,7 @@ TEST_CASE("EvController DER publications convert every ISO control source", "[ev
                   .source == expected);
     }
     ::types::iso15118::DerControlReceived invalid{};
+    // NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange): deliberately invalid value to test rejection
     invalid.source = static_cast<IsoSource>(-1);
     CHECK_THROWS_AS(ctx->publish_e2m_der_control(invalid), std::out_of_range);
 }

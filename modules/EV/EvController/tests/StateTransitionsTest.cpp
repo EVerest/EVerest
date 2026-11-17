@@ -40,8 +40,8 @@ TEST_CASE("FsmContext helpers and shortcuts", "[evctl][helpers]") {
         auto result = transition_to_fault(*ctx, p);
 
         REQUIRE(ctx->vars.last_fault.has_value());
-        CHECK(ctx->vars.last_fault->type == api::FaultType::Internal);
-        CHECK_FALSE(ctx->vars.last_fault->rcd_mA.has_value());
+        CHECK(value_of(ctx->vars.last_fault).type == api::FaultType::Internal);
+        CHECK_FALSE(value_of(ctx->vars.last_fault).rcd_mA.has_value());
         REQUIRE(result.new_state != nullptr);
         CHECK(result.new_state->get_id() == api::FsmState::Faulted);
         CHECK(result.unhandled == false);
@@ -368,7 +368,7 @@ TEST_CASE("FsmContext helpers and shortcuts", "[evctl][helpers]") {
         }
         auto roundtrip = nlohmann::json::parse(json_str).get<PersistedState>();
         REQUIRE(roundtrip.configured_session.has_value());
-        CHECK(api::mode_of(*roundtrip.configured_session) == api::ChargeMode::AcIec);
+        CHECK(api::mode_of(value_of(roundtrip.configured_session)) == api::ChargeMode::AcIec);
     }
 
     SECTION("kvs_save records NOTHING when keep_cross_boot_plugin_state=false") {
@@ -401,10 +401,10 @@ TEST_CASE("FsmContext helpers and shortcuts", "[evctl][helpers]") {
         ctx->kvs_load();
 
         REQUIRE(ctx->persisted_state().configured_session.has_value());
-        CHECK(api::mode_of(*ctx->persisted_state().configured_session) == api::ChargeMode::DcIso2);
+        CHECK(api::mode_of(value_of(ctx->persisted_state().configured_session)) == api::ChargeMode::DcIso2);
         // kvs_load seeds the live latched config too.
         REQUIRE(ctx->configured_session.has_value());
-        CHECK(api::mode_of(*ctx->configured_session) == api::ChargeMode::DcIso2);
+        CHECK(api::mode_of(value_of(ctx->configured_session)) == api::ChargeMode::DcIso2);
     }
 
     SECTION("mutators round-trip through kvs_save then kvs_load") {
@@ -428,9 +428,9 @@ TEST_CASE("FsmContext helpers and shortcuts", "[evctl][helpers]") {
         loader->kvs_load();
 
         REQUIRE(loader->persisted_state().configured_session.has_value());
-        CHECK(api::mode_of(*loader->persisted_state().configured_session) == api::ChargeMode::AcIso2);
+        CHECK(api::mode_of(value_of(loader->persisted_state().configured_session)) == api::ChargeMode::AcIso2);
         REQUIRE(loader->configured_session.has_value());
-        CHECK(api::mode_of(*loader->configured_session) == api::ChargeMode::AcIso2);
+        CHECK(api::mode_of(value_of(loader->configured_session)) == api::ChargeMode::AcIso2);
     }
 
     SECTION("kvs_load tolerates a legacy last_mode blob without throwing") {
@@ -469,7 +469,7 @@ TEST_CASE("FsmContext helpers and shortcuts", "[evctl][helpers]") {
         CHECK(decoded.command == "configure_session");
         CHECK(decoded.status == api::CommandAckStatus::Rejected);
         REQUIRE(decoded.reason.has_value());
-        CHECK(*decoded.reason == "no_session_active");
+        CHECK(value_of(decoded.reason) == "no_session_active");
     }
 
     SECTION("publish_e2m_fault records fault topic+payload") {
@@ -734,7 +734,7 @@ TEST_CASE("EvController group1 transitions", "[evctl][group1]") {
         REQUIRE(result.new_state);
         CHECK(result.new_state->get_id() == api::FsmState::SlacMatching);
         REQUIRE(ctx->vars.payment().has_value());
-        CHECK(*ctx->vars.payment() == api::PaymentOption::Contract);
+        CHECK(value_of(ctx->vars.payment()) == api::PaymentOption::Contract);
     }
 
     SECTION("Plugged: BspMeasurement triggers Charging when AcIec PWM in range") {
@@ -831,7 +831,7 @@ TEST_CASE("EvController group1 transitions", "[evctl][group1]") {
         REQUIRE(result.new_state);
         CHECK(result.new_state->get_id() == api::FsmState::Faulted);
         REQUIRE(ctx->vars.last_fault.has_value());
-        CHECK(ctx->vars.last_fault->type == api::FaultType::Internal);
+        CHECK(value_of(ctx->vars.last_fault).type == api::FaultType::Internal);
     }
 
     SECTION("Plugged: Disable -> Disabled") {
@@ -850,7 +850,7 @@ TEST_CASE("EvController group1 transitions", "[evctl][group1]") {
         auto ack = api::deserialize<api::CommandAck>(payload_for(fx.sink, ack_topic));
         CHECK(ack.command == "stop_session");
         REQUIRE(ack.reason.has_value());
-        CHECK(*ack.reason == "no session active");
+        CHECK(value_of(ack.reason) == "no session active");
     }
 
     // ---- SlacMatching --------------------------------------------------
@@ -948,7 +948,7 @@ TEST_CASE("EvController group1 transitions", "[evctl][group1]") {
         auto p = std::get<InternalFault>(fx.timer.enqueued_events[0].payload);
         CHECK(p.type == api::FaultType::Internal);
         REQUIRE(p.message.has_value());
-        CHECK(*p.message == "no ev_slac peer");
+        CHECK(value_of(p.message) == "no ev_slac peer");
 
         // Feeding the carried InternalFault produces Faulted with the payload
         // message (transition_to_fault prefers p.message over last_fault).
@@ -958,7 +958,7 @@ TEST_CASE("EvController group1 transitions", "[evctl][group1]") {
         CHECK(result.new_state->get_id() == api::FsmState::Faulted);
         REQUIRE(ctx->vars.last_fault.has_value());
         REQUIRE(ctx->vars.last_fault->message.has_value());
-        CHECK(*ctx->vars.last_fault->message == "no ev_slac peer");
+        CHECK(value_of(value_of(ctx->vars.last_fault).message) == "no ev_slac peer");
         result.new_state->enter();
         const auto report =
             api::deserialize<api::FaultReport>(payload_for(fx.sink, fx.topics.everest_to_extern("fault")));
@@ -978,8 +978,8 @@ TEST_CASE("EvController group1 transitions", "[evctl][group1]") {
         REQUIRE(fx.timer.enqueued_events.size() == 1);
         auto p = std::get<InternalFault>(fx.timer.enqueued_events[0].payload);
         REQUIRE(p.message.has_value());
-        CHECK(*p.message == "ev_slac trigger_matching rejected");
-        CHECK(*p.message != "no ev_slac peer");
+        CHECK(value_of(p.message) == "ev_slac trigger_matching rejected");
+        CHECK(value_of(p.message) != "no ev_slac peer");
     }
 
     SECTION("V2GNegotiating.enter on iso_start_charging rejection: no pre-seed, "
@@ -996,7 +996,7 @@ TEST_CASE("EvController group1 transitions", "[evctl][group1]") {
         auto p = std::get<InternalFault>(fx.timer.enqueued_events[0].payload);
         CHECK(p.type == api::FaultType::Internal);
         REQUIRE(p.message.has_value());
-        CHECK(*p.message == "iso_start_charging rejected");
+        CHECK(value_of(p.message) == "iso_start_charging rejected");
     }
 
     // EvManager's stop replaces the queued iso_wait_slac_matched with
@@ -1107,7 +1107,7 @@ TEST_CASE("EvController group1 transitions", "[evctl][group1]") {
         set_mode(*ctx, api::ChargeMode::DcIso2);
         ensure_session(*ctx).payment = api::PaymentOption::ExternalPayment;
         REQUIRE(ctx->vars.payment().has_value());
-        CHECK(*ctx->vars.payment() == api::PaymentOption::ExternalPayment);
+        CHECK(value_of(ctx->vars.payment()) == api::PaymentOption::ExternalPayment);
         V2GNegotiating s{*ctx};
         s.enter();
         CHECK(contains_substr(fx.mocks.iso.records, "payment=ExternalPayment"));
@@ -1193,9 +1193,9 @@ TEST_CASE("EvController group1 transitions", "[evctl][group1]") {
         REQUIRE(result.new_state);
         CHECK(result.new_state->get_id() == api::FsmState::Faulted);
         REQUIRE(ctx->vars.last_fault.has_value());
-        CHECK(ctx->vars.last_fault->type == api::FaultType::V2GTimeout);
-        REQUIRE(ctx->vars.last_fault->message.has_value());
-        CHECK(*ctx->vars.last_fault->message == "no PWM to resume the session");
+        CHECK(value_of(ctx->vars.last_fault).type == api::FaultType::V2GTimeout);
+        REQUIRE(value_of(ctx->vars.last_fault).message.has_value());
+        CHECK(value_of(value_of(ctx->vars.last_fault).message) == "no PWM to resume the session");
     }
 
     SECTION("V2GNegotiating: StateDeadline once the session is started is ignored") {
@@ -1435,7 +1435,7 @@ TEST_CASE("EvController group2 transitions", "[evctl][group2]") {
         CHECK_FALSE(contains_substr(fx.mocks.bsp.records, "set_ac_max_current"));
         CHECK_FALSE(contains_substr(fx.mocks.bsp.records, "set_three_phases"));
         REQUIRE(ctx->vars.active_ramp.has_value());
-        const auto& r = *ctx->vars.active_ramp;
+        const auto& r = value_of(ctx->vars.active_ramp);
         CHECK(r.start_a == 6.0f);
         CHECK(r.target_a == 16.0f);
         CHECK(r.three_phases == false);
@@ -1481,7 +1481,7 @@ TEST_CASE("EvController group2 transitions", "[evctl][group2]") {
         auto ack = api::deserialize<api::CommandAck>(payload_for(fx.sink, ack_topic));
         CHECK(ack.command == "set_charging_current");
         REQUIRE(ack.reason.has_value());
-        CHECK(*ack.reason == "set_charging_current not supported in DC/ISO-20 mode");
+        CHECK(value_of(ack.reason) == "set_charging_current not supported in DC/ISO-20 mode");
     }
 
     SECTION("Charging: IsoStopFromCharger -> Stopping") {
@@ -1730,7 +1730,7 @@ TEST_CASE("EvController group2 transitions", "[evctl][group2]") {
         CHECK(result.new_state == nullptr);
         auto ack = api::deserialize<api::CommandAck>(payload_for(fx.sink, ack_topic));
         REQUIRE(ack.reason.has_value());
-        CHECK(*ack.reason == "AC IEC: ISO verbs not applicable");
+        CHECK(value_of(ack.reason) == "AC IEC: ISO verbs not applicable");
     }
 
     SECTION("ChargingPwmPaused: InternalFault -> Faulted") {
@@ -1955,7 +1955,7 @@ TEST_CASE("EvController group2 transitions", "[evctl][group2]") {
         auto fr = api::deserialize<api::FaultReport>(payload_for(fx.sink, fault_topic));
         CHECK(fr.type == api::FaultType::Internal);
         REQUIRE(fr.message.has_value());
-        CHECK(*fr.message == "last_fault unset");
+        CHECK(value_of(fr.message) == "last_fault unset");
         auto decoded = api::deserialize<api::FsmState>(payload_for(fx.sink, state_topic));
         CHECK(decoded == api::FsmState::Faulted);
     }
@@ -2088,7 +2088,7 @@ TEST_CASE("EvController group3 transitions", "[evctl][group3]") {
         ctx->configure_session(api::SessionConfigParams{api::DcIso2SessionParams{}});
         CHECK(ctx->vars.charge_mode() == api::ChargeMode::AcIec);
         REQUIRE(ctx->configured_session.has_value());
-        CHECK(api::mode_of(*ctx->configured_session) == api::ChargeMode::DcIso2);
+        CHECK(api::mode_of(value_of(ctx->configured_session)) == api::ChargeMode::DcIso2);
 
         // unplug -> plug consumes the new config.
         Unplugged u{*ctx};
@@ -2130,7 +2130,7 @@ TEST_CASE("EvController group3 transitions", "[evctl][group3]") {
         CHECK(ctx->vars.charge_mode() == api::ChargeMode::AcIec);
         // Curve is stashed for Charging::enter; scenario dispatcher stays idle.
         REQUIRE(ctx->vars.pending_curve().has_value());
-        CHECK(ctx->vars.pending_curve()->points.size() == 2);
+        CHECK(value_of(ctx->vars.pending_curve()).points.size() == 2);
         CHECK_FALSE(ctx->curve.active());
         CHECK_FALSE(topic_recorded(fx.sink, ack_topic));
     }
@@ -2647,9 +2647,9 @@ TEST_CASE("EvCtlRuntime feed_with_fault_isolation", "[evctl][fault_isolation]") 
 
         // Fault metadata reflects Internal cause.
         REQUIRE(ctx->vars.last_fault.has_value());
-        CHECK(ctx->vars.last_fault->type == api::FaultType::Internal);
-        REQUIRE(ctx->vars.last_fault->message.has_value());
-        CHECK_FALSE(ctx->vars.last_fault->message->empty());
+        CHECK(value_of(ctx->vars.last_fault).type == api::FaultType::Internal);
+        REQUIRE(value_of(ctx->vars.last_fault).message.has_value());
+        CHECK_FALSE(value_of(value_of(ctx->vars.last_fault).message).empty());
 
         // Faulted::enter has published the fault + state externally. The
         // Unplugged ctor also published once on the state topic, so take the
@@ -2694,12 +2694,12 @@ TEST_CASE("EvCtlRuntime feed_with_fault_isolation", "[evctl][fault_isolation]") 
         REQUIRE(topic_recorded(fx.sink, fault_topic));
         const auto fault = api::deserialize<api::FaultReport>(payload_for(fx.sink, fault_topic));
         REQUIRE(fault.message.has_value());
-        CHECK(fault.message->find("could not release CP to B") != std::string::npos);
+        CHECK(value_of(fault.message).find("could not release CP to B") != std::string::npos);
         if (iso_stop_throws) {
-            CHECK(fault.message->find("could not stop the V2G session") != std::string::npos);
+            CHECK(value_of(fault.message).find("could not stop the V2G session") != std::string::npos);
         }
         REQUIRE(ctx->vars.last_fault.has_value());
-        CHECK(ctx->vars.last_fault->message == fault.message);
+        CHECK(value_of(ctx->vars.last_fault).message == fault.message);
         const auto state_topic = fx.topics.everest_to_extern("state");
         const auto last_state = std::find_if(fx.sink.records.rbegin(), fx.sink.records.rend(),
                                              [&](const auto& kv) { return kv.first == state_topic; });
@@ -2715,8 +2715,9 @@ TEST_CASE("EvCtlRuntime feed_with_fault_isolation", "[evctl][fault_isolation]") 
 
         REQUIRE(fsm);
         REQUIRE(ctx->vars.last_fault.has_value());
-        REQUIRE(ctx->vars.last_fault->message.has_value());
-        CHECK(ctx->vars.last_fault->message->find("could not publish the fault") != std::string::npos);
+        REQUIRE(value_of(ctx->vars.last_fault).message.has_value());
+        CHECK(value_of(value_of(ctx->vars.last_fault).message).find("could not publish the fault") !=
+              std::string::npos);
         const auto state_topic = fx.topics.everest_to_extern("state");
         const auto last_state = std::find_if(fx.sink.records.rbegin(), fx.sink.records.rend(),
                                              [&](const auto& kv) { return kv.first == state_topic; });

@@ -50,7 +50,7 @@ std::vector<Everest::UnsubscribeToken> setup_command_router(EvCtlRuntime& rt, Ev
     // The UnsubscribeToken returned by `mqtt.subscribe` is captured into
     // `tokens` and invoked by ~EvCtlRuntime so the handler stops firing
     // before the runtime references it captures are torn down.
-    auto subscribe = [&](const std::string& var, auto handler) {
+    auto subscribe = [&](const std::string& var, const auto& handler) {
         const auto topic = topics.extern_to_everest(var);
         tokens.push_back(mqtt.subscribe(topic, [&rt, topic, var, handler](const std::string& payload) {
             try {
@@ -85,7 +85,7 @@ std::vector<Everest::UnsubscribeToken> setup_command_router(EvCtlRuntime& rt, Ev
     });
 
     // ---- parameterless verbs -----------------------------------------------
-    auto sub_void = [&](const std::string& var, EventPayload payload) {
+    auto sub_void = [&](const std::string& var, const EventPayload& payload) {
         subscribe(var, [&rt, payload](const std::string&) { rt.enqueue(Event{payload}); });
     };
     sub_void("pause_session", PauseSessionCmd{});

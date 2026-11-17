@@ -571,5 +571,5 @@ TEST_CASE("EvController resume faults with V2GTimeout if PWM never returns", "[e
     fsm.feed(Event{EventKind::StateDeadline});
     REQUIRE(fsm.get_current_state_id() == api::FsmState::Faulted);
     REQUIRE(ctx->vars.last_fault.has_value());
-    CHECK(ctx->vars.last_fault->type == api::FaultType::V2GTimeout);
+    CHECK(value_of(ctx->vars.last_fault).type == api::FaultType::V2GTimeout);
 }

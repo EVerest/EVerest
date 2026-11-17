@@ -92,7 +92,7 @@ TEST_CASE("kvs_load_raw seam returns optional<string>", "[evctl][kvs][optional]"
         auto out = ctx->peer_actions.kvs.load_raw("any");
 
         REQUIRE(out.has_value());
-        CHECK(out->empty());
+        CHECK(value_of(out).empty());
     }
 
     SECTION("optional non-empty string round-trips") {
@@ -102,18 +102,20 @@ TEST_CASE("kvs_load_raw seam returns optional<string>", "[evctl][kvs][optional]"
         auto out = ctx->peer_actions.kvs.load_raw("any");
 
         REQUIRE(out.has_value());
-        CHECK(*out == "hello");
+        CHECK(value_of(out) == "hello");
     }
 }
 
 TEST_CASE("Enum to_json throws on out-of-range value", "[evctl][codec][to_json]") {
     SECTION("FsmState out-of-range throws std::out_of_range") {
+        // NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange): deliberately invalid value to test rejection
         auto bogus = static_cast<api::FsmState>(9999);
         nlohmann::json j;
         REQUIRE_THROWS_AS(api::to_json(j, bogus), std::out_of_range);
     }
 
     SECTION("CommandAckStatus out-of-range throws std::out_of_range") {
+        // NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange): deliberately invalid value to test rejection
         auto bogus = static_cast<api::CommandAckStatus>(9999);
         nlohmann::json j;
         REQUIRE_THROWS_AS(api::to_json(j, bogus), std::out_of_range);
@@ -175,7 +177,7 @@ TEST_CASE("SlacMatching::enter routes to Faulted when peer is unwired", "[evctl]
         auto p = std::get<InternalFault>(it->payload);
         CHECK(p.type == api::FaultType::Internal);
         REQUIRE(p.message.has_value());
-        CHECK(*p.message == "no ev_slac peer");
+        CHECK(value_of(p.message) == "no ev_slac peer");
         // No deadline timer is armed in the failure path so the state cannot
         // sit around for 30s and then fault with the wrong reason.
         CHECK(fx.timer.state_timer_arms.empty());
@@ -198,7 +200,7 @@ TEST_CASE("SlacMatching::enter routes to Faulted when peer is unwired", "[evctl]
         auto p = std::get<InternalFault>(it->payload);
         CHECK(p.type == api::FaultType::Internal);
         REQUIRE(p.message.has_value());
-        CHECK(*p.message == "ev_slac trigger_matching rejected");
+        CHECK(value_of(p.message) == "ev_slac trigger_matching rejected");
         CHECK(fx.timer.state_timer_arms.empty());
     }
 }
@@ -225,7 +227,7 @@ TEST_CASE("V2GNegotiating::enter routes to Faulted when iso_start_charging retur
         auto p = std::get<InternalFault>(it->payload);
         CHECK(p.type == api::FaultType::Internal);
         REQUIRE(p.message.has_value());
-        CHECK(*p.message == "iso_start_charging rejected");
+        CHECK(value_of(p.message) == "iso_start_charging rejected");
         CHECK(fx.timer.state_timer_arms.empty());
     }
 
@@ -244,7 +246,7 @@ TEST_CASE("V2GNegotiating::enter routes to Faulted when iso_start_charging retur
         auto p = std::get<InternalFault>(it->payload);
         CHECK(p.type == api::FaultType::Internal);
         REQUIRE(p.message.has_value());
-        CHECK(*p.message == "iso_start_charging rejected");
+        CHECK(value_of(p.message) == "iso_start_charging rejected");
     }
 }
 
@@ -372,7 +374,7 @@ TEST_CASE("raise_error / clear_error route through the loop thread", "[evctl][er
         CHECK(ack.command == "clear_error");
         CHECK(ack.status == api::CommandAckStatus::Rejected);
         REQUIRE(ack.reason.has_value());
-        CHECK(*ack.reason == "no such error active");
+        CHECK(value_of(ack.reason) == "no such error active");
     }
 
     // A clear that names no sub-type is the wildcard that clears every sub-type of the error.

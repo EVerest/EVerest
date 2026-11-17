@@ -613,7 +613,7 @@ void FsmContext::publish_e2m_state(API_types::ev_controller::FsmState s) {
     publisher_(topics_.everest_to_extern("state"), serialize(s));
 }
 
-void FsmContext::publish_e2m_fault(API_types::ev_controller::FaultReport f) {
+void FsmContext::publish_e2m_fault(const API_types::ev_controller::FaultReport& f) {
     using namespace API_types::ev_controller;
     publisher_(topics_.everest_to_extern("fault"), serialize(f));
 }

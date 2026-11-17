@@ -4,6 +4,8 @@
 
 #include "../StateBase.hpp"
 
+#include <cstdint>
+
 namespace module {
 
 class Plugged final : public StateBase {
@@ -25,7 +27,7 @@ private:
     bool m_iso_pwm_waiting{false};
     // The steps of EvManager's arm_restart_after_charger_stop
     // (car_simulation.cpp:720): settle 2 s, then wait for running PWM.
-    enum class ChargerRestart {
+    enum class ChargerRestart : std::uint8_t {
         None,
         Settle,
         AwaitPwm,

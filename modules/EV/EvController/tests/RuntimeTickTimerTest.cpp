@@ -55,7 +55,7 @@ TEST_CASE("apply_passthrough_vars routes DC present current/voltage into vars", 
         EvCtlRuntime::apply_passthrough_vars(*ctx, Event{DcEvsePresentCurrentPayload{75.0}});
 
         REQUIRE(ctx->vars.evse_dc_present_current_a.has_value());
-        CHECK(*ctx->vars.evse_dc_present_current_a == 75.0f);
+        CHECK(value_of(ctx->vars.evse_dc_present_current_a) == 75.0f);
     }
 
     SECTION("DcEvsePresentVoltagePayload writes dc_present_voltage_v") {
@@ -217,7 +217,7 @@ TEST_CASE("publish_passthrough_external publishes an iso_session_event per lifec
 
     // One publish per lifecycle edge, each carrying its own kind. The five listed here are exactly
     // the kinds iso_session_event_kind maps, so a mapping that lost one reds this section.
-    const auto publishes_kind = [](Event ev, ISEK expected) {
+    const auto publishes_kind = [](const Event& ev, ISEK expected) {
         TestFixture fx;
         auto ctx = fx.make_ctx();
         const auto topic = fx.topics.everest_to_extern("iso_session_event");
@@ -257,9 +257,9 @@ TEST_CASE("publish_passthrough_external publishes an iso_session_event per lifec
 
         const auto decoded = api::deserialize<api::IsoSessionEvent>(payload_for(fx.sink, topic));
         REQUIRE(decoded.dc_voltage_v.has_value());
-        CHECK(*decoded.dc_voltage_v == 410.0f);
+        CHECK(value_of(decoded.dc_voltage_v) == 410.0f);
         REQUIRE(decoded.dc_current_a.has_value());
-        CHECK(*decoded.dc_current_a == 125.0f);
+        CHECK(value_of(decoded.dc_current_a) == 125.0f);
     }
 }
 
@@ -310,7 +310,7 @@ TEST_CASE("on_wake drains only the events queued when it runs", "[evctl][runtime
 
         CHECK(count("set_ac_max_current") == 1);
         CHECK(count("set_ac_max_current(current=14)") == 1);
-        CHECK(*ctx->vars.evse_ac_max_current_a == 14.0f);
+        CHECK(value_of(ctx->vars.evse_ac_max_current_a) == 14.0f);
     }
 
     SECTION("a limit equal to the one applied makes no board call") {

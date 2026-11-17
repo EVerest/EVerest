@@ -81,8 +81,8 @@ TEST_CASE("keep_cross_boot_plugin_state without a kvs connection is refused", "[
     const auto error = cross_boot_config_error(cfg, false);
 
     REQUIRE(error.has_value());
-    CHECK(error->find("keep_cross_boot_plugin_state") != std::string::npos);
-    CHECK(error->find("kvs") != std::string::npos);
+    CHECK(value_of(error).find("keep_cross_boot_plugin_state") != std::string::npos);
+    CHECK(value_of(error).find("kvs") != std::string::npos);
 }
 
 TEST_CASE("keep_cross_boot_plugin_state is accepted with a kvs connection", "[evctl][kvs][config]") {

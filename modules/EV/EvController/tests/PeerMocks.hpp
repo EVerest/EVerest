@@ -88,7 +88,7 @@ class MockKvs {
 public:
     using Value = std::variant<std::nullptr_t, Array, Object, bool, double, int, std::string>;
 
-    void call_store(const std::string& key, Value value);
+    void call_store(const std::string& key, const Value& value);
     // Returns `next_load_value` (default `nullptr_t{}` modeling first boot).
     Value call_load(const std::string& key);
     void call_delete(const std::string& key);

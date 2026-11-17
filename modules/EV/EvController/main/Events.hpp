@@ -25,7 +25,7 @@ namespace API_types = everest::lib::API::V1_0::types;
 // want the readable grouped `switch` recover the discriminant via
 // `kind_of(ev)`, which is the single place a `std::visit` over the variant
 // lives.
-enum class EventKind {
+enum class EventKind : std::uint8_t {
     // External commands
     Enable,
     Disable,

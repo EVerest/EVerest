@@ -2,6 +2,7 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 #pragma once
 
+#include <cstdint>
 #include <string>
 
 namespace module {
@@ -12,7 +13,7 @@ class FsmContext;
 // full threshold. Lifted into module:: (was in an anonymous namespace) so the
 // parsed policy can be cached on FsmContext at construction time and consumed
 // without re-parsing the config string on every tick.
-enum class OnBatteryFull {
+enum class OnBatteryFull : std::uint8_t {
     Clamp,
     IdleAtFull,
     StopSession,

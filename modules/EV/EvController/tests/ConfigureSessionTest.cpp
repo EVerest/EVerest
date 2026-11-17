@@ -40,7 +40,7 @@ TEST_CASE("configure_session interceptor latch/reject contract", "[evctl][config
         ctx->configure_session(api::SessionConfigParams{api::AcIecSessionParams{20.0f, false, std::nullopt}});
 
         REQUIRE(ctx->configured_session.has_value());
-        CHECK(api::mode_of(*ctx->configured_session) == api::ChargeMode::AcIec);
+        CHECK(api::mode_of(value_of(ctx->configured_session)) == api::ChargeMode::AcIec);
         auto ack = last_ack(fx.sink, fx.topics);
         CHECK(ack.command == "configure_session");
         CHECK(ack.status == api::CommandAckStatus::Accepted);
@@ -52,7 +52,7 @@ TEST_CASE("configure_session interceptor latch/reject contract", "[evctl][config
         ctx->configure_session(api::SessionConfigParams{api::DcIso2SessionParams{}});
 
         REQUIRE(ctx->configured_session.has_value());
-        CHECK(api::mode_of(*ctx->configured_session) == api::ChargeMode::DcIso2);
+        CHECK(api::mode_of(value_of(ctx->configured_session)) == api::ChargeMode::DcIso2);
         CHECK(last_ack(fx.sink, fx.topics).status == api::CommandAckStatus::Accepted);
     }
 
@@ -77,7 +77,7 @@ TEST_CASE("configure_session interceptor latch/reject contract", "[evctl][config
         CHECK(ack.command == "configure_session");
         CHECK(ack.status == api::CommandAckStatus::Rejected);
         REQUIRE(ack.reason.has_value());
-        CHECK(ack.reason->find("monotonic") != std::string::npos);
+        CHECK(value_of(ack.reason).find("monotonic") != std::string::npos);
     }
 
     // The spin above is reachable from a config, so the config is where it is refused: a looping
@@ -95,7 +95,7 @@ TEST_CASE("configure_session interceptor latch/reject contract", "[evctl][config
         auto ack = last_ack(fx.sink, fx.topics);
         CHECK(ack.status == api::CommandAckStatus::Rejected);
         REQUIRE(ack.reason.has_value());
-        CHECK(ack.reason->find("looping curve needs at least two points") != std::string::npos);
+        CHECK(value_of(ack.reason).find("looping curve needs at least two points") != std::string::npos);
     }
 
     SECTION("A looping curve with two points is accepted") {
@@ -129,7 +129,7 @@ TEST_CASE("configure_session interceptor latch/reject contract", "[evctl][config
         auto ack = last_ack(fx.sink, fx.topics);
         CHECK(ack.status == api::CommandAckStatus::Rejected);
         REQUIRE(ack.reason.has_value());
-        CHECK(ack.reason->find("ev_slac") != std::string::npos);
+        CHECK(value_of(ack.reason).find("ev_slac") != std::string::npos);
     }
 
     SECTION("ISO mode with no iso peer rejected") {
@@ -150,7 +150,7 @@ TEST_CASE("configure_session interceptor latch/reject contract", "[evctl][config
         ctx->configure_session(api::SessionConfigParams{api::DcIso2SessionParams{}});
 
         REQUIRE(ctx->configured_session.has_value());
-        CHECK(api::mode_of(*ctx->configured_session) == api::ChargeMode::DcIso2);
+        CHECK(api::mode_of(value_of(ctx->configured_session)) == api::ChargeMode::DcIso2);
     }
 
     SECTION("rejected reconfigure leaves the prior latched config intact") {
@@ -163,6 +163,6 @@ TEST_CASE("configure_session interceptor latch/reject contract", "[evctl][config
         ctx->configure_session(api::SessionConfigParams{bad});
 
         REQUIRE(ctx->configured_session.has_value());
-        CHECK(api::mode_of(*ctx->configured_session) == api::ChargeMode::AcIec);
+        CHECK(api::mode_of(value_of(ctx->configured_session)) == api::ChargeMode::AcIec);
     }
 }

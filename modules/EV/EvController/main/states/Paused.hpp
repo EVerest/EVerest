@@ -6,6 +6,7 @@
 #include "../StateBase.hpp"
 
 #include <chrono>
+#include <cstdint>
 
 namespace module {
 
@@ -33,7 +34,7 @@ private:
     bool m_charger_pause;
     // Charger pause only: the steps of EvManager's resume, which waits for the
     // paused session to end, settles 2 s, then waits for running PWM.
-    enum class ChargerResume {
+    enum class ChargerResume : std::uint8_t {
         AwaitSessionEnd,
         Settle,
         AwaitPwm,
@@ -42,7 +43,7 @@ private:
     // EV pause only: a resume and the BCB edges it carries. AwaitSessionEnd
     // defers it while the paused session tears down; AwaitX1 holds it while the
     // charger may still run its retain PWM.
-    enum class EvResume {
+    enum class EvResume : std::uint8_t {
         None,
         AwaitSessionEnd,
         AwaitX1,
@@ -52,7 +53,7 @@ private:
     // EV pause of a live ISO session: the charger answers SessionStop(Pause)
     // with its retain PWM, then X1. SessionLive until the session ends, then
     // Bound until X1 is seen or the bound counted from the session end passes.
-    enum class RetainPwm {
+    enum class RetainPwm : std::uint8_t {
         None,
         SessionLive,
         Bound,

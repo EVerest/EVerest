@@ -161,6 +161,7 @@ struct Session {
     std::optional<API_types::ev_controller::ChargingCurve> pending_curve;
 };
 
+// NOLINTNEXTLINE(clang-analyzer-optin.performance.Padding): fields grouped by meaning; padding irrelevant here
 struct SimVars {
     float battery_capacity_wh{60000};
     float battery_charge_wh{18000};
@@ -461,7 +462,7 @@ public:
 
     // External publish helpers.
     void publish_e2m_state(API_types::ev_controller::FsmState);
-    void publish_e2m_fault(API_types::ev_controller::FaultReport);
+    void publish_e2m_fault(const API_types::ev_controller::FaultReport&);
     void publish_e2m_iso_session_event(API_types::ev_controller::IsoSessionEvent);
     void publish_e2m_der_negotiated_functions(const ::types::iso15118::DerNegotiatedFunctions&);
     void publish_e2m_der_control(const ::types::iso15118::DerControlReceived&);

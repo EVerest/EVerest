@@ -35,7 +35,7 @@ TEST_CASE("CurvePlayer ChargingCurve handling", "[evctl][curve][curve]") {
     TestFixture fx;
     const auto ack_topic = fx.topics.everest_to_extern("command_ack");
 
-    auto make_curve = [](std::vector<int32_t> offsets, bool loop) {
+    auto make_curve = [](const std::vector<int32_t>& offsets, bool loop) {
         api::ChargingCurve c;
         c.loop = loop;
         for (auto o : offsets) {
@@ -105,7 +105,7 @@ TEST_CASE("CurvePlayer ChargingCurve handling", "[evctl][curve][curve]") {
         REQUIRE(it != fx.sink.records.end());
         auto ack = api::deserialize<api::CommandAck>(it->second);
         REQUIRE(ack.reason.has_value());
-        CHECK(*ack.reason == "curve points not monotonic");
+        CHECK(value_of(ack.reason) == "curve points not monotonic");
     }
 
     SECTION("ChargingCurve.loop=true rewinds curve steps after last point") {
@@ -399,9 +399,9 @@ TEST_CASE("CurvePlayer forward-progress guard", "[evctl][curve][loop-guard]") {
             REQUIRE(std::holds_alternative<api::AcIecSessionParams>(sp));
             const auto& p = std::get<api::AcIecSessionParams>(sp);
             REQUIRE(p.curve.has_value());
-            CHECK(p.curve->points.size() == 3);
-            CHECK(p.curve->points[0].current_a == 8.0f);
-            CHECK(p.curve->points[2].current_a == 10.0f);
+            CHECK(value_of(p.curve).points.size() == 3);
+            CHECK(value_of(p.curve).points[0].current_a == 8.0f);
+            CHECK(value_of(p.curve).points[2].current_a == 10.0f);
         }
     }
 
@@ -505,6 +505,7 @@ TEST_CASE("CurvePlayer fires steps in due-time order", "[evctl][curve][order]") 
     TestFixture fx;
     const auto kinds = [&] {
         std::vector<EventKind> out;
+        out.reserve(fx.timer.enqueued_events.size());
         for (const auto& ev : fx.timer.enqueued_events) {
             out.push_back(kind_of(ev));
         }
@@ -548,7 +549,9 @@ struct ControlledClock {
 } // namespace
 
 // The test target wraps libstdc++'s steady_clock::now; other tests and threads use real time.
+// NOLINTNEXTLINE(bugprone-reserved-identifier): name required by ld --wrap (tests/CMakeLists.txt)
 extern "C" std::chrono::steady_clock::time_point __real__ZNSt6chrono3_V212steady_clock3nowEv() noexcept;
+// NOLINTNEXTLINE(bugprone-reserved-identifier): name required by ld --wrap (tests/CMakeLists.txt)
 extern "C" std::chrono::steady_clock::time_point __wrap__ZNSt6chrono3_V212steady_clock3nowEv() noexcept {
     if (controlled_now) {
         return *controlled_now;

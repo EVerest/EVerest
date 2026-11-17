@@ -33,7 +33,7 @@ void Charging::enter() {
             sc.current_a = cp.current_a;
             sc.three_phases = cp.three_phases;
             sc.ramp_ms = cp.ramp_ms;
-            curve_steps.push_back({std::chrono::milliseconds(cp.t_offset_ms), Event{std::move(sc)}});
+            curve_steps.push_back({std::chrono::milliseconds(cp.t_offset_ms), Event{sc}});
         }
         // The dispatcher marks the loop itself, before dispatching anything.
         ctx.curve.append_steps(std::move(curve_steps), curve.loop, ctx);

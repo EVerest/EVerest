@@ -39,6 +39,8 @@ namespace module {
 class EvCtlRuntime;
 class FsmContext;
 } // namespace module
+// The generated Conf follows the manifest's key order.
+// NOLINTBEGIN(clang-analyzer-optin.performance.Padding)
 // ev@4bf81b14-a215-475c-a1d3-0a484ae48918:v1
 
 namespace module {
@@ -97,6 +99,7 @@ public:
     const Conf& config;
 
     // ev@1fce4c5e-0ab8-41bb-90f7-14277703d2ac:v1
+    // NOLINTEND(clang-analyzer-optin.performance.Padding)
     // insert your public definitions here
     ~EvController();
     std::optional<everest::lib::API::V1_0::types::ev_controller::SessionConfigParams> m_default_session;
