@@ -28,7 +28,11 @@ documentation compares the two ways in
 OCPPmulti serves OCPP 1.6 from the same device model. In 1.6 mode, a registered variable is reachable through
 GetConfiguration and ChangeConfiguration once ``Ocpp16KeyMappingsPath`` maps a configuration key onto it, see
 :ref:`One model for OCPP 1.6 and OCPP 2.x <handwritten_ocppmulti_one-model-for-ocpp16-and-ocpp2x>`. Only the
-``Actual`` attribute is reachable that way, and OCPP 1.6 has no monitors.
+``Actual`` attribute is reachable that way, and OCPP 1.6 has no monitors. The supported feature profiles and
+measurands are derived once, after the startup registrations, so a registered ``SupportedFeatureProfiles`` or
+measurands variable counts. A profile that OCPPmulti adds when its configuration is present, CostAndPrice or PnC,
+is added for any registered value of that configuration, ``false`` included. Registrations after startup do not
+change the profiles or measurands.
 
 The rules in this guide come from libocpp's runtime registry. The details are in
 ``lib/everest/ocpp/doc/v2/ocpp_201_device_model_initialization.md``.
@@ -241,7 +245,9 @@ Keep these rules in mind when choosing names:
 - An attribute without ``mutability`` cannot be written.
 - The variables that the OCPP service writes from its own state are rejected with ``ReservedVariable``, for example
   ``AuthCacheCtrlr.Storage``, the ``AvailabilityState`` of an EVSE and every variable of a ``NetworkConfiguration``
-  slot.
+  slot. The required ones among them must be defined with a value in the component config:
+  ``OCPPCommCtrlr.MessageTimeout``, ``SecurityCtrlr.Identity`` and ``SecurityCtrlr.SecurityProfile``, and
+  ``LocalAuthListCtrlr.Entries`` when ``LocalAuthListCtrlr.Available`` is true.
 
 Check the result
 ================

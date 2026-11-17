@@ -1217,7 +1217,7 @@ std::string ChargePointConfigurationDeviceModel::calculateSupportedMeasurands() 
 
 ChargePointConfigurationDeviceModel::ChargePointConfigurationDeviceModel(
     const std::string_view& ocpp_main_path, std::unique_ptr<v2::DeviceModelVariablesInterface> device_model_interface,
-    v2::Ocpp16KeyMappings custom_key_mappings) :
+    v2::Ocpp16KeyMappings custom_key_mappings, Load load_mode) :
     ChargePointConfigurationBase(ocpp_main_path),
     storage(std::move(device_model_interface)),
     resolver(custom_key_mappings) {
@@ -1229,6 +1229,12 @@ ChargePointConfigurationDeviceModel::ChargePointConfigurationDeviceModel(
                    << v2::describe_mapping_target(builtin->first, builtin->second);
     }
 
+    if (load_mode == Load::OnConstruction) {
+        load();
+    }
+}
+
+void ChargePointConfigurationDeviceModel::load() {
     const auto profiles = get_optional<std::string>(*storage, resolver, keys::valid_keys::SupportedFeatureProfiles);
     const auto measurands = calculateSupportedMeasurands();
     ProfilesSet initial;

@@ -9,6 +9,7 @@
 
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
 #include <functional>
 #include <map>
 #include <memory>
@@ -22,6 +23,7 @@
 #include <everest/ocpp_module_common/device_model/definitions.hpp>
 #include <everest/ocpp_module_common/device_model/everest_device_model.hpp>
 #include <everest/ocpp_module_common/device_model/external_owners.hpp>
+#include <nlohmann/json.hpp>
 #include <ocpp/v2/comparators.hpp>
 #include <ocpp/v2/ctrlr_component_variables.hpp>
 #include <ocpp/v2/device_model_storage_interface.hpp>
@@ -221,39 +223,50 @@ TEST_F(ChargePointConfigFactoryV16Test, ConfigurationViewsAreRegistered) {
     EXPECT_EQ(config_service.handlers, 0);
 }
 
-TEST_F(ChargePointConfigFactoryV16Test, ExternalOwnersAreRegistered) {
-    namespace dm_types = types::ocpp_device_model;
-    class Connection : public ocpp_module_common::device_model::DeviceModelOwnerConnection {
-    public:
-        std::string module_id() const override {
-            return "device_model_api";
-        }
-        void set_registration_result(const dm_types::RegistrationResult& result) override {
-            this->results.push_back(result);
-        }
-        types::ocpp::SetVariableStatusEnumType set_value(const dm_types::WriteRequest& /*request*/) override {
-            return types::ocpp::SetVariableStatusEnumType::Accepted;
-        }
-        std::vector<dm_types::RegistrationResult> results;
-    };
-    const auto connection = std::make_shared<Connection>();
-    ocpp_module_common::device_model::ExternalOwners owners({connection});
+namespace dm_types = types::ocpp_device_model;
 
+class OwnerConnection : public ocpp_module_common::device_model::DeviceModelOwnerConnection {
+public:
+    std::string module_id() const override {
+        return "device_model_api";
+    }
+    void set_registration_result(const dm_types::RegistrationResult& result) override {
+        this->results.push_back(result);
+    }
+    types::ocpp::SetVariableStatusEnumType set_value(const dm_types::WriteRequest& /*request*/) override {
+        return types::ocpp::SetVariableStatusEnumType::Accepted;
+    }
+    std::vector<dm_types::RegistrationResult> results;
+};
+
+/// \brief Registrations of one owner with a single variable of \p component_name that has an Actual \p value
+dm_types::Registrations make_registrations(const std::string& component_name, const types::ocpp::Variable& variable,
+                                           dm_types::DataEnum data_type, const std::string& value) {
     dm_types::VariableAttribute attribute;
-    attribute.value = "40";
-    dm_types::RegisteredVariable variable;
-    variable.variable.name = "FanSpeed";
-    variable.characteristics.data_type = dm_types::DataEnum::integer;
-    variable.characteristics.supports_monitoring = true;
-    variable.attributes.push_back(attribute);
+    attribute.value = value;
+    dm_types::RegisteredVariable registered_variable;
+    registered_variable.variable = variable;
+    registered_variable.characteristics.data_type = data_type;
+    registered_variable.characteristics.supports_monitoring = true;
+    registered_variable.attributes.push_back(attribute);
     dm_types::RegisteredComponent component;
-    component.component.name = "CoolingCtrlr";
-    component.variables.push_back(variable);
+    component.component.name = component_name;
+    component.variables.push_back(registered_variable);
     dm_types::Registration registration;
     registration.components.push_back(component);
     dm_types::Registrations registrations;
     registrations.registrations.push_back(registration);
-    owners.set_startup_registrations(0, registrations);
+    return registrations;
+}
+
+TEST_F(ChargePointConfigFactoryV16Test, ExternalOwnersAreRegistered) {
+    const auto connection = std::make_shared<OwnerConnection>();
+    ocpp_module_common::device_model::ExternalOwners owners({connection});
+
+    types::ocpp::Variable fan_speed;
+    fan_speed.name = "FanSpeed";
+    owners.set_startup_registrations(0,
+                                     make_registrations("CoolingCtrlr", fan_speed, dm_types::DataEnum::integer, "40"));
 
     auto result = module::config_factory_v16::create_charge_point_configuration(work_dir, make_params(), n_evse, {},
                                                                                 nullptr, nullptr, &owners);
@@ -274,6 +287,35 @@ TEST_F(ChargePointConfigFactoryV16Test, ExternalOwnersAreRegistered) {
                   make_component("CoolingCtrlr"), make_variable("FanSpeed"), ocpp::v2::AttributeEnum::Actual, value,
                   false, ocpp::v2::UnsetValue::NotSupported),
               ocpp::v2::GetVariableStatusEnum::UnknownComponent);
+}
+
+// The supported feature profiles depend on values that an external owner may provide
+TEST_F(ChargePointConfigFactoryV16Test, FeatureProfilesSeeValuesOfExternalOwners) {
+    const auto component_config_dir = work_dir / "component_config";
+    fs::copy(LIBOCPP_COMPONENT_CONFIG_DIR, component_config_dir, fs::copy_options::recursive);
+    const auto customization_ctrlr_path = component_config_dir / "standardized" / "CustomizationCtrlr.json";
+    auto customization_ctrlr = nlohmann::json::parse(std::ifstream(customization_ctrlr_path));
+    customization_ctrlr.at("properties").erase("CustomImplementationCaliforniaPricingEnabled");
+    std::ofstream(customization_ctrlr_path) << customization_ctrlr.dump(2);
+
+    const auto connection = std::make_shared<OwnerConnection>();
+    ocpp_module_common::device_model::ExternalOwners owners({connection});
+    types::ocpp::Variable cost_and_price_enabled;
+    cost_and_price_enabled.name = "CustomImplementationEnabled";
+    cost_and_price_enabled.instance = "org.openchargealliance.costmsg";
+    owners.set_startup_registrations(
+        0, make_registrations("CustomizationCtrlr", cost_and_price_enabled, dm_types::DataEnum::boolean, "true"));
+
+    auto params = make_params();
+    params.DeviceModelConfigPath = component_config_dir.string();
+    auto result = module::config_factory_v16::create_charge_point_configuration(work_dir, params, n_evse, {}, nullptr,
+                                                                                nullptr, &owners);
+    ASSERT_EQ(connection->results.size(), 1u);
+    ASSERT_EQ(connection->results.front().status, dm_types::RegistrationStatus::Accepted);
+
+    EXPECT_EQ(
+        result.configuration->getSupportedFeatureProfilesSet().count(ocpp::v16::SupportedFeatureProfiles::CostAndPrice),
+        1u);
 }
 
 // The configuration views are stopped before the device model that holds them is destroyed

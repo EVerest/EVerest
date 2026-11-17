@@ -108,11 +108,21 @@ protected:
     std::string calculateSupportedMeasurands();
 
 public:
+    /// \brief When the supported feature profiles and measurands are read from the device model
+    enum class Load {
+        OnConstruction,
+        Deferred, ///< by load(), so that values registered with the device model in between are included
+    };
+
     explicit ChargePointConfigurationDeviceModel(
         const std::string_view& ocpp_main_path,
         std::unique_ptr<v2::DeviceModelVariablesInterface> device_model_interface,
-        ocpp::v2::Ocpp16KeyMappings custom_key_mappings = {});
+        ocpp::v2::Ocpp16KeyMappings custom_key_mappings = {}, Load load_mode = Load::OnConstruction);
     virtual ~ChargePointConfigurationDeviceModel() = default;
+
+    /// \brief Reads the supported feature profiles and measurands from the device model, replacing those read before.
+    /// Call it before any other member when constructed with Load::Deferred.
+    void load();
 
     /// \brief The device model backing this configuration.
     v2::DeviceModelVariablesInterface& get_device_model() {

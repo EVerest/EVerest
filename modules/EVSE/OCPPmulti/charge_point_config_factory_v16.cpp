@@ -205,9 +205,11 @@ config_factory_result_t create_device_model_charge_point_configuration(
 
     // Register only once the configuration owns the device model, so the registrations end before it is destroyed
     auto& registry = *device_model;
-    // Pass a copy so the returned mappings match the ones the configuration runs with.
+    // Pass a copy so the returned mappings match the ones the configuration runs with. Loading is deferred so that the
+    // supported feature profiles and measurands include registered values.
     auto configuration = std::make_unique<ocpp::v16::ChargePointConfigurationDeviceModel>(
-        ocpp_share_path.string(), std::move(device_model), custom_mappings);
+        ocpp_share_path.string(), std::move(device_model), custom_mappings,
+        ocpp::v16::ChargePointConfigurationDeviceModel::Load::Deferred);
 
     ocpp_module_common::device_model::DeviceModelRegistrations registrations;
     if (everest_device_model != nullptr) {
@@ -223,6 +225,7 @@ config_factory_result_t create_device_model_charge_point_configuration(
     registry.remove_monitors_and_values_of_absent_variables();
     ocpp_module_common::device_model::check_device_model_conflicts(registrations.results(),
                                                                    fail_on_device_model_conflicts);
+    configuration->load();
     configuration->check_integrity(n_evse);
 
     return {std::move(configuration), std::move(custom_mappings), std::move(registrations)};
