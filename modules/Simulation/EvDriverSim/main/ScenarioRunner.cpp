@@ -2,6 +2,7 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 #include "ScenarioRunner.hpp"
 #include <array>
+#include <cstdint>
 #include <everest_api_types/ev_controller/codec.hpp>
 #include <everest_api_types/ev_driver_sim/codec.hpp>
 #include <utility>
@@ -18,7 +19,7 @@ Command make_plug_command() {
     return {"plug", "null"};
 }
 
-Command make_configure_session_command(api::SessionConfigParams params) {
+Command make_configure_session_command(const api::SessionConfigParams& params) {
     return {"configure_session", api::serialize(params)};
 }
 
@@ -38,7 +39,7 @@ Command make_unplug_command() {
     return {"unplug", "null"};
 }
 
-Command make_inject_fault_command(driver::InjectFaultParams params) {
+Command make_inject_fault_command(const driver::InjectFaultParams& params) {
     return {"inject_fault", driver::serialize(params)};
 }
 
@@ -47,7 +48,7 @@ Command make_clear_fault_command() {
 }
 
 // Phase tag for a timing override slot. Index into TimingResolver::consumed.
-enum class Phase {
+enum class Phase : std::uint8_t {
     PauseAt,
     ResumeAt,
     StopAfter,
@@ -163,7 +164,7 @@ std::vector<ScenarioStep> build_scenario_steps(driver::ScenarioName name,
         api::AcIecSessionParams p;
         p.charging_current_a = 16.0f;
         p.three_phases = true;
-        steps.push_back({std::chrono::milliseconds(0), make_configure_session_command(std::move(p))});
+        steps.push_back({std::chrono::milliseconds(0), make_configure_session_command(p)});
         steps.push_back({std::chrono::milliseconds(0), make_plug_command()});
         steps.push_back({r.at(Phase::StopAfter, 30000), make_stop_session_command()});
         break;
@@ -172,7 +173,7 @@ std::vector<ScenarioStep> build_scenario_steps(driver::ScenarioName name,
         api::AcIso2SessionParams p;
         p.charging_current_a = 16.0f;
         p.three_phases = true;
-        steps.push_back({std::chrono::milliseconds(0), make_configure_session_command(std::move(p))});
+        steps.push_back({std::chrono::milliseconds(0), make_configure_session_command(p)});
         steps.push_back({std::chrono::milliseconds(0), make_plug_command()});
         steps.push_back({r.at(Phase::StopAfter, 60000), make_stop_session_command()});
         break;
@@ -186,7 +187,7 @@ std::vector<ScenarioStep> build_scenario_steps(driver::ScenarioName name,
         api::AcIecSessionParams p;
         p.charging_current_a = 16.0f;
         p.three_phases = true;
-        steps.push_back({std::chrono::milliseconds(0), make_configure_session_command(std::move(p))});
+        steps.push_back({std::chrono::milliseconds(0), make_configure_session_command(p)});
         steps.push_back({std::chrono::milliseconds(0), make_plug_command()});
         steps.push_back({r.at(Phase::PauseAt, 30000), make_pause_session_command()});
         steps.push_back({r.at(Phase::ResumeAt, 60000), make_resume_session_command()});
@@ -207,7 +208,7 @@ std::vector<ScenarioStep> build_scenario_steps(driver::ScenarioName name,
         api::AcIsoD20SessionParams p;
         p.charging_current_a = 16.0f;
         p.three_phases = true;
-        steps.push_back({std::chrono::milliseconds(0), make_configure_session_command(std::move(p))});
+        steps.push_back({std::chrono::milliseconds(0), make_configure_session_command(p)});
         steps.push_back({std::chrono::milliseconds(0), make_plug_command()});
         steps.push_back({r.at(Phase::StopAfter, 120000), make_stop_session_command()});
         steps.push_back({r.at(Phase::UnplugAfter, 125000), make_unplug_command()});
@@ -228,7 +229,7 @@ std::vector<ScenarioStep> build_scenario_steps(driver::ScenarioName name,
         bpt.discharge_target_current = 30.0f;
         bpt.discharge_minimal_soc = 20.0f;
         p.bpt = bpt;
-        steps.push_back({std::chrono::milliseconds(0), make_configure_session_command(std::move(p))});
+        steps.push_back({std::chrono::milliseconds(0), make_configure_session_command(p)});
         steps.push_back({std::chrono::milliseconds(0), make_plug_command()});
         steps.push_back({r.at(Phase::StopAfter, 180000), make_stop_session_command()});
         steps.push_back({r.at(Phase::UnplugAfter, 185000), make_unplug_command()});
@@ -237,7 +238,7 @@ std::vector<ScenarioStep> build_scenario_steps(driver::ScenarioName name,
     case driver::ScenarioName::DcIsoMcs: {
         api::DcIsoD20SessionParams p;
         p.mcs_enabled = true;
-        steps.push_back({std::chrono::milliseconds(0), make_configure_session_command(std::move(p))});
+        steps.push_back({std::chrono::milliseconds(0), make_configure_session_command(p)});
         steps.push_back({std::chrono::milliseconds(0), make_plug_command()});
         steps.push_back({r.at(Phase::StopAfter, 180000), make_stop_session_command()});
         steps.push_back({r.at(Phase::UnplugAfter, 185000), make_unplug_command()});
@@ -274,7 +275,7 @@ std::vector<ScenarioStep> build_scenario_steps(driver::ScenarioName name,
             curve.points.push_back(cp);
         }
         p.curve = std::move(curve);
-        steps.push_back({std::chrono::milliseconds(0), make_configure_session_command(std::move(p))});
+        steps.push_back({std::chrono::milliseconds(0), make_configure_session_command(p)});
         steps.push_back({std::chrono::milliseconds(0), make_plug_command()});
         steps.push_back({r.at(Phase::StopAfter, 60000), make_stop_session_command()});
         steps.push_back({r.at(Phase::UnplugAfter, 65000), make_unplug_command()});
@@ -316,7 +317,7 @@ std::vector<ScenarioStep> build_scenario_steps(driver::ScenarioName name,
             curve.points.push_back(cp);
         }
         p.curve = std::move(curve);
-        steps.push_back({std::chrono::milliseconds(0), make_configure_session_command(std::move(p))});
+        steps.push_back({std::chrono::milliseconds(0), make_configure_session_command(p)});
         steps.push_back({std::chrono::milliseconds(0), make_plug_command()});
         steps.push_back({r.at(Phase::StopAfter, 120000), make_stop_session_command()});
         steps.push_back({r.at(Phase::UnplugAfter, 125000), make_unplug_command()});
@@ -326,11 +327,11 @@ std::vector<ScenarioStep> build_scenario_steps(driver::ScenarioName name,
         api::AcIecSessionParams p;
         p.charging_current_a = 32.0f;
         p.three_phases = true;
-        steps.push_back({std::chrono::milliseconds(0), make_configure_session_command(std::move(p))});
+        steps.push_back({std::chrono::milliseconds(0), make_configure_session_command(p)});
         steps.push_back({std::chrono::milliseconds(0), make_plug_command()});
         driver::InjectFaultParams fault;
         fault.type = driver::WorldFault::DiodeFail;
-        steps.push_back({r.at(Phase::FaultAt, 15000), make_inject_fault_command(std::move(fault))});
+        steps.push_back({r.at(Phase::FaultAt, 15000), make_inject_fault_command(fault)});
         steps.push_back({r.at(Phase::ClearFaultAt, 20000), make_clear_fault_command()});
         break;
     }
@@ -419,7 +420,7 @@ void ScenarioRunner::configuration_ack(const std::optional<std::string>& rejecti
     if (!m_pending_configuration) {
         return;
     }
-    if (now >= *next_deadline()) {
+    if (const auto deadline = next_deadline(); deadline && now >= *deadline) {
         on_timer(actions, now);
         return;
     }
@@ -470,12 +471,12 @@ void ScenarioRunner::reject(const std::string& reason, const Actions& actions) {
 
 void ScenarioRunner::on_timer(const Actions& actions, Clock::time_point now) {
     if (m_pending_configuration) {
-        if (now >= *next_deadline()) {
+        if (const auto deadline = next_deadline(); deadline && now >= *deadline) {
             reject("timed out waiting for EvController configure_session acknowledgement", actions);
         }
         return;
     }
-    while (active() && *next_deadline() <= now) {
+    for (auto deadline = next_deadline(); deadline && *deadline <= now; deadline = next_deadline()) {
         const auto& command = m_steps[m_next].command;
         if (const auto rejection = actions.execute(command.name, command.payload)) {
             reject(*rejection, actions);

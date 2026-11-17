@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
 #include "EvDriverSim.hpp"
+#include "ValueOf.hpp"
 #include "board_support/ev_board_supportImpl.hpp"
 #include <ModuleAdapterStub.hpp>
 #include <boost/log/core.hpp>
@@ -15,6 +16,7 @@
 
 namespace module {
 static EvDriverSim* test_module;
+// NOLINTNEXTLINE(performance-unnecessary-value-param): signature fixed by ev-cli's generated ld-ev.hpp
 void LdEverest::init(ModuleConfigs, const ModuleInfo&) {
     test_module->init();
 }
@@ -25,6 +27,7 @@ void LdEverest::ready() {
 
 namespace {
 namespace api = everest::lib::API::V1_0::types::ev_driver_sim;
+using module::test::value_of;
 using types::board_support_common::Event;
 
 struct Observations {
@@ -170,7 +173,7 @@ struct Fixture {
         }
         return result;
     }
-    void car_command(const std::string& name, Parameters params) {
+    void car_command(const std::string& name, const Parameters& params) {
         const auto it = std::find_if(adapter.registered_commands.begin(), adapter.registered_commands.end(),
                                      [&](const auto& cmd) { return cmd.cmd_name == name; });
         REQUIRE(it != adapter.registered_commands.end());
@@ -579,7 +582,7 @@ TEST_CASE("EvDriverSim refuses scenarios until the controller heartbeat", "[evdr
     CHECK(ack.command == "run_scenario");
     CHECK(ack.status == api::CommandAckStatus::Rejected);
     REQUIRE(ack.message.has_value());
-    CHECK(ack.message->find("heartbeat") != std::string::npos);
+    CHECK(value_of(ack.message).find("heartbeat") != std::string::npos);
     const auto out = f.observations();
     const auto event = std::find_if(out.mqtt.begin(), out.mqtt.end(),
                                     [&](const auto& msg) { return msg.first == f.base + "e2m/scenario_event"; });
@@ -867,10 +870,10 @@ TEST_CASE("EvDriverSim contains configuration callback failures and marks uncert
     REQUIRE(events.size() == 1);
     CHECK(events.front().kind == api::ScenarioEventKind::Rejected);
     REQUIRE(events.front().message);
-    CHECK(events.front().message->find("plug") != std::string::npos);
-    CHECK(events.front().message->find("test_car") != std::string::npos);
-    CHECK(events.front().message->find("injected") != std::string::npos);
-    CHECK(events.front().message->find("world state may be partially applied") != std::string::npos);
+    CHECK(value_of(events.front().message).find("plug") != std::string::npos);
+    CHECK(value_of(events.front().message).find("test_car") != std::string::npos);
+    CHECK(value_of(events.front().message).find("injected") != std::string::npos);
+    CHECK(value_of(events.front().message).find("world state may be partially applied") != std::string::npos);
     f.command("unplug");
     CHECK(f.last_message<api::WorldState>("world_state").pilot == api::PilotState::Withheld);
     f.command("run_scenario", R"({"name":"DcIsoBasic"})");
@@ -909,11 +912,11 @@ TEST_CASE("EvDriverSim reports timed action exceptions with step and car context
     REQUIRE(events.size() == 4);
     CHECK(events.back().kind == api::ScenarioEventKind::Rejected);
     REQUIRE(events.back().message);
-    CHECK(events.back().message->find("step " + step) != std::string::npos);
-    CHECK(events.back().message->find("test_car") != std::string::npos);
-    CHECK(events.back().message->find("injected") != std::string::npos);
+    CHECK(value_of(events.back().message).find("step " + step) != std::string::npos);
+    CHECK(value_of(events.back().message).find("test_car") != std::string::npos);
+    CHECK(value_of(events.back().message).find("injected") != std::string::npos);
     if (step == "inject_fault") {
-        CHECK(events.back().message->find("world state may be partially applied") != std::string::npos);
+        CHECK(value_of(events.back().message).find("world state may be partially applied") != std::string::npos);
     }
     const auto failed = f.observations();
     CHECK_FALSE(f.wait_for([&](const auto& out) { return out.mqtt.size() != failed.mqtt.size(); },
@@ -942,8 +945,8 @@ TEST_CASE("EvDriverSim cancels a scenario whose configuration publish throws",
     REQUIRE(events.size() == 1);
     CHECK(events.front().kind == api::ScenarioEventKind::Rejected);
     REQUIRE(events.front().message);
-    CHECK(events.front().message->find("configure_session") != std::string::npos);
-    CHECK(events.front().message->find("test_car") != std::string::npos);
+    CHECK(value_of(events.front().message).find("configure_session") != std::string::npos);
+    CHECK(value_of(events.front().message).find("test_car") != std::string::npos);
     f.car_ack();
     CHECK(f.last_message<api::WorldState>("world_state").pilot == api::PilotState::Withheld);
     CHECK(f.scenario_events().size() == 1);

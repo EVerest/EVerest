@@ -3,6 +3,7 @@
 #include "../main/ScenarioRunner.hpp"
 #include "../main/PilotGate.hpp"
 #include "../main/WorldFaults.hpp"
+#include "ValueOf.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 #include <everest_api_types/ev_driver_sim/codec.hpp>
@@ -11,6 +12,7 @@
 
 namespace {
 namespace api = everest::lib::API::V1_0::types::ev_driver_sim;
+using module::test::value_of;
 using namespace std::chrono_literals;
 using Runner = module::ScenarioRunner;
 
@@ -237,6 +239,7 @@ TEST_CASE("EvDriverSim scenario gates preserve the running preset", "[evdriver][
 
 TEST_CASE("EvDriverSim rejects unknown scenario names and malformed payloads", "[evdriver][scenario]") {
     Fixture f;
+    // NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange): deliberately invalid value to test rejection
     const auto invalid = static_cast<api::ScenarioName>(9999);
     CHECK(f.runner.start({invalid, {}}, true, f.pilot.passed(), f.actions, f.epoch) == "unknown scenario name");
     CHECK(f.commands.empty());
@@ -264,23 +267,23 @@ TEST_CASE("ScenarioTimingOverrides codec preserves field values across round-tri
         api::RunScenarioParams params_full{};
         REQUIRE(api::adl_deserialize(with_all_timing, params_full));
         REQUIRE(params_full.timing.has_value());
-        CHECK(params_full.timing->pause_at_ms == 1000);
-        CHECK(params_full.timing->resume_at_ms == 3000);
-        CHECK(params_full.timing->stop_after_ms == 5000);
-        CHECK(params_full.timing->unplug_after_ms == 6000);
-        CHECK(params_full.timing->fault_at_ms == 2000);
-        CHECK(params_full.timing->clear_fault_at_ms == 4000);
+        CHECK(value_of(params_full.timing).pause_at_ms == 1000);
+        CHECK(value_of(params_full.timing).resume_at_ms == 3000);
+        CHECK(value_of(params_full.timing).stop_after_ms == 5000);
+        CHECK(value_of(params_full.timing).unplug_after_ms == 6000);
+        CHECK(value_of(params_full.timing).fault_at_ms == 2000);
+        CHECK(value_of(params_full.timing).clear_fault_at_ms == 4000);
 
         // Round-trip serialize -> deserialize preserves set and unset fields.
         const std::string serialized = api::serialize(params_full);
         auto params_rt = api::deserialize<api::RunScenarioParams>(serialized);
         REQUIRE(params_rt.timing.has_value());
-        CHECK(params_rt.timing->pause_at_ms == 1000);
-        CHECK(params_rt.timing->resume_at_ms == 3000);
-        CHECK(params_rt.timing->stop_after_ms == 5000);
-        CHECK(params_rt.timing->unplug_after_ms == 6000);
-        CHECK(params_rt.timing->fault_at_ms == 2000);
-        CHECK(params_rt.timing->clear_fault_at_ms == 4000);
+        CHECK(value_of(params_rt.timing).pause_at_ms == 1000);
+        CHECK(value_of(params_rt.timing).resume_at_ms == 3000);
+        CHECK(value_of(params_rt.timing).stop_after_ms == 5000);
+        CHECK(value_of(params_rt.timing).unplug_after_ms == 6000);
+        CHECK(value_of(params_rt.timing).fault_at_ms == 2000);
+        CHECK(value_of(params_rt.timing).clear_fault_at_ms == 4000);
     }
 
     SECTION("absent timing decodes to nullopt") {
@@ -294,8 +297,8 @@ TEST_CASE("ScenarioTimingOverrides codec preserves field values across round-tri
         api::RunScenarioParams params_partial{};
         REQUIRE(api::adl_deserialize(with_partial_timing, params_partial));
         REQUIRE(params_partial.timing.has_value());
-        CHECK_FALSE(params_partial.timing->pause_at_ms.has_value());
-        CHECK(params_partial.timing->stop_after_ms == 8000);
+        CHECK_FALSE(value_of(params_partial.timing).pause_at_ms.has_value());
+        CHECK(value_of(params_partial.timing).stop_after_ms == 8000);
     }
 
     SECTION("ScenarioTimingOverrides round-trips in isolation") {
