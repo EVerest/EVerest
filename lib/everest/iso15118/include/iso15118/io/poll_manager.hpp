@@ -18,6 +18,7 @@ struct PollSet {
 class PollManager {
 public:
     PollManager();
+    ~PollManager();
 
     void register_fd(int fd, PollCallback& poll_callback);
     void unregister_fd(int fd);
