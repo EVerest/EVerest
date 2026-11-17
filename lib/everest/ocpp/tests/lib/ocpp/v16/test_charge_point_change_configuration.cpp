@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
 
-/// \file test_charge_point_change_configuration.cpp
-/// \brief ReadOnly configuration keys: rejected for a ChangeConfiguration.req, writable by local callers.
+/// \brief ChangeConfiguration.req: ReadOnly keys are rejected but writable by local callers, AuthEnabled is applied.
 
 #include <algorithm>
 #include <chrono>
@@ -46,6 +45,8 @@ namespace {
 constexpr auto WAIT_TIMEOUT = std::chrono::seconds(10);
 const std::string READ_ONLY_KEY = "CentralSystemURI";
 const std::string NEW_URI = "ws://localhost:9000";
+const std::string SUPPORTED_FEATURE_PROFILES_WITH_PNC =
+    "Core,FirmwareManagement,RemoteTrigger,Reservation,LocalAuthListManagement,SmartCharging,PnC";
 } // namespace
 
 class ChargePointChangeConfigurationTest : public ::testing::Test {
@@ -110,6 +111,32 @@ protected:
         EXPECT_TRUE(this->cv.wait_for(lock, WAIT_TIMEOUT, [this]() { return this->boot_accepted; }));
     }
 
+    /// \brief Starts a transaction for \p id_tag, which the CSMS answers with Invalid, and waits until its
+    /// StartTransaction.conf is handled
+    void start_transaction_rejected_by_csms(const std::string& id_tag = "FREESERVICE") {
+        this->charge_point->register_pause_charging_callback([this](std::int32_t) {
+            const std::lock_guard<std::mutex> lock(this->mtx);
+            this->charging_paused = true;
+            return true;
+        });
+        this->charge_point->register_stop_transaction_callback([this](std::int32_t, Reason) {
+            const std::lock_guard<std::mutex> lock(this->mtx);
+            this->transaction_stopped = true;
+            return true;
+        });
+        this->charge_point->register_transaction_updated_callback(
+            [this](const std::string&, const StartTransactionRequest&, const StartTransactionResponse&) {
+                const std::lock_guard<std::mutex> lock(this->mtx);
+                this->start_transaction_handled = true;
+                this->cv.notify_all();
+            });
+        this->charge_point->on_session_started(1, "session-1", SessionStartedReason::EVConnected, std::nullopt);
+        this->charge_point->on_transaction_started(1, "session-1", id_tag, 0, std::nullopt, ocpp::DateTime(),
+                                                   std::nullopt);
+        std::unique_lock<std::mutex> lock(this->mtx);
+        EXPECT_TRUE(this->cv.wait_for(lock, WAIT_TIMEOUT, [this]() { return this->start_transaction_handled; }));
+    }
+
     /// \brief Send a ChangeConfiguration.req as the CSMS and return the status of its response
     std::optional<std::string> change_configuration(const std::string& key, const std::string& value) {
         const std::string unique_id = "change-configuration-1";
@@ -137,6 +164,9 @@ protected:
         }
         {
             const std::lock_guard<std::mutex> lock(this->mtx);
+            if (frame.at(0) == 2) {
+                this->sent_actions.push_back(frame.at(2).get<std::string>());
+            }
             if (frame.at(0) == 3) {
                 this->call_results.push_back(frame);
             } else if (frame.at(0) == 2 and frame.at(2) == "BootNotification") {
@@ -144,6 +174,12 @@ protected:
                     {3,
                      frame.at(1),
                      {{"currentTime", ocpp::DateTime().to_rfc3339()}, {"interval", 86400}, {"status", "Accepted"}}}));
+            } else if (frame.at(0) == 2 and frame.at(2) == "StartTransaction") {
+                this->incoming.push_back(nlohmann::json::array(
+                    {3, frame.at(1), {{"idTagInfo", {{"status", "Invalid"}}}, {"transactionId", 1}}}));
+            } else if (frame.at(0) == 2 and frame.at(2) == "Authorize") {
+                this->incoming.push_back(
+                    nlohmann::json::array({3, frame.at(1), {{"idTagInfo", {{"status", "Accepted"}}}}}));
             } else if (frame.at(0) == 2) {
                 this->incoming.push_back(nlohmann::json::array({3, frame.at(1), nlohmann::json::object()}));
             }
@@ -190,6 +226,10 @@ protected:
     std::condition_variable cv;
     std::deque<nlohmann::json> incoming;
     std::vector<nlohmann::json> call_results;
+    std::vector<std::string> sent_actions;
+    bool charging_paused{false};
+    bool transaction_stopped{false};
+    bool start_transaction_handled{false};
     bool websocket_connected{false};
     bool boot_accepted{false};
     bool stop_responder{false};
@@ -266,6 +306,25 @@ TEST_F(ChargePointChangeConfigurationDeviceModelTest, LocalCallerCanChangeReadOn
 
     EXPECT_EQ(this->charge_point->set_configuration_key("ChargePointModel", "Other"), ConfigurationStatus::Accepted);
     EXPECT_EQ(this->configuration->getChargePointModel().get(), "Other");
+}
+
+TEST_F(ChargePointChangeConfigurationDeviceModelTest, CsmsCanChangeAuthEnabled) {
+    this->device_model->set("Internal", "AuthEnabled", "true");
+    make_booted_charge_point();
+    ASSERT_TRUE(this->configuration->getAuthEnabled());
+
+    EXPECT_EQ(change_configuration("AuthEnabled", "false"), "Accepted");
+    EXPECT_FALSE(this->configuration->getAuthEnabled());
+    EXPECT_EQ(this->device_model->get("AuthCtrlr", "Enabled"), "false");
+}
+
+TEST_F(ChargePointChangeConfigurationDeviceModelTest, AuthDisabledAcceptsIdTokenWithoutAuthorize) {
+    this->device_model->set("Internal", "AuthEnabled", "false");
+    make_booted_charge_point();
+
+    EXPECT_EQ(this->charge_point->authorize_id_token("UNKNOWN").id_tag_info.status, AuthorizationStatus::Accepted);
+    const std::lock_guard<std::mutex> lock(this->mtx);
+    EXPECT_THAT(this->sent_actions, ::testing::Not(::testing::Contains("Authorize")));
 }
 
 namespace {
@@ -360,6 +419,69 @@ TEST_F(ChargePointChangeConfigurationValuelessCustomKeyTest, LocalCallerCanSetKe
 
     EXPECT_EQ(this->charge_point->set_configuration_key(VALUELESS_KEY, "first"), ConfigurationStatus::Accepted);
     EXPECT_EQ(this->configuration->get(VALUELESS_KEY)->value.value().get(), "first");
+}
+
+TEST_F(ChargePointChangeConfigurationDeviceModelTest, AuthEnabledSendsAuthorize) {
+    this->device_model->set("Internal", "AuthEnabled", "true");
+    make_booted_charge_point();
+
+    EXPECT_EQ(this->charge_point->authorize_id_token("UNKNOWN").id_tag_info.status, AuthorizationStatus::Accepted);
+    const std::lock_guard<std::mutex> lock(this->mtx);
+    EXPECT_THAT(this->sent_actions, ::testing::Contains("Authorize"));
+}
+
+TEST_F(ChargePointChangeConfigurationDeviceModelTest, AuthDisabledAcceptsPncWithoutDataTransfer) {
+    this->device_model->set("Internal", "AuthEnabled", "false");
+    this->device_model->set("Core", "SupportedFeatureProfiles", SUPPORTED_FEATURE_PROFILES_WITH_PNC);
+    make_booted_charge_point();
+
+    const auto response = this->charge_point->data_transfer_pnc_authorize("EMAID", std::nullopt, std::nullopt);
+    EXPECT_EQ(response.idTokenInfo.status, ocpp::v2::AuthorizationStatusEnum::Accepted);
+    EXPECT_FALSE(response.certificateStatus.has_value());
+    const std::lock_guard<std::mutex> lock(this->mtx);
+    EXPECT_THAT(this->sent_actions, ::testing::Not(::testing::Contains("DataTransfer")));
+}
+
+TEST_F(ChargePointChangeConfigurationDeviceModelTest, AuthDisabledStillRejectsPncWhilePncIsDisabled) {
+    this->device_model->set("Internal", "AuthEnabled", "false");
+    this->device_model->set("Core", "SupportedFeatureProfiles", SUPPORTED_FEATURE_PROFILES_WITH_PNC);
+    this->device_model->set("PnC", "ISO15118PnCEnabled", "false");
+    make_booted_charge_point();
+
+    EXPECT_NE(this->charge_point->data_transfer_pnc_authorize("EMAID", std::nullopt, std::nullopt).idTokenInfo.status,
+              ocpp::v2::AuthorizationStatusEnum::Accepted);
+}
+
+TEST_F(ChargePointChangeConfigurationDeviceModelTest, InvalidIdTagStopsTransactionWhileAuthEnabled) {
+    this->device_model->set("Internal", "AuthEnabled", "true");
+    make_booted_charge_point();
+
+    start_transaction_rejected_by_csms();
+    const std::lock_guard<std::mutex> lock(this->mtx);
+    EXPECT_TRUE(this->charging_paused);
+    EXPECT_TRUE(this->transaction_stopped);
+}
+
+TEST_F(ChargePointChangeConfigurationDeviceModelTest, InvalidIdTagKeepsTransactionStartedWhileAuthDisabled) {
+    this->device_model->set("Internal", "AuthEnabled", "false");
+    make_booted_charge_point();
+
+    start_transaction_rejected_by_csms();
+    const std::lock_guard<std::mutex> lock(this->mtx);
+    EXPECT_FALSE(this->charging_paused);
+    EXPECT_FALSE(this->transaction_stopped);
+}
+
+TEST_F(ChargePointChangeConfigurationDeviceModelTest, InvalidIdTagStopsTransactionStartedAfterAuthReenabled) {
+    this->device_model->set("Internal", "AuthEnabled", "false");
+    make_booted_charge_point();
+    EXPECT_EQ(this->charge_point->authorize_id_token("UNKNOWN").id_tag_info.status, AuthorizationStatus::Accepted);
+    EXPECT_EQ(change_configuration("AuthEnabled", "true"), "Accepted");
+
+    start_transaction_rejected_by_csms("UNKNOWN");
+    const std::lock_guard<std::mutex> lock(this->mtx);
+    EXPECT_TRUE(this->charging_paused);
+    EXPECT_TRUE(this->transaction_stopped);
 }
 
 } // namespace v16

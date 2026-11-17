@@ -25,6 +25,7 @@ from ocpp.v16.enums import (
     ReservationStatus,
     MessageTrigger,
     RemoteStartStopStatus,
+    ConfigurationStatus,
 )
 
 # fmt: off
@@ -1495,3 +1496,60 @@ async def test_send_local_lost_large_token(
     assert await wait_for_callerror_and_validate(
         test_utility, charge_point_v16, "FormationViolation"
     )
+
+
+@pytest.mark.asyncio
+@pytest.mark.ocpp_multi_only
+async def test_auth_enabled_false_authorizes_plug_in(
+    charge_point_v16: ChargePoint16,
+    test_utility: TestUtility,
+    test_controller: TestController,
+):
+    response = await charge_point_v16.change_configuration_req(
+        key="AuthEnabled", value="false"
+    )
+    assert response.status == ConfigurationStatus.accepted
+
+    test_utility.forbidden_actions.append("Authorize")
+    test_controller.plug_in()
+
+    assert await wait_for_and_validate(
+        test_utility,
+        charge_point_v16,
+        "StartTransaction",
+        {"connectorId": 1, "idTag": "FREESERVICE"},
+    )
+
+    test_utility.messages.clear()
+    test_controller.plug_out()
+    # an empty payload would also match any CallResult
+    assert await wait_for_and_validate(
+        test_utility, charge_point_v16, "StopTransaction", {"reason": "EVDisconnected"}
+    )
+    # the car simulator rejects the next plug-in until the unplug is done
+    assert await wait_for_and_validate(
+        test_utility,
+        charge_point_v16,
+        "StatusNotification",
+        {"connectorId": 1, "status": "Available"},
+    )
+
+    response = await charge_point_v16.change_configuration_req(
+        key="AuthEnabled", value="true"
+    )
+    assert response.status == ConfigurationStatus.accepted
+
+    test_utility.messages.clear()
+    test_utility.forbidden_actions.clear()
+    test_controller.plug_in()
+
+    assert await wait_for_and_validate(
+        test_utility,
+        charge_point_v16,
+        "StatusNotification",
+        {"connectorId": 1, "status": "Preparing"},
+    )
+    assert not await wait_for_and_validate(
+        test_utility, charge_point_v16, "StartTransaction", {"connectorId": 1}, timeout=5
+    )
+    test_controller.plug_out()

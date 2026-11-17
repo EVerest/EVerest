@@ -82,6 +82,7 @@ public:
     std::optional<KeyValue> getMeterSerialNumberKeyValue() override;
     std::optional<CiString<25>> getMeterType() override;
     std::optional<KeyValue> getMeterTypeKeyValue() override;
+    bool getAuthEnabled() override;
     bool getAuthorizeConnectorZeroOnConnectorOne() override;
     KeyValue getAuthorizeConnectorZeroOnConnectorOneKeyValue() override;
     bool getLogMessages() override;

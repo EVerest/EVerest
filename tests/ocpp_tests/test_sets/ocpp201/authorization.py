@@ -1097,3 +1097,108 @@ async def test_c15(
 
     # unplug
     test_controller.plug_out()
+
+
+@pytest.mark.asyncio
+@pytest.mark.ocpp_version("ocpp2.0.1")
+@pytest.mark.ocpp_multi_only
+async def test_auth_ctrlr_disabled_authorizes_plug_in(
+    charge_point_v201: ChargePoint201,
+    test_controller: TestController,
+    test_utility: TestUtility,
+):
+    """
+    AuthCtrlr.Enabled (AuthEnabled) false: an EV plug-in is authorised without an AuthorizeRequest, the
+    TransactionEventRequest carries an empty idToken of type NoAuthorization
+    """
+    r: call_result201.SetVariables = await charge_point_v201.set_config_variables_req(
+        "AuthCtrlr", "Enabled", "false"
+    )
+    set_variable_result = SetVariableResultType(**r.set_variable_result[0])
+    assert set_variable_result.attribute_status == SetVariableStatusEnumType.accepted
+
+    test_utility.forbidden_actions.append("Authorize")
+    test_controller.plug_in()
+
+    assert await wait_for_and_validate(
+        test_utility,
+        charge_point_v201,
+        "TransactionEvent",
+        {"idToken": {"idToken": "", "type": "NoAuthorization"}},
+    )
+
+    test_utility.messages.clear()
+    test_controller.plug_out()
+    assert await wait_for_and_validate(
+        test_utility, charge_point_v201, "TransactionEvent", {"eventType": "Ended"}
+    )
+    # the car simulator rejects the next plug-in until the unplug is done
+    assert await wait_for_and_validate(
+        test_utility, charge_point_v201, "StatusNotification", {"connectorStatus": "Available"}
+    )
+
+    r = await charge_point_v201.set_config_variables_req("AuthCtrlr", "Enabled", "true")
+    set_variable_result = SetVariableResultType(**r.set_variable_result[0])
+    assert set_variable_result.attribute_status == SetVariableStatusEnumType.accepted
+
+    test_utility.messages.clear()
+    test_controller.plug_in()
+    assert await wait_for_and_validate(
+        test_utility, charge_point_v201, "StatusNotification", {"connectorStatus": "Occupied"}
+    )
+
+    assert not await wait_for_and_validate(
+        test_utility,
+        charge_point_v201,
+        "TransactionEvent",
+        {"idToken": {"type": "NoAuthorization"}},
+        timeout=5,
+    )
+    test_controller.plug_out()
+
+
+@pytest.mark.asyncio
+@pytest.mark.ocpp_version("ocpp2.0.1")
+@pytest.mark.ocpp_multi_only
+async def test_auth_ctrlr_disabled_keeps_rejected_free_session(
+    central_system_v201: CentralSystem,
+    charge_point_v201: ChargePoint201,
+    test_controller: TestController,
+    test_utility: TestUtility,
+):
+    """
+    AuthCtrlr.Enabled false: a TransactionEventResponse that does not accept the NoAuthorization idToken neither stops
+    nor pauses the transaction, even with StopTxOnInvalidId
+    """
+
+    @on(Action.transaction_event)
+    def on_transaction_event(**kwargs):
+        msg = call201.TransactionEvent(**kwargs)
+        if msg.id_token is not None:
+            return call_result201.TransactionEvent(id_token_info={"status": "Invalid"})
+        return call_result201.TransactionEvent()
+
+    setattr(charge_point_v201, "on_transaction_event", on_transaction_event)
+    central_system_v201.chargepoint.route_map = create_route_map(central_system_v201.chargepoint)
+
+    for component, variable, value in [("TxCtrlr", "StopTxOnInvalidId", "true"), ("AuthCtrlr", "Enabled", "false")]:
+        r = await charge_point_v201.set_config_variables_req(component, variable, value)
+        set_variable_result = SetVariableResultType(**r.set_variable_result[0])
+        assert set_variable_result.attribute_status == SetVariableStatusEnumType.accepted
+
+    test_controller.plug_in()
+
+    assert await wait_for_and_validate(
+        test_utility,
+        charge_point_v201,
+        "TransactionEvent",
+        {"idToken": {"idToken": "", "type": "NoAuthorization"}},
+    )
+    assert not await wait_for_and_validate(
+        test_utility, charge_point_v201, "TransactionEvent", {"triggerReason": "Deauthorized"}, timeout=5
+    )
+    assert not await wait_for_and_validate(
+        test_utility, charge_point_v201, "TransactionEvent", {"eventType": "Ended"}, timeout=1
+    )
+
+    test_controller.plug_out()
