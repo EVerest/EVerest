@@ -1115,12 +1115,11 @@ void EvseManager::ready() {
                 car_manufacturer = types::evse_manager::CarManufacturer::Unknown;
                 r_slac[0]->call_enter_bcd();
             } else if (event == CPEvent::CarUnplugged) {
-                // Make a local copy as leave_bcd() will overwrite the slac_unmatched flag
-                bool unmatched_on_unplug = not slac_unmatched;
-                r_slac[0]->call_leave_bcd();
-                if (unmatched_on_unplug) {
-                    r_slac[0]->call_reset(false);
-                }
+                // Always reset on unplug ([V2G3-M09-19]). Do not rely on the last published SLAC state:
+                // its subscription can be blocked on the charger's state_machine_mutex while a short CP
+                // bounce has already started matching. reset leaves every SLAC state, so no leave_bcd
+                // before it: that would reset twice and send two CM_SET_KEY.REQ.
+                r_slac[0]->call_reset(false);
                 hlc_waiting_for_auth_pnc = false;
                 hlc_waiting_for_auth_eim = false;
             }
@@ -1242,10 +1241,8 @@ void EvseManager::ready() {
             // Notify charger whether matching was started (or is done) or not
             if (s == types::slac::State::UNMATCHED) {
                 charger->set_matching_started(false);
-                slac_unmatched = true;
             } else {
                 charger->set_matching_started(true);
-                slac_unmatched = false;
             }
         });
 

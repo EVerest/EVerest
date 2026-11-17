@@ -213,6 +213,10 @@ FSMSimpleState::HandleEventReturnType MatchedState::handle_event(AllocatorType& 
         }
     } else if (ev == Event::RESET) {
         return sa.create_simple<ResetState>(ctx);
+    } else if (ev == Event::LEAVE_BCD) {
+        // CP left B/C/D via E/F: leave the logical network, the NMK must not be reused
+        ctx.log_info("Leaving BCD in matched state -> reset");
+        return sa.create_simple<ResetState>(ctx);
     }
     return sa.PASS_ON;
 }
@@ -248,6 +252,11 @@ void FailedState::enter() {
 FSMSimpleState::HandleEventReturnType FailedState::handle_event(AllocatorType& sa, Event ev) {
     if (ev == Event::RESET) {
         return sa.create_simple<ResetState>(ctx);
+    } else if (ev == Event::LEAVE_BCD) {
+        // Leave FailedState on unplug or E/F as well, not only on RESET, so the next
+        // ENTER_BCD starts matching again
+        ctx.log_info("Leaving BCD in failed state -> reset");
+        return sa.create_simple<ResetState>(ctx);
     } else {
         return sa.PASS_ON;
     }
@@ -270,6 +279,10 @@ FSMSimpleState::HandleEventReturnType WaitForLinkState::handle_event(AllocatorTy
         // Notify higher layers to on CP signal
         return sa.create_simple<FailedState>(ctx);
     } else if (ev == Event::RESET) {
+        return sa.create_simple<ResetState>(ctx);
+    } else if (ev == Event::LEAVE_BCD) {
+        // CP left B/C/D after CM_SLAC_MATCH.CNF handed out the NMK: rotate it
+        ctx.log_info("Leaving BCD while waiting for link -> reset");
         return sa.create_simple<ResetState>(ctx);
     } else {
         return sa.PASS_ON;
