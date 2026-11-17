@@ -661,6 +661,31 @@ Errors raised by the EvseManager itself.
 
 ``evse_manager/Inoperative`` is the result of the evaluation, not a cause.
 
+Retry after a soft over current error
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+During AC charging the EvseManager compares the currents reported by the billing powermeter with the current it signals
+to the EV (config options ``soft_over_current_tolerance_percent``, ``soft_over_current_measurement_noise_A`` and
+``soft_over_current_timeout_ms``). If the EV draws too much, it raises ``evse_manager/MREC4OverCurrentFailure``, which
+causes an emergency shutdown: PWM is switched off (state X1) and the relays are opened. The session stays in
+``ChargingPausedEVSE`` with the transaction open.
+
+By default the error is cleared only when the EV is unplugged. With ``soft_over_current_max_retries`` greater than 0 the
+EvseManager clears the error itself ``soft_over_current_retry_timeout_s`` after charging was suspended. The timeout
+includes the time state F is signalled (``state_F_after_fault_ms``); if F is still signalled when it expires, the error
+is cleared as soon as the EVSE is back in X1. If no other blocking error is active, charging resumes as after any other
+cleared error: PWM is enabled again and the relays close once the EV requests power. A new over current starts the same
+sequence again. A retry counts once charging resumes, so a retry held back by another blocking error is not used up.
+After ``soft_over_current_max_retries`` retries in one session the error stays active until the EV is unplugged.
+Unplugging resets the retry counter.
+
+Limitations:
+
+* Only basic charging sessions are retried. In an ISO 15118 session the emergency shutdown ends the V2G session, and the
+  error stays active until the EV is unplugged.
+* Only the error raised by the EvseManager itself is cleared. ``evse_board_support/MREC4OverCurrentFailure`` is owned by
+  the BSP driver, which decides when to clear it.
+
 evse_board_support
 ------------------
 

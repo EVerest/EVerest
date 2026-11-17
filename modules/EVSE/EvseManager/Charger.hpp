@@ -86,6 +86,8 @@ public:
         std::string switch_3ph1ph_cp_state{};
         int soft_over_current_timeout_ms{0};
         int soft_over_current_stale_data_warning_ms{0};
+        int soft_over_current_max_retries{0};
+        int soft_over_current_retry_timeout_s{0};
         int state_F_after_fault_ms{0};
         int reinit_duration_ms{0};
         std::string reinit_method{};
@@ -341,6 +343,7 @@ private:
     float ampere_to_duty_cycle(float ampere);
 
     void check_soft_over_current();
+    void retry_after_over_current();
 
     bool power_available();
 
@@ -473,6 +476,10 @@ private:
         int soft_over_current_timeout_ms{7000};
         // Warn if power meter data used for soft over current checking is older than given time (0 = disabled)
         int soft_over_current_stale_data_warning_ms{5000};
+        // Retries per session after a soft over current error (0 = disabled)
+        int soft_over_current_max_retries{0};
+        // Time charging stays suspended before a retry
+        int soft_over_current_retry_timeout_s{30};
         // Switch to F for configured ms after a fatal error
         int state_F_after_fault_ms{300};
         // Duration in milliseconds of the reinit state before returning to normal operation
@@ -528,6 +535,14 @@ private:
         bool t_step_X1_until_unmatched{false};
         std::chrono::time_point<std::chrono::steady_clock> last_over_current_event;
         bool over_current{false};
+        // The soft over current error was raised in basic charging and may be cleared for a retry
+        bool over_current_retry_pending{false};
+        // The error was cleared for a retry, which counts once charging resumes
+        bool over_current_retry_uncounted{false};
+        // Retries since plug-in
+        int over_current_retries{0};
+        bool over_current_retries_exhausted_logged{false};
+        std::optional<std::chrono::time_point<std::chrono::steady_clock>> over_current_retry_deadline{};
         // Rate limit for the stale powermeter data warning in check_soft_over_current
         std::chrono::time_point<std::chrono::steady_clock> last_stale_powermeter_warning{};
 
