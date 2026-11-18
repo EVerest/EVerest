@@ -9,6 +9,8 @@ returns the stored errors through the ``get_errors`` command of the ``error_hist
 interface. An error is stored when it is raised and updated when it is cleared; errors
 still active at startup are marked ``ClearedByReboot``.
 
+Each error is returned with the vendor id of its raiser, which is left out when empty.
+
 Database schema
 ===============
 

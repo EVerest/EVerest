@@ -194,6 +194,7 @@ ErrorObject_Internal to_internal_api(ErrorObject_External const& val) {
     result.uuid = val.uuid;
     result.state = to_internal_api(val.state);
     result.sub_type = val.sub_type;
+    result.vendor_id = val.vendor_id;
     return result;
 }
 
@@ -208,6 +209,7 @@ ErrorObject_External to_external_api(ErrorObject_Internal const& val) {
     result.uuid = val.uuid;
     result.state = to_external_api(val.state);
     result.sub_type = val.sub_type;
+    result.vendor_id = val.vendor_id;
     return result;
 }
 
