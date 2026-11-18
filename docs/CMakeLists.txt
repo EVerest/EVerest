@@ -62,6 +62,14 @@ configure_file(
     ${TRAILBOOK_INSTANCE_SOURCE_DIRECTORY}/conf.py
     @ONLY
 )
+# conf.py is rendered here, outside the stem, so the Sphinx stage has to be
+# told about it explicitly.
+set_property(
+    TARGET trailbook_everest
+    APPEND
+    PROPERTY ADDITIONAL_DEPS_STAGE_BUILD_SPHINX_BEFORE
+        ${TRAILBOOK_INSTANCE_SOURCE_DIRECTORY}/conf.py
+)
 
 get_filename_component(EVEREST_WORKSPACE_DIRECTORY ${CMAKE_SOURCE_DIR} DIRECTORY)
 trailbook_ev_create_snapshot(

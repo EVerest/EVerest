@@ -109,7 +109,7 @@ In the `EVerest/EVerest repository <https://github.com/EVerest/EVerest>`_:
 * ``modules/.../manifest.yaml``: Definition of the individual modules. This adds to the *reference*
   section.
 * ``docs/source/reference/EVerest_API``: This specific subfolder contains the definitions of the
-  *EVerestAPI*. They are transformed to html to become part of the *reference* section.
+  *EVerestAPI*. They are rendered into one page per API in the *reference* section.
   
 The generated pages can be found in
 :ref:`the reference section of the main documentation <everest_reference>`.
