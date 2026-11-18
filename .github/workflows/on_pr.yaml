@@ -73,8 +73,6 @@ jobs:
       - build-build-kit
       - build-cmake-gcc
     if: ${{ !cancelled() && needs.build-cmake-gcc.outputs.build_tree_uploaded == 'true' }}
-    secrets:
-      PRIVATE_DEPS_SSH_KEY: ${{ secrets.PRIVATE_DEPS_SSH_KEY }}
     with:
       runner: ${{ inputs.runner || 'ubuntu-24.04' }}
       build-kit-artifact-name: ${{ needs.build-build-kit.outputs.build_kit_artifact_name }}

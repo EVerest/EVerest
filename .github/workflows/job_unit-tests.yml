@@ -35,13 +35,6 @@ on:
         required: false
         default: 'build/Testing/ctest-junit.xml'
         type: string
-    secrets:
-      PRIVATE_DEPS_SSH_KEY:
-        description: >-
-          Optional SSH private key granting read access to private
-          dependencies. Leave unset when every dependency is public, which is
-          the case for everest-core upstream.
-        required: false
     outputs:
       ctest_report_artifact_name:
         description: 'The name of the ctest report artifact uploaded'
@@ -60,7 +53,6 @@ jobs:
       CTEST_REPORT_ARTIFACT_NAME: ctest-report
       CTEST_JUNIT_ARTIFACT_NAME: ctest-junit
       BUILD_KIT_IMAGE: ${{ inputs.build_kit_image_tag }}
-      SSH_AUTH_SOCK: /tmp/ssh_agent.sock
     outputs:
       ctest_report_artifact_name: ${{ env.CTEST_REPORT_ARTIFACT_NAME }}
       ctest_junit_artifact_name: ${{ env.CTEST_JUNIT_ARTIFACT_NAME }}
@@ -70,11 +62,6 @@ jobs:
         with:
           persist-credentials: false
           path: source
-      - name: Setup SSH agent for private dependencies
-        uses: ./source/.github/actions/setup-ssh-agent
-        with:
-          ssh_private_key: ${{ secrets.PRIVATE_DEPS_SSH_KEY }}
-          ssh_auth_sock: ${{ env.SSH_AUTH_SOCK }}
       - name: Setup run scripts
         env:
           BUILD_KIT_SCRIPTS_DIRECTORY: ${{ inputs.build_kit_scripts_directory }}
@@ -100,8 +87,6 @@ jobs:
         id: run_unit_tests
         run: |
           docker run \
-          --mount "type=bind,source=$SSH_AUTH_SOCK,target=/ssh-agent" \
-          --env SSH_AUTH_SOCK=/ssh-agent \
           --volume "$GITHUB_WORKSPACE:/ext" \
           --name unit-test-container \
           build-kit run-script run_unit_tests
