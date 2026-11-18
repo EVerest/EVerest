@@ -109,10 +109,10 @@ config:
       Communication check timeout in seconds. 0 disables the check (no
       external heartbeat required). When > 0, the test driver must
       publish `m2e/communication_check true` periodically faster than
-      this timeout or EvController raises a CommunicationFault on its
-      ev_manager interface, which evse_manager surfaces as connector
-      OtherError. Disabled by default to match historical EvManager
-      behavior; opt in by setting > 0.
+      this timeout. A missed check is only logged: the CommunicationFault
+      it raises is dropped, because ev_manager declares no generic
+      errors, so evse_manager shows no OtherError. Disabled by default to
+      match historical EvManager behavior; opt in by setting > 0.
     type: integer
     default: 0
   cfg_heartbeat_interval_ms:

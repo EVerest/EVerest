@@ -92,11 +92,11 @@ Configuration
     has been latched by ``configure_session`` (including a restored session).
     Default: empty, selecting AcIec from ``max_current_a`` and ``three_phases``.
     For example, ``default_session: '{"mode":"DcIsoD20","params":{"mcs_enabled":true}}'``.
-    Parsed during ``init()``; invalid JSON or payloads raise
-    ``generic/CommunicationFault`` with the parse message in ``ready()`` and
-    use the AcIec default. The same curve and peer validation as
-    ``configure_session`` runs in ``ready()``; a rejected default also raises
-    ``CommunicationFault`` and falls back to AcIec.
+    Parsed during ``init()``; the same curve and peer validation as
+    ``configure_session`` runs in ``ready()``. An invalid or rejected default
+    falls back to AcIec. Its ``generic/CommunicationFault`` raise is logged and
+    dropped, because ``ev_manager`` declares no generic errors, so evse_manager
+    shows no ``OtherError``; only the module log records the reason.
 
 ``iso_pwm_wait_s``
     Seconds to wait for 5 percent PWM after a DC ISO session sees nominal PWM.
@@ -211,10 +211,12 @@ Configuration
 ``cfg_communication_check_to_s``
     Communication check timeout in seconds. Default: ``0`` (check disabled).
     When ``0`` no external heartbeat is required. When ``> 0``, the test driver
-    must publish ``m2e/communication_check true`` faster than this timeout or
-    EvController raises a ``CommunicationFault`` on its ``ev_manager`` interface
-    (surfaced by evse_manager as connector ``OtherError``). Disabled by default
-    to match historical EvManager behavior; opt in by setting ``> 0``.
+    must publish ``m2e/communication_check true`` faster than this timeout. A
+    missed check logs ``Communication check: FAILURE``; the
+    ``CommunicationFault`` it raises is dropped, because ``ev_manager``
+    declares no generic errors, so evse_manager shows no ``OtherError``.
+    Disabled by default to match historical EvManager behavior; opt in by
+    setting ``> 0``.
 
 ``cfg_heartbeat_interval_ms``
     Heartbeat publish interval in milliseconds. Default: ``1000``.
