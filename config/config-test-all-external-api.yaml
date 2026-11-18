@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright Pionix GmbH and Contributors to EVerest
 # Test configuration instantiating ALL EVerest API modules so every external
 # API client (applications/utils/everest-api-client) can be exercised against
 # a running EVerest. Software-only: no hardware drivers are used; the API
