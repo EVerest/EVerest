@@ -126,28 +126,15 @@ void raise_not_found(const std::string_view& section, const std::string_view& na
 
 // Component/Variable support ...
 
-std::optional<bool> isReadOnly(DeviceModelInterface& storage, const std::string_view& component,
-                               const std::string_view& variable, v2::AttributeEnum attribute) {
+std::optional<bool> isReadOnly(DeviceModelInterface& storage, const v2::Component& component,
+                               const v2::Variable& variable, v2::AttributeEnum attribute) {
     // known keys are checked via is_readonly() in known_keys.hpp
     // for other keys get_mutability() is used
-    const v2::Component component_v{std::string{component}};
-    const v2::Variable variable_v{std::string{variable}};
-    std::optional<bool> result;
-    const auto res = storage.get_mutability(component_v, variable_v, attribute);
-    if (res) {
-        result = res.value() == v2::MutabilityEnum::ReadOnly;
+    const auto mutability = storage.get_mutability(component, variable, attribute);
+    if (!mutability) {
+        return std::nullopt;
     }
-    return result;
-}
-
-inline std::optional<bool> isReadOnly(DeviceModelInterface& storage, const v2::RequiredComponentVariable& var,
-                                      v2::AttributeEnum attribute) {
-    const std::string component = var.component.name;
-    std::string variable;
-    if (var.variable) {
-        variable = var.variable.value().name;
-    }
-    return isReadOnly(storage, component, variable, attribute);
+    return mutability.value() == v2::MutabilityEnum::ReadOnly;
 }
 
 /// readonly when the device model mutability is ReadOnly (or unknown)
@@ -1215,24 +1202,55 @@ std::string ChargePointConfigurationDeviceModel::calculateSupportedMeasurands() 
 // ----------------------------------------------------------------------------
 // Public methods
 
-// Mapping targets are resolved once here and must be defined in the component configuration: the migration sees no
-// other variables, so a variable that an owner registers at runtime, before or after this, is not a mapping target
 ChargePointConfigurationDeviceModel::ChargePointConfigurationDeviceModel(
     const std::string_view& ocpp_main_path, std::unique_ptr<v2::DeviceModelVariablesInterface> device_model_interface,
-    v2::Ocpp16KeyMappings custom_key_mappings) :
+    v2::Ocpp16KeyMappings custom_key_mappings, Load load_mode, RuntimeTargetOwner runtime_target_owner) :
     ChargePointConfigurationBase(ocpp_main_path),
     storage(std::move(device_model_interface)),
-    resolver(v2::usable_key_mappings(
-        custom_key_mappings,
+    custom_key_mappings(std::move(custom_key_mappings)),
+    runtime_target_owner(std::move(runtime_target_owner)) {
+    if (load_mode == Load::OnConstruction) {
+        load();
+    }
+}
+
+// The migration sees the component configuration only, so a target of a runtime owner gets no migrated value
+bool ChargePointConfigurationDeviceModel::is_mapping_target_owner(const std::string& owner) const {
+    return owner == v2::VARIABLE_OWNER_COMPONENT_CONFIG || (runtime_target_owner && runtime_target_owner(owner));
+}
+
+bool ChargePointConfigurationDeviceModel::is_mapping_target(const v2::Component& component,
+                                                            const v2::Variable& variable) const {
+    const auto meta = storage->get_variable_meta_data(component, variable);
+    return meta.has_value() && is_mapping_target_owner(meta->owner);
+}
+
+v2::Ocpp16KeyMappings ChargePointConfigurationDeviceModel::usable_key_mappings() const {
+    v2::Ocpp16KeyMappings checked;
+    // A custom key is looked up at every access, so it is kept for a runtime owner that registers its target later
+    v2::Ocpp16KeyMappings awaiting_owner;
+    for (const auto& [key, target] : custom_key_mappings) {
+        const bool awaits_owner = runtime_target_owner && !keys::convert(key).has_value() &&
+                                  !storage->get_variable_meta_data(target.first, target.second).has_value();
+        (awaits_owner ? awaiting_owner : checked).emplace(key, target);
+    }
+    auto usable = v2::usable_key_mappings(
+        checked,
         [this](const v2::Component& component, const v2::Variable& variable) -> std::optional<v2::MappingTargetInfo> {
             const auto meta = storage->get_variable_meta_data(component, variable);
-            if (meta.has_value() && meta->owner == v2::VARIABLE_OWNER_COMPONENT_CONFIG) {
-                const auto actual = storage->get_mutability(component, variable, v2::AttributeEnum::Actual);
-                return v2::MappingTargetInfo{meta->characteristics.dataType, actual.has_value()};
+            if (!meta.has_value() || !is_mapping_target_owner(meta->owner)) {
+                return std::nullopt;
             }
-            return std::nullopt;
+            const auto actual = storage->get_mutability(component, variable, v2::AttributeEnum::Actual);
+            return v2::MappingTargetInfo{meta->characteristics.dataType, actual.has_value()};
         },
-        true)) {
+        true);
+    usable.merge(awaiting_owner);
+    return usable;
+}
+
+void ChargePointConfigurationDeviceModel::load() {
+    resolver = VariableResolver(usable_key_mappings());
     // logged here rather than in the loader, which runs twice on a migration boot, and after unusable overrides
     // were dropped
     for (const auto& [key, target] : resolver.overrides()) {
@@ -1431,15 +1449,14 @@ std::optional<KeyValue> ChargePointConfigurationDeviceModel::getCustomKeyValue(c
     }
 
     const auto& [component, variable] = it->second;
-    if (!key_exists(*storage, component, variable)) {
+    if (!is_mapping_target(component, variable)) {
         return std::nullopt;
     }
 
     // a known key without a value is reported without one (OCPP 1.6 KeyValue.value)
     KeyValue kv;
     kv.key = key;
-    kv.readonly =
-        isReadOnly(*storage, component.name.get(), variable.name.get(), v2::AttributeEnum::Actual).value_or(true);
+    kv.readonly = isReadOnly(*storage, component, variable, v2::AttributeEnum::Actual).value_or(true);
     if (const auto value = get_optional<std::string>(*storage, component, variable, v2::AttributeEnum::Actual)) {
         kv.value = value.value();
     }
@@ -1582,7 +1599,7 @@ std::optional<ConfigurationStatus> ChargePointConfigurationDeviceModel::setCusto
     }
 
     const auto& [component, variable] = it->second;
-    if (!key_exists(*storage, component, variable)) {
+    if (!is_mapping_target(component, variable)) {
         return std::nullopt;
     }
 

@@ -69,6 +69,9 @@ void ChargePointConfigurationBase::initialise(const ProfilesSet& initial_set,
                                               const std::optional<std::string>& supported_profiles_csl,
                                               const std::optional<std::string>& supported_measurands_csl) {
     supported_feature_profiles = initial_set;
+    supported_message_types_sending.clear();
+    supported_message_types_receiving.clear();
+    supported_measurands.clear();
 
     if (supported_profiles_csl) {
         const auto supported_profiles = utils::from_csl(supported_profiles_csl.value());
