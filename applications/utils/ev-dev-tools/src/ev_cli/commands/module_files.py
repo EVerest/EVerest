@@ -1,0 +1,115 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright Pionix GmbH and Contributors to EVerest
+"""``ev-cli module create`` and ``ev-cli module update``.
+
+These two write into a directory a human owns, which makes the write strategies
+the important part rather than the rendering.  ``create`` never replaces an
+existing file unless asked; ``update`` regenerates what the generator owns,
+creates what a human owns only when it is missing, and carries the contents of
+every ``ev@<uuid>`` region across from the file it is replacing.
+"""
+
+from __future__ import annotations
+
+from .. import license_headers
+from ..backends.base import FileCategory, UpdatePolicy, registry
+from ..errors import EvCliError
+from ..files import FileWriter, Strategy
+from ..schema.loader import MODULES_DIR
+from .context import Context
+
+
+def write_module_files(args, *, updating: bool) -> int:
+    context = Context.from_args(args)
+    module_dir = context.work_dir / MODULES_DIR / args.module
+
+    model = context.module_model([args.module], with_interfaces=True)
+    license_header = license_headers.find_header(
+        license_headers.search_dirs(context.work_dir, context.licenses_dir),
+        model.modules[args.module].metadata.license,
+    )
+
+    backend = registry.create(args.backend, args)
+    generated = backend.emit_module_files(
+        model, args.module, module_dir,
+        license_header=license_header,
+        preserve_regions=updating,
+    )
+
+    if args.only == 'which':
+        _print_available(generated)
+        return 0
+
+    try:
+        generated = _filter(generated, args.only)
+    except EvCliError as err:
+        # A bad filter is reported without failing, so that "--only <typo>"
+        # does not look like a generator error.
+        print(f'ev-cli: {err}')
+        return 0
+
+    writer = FileWriter(diff_only=args.diff)
+    if updating:
+        _update(generated, writer, force=args.force)
+    else:
+        _create(generated, writer, force=args.force)
+
+    return 0
+
+
+# --------------------------------------------------------------------------
+# --only
+# --------------------------------------------------------------------------
+
+def _print_available(generated) -> None:
+    for category in FileCategory:
+        in_category = [f for f in generated if f.category == category]
+        if not in_category:
+            continue
+        print(f'Available files for category "{category.value}"')
+        for file in in_category:
+            print(f'  {file.only_key}')
+
+
+def _filter(generated, only: str | None):
+    if not only:
+        return generated
+
+    wanted = {name.strip() for name in only.split(',')}
+    known = {f.only_key for f in generated}
+    unknown = wanted - known
+    if unknown:
+        raise EvCliError(
+            f'unknown file filters for --only: {", ".join(sorted(unknown))}\n'
+            f'Use "--only which" to show the available names'
+        )
+    return [f for f in generated if f.only_key in wanted]
+
+
+# --------------------------------------------------------------------------
+# Writing
+# --------------------------------------------------------------------------
+
+def _create(generated, writer, *, force: bool) -> None:
+    strategy = Strategy.FORCE_CREATE if force else Strategy.CREATE
+    for file in generated:
+        writer.write(file, strategy)
+
+
+def _update(generated, writer, *, force: bool) -> None:
+    """Replace what the generator owns, keep what a human owns.
+
+    Which is which is each file's update policy, set by the backend.  A file a
+    human owns is not replaced even with ``--force``; the deliberate escape is
+    ``module create --force --only <name>``.
+    """
+    primary = Strategy.FORCE_UPDATE if force else Strategy.UPDATE
+
+    for file in generated:
+        if file.update_policy is UpdatePolicy.LEAVE_ALONE:
+            continue
+        strategy = (
+            primary if file.update_policy is UpdatePolicy.REGENERATE
+            else Strategy.CREATE
+        )
+        writer.write(file, strategy, preserve_license_header=True)

@@ -216,12 +216,6 @@ configuration::
 
     cd $EVEREST_TUTORIAL_DIR && ev-cli module create --everest-dir . --schemas-dir $EVEREST_WORKSPACE/EVerest/lib/everest/framework/schemas TutorialModule --licenses $EVEREST_WORKSPACE/EVerest/applications/utils/ev-dev-tools/src/ev_cli/licenses
 
-.. note::
-
-    ``ev-cli`` prints ``Could not detect EVerest path in --everest-dir`` at
-    this point, because the project has not been configured with CMake yet.
-    This message can be ignored, the files are generated nevertheless.
-
 After that, you should have the following file structure::
 
     .
