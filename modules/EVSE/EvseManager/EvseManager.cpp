@@ -53,7 +53,9 @@ types::authorization::ProvidedIdToken create_autocharge_token(std::string token,
 
 bool provided_limit_changed(std::optional<float> const& current_value, std::optional<float> const& received_value) {
     return received_value.has_value() and
-           (not current_value.has_value() or not almost_eq(current_value.value(), received_value.value()));
+           (not current_value.has_value() or
+            not everest::lib::util::in_noise_range(static_cast<double>(current_value.value()),
+                                                   static_cast<double>(received_value.value()), 1e-6));
 }
 
 bool dc_ev_maximum_limits_changed(types::evse_manager::EVInfo const& ev_info,
@@ -61,29 +63,6 @@ bool dc_ev_maximum_limits_changed(types::evse_manager::EVInfo const& ev_info,
     return provided_limit_changed(ev_info.maximum_current_limit, limits.dc_ev_maximum_current_limit) or
            provided_limit_changed(ev_info.maximum_power_limit, limits.dc_ev_maximum_power_limit) or
            provided_limit_changed(ev_info.maximum_voltage_limit, limits.dc_ev_maximum_voltage_limit);
-}
-
-std::optional<float> min_optional(std::optional<float> const& a, std::optional<float> const& b) {
-    // if both a and b have values, return the smaller one.
-    if (a.has_value() and b.has_value()) {
-        return (b.value() < a.value() ? b.value() : a.value());
-    }
-    // if a has a value, return that one.
-    if (a.has_value()) {
-        return a;
-    }
-
-    // else return b. It is either the only value or empty.
-    return b;
-}
-
-float min_optional(float a, std::optional<float> b) {
-    // if both a and b have values, return the smaller one.
-    if (b.has_value()) {
-        return (b.value() < a ? b.value() : a);
-    }
-    // else return a
-    return a;
 }
 
 types::dc_external_derate::ExternalDerating
@@ -3159,10 +3138,12 @@ types::power_supply_DC::Capabilities EvseManager::apply_external_derating(types:
         derate = get_dc_external_derate(this->ev_info.present_voltage, dc_external_derate);
     }
 
-    caps.max_export_current_A = min_optional(caps.max_export_current_A, derate.max_export_current_A);
-    caps.max_import_current_A = min_optional(caps.max_import_current_A, derate.max_import_current_A);
-    caps.max_export_power_W = min_optional(caps.max_export_power_W, derate.max_export_power_W);
-    caps.max_import_power_W = min_optional(caps.max_import_power_W, derate.max_import_power_W);
+    caps.max_export_current_A =
+        everest::lib::util::min_optional(caps.max_export_current_A, derate.max_export_current_A);
+    caps.max_import_current_A =
+        everest::lib::util::min_optional(caps.max_import_current_A, derate.max_import_current_A);
+    caps.max_export_power_W = everest::lib::util::min_optional(caps.max_export_power_W, derate.max_export_power_W);
+    caps.max_import_power_W = everest::lib::util::min_optional(caps.max_import_power_W, derate.max_import_power_W);
 
     return caps;
 }
