@@ -411,6 +411,22 @@ components:
         vendor_id:
           description: Vendor of the error type as given by the raiser of the error. Absent when empty.
           type: string
+        trigger_value:
+          description: |-
+            Optional value that caused this specific occurrence of the error, e.g. the
+            measurement that crossed a limit. Absent when the raiser named none.
+          type: object
+          required:
+            - text_repr
+          properties:
+            text_repr:
+              description: |-
+                Text representation of the value as the raising entity would print it,
+                including a unit where one applies, e.g. `85.3 degC`. EVerest passes it
+                on as is and does not parse it. Longer values are truncated to 2500
+                characters.
+              type: string
+              maxLength: 2500
     FilterArguments:
       description: Arguments for the get_errors command
       type: object

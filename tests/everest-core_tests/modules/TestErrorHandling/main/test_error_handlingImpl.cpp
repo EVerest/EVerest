@@ -72,5 +72,14 @@ void test_error_handlingImpl::handle_raise_error(std::string& type, std::string&
     this->raise_error(error);
 }
 
+void test_error_handlingImpl::handle_raise_error_with_trigger_value(std::string& type, std::string& sub_type,
+                                                                    std::string& message, std::string& severity,
+                                                                    std::string& trigger_value) {
+    Everest::error::Error error =
+        this->error_factory->create_error(type, sub_type, message, Everest::error::string_to_severity(severity),
+                                          Everest::error::TriggerValue{trigger_value});
+    this->raise_error(error);
+}
+
 } // namespace main
 } // namespace module

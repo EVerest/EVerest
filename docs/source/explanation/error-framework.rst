@@ -49,7 +49,8 @@ required to handle the error. Data members include:
   `text_repr`, the text representation of the value as the raising module
   would print it, including a unit where one applies (e.g. `85.3 degC`). It
   is passed on as is and never parsed by the framework. Raising an error
-  truncates `text_repr` to 2500 characters.
+  truncates `text_repr` to 2500 characters. The ErrorHistory module stores
+  it with the error.
 
 Raise an error
 --------------

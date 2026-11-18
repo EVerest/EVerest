@@ -101,6 +101,9 @@ error_historyImpl::handle_get_errors(types::error_history::FilterArguments& filt
         if (not error->vendor_id.empty()) {
             error_object.vendor_id = error->vendor_id;
         }
+        if (error->trigger_value.has_value()) {
+            error_object.trigger_value = types::error_history::TriggerValue{error->trigger_value.value().text_repr};
+        }
         return error_object;
     });
     return result;

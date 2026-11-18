@@ -36,6 +36,15 @@ def assert_errors(expected_errors, errors):
         assert index is not None
         assert_error(exp_err, errors[index])
 
+async def wait_for_errors(probe_module, predicate, timeout=5.0):
+    """Polls get_errors until predicate holds for the result, returns the last result"""
+    deadline = asyncio.get_running_loop().time() + timeout
+    while True:
+        result = await probe_module.call_command('error_history', 'get_errors', {'filters': {}})
+        if predicate(result) or asyncio.get_running_loop().time() > deadline:
+            return result
+        await asyncio.sleep(0.1)
+
 class ErrorHistoryModuleConfigurationStrategy(EverestConfigAdjustmentStrategy):
     def __init__(self, db_name):
         self.db_name = db_name
@@ -266,3 +275,53 @@ class TestErrorHistory:
             call_args
         )
         assert_errors(test_errors, result)
+
+    @pytest.mark.asyncio
+    @pytest.mark.everest_core_config('config-test-error-history-module.yaml')
+    @pytest.mark.everest_config_adaptions(UniqueDBNameStrategy())
+    async def test_error_history_trigger_value(self, everest_core: EverestCore):
+        """
+        Test that the ErrorHistory module returns the trigger value of an error,
+        while the error is active and after it was cleared.
+        """
+        everest_core.start(standalone_module='probe')
+
+        probe_module = ProbeModule(everest_core.get_runtime_session())
+        probe_module.start()
+
+        await probe_module.call_command(
+            'test_error_handling',
+            'raise_error_with_trigger_value',
+            {
+                'type': 'test_errors/TestErrorA',
+                'sub_type': '',
+                'message': 'Test Error A',
+                'severity': 'Low',
+                'trigger_value': '85.3 degC'
+            }
+        )
+        await probe_module.call_command(
+            'test_error_handling',
+            'raise_error',
+            {
+                'type': 'test_errors/TestErrorB',
+                'sub_type': '',
+                'message': 'Test Error B',
+                'severity': 'Low'
+            }
+        )
+
+        def assert_trigger_values(errors, state):
+            assert len(errors) == 2
+            assert all(error['state'] == state for error in errors)
+            by_type = {error['type']: error for error in errors}
+            assert by_type['test_errors/TestErrorA']['trigger_value'] == {'text_repr': '85.3 degC'}
+            assert 'trigger_value' not in by_type['test_errors/TestErrorB']
+
+        result = await wait_for_errors(probe_module, lambda errors: len(errors) == 2)
+        assert_trigger_values(result, 'Active')
+
+        await probe_module.call_command('test_error_handling', 'clear_all_errors', {})
+        result = await wait_for_errors(
+            probe_module, lambda errors: all(error['state'] == 'ClearedByModule' for error in errors))
+        assert_trigger_values(result, 'ClearedByModule')

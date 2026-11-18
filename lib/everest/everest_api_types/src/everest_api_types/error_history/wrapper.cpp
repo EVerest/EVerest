@@ -37,6 +37,22 @@ auto optToExternal(std::optional<SrcT> const& src) -> std::optional<decltype(to_
     return srcToTarOpt(src, [](SrcT const& val) { return to_external_api(val); });
 }
 
+std::optional<::types::error_history::TriggerValue>
+trigger_value_to_internal(std::optional<generic::TriggerValue> const& val) {
+    if (val and val->text_repr) {
+        return ::types::error_history::TriggerValue{val->text_repr.value()};
+    }
+    return std::nullopt;
+}
+
+std::optional<generic::TriggerValue>
+trigger_value_to_external(std::optional<::types::error_history::TriggerValue> const& val) {
+    if (val) {
+        return generic::TriggerValue{val->text_repr};
+    }
+    return std::nullopt;
+}
+
 template <class SrcT> auto vecToExternal(std::vector<SrcT> const& src) {
     return srcToTarVec(src, [](SrcT const& val) { return to_external_api(val); });
 }
@@ -195,6 +211,7 @@ ErrorObject_Internal to_internal_api(ErrorObject_External const& val) {
     result.state = to_internal_api(val.state);
     result.sub_type = val.sub_type;
     result.vendor_id = val.vendor_id;
+    result.trigger_value = trigger_value_to_internal(val.trigger_value);
     return result;
 }
 
@@ -210,6 +227,7 @@ ErrorObject_External to_external_api(ErrorObject_Internal const& val) {
     result.state = to_external_api(val.state);
     result.sub_type = val.sub_type;
     result.vendor_id = val.vendor_id;
+    result.trigger_value = trigger_value_to_external(val.trigger_value);
     return result;
 }
 
