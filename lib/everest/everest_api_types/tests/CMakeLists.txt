@@ -85,6 +85,7 @@ target_include_directories(${TEST_TARGET_NAME} PUBLIC
 target_sources(${TEST_TARGET_NAME} PRIVATE
   manual_tests/serialization/generic.hpp
   manual_tests/serialization/generic.cpp
+  manual_tests/serialization/ocpp_device_model.cpp
   manual_tests/serialization/auth.cpp
   manual_tests/serialization/date_time.cpp
   manual_tests/serialization/dc_external_derate.cpp
@@ -97,6 +98,7 @@ target_sources(${TEST_TARGET_NAME} PRIVATE
   manual_tests/serialization/telemetry.cpp
   manual_tests/source_file_hash_check/source_file_hash_check.cpp
   manual_tests/spec_check/e2m_channel_depth.cpp
+  manual_tests/spec_check/ocpp_device_model_examples.cpp
 )
 
 target_link_libraries(${TEST_TARGET_NAME} PRIVATE

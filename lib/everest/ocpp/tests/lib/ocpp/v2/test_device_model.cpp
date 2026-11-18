@@ -565,6 +565,21 @@ TEST_F(DeviceModelTest, test_check_integrity_invalid_missing_required_variable_v
     EXPECT_THROW(dm->check_integrity(evse_connector_structure), DeviceModelError);
 }
 
+// A registration cannot provide a reserved variable, so the error points at the component config
+TEST_F(DeviceModelTest, test_check_integrity_missing_reserved_variable_names_the_component_config) {
+    device_model_test_helper.remove_variable_from_db("OCPPCommCtrlr", std::nullopt, std::nullopt, std::nullopt,
+                                                     "MessageTimeout", "Default");
+    dm = device_model_test_helper.get_device_model();
+    try {
+        dm->check_integrity(evse_connector_structure);
+        FAIL() << "The missing MessageTimeout did not fail the integrity check";
+    } catch (const DeviceModelError& e) {
+        const std::string message = e.what();
+        EXPECT_NE(message.find("OCPPCommCtrlr/MessageTimeout"), std::string::npos) << message;
+        EXPECT_NE(message.find("define it with a value in the component config"), std::string::npos) << message;
+    }
+}
+
 TEST_F(DeviceModelTest, test_get_variable_unset_as_empty_string_is_accepted_and_empty) {
     const auto& organization_name = ControllerComponentVariables::OrganizationName;
     ASSERT_TRUE(device_model_test_helper.set_variable_attribute_value_null("SecurityCtrlr", std::nullopt, std::nullopt,

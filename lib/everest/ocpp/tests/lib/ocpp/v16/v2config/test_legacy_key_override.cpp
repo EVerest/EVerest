@@ -190,9 +190,10 @@ protected:
         reopen(mappings);
     }
 
-    /// Registers an integer variable with the value 7 under a runtime owner
+    /// Registers an integer variable with the value 7 under a runtime owner, replacing the owner's registration
     static void register_runtime_variable(ocpp::v2::DeviceModelRegistryInterface& registry,
-                                          const std::string& component, const std::string& variable) {
+                                          const std::string& component, const std::string& variable,
+                                          const std::string& owner = "TEST_OWNER") {
         ocpp::v2::VariableAttribute attribute;
         attribute.value = "7";
         ocpp::v2::RegisteredVariable registered;
@@ -201,7 +202,7 @@ protected:
         registered.characteristics.supportsMonitoring = false;
         registered.attributes.push_back(attribute);
         const auto result = registry.register_components(
-            "TEST_OWNER", {ocpp::v2::RegisteredComponent{ocpp::v2::Component{component}, {registered}}}, nullptr);
+            owner, {ocpp::v2::RegisteredComponent{ocpp::v2::Component{component}, {registered}}}, nullptr);
         ASSERT_TRUE(result.rejected.empty());
     }
 
@@ -275,6 +276,19 @@ TEST_F(LegacyKeyOverride, MigratedValueIsStoredInEvseScopedOverrideTarget) {
     const auto kv = config->get("LightIntensity");
     ASSERT_TRUE(kv.has_value());
     EXPECT_EQ(kv->value, MIGRATED_LIGHT_INTENSITY);
+}
+
+TEST_F(LegacyKeyOverride, CustomKeyOnEvseScopedTargetFollowsItsMutability) {
+    migrate({{"VendorBrightness", {vendor_evse_component(), ocpp::v2::Variable{"Brightness"}}}});
+
+    auto kv = config->get("VendorBrightness");
+    ASSERT_TRUE(kv.has_value());
+    EXPECT_FALSE(kv->readonly);
+
+    EXPECT_EQ(config->set("VendorBrightness", "30"), ocpp::v16::ConfigurationStatus::Accepted);
+    kv = config->get("VendorBrightness");
+    ASSERT_TRUE(kv.has_value());
+    EXPECT_EQ(kv->value, "30");
 }
 
 TEST_F(LegacyKeyOverride, GetAndSetUseOverrideTarget) {
@@ -369,6 +383,84 @@ TEST_F(LegacyKeyOverride, MappingsToVariablesRegisteredBeforehandAreIgnored) {
 
     EXPECT_FALSE(config->get("VendorFanSpeed").has_value());
     EXPECT_FALSE(config->get_variable_resolver().key_to_cv("VendorFanSpeed").has_value());
+    EXPECT_FALSE(config->get_variable_resolver().is_overridden(ocpp::v16::keys::valid_keys::LightIntensity));
+    const auto kv = config->get("LightIntensity");
+    ASSERT_TRUE(kv.has_value());
+    EXPECT_EQ(kv->value, MIGRATED_LIGHT_INTENSITY);
+}
+
+TEST_F(LegacyKeyOverride, MappingsToVariablesOfAllowedOwnersRegisteredBeforeLoadApply) {
+    migrate({});
+    config.reset();
+    auto device_model = std::make_unique<ocpp::v2::DeviceModel>(
+        std::make_unique<ocpp::v2::DeviceModelStorageSqlite>((work_dir / "device_model.db").string()));
+    auto& registry = *device_model;
+    config = std::make_unique<ocpp::v16::ChargePointConfigurationDeviceModel>(
+        CONFIG_DIR_V16, std::move(device_model),
+        ocpp::v2::Ocpp16KeyMappings{
+            {"VendorFanSpeed", {ocpp::v2::Component{"VendorRuntime"}, ocpp::v2::Variable{"FanSpeed"}}},
+            {"LightIntensity", {ocpp::v2::Component{"VendorLight"}, ocpp::v2::Variable{"Intensity"}}}},
+        ocpp::v16::ChargePointConfigurationDeviceModel::Load::Deferred,
+        [](const std::string& owner) { return owner == "TEST_OWNER" || owner == "LIGHT_OWNER"; });
+    register_runtime_variable(registry, "VendorRuntime", "FanSpeed");
+    register_runtime_variable(registry, "VendorLight", "Intensity", "LIGHT_OWNER");
+    config->load();
+
+    EXPECT_NO_THROW(config->check_integrity(NUMBER_OF_CONNECTORS));
+    const auto fan_speed = config->get("VendorFanSpeed");
+    ASSERT_TRUE(fan_speed.has_value());
+    EXPECT_EQ(fan_speed->value, "7");
+    EXPECT_TRUE(config->get_variable_resolver().is_overridden(ocpp::v16::keys::valid_keys::LightIntensity));
+    const auto light_intensity = config->get("LightIntensity");
+    ASSERT_TRUE(light_intensity.has_value());
+    EXPECT_EQ(light_intensity->value, "7");
+}
+
+// The owner of a custom key's target may register after the configuration is loaded, and release it again
+TEST_F(LegacyKeyOverride, CustomKeyOfAllowedOwnerFollowsItsRegistration) {
+    migrate({});
+    config.reset();
+    auto device_model = std::make_unique<ocpp::v2::DeviceModel>(
+        std::make_unique<ocpp::v2::DeviceModelStorageSqlite>((work_dir / "device_model.db").string()));
+    auto& registry = *device_model;
+    config = std::make_unique<ocpp::v16::ChargePointConfigurationDeviceModel>(
+        CONFIG_DIR_V16, std::move(device_model),
+        ocpp::v2::Ocpp16KeyMappings{
+            {"VendorFanSpeed", {ocpp::v2::Component{"VendorRuntime"}, ocpp::v2::Variable{"FanSpeed"}}}},
+        ocpp::v16::ChargePointConfigurationDeviceModel::Load::OnConstruction,
+        [](const std::string& owner) { return owner == "TEST_OWNER"; });
+    EXPECT_FALSE(config->get("VendorFanSpeed").has_value());
+
+    register_runtime_variable(registry, "VendorRuntime", "FanSpeed");
+    const auto registered = config->get("VendorFanSpeed");
+    ASSERT_TRUE(registered.has_value());
+    EXPECT_EQ(registered->value, "7");
+    EXPECT_EQ(config->set("VendorFanSpeed", "9"), ocpp::v16::ConfigurationStatus::Accepted);
+
+    registry.unregister_components("TEST_OWNER");
+    EXPECT_FALSE(config->get("VendorFanSpeed").has_value());
+    const auto all = config->get_all_key_value();
+    EXPECT_TRUE(std::none_of(all.begin(), all.end(), [](const auto& kv) { return kv.key == "VendorFanSpeed"; }));
+}
+
+TEST_F(LegacyKeyOverride, MappingsToVariablesOfOtherOwnersAreIgnored) {
+    migrate({});
+    config.reset();
+    auto device_model = std::make_unique<ocpp::v2::DeviceModel>(
+        std::make_unique<ocpp::v2::DeviceModelStorageSqlite>((work_dir / "device_model.db").string()));
+    auto& registry = *device_model;
+    config = std::make_unique<ocpp::v16::ChargePointConfigurationDeviceModel>(
+        CONFIG_DIR_V16, std::move(device_model),
+        ocpp::v2::Ocpp16KeyMappings{
+            {"VendorFanSpeed", {ocpp::v2::Component{"VendorRuntime"}, ocpp::v2::Variable{"FanSpeed"}}},
+            {"LightIntensity", {ocpp::v2::Component{"VendorLight"}, ocpp::v2::Variable{"Intensity"}}}},
+        ocpp::v16::ChargePointConfigurationDeviceModel::Load::Deferred,
+        [](const std::string& owner) { return owner == "ANOTHER_OWNER"; });
+    register_runtime_variable(registry, "VendorLight", "Intensity", "LIGHT_OWNER");
+    config->load();
+    register_runtime_variable(registry, "VendorRuntime", "FanSpeed");
+
+    EXPECT_FALSE(config->get("VendorFanSpeed").has_value());
     EXPECT_FALSE(config->get_variable_resolver().is_overridden(ocpp::v16::keys::valid_keys::LightIntensity));
     const auto kv = config->get("LightIntensity");
     ASSERT_TRUE(kv.has_value());
