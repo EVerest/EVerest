@@ -163,6 +163,9 @@ SCENARIO("Check ErrorDatabaseSqlite class", "[!throws]") {
                 REQUIRE(errors.front()->state == Everest::error::State::ClearedByModule);
                 REQUIRE(errors.front()->trigger_value.has_value());
                 REQUIRE(errors.front()->trigger_value.value().text_repr == "");
+                REQUIRE(errors.front()->origin.mapping.has_value());
+                REQUIRE(errors.front()->origin.mapping.value().evse == 1);
+                REQUIRE(errors.front()->origin.mapping.value().connector == 1);
             }
         }
         WHEN("Edit error severity") {

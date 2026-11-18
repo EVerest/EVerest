@@ -62,3 +62,42 @@ TEST(error_history, error_object_without_trigger_value_omits_it) {
     const auto serialized = nlohmann::json::parse(serialize(make_error_object()));
     EXPECT_FALSE(serialized.contains("trigger_value"));
 }
+
+TEST(error_history, error_object_serializes_origin_mapping) {
+    auto error = make_error_object();
+    error.origin.mapping = Mapping{1, 2};
+
+    const auto serialized = nlohmann::json::parse(serialize(error));
+    EXPECT_EQ(serialized.at("origin").at("mapping"), nlohmann::json({{"evse", 1}, {"connector", 2}}));
+
+    ErrorObject result;
+    ASSERT_TRUE(everest::lib::API::deserialize(serialized.dump(), result));
+    ASSERT_TRUE(result.origin.mapping.has_value());
+    EXPECT_EQ(result.origin.mapping->evse, 1);
+    EXPECT_EQ(result.origin.mapping->connector, 2);
+}
+
+TEST(error_history, origin_mapping_without_connector) {
+    auto payload = nlohmann::json::parse(serialize(make_error_object()));
+    payload["origin"]["mapping"] = {{"evse", 1}};
+
+    ErrorObject result;
+    ASSERT_TRUE(everest::lib::API::deserialize(payload.dump(), result));
+    ASSERT_TRUE(result.origin.mapping.has_value());
+    EXPECT_EQ(result.origin.mapping->evse, 1);
+    EXPECT_FALSE(result.origin.mapping->connector.has_value());
+    EXPECT_EQ(nlohmann::json::parse(serialize(result)).at("origin").at("mapping"), nlohmann::json({{"evse", 1}}));
+}
+
+TEST(error_history, origin_mapping_rejects_out_of_range_evse) {
+    auto payload = nlohmann::json::parse(serialize(make_error_object()));
+    payload["origin"]["mapping"] = {{"evse", 4294967297}};
+
+    ErrorObject result;
+    EXPECT_FALSE(everest::lib::API::deserialize(payload.dump(), result));
+}
+
+TEST(error_history, origin_without_mapping_omits_it) {
+    const auto serialized = nlohmann::json::parse(serialize(make_error_object()));
+    EXPECT_FALSE(serialized.at("origin").contains("mapping"));
+}

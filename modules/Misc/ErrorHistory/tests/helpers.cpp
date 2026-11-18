@@ -97,6 +97,9 @@ std::vector<Everest::error::ErrorPtr> get_test_errors() {
     errors.at(0)->trigger_value = Everest::error::TriggerValue{"85.3 degC"};
     errors.at(3)->trigger_value = Everest::error::TriggerValue{"85,3 °C – Grenzwert überschritten"};
     errors.at(4)->trigger_value = Everest::error::TriggerValue{""};
+    errors.at(0)->origin.mapping = Mapping(1, 2);
+    errors.at(3)->origin.mapping = Mapping(2);
+    errors.at(4)->origin.mapping = Mapping(1, 1);
     return errors;
 }
 
@@ -117,6 +120,11 @@ void check_expected_errors_in_list(const std::vector<Everest::error::ErrorPtr>& 
         REQUIRE((*result)->state == exp_err->state);
         REQUIRE((*result)->sub_type == exp_err->sub_type);
         REQUIRE((*result)->vendor_id == exp_err->vendor_id);
+        REQUIRE((*result)->origin.mapping.has_value() == exp_err->origin.mapping.has_value());
+        if (exp_err->origin.mapping.has_value()) {
+            REQUIRE((*result)->origin.mapping.value().evse == exp_err->origin.mapping.value().evse);
+            REQUIRE((*result)->origin.mapping.value().connector == exp_err->origin.mapping.value().connector);
+        }
         REQUIRE((*result)->trigger_value.has_value() == exp_err->trigger_value.has_value());
         if (exp_err->trigger_value.has_value()) {
             REQUIRE((*result)->trigger_value.value().text_repr == exp_err->trigger_value.value().text_repr);

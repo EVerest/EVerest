@@ -30,6 +30,12 @@ using Severity_External = Severity;
 Severity_Internal to_internal_api(Severity_External const& val);
 Severity_External to_external_api(Severity_Internal const& val);
 
+using Mapping_Internal = ::types::error_history::Mapping;
+using Mapping_External = Mapping;
+
+Mapping_Internal to_internal_api(Mapping_External const& val);
+Mapping_External to_external_api(Mapping_Internal const& val);
+
 using ImplementationIdentifier_Internal = ::types::error_history::ImplementationIdentifier;
 using ImplementationIdentifier_External = ImplementationIdentifier;
 

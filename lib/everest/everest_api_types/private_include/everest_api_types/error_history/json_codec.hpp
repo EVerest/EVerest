@@ -19,6 +19,9 @@ void from_json(const json& j, SeverityFilter& k);
 void to_json(json& j, Severity const& k) noexcept;
 void from_json(const json& j, Severity& k);
 
+void to_json(json& j, Mapping const& k) noexcept;
+void from_json(const json& j, Mapping& k);
+
 void to_json(json& j, ImplementationIdentifier const& k) noexcept;
 void from_json(const json& j, ImplementationIdentifier& k);
 
