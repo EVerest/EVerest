@@ -263,3 +263,20 @@ async def test_value_change_ahead_of_its_registration_is_applied(probe_module, c
     await wait_for_calls(owner.registration_results, 1)
     assert owner.registration_results.call_args.args[0] == {"owner": "aux", "status": "Accepted", "rejected": []}
     assert (await read(charge_point, "AuxCtrlr"))["attribute_value"] == "55"
+
+
+@pytest.mark.asyncio
+@pytest.mark.ocpp_version("ocpp2.0.1")
+@pytest.mark.everest_core_config("everest-config-ocpp201-probe-module.yaml")
+@pytest.mark.probe_module
+@pytest.mark.everest_config_adaptions(DeviceModelConnectionAdjustment())
+async def test_ocpp16_key_is_ignored(probe_module, central_system: CentralSystem):
+    # A key OCPP 1.6 mode would refuse, as the stack owns it
+    registration = fan_speed_registration()
+    registration["components"][0]["variables"][0]["ocpp16_key"] = "HeartbeatInterval"
+    owner = Owner(probe_module, [registration])
+    charge_point = await start(probe_module, central_system)
+
+    await wait_for_calls(owner.registration_results, 1)
+    assert owner.registration_results.call_args.args[0] == {"owner": DEFAULT_OWNER, "status": "Accepted", "rejected": []}
+    assert (await read(charge_point))["attribute_value"] == "40"

@@ -13,6 +13,7 @@
 #include <vector>
 
 #include <everest/ocpp_module_common/device_model/device_model_registrations.hpp>
+#include <everest/ocpp_module_common/device_model/ocpp16_key_binder.hpp>
 #include <everest/util/async/monitor.hpp>
 #include <generated/types/ocpp.hpp>
 #include <generated/types/ocpp_device_model.hpp>
@@ -76,19 +77,23 @@ public:
 
     /// \brief Registers every owner with \p registry and answers each registration not answered yet. Connections
     /// whose startup registrations are missing count as having none. An owner whose registration fails is logged and
-    /// dropped, which frees its name. Call detach() before \p registry is destroyed.
+    /// dropped, which frees its name. Call detach() before \p registry or \p binder is destroyed.
+    /// \param binder Maps the OCPP 1.6 keys that the owners declare, from now on until detach(); without one the keys
+    /// are ignored. A variable whose key it refuses is not registered.
     /// \returns The result of each owner's registration
-    std::vector<OwnerRegistrationResult> register_with(ocpp::v2::DeviceModelRegistryInterface& registry);
+    std::vector<OwnerRegistrationResult> register_with(ocpp::v2::DeviceModelRegistryInterface& registry,
+                                                       Ocpp16KeyBinder* binder = nullptr);
 
     /// \brief Unregisters the owners from the attached registry, which keeps their monitors for the next
-    /// registration, once the registrations, releases and value reports in progress finished. The owners and their
-    /// registrations are kept for the next register_with.
+    /// registration, and removes their OCPP 1.6 keys, once the registrations, releases and value reports in progress
+    /// finished. The owners and their registrations are kept for the next register_with.
     void detach();
 
 private:
     struct Owner {
         std::size_t connection;
         std::vector<ocpp::v2::RegisteredComponent> components;
+        std::vector<DeclaredOcpp16Key> keys;
         std::shared_ptr<ocpp::v2::VariableValueProvider> provider;
         /// \brief Being unregistered after a release or a failed registration; the name stays in use until then
         bool releasing{false};
@@ -104,6 +109,7 @@ private:
 
     struct State {
         ocpp::v2::DeviceModelRegistryInterface* registry{nullptr};
+        Ocpp16KeyBinder* binder{nullptr};
         std::map<std::string, Owner> owners;
         std::vector<bool> answered;
         /// \brief Per connection, the latest registration of each owner published before its startup registrations
@@ -171,7 +177,15 @@ private:
     /// when accepted. The caller counted the call in registry_calls_in_progress.
     void report(ocpp::v2::DeviceModelRegistryInterface& registry, std::size_t index, const std::string& owner,
                 const types::ocpp_device_model::ValueChange& change);
-    /// \brief Unregisters \p owner, which is marked releasing, from \p registry and drops it
+    /// \brief Binds the keys of \p owner with \p binder, if given, and registers the components whose key is not
+    /// refused with \p registry, whose result then lists the refused variables too. Without the lock.
+    /// \throws What the registry throws, after removing the keys of \p owner
+    static ocpp::v2::ComponentRegistrationResult
+    register_owner(ocpp::v2::DeviceModelRegistryInterface& registry, Ocpp16KeyBinder* binder, const std::string& owner,
+                   const std::vector<ocpp::v2::RegisteredComponent>& components,
+                   const std::vector<DeclaredOcpp16Key>& keys,
+                   const std::shared_ptr<ocpp::v2::VariableValueProvider>& provider);
+    /// \brief Unregisters \p owner, which is marked releasing, from \p registry, removes its keys and drops it
     void unregister(ocpp::v2::DeviceModelRegistryInterface& registry, const std::string& owner);
     /// \brief Sends the outbox while a registry is attached, unless another thread is sending it already
     void flush();

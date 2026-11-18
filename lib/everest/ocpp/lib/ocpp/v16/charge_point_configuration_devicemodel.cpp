@@ -1250,7 +1250,7 @@ v2::Ocpp16KeyMappings ChargePointConfigurationDeviceModel::usable_key_mappings()
 }
 
 void ChargePointConfigurationDeviceModel::load() {
-    resolver = VariableResolver(usable_key_mappings());
+    resolver.replace_file_mappings(usable_key_mappings());
     // logged here rather than in the loader, which runs twice on a migration boot, and after unusable overrides
     // were dropped
     for (const auto& [key, target] : resolver.overrides()) {
@@ -1443,12 +1443,12 @@ bool ChargePointConfigurationDeviceModel::shouldExposeKey(keys::valid_keys key) 
 }
 
 std::optional<KeyValue> ChargePointConfigurationDeviceModel::getCustomKeyValue(const std::string& key) {
-    const auto it = resolver.custom_keys().find(key);
-    if (it == resolver.custom_keys().end()) {
+    const auto target = resolver.custom_key_to_cv(key);
+    if (!target.has_value()) {
         return std::nullopt;
     }
 
-    const auto& [component, variable] = it->second;
+    const auto& [component, variable] = target.value();
     if (!is_mapping_target(component, variable)) {
         return std::nullopt;
     }
@@ -1593,12 +1593,12 @@ void ChargePointConfigurationDeviceModel::appendSupportedMeasurandsKeyValue(
 
 std::optional<ConfigurationStatus> ChargePointConfigurationDeviceModel::setCustomKey(const std::string& key,
                                                                                      const std::string& value) {
-    const auto it = resolver.custom_keys().find(key);
-    if (it == resolver.custom_keys().end()) {
+    const auto target = resolver.custom_key_to_cv(key);
+    if (!target.has_value()) {
         return std::nullopt;
     }
 
-    const auto& [component, variable] = it->second;
+    const auto& [component, variable] = target.value();
     if (!is_mapping_target(component, variable)) {
         return std::nullopt;
     }

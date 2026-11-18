@@ -21,7 +21,7 @@ from ocpp.v16.enums import ConfigurationStatus
 
 from device_model_api_client import (API_TIMEOUTS, OWNER, DeviceModelApiConfigAdjustment, ExternalOwnerApp,
                                      cooling_unit_component, cooling_unit_registration, fan_speed_limit_variable,
-                                     ocpp16_mapping, release, start_everest, write_ocpp16_mappings)
+                                     mode_variable, ocpp16_mapping, release, start_everest, write_ocpp16_mappings)
 # fmt: on
 
 DEADLINE = API_TIMEOUTS["cfg_expected_owners_timeout_s"]
@@ -441,3 +441,111 @@ async def test_malformed_mapping_file_stops_ocpp(
         everest_core: EverestCore, central_system: CentralSystem, test_controller: EverestTestController, caplog):
     await assert_ocpp_does_not_start(test_controller, everest_core, central_system, caplog, "YAML parsing error",
                                      within=15)
+
+
+DECLARED_KEY = "CoolingUnitFanSpeed"
+
+
+def keyed(variable: dict, key: str) -> dict:
+    return {**variable, "ocpp16_key": key}
+
+
+def rejection(component: dict, variable: str, reason: str) -> dict:
+    return {"component": component, "variable": {"name": variable}, "reason": reason}
+
+
+class TestDeclaredKeys:
+
+    @ocpp16(expecting(), pytest.mark.ocpp16_key_mappings([]))
+    async def test_key_declared_by_the_owner_is_served_from_the_first_boot(
+            self, app: ExternalOwnerApp, central_system: CentralSystem, test_controller: EverestTestController):
+        await app.connect()
+        app.register(cooling_unit_registration(variables=[keyed(fan_speed_limit_variable(), DECLARED_KEY)]))
+        charge_point = await start_everest(test_controller, central_system)
+        assert_accepted(await app.wait_for_result())
+
+        known, unknown = await configuration(charge_point, DECLARED_KEY)
+        assert unknown == []
+        assert (known[DECLARED_KEY]["value"], known[DECLARED_KEY]["readonly"]) == ("80", False)
+        assert await change(charge_point, DECLARED_KEY, "60") == ConfigurationStatus.accepted
+        assert app.writes[-1]["value"] == "60" and app.writes[-1]["source"] == "OCPP 1.6"
+
+    @ocpp16(expecting(), pytest.mark.ocpp16_key_mappings([]))
+    async def test_key_declared_at_runtime_follows_the_registration(
+            self, app: ExternalOwnerApp, central_system: CentralSystem, test_controller: EverestTestController):
+        charge_point = await start_everest(test_controller, central_system, timeout=DEADLINE + 30)
+        assert await configuration(charge_point, DECLARED_KEY) == ({}, [DECLARED_KEY])
+
+        await app.connect()
+        app.register(cooling_unit_registration(variables=[keyed(fan_speed_limit_variable(), DECLARED_KEY)]))
+        assert_accepted(await app.wait_for_result())
+        assert (await configuration(charge_point, DECLARED_KEY))[0][DECLARED_KEY]["value"] == "80"
+
+        app.register(cooling_unit_registration(variables=[fan_speed_limit_variable()]))
+        assert_accepted(await app.wait_for_result(count=2))
+        assert await configuration(charge_point, DECLARED_KEY) == ({}, [DECLARED_KEY])
+
+        app.register(cooling_unit_registration(variables=[keyed(fan_speed_limit_variable(), DECLARED_KEY)]))
+        assert_accepted(await app.wait_for_result(count=3))
+        app.register(release())
+        assert_accepted(await app.wait_for_result(count=4))
+        assert await configuration(charge_point, DECLARED_KEY) == ({}, [DECLARED_KEY])
+
+    @ocpp16(expecting())
+    async def test_key_or_variable_of_the_mapping_file_is_refused(
+            self, app: ExternalOwnerApp, central_system: CentralSystem, test_controller: EverestTestController):
+        await app.connect()
+        app.register(cooling_unit_registration(variables=[keyed(fan_speed_limit_variable(), DECLARED_KEY),
+                                                          keyed(mode_variable(), KEY)]))
+        charge_point = await start_everest(test_controller, central_system)
+
+        result = await app.wait_for_result()
+        assert result["status"] == "Accepted"
+        assert sorted(result["rejected"], key=lambda r: r["variable"]["name"]) == [
+            rejection(cooling_unit_component(), "FanSpeedLimit", "Ocpp16KeyInUse"),
+            rejection(cooling_unit_component(), "Mode", "Ocpp16KeyInUse"),
+        ]
+        assert await configuration(charge_point, DECLARED_KEY) == ({}, [DECLARED_KEY])
+
+    @ocpp16(expecting())
+    async def test_key_declared_like_the_mapping_file_is_accepted(
+            self, app: ExternalOwnerApp, central_system: CentralSystem, test_controller: EverestTestController):
+        await app.connect()
+        app.register(cooling_unit_registration(variables=[keyed(fan_speed_limit_variable(), KEY)]))
+        charge_point = await start_everest(test_controller, central_system)
+
+        assert_accepted(await app.wait_for_result())
+        assert (await configuration(charge_point, KEY))[0][KEY]["value"] == "80"
+
+    @ocpp16(expecting("station-light"), pytest.mark.ocpp16_key_mappings([]))
+    async def test_built_in_key_declared_by_a_late_owner_is_served_by_the_owner(
+            self, app: ExternalOwnerApp, central_system: CentralSystem, test_controller: EverestTestController):
+        charge_point = await start_everest(test_controller, central_system, timeout=DEADLINE + 30)
+        assert await configuration(charge_point, "LightIntensity") == ({}, ["LightIntensity"])
+
+        await app.connect()
+        light = station_light_registration()
+        light["components"][0]["variables"][0]["ocpp16_key"] = "LightIntensity"
+        app.register(light)
+        assert_accepted(await app.wait_for_result("station-light"))
+
+        known, _ = await configuration(charge_point, "LightIntensity")
+        assert (known["LightIntensity"]["value"], known["LightIntensity"]["readonly"]) == ("50", False)
+        assert await change(charge_point, "LightIntensity", "70") == ConfigurationStatus.accepted
+        assert (app.writes[-1]["variable"], app.writes[-1]["value"]) == ({"name": "Intensity"}, "70")
+
+        app.register(release("station-light"))
+        assert_accepted(await app.wait_for_result("station-light", count=2))
+        assert await configuration(charge_point, "LightIntensity") == ({}, ["LightIntensity"])
+
+    @ocpp16(expecting("station-light"), pytest.mark.ocpp16_key_mappings([]))
+    async def test_built_in_key_declared_for_a_variable_of_another_type_is_invalid(
+            self, app: ExternalOwnerApp, central_system: CentralSystem, test_controller: EverestTestController):
+        await app.connect()
+        light = station_light_registration(data_type="string", value="bright")
+        light["components"][0]["variables"][0]["ocpp16_key"] = "LightIntensity"
+        app.register(light)
+        await start_everest(test_controller, central_system)
+
+        result = await app.wait_for_result("station-light")
+        assert result["rejected"] == [rejection({"name": "StationLight"}, "Intensity", "Ocpp16KeyInvalid")]

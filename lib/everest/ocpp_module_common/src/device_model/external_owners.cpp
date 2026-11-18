@@ -87,6 +87,10 @@ dm_types::RegistrationRejectionReason to_everest_rejection_reason(const ocpp::v2
         return dm_types::RegistrationRejectionReason::InvalidNameKey;
     case ocpp::v2::RegistrationRejectionReason::ReservedVariable:
         return dm_types::RegistrationRejectionReason::ReservedVariable;
+    case ocpp::v2::RegistrationRejectionReason::Ocpp16KeyInUse:
+        return dm_types::RegistrationRejectionReason::Ocpp16KeyInUse;
+    case ocpp::v2::RegistrationRejectionReason::Ocpp16KeyInvalid:
+        return dm_types::RegistrationRejectionReason::Ocpp16KeyInvalid;
     }
     throw std::out_of_range("Unknown RegistrationRejectionReason");
 }
@@ -129,6 +133,44 @@ to_registered_components(const std::string& owner, const std::vector<dm_types::R
             }
         }
         result.push_back(std::move(registered));
+    }
+    return result;
+}
+
+/// \brief The OCPP 1.6 keys that \p components declare. The components and variables fit the OCPP types.
+std::vector<DeclaredOcpp16Key> declared_keys(const std::vector<dm_types::RegisteredComponent>& components) {
+    std::vector<DeclaredOcpp16Key> keys;
+    for (const auto& component : components) {
+        for (const auto& variable : component.variables) {
+            if (variable.ocpp16_key.has_value()) {
+                keys.push_back({to_ocpp_component(component.component), to_ocpp_variable(variable.variable),
+                                variable.ocpp16_key.value()});
+            }
+        }
+    }
+    return keys;
+}
+
+/// \brief \p components without the variables in \p refused, and without the components left empty
+std::vector<ocpp::v2::RegisteredComponent> without(const std::vector<ocpp::v2::RegisteredComponent>& components,
+                                                   const std::vector<ocpp::v2::RejectedVariable>& refused) {
+    if (refused.empty()) {
+        return components;
+    }
+    std::vector<ocpp::v2::RegisteredComponent> result;
+    for (const auto& component : components) {
+        ocpp::v2::RegisteredComponent kept{component.component, {}};
+        for (const auto& variable : component.variables) {
+            const bool is_refused = std::any_of(refused.begin(), refused.end(), [&](const auto& rejected) {
+                return rejected.component == component.component and rejected.variable == variable.variable;
+            });
+            if (not is_refused) {
+                kept.variables.push_back(variable);
+            }
+        }
+        if (not kept.variables.empty()) {
+            result.push_back(std::move(kept));
+        }
     }
     return result;
 }
@@ -346,7 +388,9 @@ void ExternalOwners::set_startup_registrations(const std::size_t index, const dm
 void ExternalOwners::on_registration(const std::size_t index, const dm_types::Registration& registration) {
     Applied applied;
     ocpp::v2::DeviceModelRegistryInterface* registry{nullptr};
+    Ocpp16KeyBinder* binder{nullptr};
     std::vector<ocpp::v2::RegisteredComponent> components;
+    std::vector<DeclaredOcpp16Key> keys;
     std::shared_ptr<ocpp::v2::VariableValueProvider> provider;
     {
         auto handle = this->state.handle();
@@ -366,10 +410,12 @@ void ExternalOwners::on_registration(const std::size_t index, const dm_types::Re
         }
         applied = this->apply(*handle, index, registration, nullptr);
         registry = handle->registry;
+        binder = handle->binder;
         if (applied.call == RegistryCall::None and applied.result.has_value()) {
             handle->outbox.push_back(std::move(applied.result.value()));
         } else if (applied.call == RegistryCall::Register) {
             components = handle->owners.at(applied.owner).components;
+            keys = handle->owners.at(applied.owner).keys;
             provider = handle->owners.at(applied.owner).provider;
         }
     }
@@ -382,7 +428,7 @@ void ExternalOwners::on_registration(const std::size_t index, const dm_types::Re
     } else if (applied.call == RegistryCall::Register) {
         std::optional<ocpp::v2::ComponentRegistrationResult> result;
         try {
-            result = registry->register_components(applied.owner, components, provider);
+            result = register_owner(*registry, binder, applied.owner, components, keys, provider);
         } catch (const std::exception& e) {
             EVLOG_error << "Registering owner " << applied.owner << " failed, the owner is dropped: " << e.what();
         }
@@ -501,7 +547,29 @@ void ExternalOwners::report(ocpp::v2::DeviceModelRegistryInterface& registry, co
     this->state.notify_all();
 }
 
-std::vector<OwnerRegistrationResult> ExternalOwners::register_with(ocpp::v2::DeviceModelRegistryInterface& registry) {
+ocpp::v2::ComponentRegistrationResult
+ExternalOwners::register_owner(ocpp::v2::DeviceModelRegistryInterface& registry, Ocpp16KeyBinder* binder,
+                               const std::string& owner, const std::vector<ocpp::v2::RegisteredComponent>& components,
+                               const std::vector<DeclaredOcpp16Key>& keys,
+                               const std::shared_ptr<ocpp::v2::VariableValueProvider>& provider) {
+    if (binder == nullptr) {
+        return registry.register_components(owner, components, provider);
+    }
+    const auto refused = binder->bind(owner, components, keys);
+    ocpp::v2::ComponentRegistrationResult result;
+    try {
+        result = registry.register_components(owner, without(components, refused), provider);
+    } catch (...) {
+        binder->unbind(owner);
+        throw;
+    }
+    binder->unbind_variables(owner, result.rejected);
+    result.rejected.insert(result.rejected.end(), refused.begin(), refused.end());
+    return result;
+}
+
+std::vector<OwnerRegistrationResult> ExternalOwners::register_with(ocpp::v2::DeviceModelRegistryInterface& registry,
+                                                                   Ocpp16KeyBinder* binder) {
     std::vector<OwnerRegistrationResult> results;
     {
         auto handle = this->state.handle();
@@ -511,10 +579,12 @@ std::vector<OwnerRegistrationResult> ExternalOwners::register_with(ocpp::v2::Dev
             }
         }
         handle->registry = &registry;
+        handle->binder = binder;
         std::vector<std::string> failed;
         for (auto& [owner, entry] : handle->owners) {
             try {
-                const auto result = registry.register_components(owner, entry.components, entry.provider);
+                const auto result =
+                    register_owner(registry, binder, owner, entry.components, entry.keys, entry.provider);
                 results.push_back({owner, result});
                 if (not entry.answered) {
                     entry.answered = true;
@@ -542,10 +612,12 @@ std::vector<OwnerRegistrationResult> ExternalOwners::register_with(ocpp::v2::Dev
 void ExternalOwners::detach() {
     std::vector<std::string> owners;
     ocpp::v2::DeviceModelRegistryInterface* registry{nullptr};
+    Ocpp16KeyBinder* binder{nullptr};
     {
         auto handle = this->state.handle();
         handle.wait([&handle]() { return handle->registry_calls_in_progress == 0; });
         registry = std::exchange(handle->registry, nullptr);
+        binder = std::exchange(handle->binder, nullptr);
         if (registry == nullptr) {
             return;
         }
@@ -559,6 +631,9 @@ void ExternalOwners::detach() {
             registry->unregister_components(owner);
         } catch (const std::exception& e) {
             EVLOG_error << "Unregistering owner " << owner << " failed: " << e.what();
+        }
+        if (binder != nullptr) {
+            binder->unbind(owner);
         }
     }
 }
@@ -616,6 +691,7 @@ ExternalOwners::Applied ExternalOwners::apply(State& state, const std::size_t in
     owned.connection = index;
     owned.answered = false;
     owned.components = std::move(components);
+    owned.keys = declared_keys(registration.components);
     if (owned.provider == nullptr) {
         owned.provider = std::make_shared<OwnerProvider>(this->connections.at(index), owner);
     }
@@ -675,10 +751,15 @@ bool ExternalOwners::store(State& state, const std::string& owner, const dm_type
 }
 
 void ExternalOwners::unregister(ocpp::v2::DeviceModelRegistryInterface& registry, const std::string& owner) {
+    // set while the registration or release counted in registry_calls_in_progress is in progress
+    auto* const binder = this->state.handle()->binder;
     try {
         registry.unregister_components(owner);
     } catch (const std::exception& e) {
         EVLOG_error << "Unregistering owner " << owner << " failed: " << e.what();
+    }
+    if (binder != nullptr) {
+        binder->unbind(owner);
     }
     {
         auto handle = this->state.handle();

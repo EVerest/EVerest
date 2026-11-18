@@ -353,6 +353,93 @@ mappings:
     result.registrations.end();
 }
 
+/// \brief The registrations of make_registrations for CoolingCtrlr.FanSpeed with the value 40 and \p key as OCPP 1.6
+/// key
+dm_types::Registrations make_keyed_fan_speed(const std::string& key) {
+    types::ocpp::Variable fan_speed;
+    fan_speed.name = "FanSpeed";
+    auto registrations = make_registrations("CoolingCtrlr", fan_speed, dm_types::DataEnum::integer, "40");
+    registrations.registrations.at(0).components.at(0).variables.at(0).ocpp16_key = key;
+    return registrations;
+}
+
+TEST_F(ChargePointConfigFactoryV16Test, KeyDeclaredByExternalOwnerApplies) {
+    const auto connection = std::make_shared<OwnerConnection>();
+    ocpp_module_common::device_model::ExternalOwners owners({connection});
+    owners.set_startup_registrations(0, make_keyed_fan_speed("CoolingFanSpeed"));
+
+    auto result = module::config_factory_v16::create_charge_point_configuration(work_dir, make_params(), n_evse, {},
+                                                                                nullptr, nullptr, &owners);
+
+    ASSERT_EQ(connection->results.size(), 1u);
+    EXPECT_TRUE(connection->results.front().rejected.empty());
+    const auto kv = result.configuration->get("CoolingFanSpeed");
+    ASSERT_TRUE(kv.has_value());
+    EXPECT_EQ(kv->value, "40");
+    EXPECT_EQ(result.configuration->getSupportedFeatureProfilesSet().count(ocpp::v16::SupportedFeatureProfiles::Custom),
+              1u);
+
+    result.registrations.end();
+    EXPECT_FALSE(result.configuration->get_variable_resolver().key_to_cv("CoolingFanSpeed").has_value());
+}
+
+TEST_F(ChargePointConfigFactoryV16Test, KeyDeclaredForAVariableTheMappingFileNamesIsRefused) {
+    const auto mapping_file = work_dir / "mappings.yaml";
+    std::ofstream(mapping_file) << R"yaml(
+mappings:
+  - ocpp16_key: VendorFanSpeed
+    component:
+      name: CoolingCtrlr
+    variable:
+      name: FanSpeed
+)yaml";
+    const auto connection = std::make_shared<OwnerConnection>();
+    ocpp_module_common::device_model::ExternalOwners owners({connection});
+    owners.set_startup_registrations(0, make_keyed_fan_speed("CoolingFanSpeed"));
+    auto params = make_params();
+    params.Ocpp16KeyMappingsPath = mapping_file.string();
+
+    auto result = module::config_factory_v16::create_charge_point_configuration(work_dir, params, n_evse, {}, nullptr,
+                                                                                nullptr, &owners);
+
+    ASSERT_EQ(connection->results.size(), 1u);
+    ASSERT_EQ(connection->results.front().rejected.size(), 1u);
+    EXPECT_EQ(connection->results.front().rejected.front().reason,
+              dm_types::RegistrationRejectionReason::Ocpp16KeyInUse);
+    EXPECT_FALSE(result.configuration->get("CoolingFanSpeed").has_value());
+    EXPECT_FALSE(result.configuration->get_device_model()
+                     .get_variable_meta_data(make_component("CoolingCtrlr"), make_variable("FanSpeed"))
+                     .has_value());
+    result.registrations.end();
+}
+
+TEST_F(ChargePointConfigFactoryV16Test, KeyDeclaredLikeTheMappingFileIsServedByTheFile) {
+    const auto mapping_file = work_dir / "mappings.yaml";
+    std::ofstream(mapping_file) << R"yaml(
+mappings:
+  - ocpp16_key: CoolingFanSpeed
+    component:
+      name: CoolingCtrlr
+    variable:
+      name: FanSpeed
+)yaml";
+    const auto connection = std::make_shared<OwnerConnection>();
+    ocpp_module_common::device_model::ExternalOwners owners({connection});
+    owners.set_startup_registrations(0, make_keyed_fan_speed("CoolingFanSpeed"));
+    auto params = make_params();
+    params.Ocpp16KeyMappingsPath = mapping_file.string();
+
+    auto result = module::config_factory_v16::create_charge_point_configuration(work_dir, params, n_evse, {}, nullptr,
+                                                                                nullptr, &owners);
+
+    ASSERT_EQ(connection->results.size(), 1u);
+    EXPECT_TRUE(connection->results.front().rejected.empty());
+    const auto kv = result.configuration->get("CoolingFanSpeed");
+    ASSERT_TRUE(kv.has_value());
+    EXPECT_EQ(kv->value, "40");
+    result.registrations.end();
+}
+
 // The supported feature profiles depend on values that an external owner may provide
 TEST_F(ChargePointConfigFactoryV16Test, FeatureProfilesSeeValuesOfExternalOwners) {
     const auto component_config_dir = work_dir / "component_config";

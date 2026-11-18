@@ -26,13 +26,27 @@ documentation compares the two ways in
 :ref:`trade-offs <howto-ocpp-device-model-trade-offs>` below add what matters in operation.
 
 OCPPmulti serves OCPP 1.6 from the same device model. In 1.6 mode, a registered variable is reachable through
-GetConfiguration and ChangeConfiguration once ``Ocpp16KeyMappingsPath`` maps a configuration key onto it, see
+GetConfiguration and ChangeConfiguration once a configuration key is mapped onto it. The owner declares the key itself
+with ``ocpp16_key`` on the variable, or the integrator maps one in the file at ``Ocpp16KeyMappingsPath``, see
 :ref:`One model for OCPP 1.6 and OCPP 2.x <handwritten_ocppmulti_one-model-for-ocpp16-and-ocpp2x>`. Only the
 ``Actual`` attribute is reachable that way, and OCPP 1.6 has no monitors: a reported change is seen on the next
-read. A custom key is looked up at each request, so it is unknown to the CSMS while its owner is not registered. A
-key that replaces a built-in ``OCPP16LegacyCtrlr`` key needs its variable registered at startup, otherwise the mapping
-is ignored with an error log and the key keeps its built-in variable until the next start. A ChangeConfiguration.req
-reaches the owner with ``source`` set to ``OCPP 1.6``.
+read. A custom key is looked up at each request, so it is unknown to the CSMS while its owner is not registered.
+
+A declared key lives as long as the registration that declares it: a later registration of the owner replaces the
+keys, and a release removes them. It is either a key that OCPP 1.6 does not define, or a built-in key stored in
+``OCPP16LegacyCtrlr``, such as ``LightIntensity``, which the variable then holds instead, at startup and at runtime
+alike. The mapping file takes precedence: a key it names for another variable, or a variable it maps to another key,
+is refused, whether or not its entry is usable; declaring the key the file maps to the same variable changes nothing.
+Between owners, the first one to register a key keeps it. A variable whose key is refused is not registered and is
+listed in the registration result, with ``Ocpp16KeyInUse`` when the key or the variable belongs to another key, and
+with ``Ocpp16KeyInvalid`` when the key cannot be mapped to the variable: a built-in key that cannot be overridden, a
+variable without an ``Actual`` attribute or, for a built-in key, of another data type. In OCPP 2.x mode the key is
+ignored. The built-in ``OCPP16LegacyCtrlr`` variable of a key that an owner declares stays in the device model, so a
+2.x base report still lists it.
+
+A key that the mapping file maps to a built-in ``OCPP16LegacyCtrlr`` key needs its variable registered at startup,
+otherwise the mapping is ignored with an error log and the key keeps its built-in variable until the next start. A
+ChangeConfiguration.req reaches the owner with ``source`` set to ``OCPP 1.6``.
 
 The supported feature profiles and measurands are derived once, after the startup registrations. The component
 config that EVerest ships defines ``SupportedFeatureProfiles`` and the measurands variables, so their registration
@@ -254,6 +268,8 @@ Keep these rules in mind when choosing names:
   slot. The required ones among them must be defined with a value in the component config:
   ``OCPPCommCtrlr.MessageTimeout``, ``SecurityCtrlr.Identity`` and ``SecurityCtrlr.SecurityProfile``, and
   ``LocalAuthListCtrlr.Entries`` when ``LocalAuthListCtrlr.Available`` is true.
+- In OCPP 1.6 mode, a variable whose ``ocpp16_key`` is refused is rejected with ``Ocpp16KeyInUse`` or
+  ``Ocpp16KeyInvalid``, see the OCPP 1.6 paragraph at the top of this guide.
 
 Check the result
 ================

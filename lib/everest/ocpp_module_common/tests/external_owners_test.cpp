@@ -7,10 +7,13 @@
 #include <filesystem>
 #include <functional>
 #include <future>
+#include <map>
 #include <memory>
 #include <optional>
+#include <set>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <everest/ocpp_module_common/device_model/config_service_binding.hpp>
@@ -188,6 +191,38 @@ dm_types::ValueChange make_change(const std::optional<std::string>& owner, const
     return change;
 }
 
+/// \brief Binds every declared key unless it is in refused, and records the keys each owner holds
+class FakeKeyBinder : public dm::Ocpp16KeyBinder {
+public:
+    std::vector<ocpp::v2::RejectedVariable> bind(const std::string& owner,
+                                                 const std::vector<ocpp::v2::RegisteredComponent>& /*components*/,
+                                                 const std::vector<dm::DeclaredOcpp16Key>& keys) override {
+        this->bound.erase(owner);
+        std::vector<ocpp::v2::RejectedVariable> rejected;
+        for (const auto& key : keys) {
+            if (this->refused.count(key.key) != 0) {
+                rejected.push_back(
+                    {key.component, key.variable, ocpp::v2::RegistrationRejectionReason::Ocpp16KeyInUse, {}});
+            } else {
+                this->bound[owner][key.variable.name.get()] = key.key;
+            }
+        }
+        return rejected;
+    }
+    void unbind_variables(const std::string& owner, const std::vector<ocpp::v2::RejectedVariable>& rejected) override {
+        for (const auto& variable : rejected) {
+            this->bound[owner].erase(variable.variable.name.get());
+        }
+    }
+    void unbind(const std::string& owner) override {
+        this->bound.erase(owner);
+    }
+
+    std::set<std::string> refused;
+    /// \brief Per owner, the key of each variable by variable name
+    std::map<std::string, std::map<std::string, std::string>> bound;
+};
+
 class ExternalOwnersTest : public ::testing::Test {
 protected:
     void SetUp() override {
@@ -237,6 +272,8 @@ protected:
     std::unique_ptr<ocpp::v2::DeviceModel> device_model;
     std::shared_ptr<FakeConnection> first;
     std::shared_ptr<FakeConnection> second;
+    // declared before owners, which uses it until destroyed
+    FakeKeyBinder binder;
     std::unique_ptr<dm::ExternalOwners> owners;
     std::vector<dm::OwnerRegistrationResult> results;
 };
@@ -878,4 +915,183 @@ TEST(ExternalOwnerNames, NamesOfOcppAndLibocppAreNotExternalOwners) {
     EXPECT_FALSE(dm::is_external_owner(dm::VARIABLE_OWNER_EVEREST_CONFIG));
     EXPECT_FALSE(dm::is_external_owner(ocpp::v2::VARIABLE_OWNER_COMPONENT_CONFIG));
     EXPECT_FALSE(dm::is_external_owner(ocpp::v2::VARIABLE_OWNER_OCPP_STACK));
+}
+
+namespace {
+
+/// \brief A registration of \p owner with one integer variable per entry of \p keys on \p component, each named by the
+/// entry's first and declaring its second as OCPP 1.6 key, if any
+dm_types::Registration
+make_keyed_registration(const std::string& owner, const std::string& component,
+                        const std::vector<std::pair<std::string, std::optional<std::string>>>& keys) {
+    auto registration = make_registration(owner, component, keys.at(0).first, "1");
+    auto& variables = registration.components.at(0).variables;
+    const auto prototype = variables.at(0);
+    variables.clear();
+    for (const auto& [variable, key] : keys) {
+        auto registered = prototype;
+        registered.variable.name = variable;
+        registered.ocpp16_key = key;
+        variables.push_back(registered);
+    }
+    return registration;
+}
+
+} // namespace
+
+TEST_F(ExternalOwnersTest, DeclaredKeysAreBoundWithTheStartupRegistration) {
+    this->owners->set_startup_registrations(
+        0, make_registrations({make_keyed_registration("cooling", "CoolingUnit",
+                                                       {{"FanSpeed", "CoolingFanSpeed"}, {"Mode", std::nullopt}})}));
+    this->owners->set_startup_registrations(1, {});
+    this->owners->register_with(*this->device_model, &binder);
+
+    EXPECT_EQ(binder.bound["cooling"], (std::map<std::string, std::string>{{"FanSpeed", "CoolingFanSpeed"}}));
+    ASSERT_EQ(this->first->results.size(), 1u);
+    EXPECT_TRUE(this->first->results.at(0).rejected.empty());
+    EXPECT_EQ(this->read("CoolingUnit", "FanSpeed"), "1");
+    EXPECT_EQ(this->read("CoolingUnit", "Mode"), "1");
+}
+
+TEST_F(ExternalOwnersTest, VariableWithARefusedKeyIsNotRegistered) {
+    binder.refused.insert("TakenKey");
+    this->owners->set_startup_registrations(
+        0, make_registrations({make_keyed_registration("cooling", "CoolingUnit",
+                                                       {{"FanSpeed", "TakenKey"}, {"Mode", "CoolingMode"}})}));
+    this->owners->set_startup_registrations(1, {});
+    this->owners->register_with(*this->device_model, &binder);
+
+    EXPECT_FALSE(this->read("CoolingUnit", "FanSpeed").has_value());
+    EXPECT_EQ(this->read("CoolingUnit", "Mode"), "1");
+    ASSERT_EQ(this->first->results.size(), 1u);
+    const auto& result = this->first->results.at(0);
+    EXPECT_EQ(result.status, dm_types::RegistrationStatus::Accepted);
+    ASSERT_EQ(result.rejected.size(), 1u);
+    EXPECT_EQ(result.rejected.at(0).variable.name, "FanSpeed");
+    EXPECT_EQ(result.rejected.at(0).reason, dm_types::RegistrationRejectionReason::Ocpp16KeyInUse);
+}
+
+TEST_F(ExternalOwnersTest, RuntimeRegistrationReplacesAndReleaseRemovesTheKeys) {
+    this->owners->set_startup_registrations(0, {});
+    this->owners->set_startup_registrations(1, {});
+    this->owners->register_with(*this->device_model, &binder);
+
+    this->owners->on_registration(0, make_keyed_registration("cooling", "CoolingUnit", {{"FanSpeed", "FirstKey"}}));
+    EXPECT_EQ(binder.bound["cooling"], (std::map<std::string, std::string>{{"FanSpeed", "FirstKey"}}));
+
+    this->owners->on_registration(0, make_keyed_registration("cooling", "CoolingUnit", {{"Mode", "SecondKey"}}));
+    EXPECT_EQ(binder.bound["cooling"], (std::map<std::string, std::string>{{"Mode", "SecondKey"}}));
+
+    this->owners->on_registration(0, make_release("cooling"));
+    EXPECT_EQ(binder.bound.count("cooling"), 0u);
+}
+
+TEST_F(ExternalOwnersTest, KeyOfAVariableTheDeviceModelRejectsIsRemoved) {
+    this->start({}, make_registrations({make_registration("meter", "CoolingUnit", "FanSpeed", "1")}));
+    this->owners->detach();
+    this->owners->register_with(*this->device_model, &binder);
+
+    this->owners->on_registration(
+        0, make_keyed_registration("cooling", "CoolingUnit", {{"FanSpeed", "FanKey"}, {"Mode", "ModeKey"}}));
+
+    EXPECT_EQ(binder.bound["cooling"], (std::map<std::string, std::string>{{"Mode", "ModeKey"}}));
+    ASSERT_FALSE(this->first->results.empty());
+    const auto& rejected = this->first->results.back().rejected;
+    ASSERT_EQ(rejected.size(), 1u);
+    EXPECT_EQ(rejected.at(0).reason, dm_types::RegistrationRejectionReason::AlreadyDefined);
+}
+
+TEST_F(ExternalOwnersTest, DetachRemovesTheKeys) {
+    this->owners->set_startup_registrations(
+        0, make_registrations({make_keyed_registration("cooling", "CoolingUnit", {{"FanSpeed", "FanKey"}})}));
+    this->owners->set_startup_registrations(1, {});
+    this->owners->register_with(*this->device_model, &binder);
+    ASSERT_EQ(binder.bound.count("cooling"), 1u);
+
+    this->owners->detach();
+    EXPECT_EQ(binder.bound.count("cooling"), 0u);
+}
+
+TEST_F(ExternalOwnersTest, KeysAreIgnoredWithoutABinder) {
+    this->start(make_registrations({make_keyed_registration("cooling", "CoolingUnit", {{"FanSpeed", "FanKey"}})}));
+
+    EXPECT_EQ(this->read("CoolingUnit", "FanSpeed"), "1");
+    ASSERT_EQ(this->first->results.size(), 1u);
+    EXPECT_TRUE(this->first->results.at(0).rejected.empty());
+}
+
+TEST_F(ExternalOwnersTest, KeysAreRemovedWhenTheRegistrationFails) {
+    WrappingRegistry registry(*this->device_model);
+    this->owners->set_startup_registrations(
+        0, make_registrations({make_keyed_registration("cooling", "CoolingUnit", {{"FanSpeed", "FanKey"}})}));
+    this->owners->set_startup_registrations(1, {});
+    registry.fail_next_registration = true;
+    this->owners->register_with(registry, &binder);
+    EXPECT_EQ(binder.bound.count("cooling"), 0u);
+
+    this->owners->on_registration(0, make_keyed_registration("cooling", "CoolingUnit", {{"FanSpeed", "FanKey"}}));
+    ASSERT_EQ(binder.bound.count("cooling"), 1u);
+
+    // At runtime as well
+    registry.fail_next_registration = true;
+    this->owners->on_registration(0, make_keyed_registration("cooling", "CoolingUnit", {{"Mode", "ModeKey"}}));
+    EXPECT_EQ(binder.bound.count("cooling"), 0u);
+    this->owners->detach();
+}
+
+TEST_F(ExternalOwnersTest, RefusedKeysAndRejectedVariablesAreReportedTogether) {
+    binder.refused.insert("TakenKey");
+    this->start({}, make_registrations({make_registration("meter", "CoolingUnit", "FanSpeed", "1")}));
+    this->owners->detach();
+    this->owners->register_with(*this->device_model, &binder);
+
+    this->owners->on_registration(
+        0, make_keyed_registration("cooling", "CoolingUnit",
+                                   {{"FanSpeed", "FanKey"}, {"Mode", "TakenKey"}, {"Level", "LevelKey"}}));
+
+    EXPECT_EQ(binder.bound["cooling"], (std::map<std::string, std::string>{{"Level", "LevelKey"}}));
+    EXPECT_EQ(this->read("CoolingUnit", "Level"), "1");
+    EXPECT_FALSE(this->read("CoolingUnit", "Mode").has_value());
+    ASSERT_FALSE(this->first->results.empty());
+    const auto& result = this->first->results.back();
+    EXPECT_EQ(result.status, dm_types::RegistrationStatus::Accepted);
+    std::map<std::string, dm_types::RegistrationRejectionReason> reasons;
+    for (const auto& rejected : result.rejected) {
+        reasons.emplace(rejected.variable.name, rejected.reason);
+    }
+    EXPECT_EQ(reasons, (std::map<std::string, dm_types::RegistrationRejectionReason>{
+                           {"FanSpeed", dm_types::RegistrationRejectionReason::AlreadyDefined},
+                           {"Mode", dm_types::RegistrationRejectionReason::Ocpp16KeyInUse}}));
+}
+
+TEST_F(ExternalOwnersTest, ComponentWhoseVariablesAreAllRefusedIsLeftOut) {
+    binder.refused.insert("TakenKey");
+    auto registration = make_keyed_registration("cooling", "CoolingUnit", {{"FanSpeed", "TakenKey"}});
+    registration.components.push_back(
+        make_keyed_registration("cooling", "Pump", {{"Flow", std::nullopt}}).components.at(0));
+    this->owners->set_startup_registrations(0, make_registrations({registration}));
+    this->owners->set_startup_registrations(1, {});
+    this->owners->register_with(*this->device_model, &binder);
+
+    EXPECT_FALSE(this->read("CoolingUnit", "FanSpeed").has_value());
+    EXPECT_EQ(this->read("Pump", "Flow"), "1");
+    ASSERT_EQ(this->first->results.size(), 1u);
+    ASSERT_EQ(this->first->results.at(0).rejected.size(), 1u);
+    EXPECT_EQ(this->first->results.at(0).rejected.at(0).component.name, "CoolingUnit");
+}
+
+TEST_F(ExternalOwnersTest, RegistrationWhoseKeysAreAllRefusedRegistersNothing) {
+    binder.refused.insert("TakenKey");
+    this->owners->set_startup_registrations(
+        0, make_registrations({make_keyed_registration("cooling", "CoolingUnit", {{"FanSpeed", "TakenKey"}})}));
+    this->owners->set_startup_registrations(1, {});
+    this->owners->register_with(*this->device_model, &binder);
+
+    EXPECT_FALSE(this->read("CoolingUnit", "FanSpeed").has_value());
+    ASSERT_EQ(this->first->results.size(), 1u);
+    const auto& result = this->first->results.at(0);
+    EXPECT_EQ(result.status, dm_types::RegistrationStatus::Accepted);
+    ASSERT_EQ(result.rejected.size(), 1u);
+    EXPECT_EQ(result.rejected.at(0).reason, dm_types::RegistrationRejectionReason::Ocpp16KeyInUse);
+    EXPECT_EQ(binder.bound.count("cooling"), 0u);
 }

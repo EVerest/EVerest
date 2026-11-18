@@ -50,6 +50,7 @@ target_sources(${TEST_TARGET_NAME}
     v16_chargepoint_tests.cpp
     v16_error_convert_freeze_tests.cpp
     v16_error_dispatch_tests.cpp
+    v16_key_binder_tests.cpp
     v16_mrec_freeze_tests.cpp
     v16_variable_access_tests.cpp
     v2_chargepoint_tests.cpp
@@ -64,6 +65,7 @@ target_sources(${TEST_TARGET_NAME}
     ../v16_chargepoint.cpp
     ../v16_connection_config_validator.cpp
     ../v16_conversions.cpp
+    ../v16_key_binder.cpp
     ../v16_variable_access.cpp
     ../v2_chargepoint.cpp
     ../charge_point_config_factory_v16.cpp

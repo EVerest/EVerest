@@ -54,8 +54,10 @@ each key onto a component and variable: a built-in mapping for the standard keys
 ``Ocpp16KeyMappingsPath``, and the ``OCPP16LegacyCtrlr`` component for keys without a standardized counterpart.
 ``GetConfiguration`` and ``ChangeConfiguration`` read and write the mapped variables. A custom mapping names a
 variable of the component configuration or of an external owner (see
-:ref:`ocpp_device_model_API <everest_modules_handwritten_ocpp_device_model_API>`). Other variables that are
-registered at runtime, such as a module configuration view, cannot be mapped. A variable without a mapping is invisible to an OCPP 1.6 CSMS. OCPP 1.6 has no variable monitoring, so
+:ref:`ocpp_device_model_API <everest_modules_handwritten_ocpp_device_model_API>`). An external owner can also declare
+the key of a variable in its registration; the mapping file reserves every key and variable it names, and such a key
+is mapped and removed with the registration. Other variables that are registered at runtime, such as a module
+configuration view, cannot be mapped. A variable without a mapping is invisible to an OCPP 1.6 CSMS. OCPP 1.6 has no variable monitoring, so
 telemetry such as ``EVSE`` / ``Power`` reaches a 1.6 CSMS only through ``MeterValues``. The ``ocpp`` interface
 sees every variable in both modes.
 

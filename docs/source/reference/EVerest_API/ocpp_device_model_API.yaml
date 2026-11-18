@@ -206,6 +206,17 @@ components:
                   name: Enabled
                 reason: AlreadyDefined
                 defined_by: COMPONENT_CONFIG
+        - summary: "Accepted under OCPP 1.6, the OCPP 1.6 key of one variable taken by the key mapping file"
+          payload:
+            owner: cooling_unit
+            status: Accepted
+            rejected:
+              - component:
+                  name: CoolingUnit
+                  instance: '1'
+                variable:
+                  name: FanSpeedLimit
+                reason: Ocpp16KeyInUse
         - summary: "Owner name used by another module"
           payload:
             owner: meter_2
@@ -334,6 +345,28 @@ components:
                         value: 85
                         severity: 2
                         monitor_type: HardWiredMonitor
+        - summary: "A fan speed limit that an OCPP 1.6 CSMS reads and writes as configuration key CoolingFanSpeedLimit"
+          payload:
+            owner: cooling_unit
+            components:
+              - component:
+                  name: CoolingUnit
+                  instance: '1'
+                variables:
+                  - variable:
+                      name: FanSpeedLimit
+                    characteristics:
+                      data_type: integer
+                      supports_monitoring: false
+                      unit: Percent
+                      min_limit: 0
+                      max_limit: 100
+                    attributes:
+                      - type: Actual
+                        value: '80'
+                        mutability: ReadWrite
+                        persistent: true
+                    ocpp16_key: CoolingFanSpeedLimit
         - summary: "Release an owner"
           payload:
             owner: meter_2
@@ -564,6 +597,17 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/RegisteredMonitor'
+        ocpp16_key:
+          description: >-
+            OCPP 1.6 configuration key that serves the Actual attribute of the variable while the registration lasts,
+            when the OCPP service runs OCPP 1.6; ignored with OCPP 2.x. Either a key that OCPP 1.6 does not define, or
+            a built-in key stored in OCPP16LegacyCtrlr, LightIntensity for example, which the variable then holds
+            instead. The key mapping file of the OCPP service reserves every key and variable it names. A variable
+            whose key is taken is rejected with Ocpp16KeyInUse, one whose key cannot be mapped to it with
+            Ocpp16KeyInvalid.
+          type: string
+          minLength: 1
+          maxLength: 50
     RegisteredComponent:
       description: A component with the variables that an owner adds to it
       type: object
@@ -626,6 +670,11 @@ components:
           connector id of 0. A name or value beyond its length is answered with the status Invalid instead.
         - ReservedVariable: Only the component config may define the variable, as the OCPP service writes it from its
           own state
+        - Ocpp16KeyInUse: OCPP 1.6 only. The ocpp16_key of the variable, or the variable itself, belongs to another
+          key: a built-in key, an entry of the key mapping file or the key of another owner's variable
+        - Ocpp16KeyInvalid: OCPP 1.6 only. The ocpp16_key cannot be mapped to the variable: a built-in key that
+          cannot be overridden, a variable that holds connection configuration or that OCPP 1.6 computes, a variable
+          without an Actual attribute or, for a built-in key, with another data type than its built-in variable
       type: string
       enum:
         - AlreadyDefined
@@ -633,6 +682,8 @@ components:
         - ReservedOwner
         - InvalidNameKey
         - ReservedVariable
+        - Ocpp16KeyInUse
+        - Ocpp16KeyInvalid
     RejectedVariable:
       description: A variable of a registration that the device model rejected
       type: object

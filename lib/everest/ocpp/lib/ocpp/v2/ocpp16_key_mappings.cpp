@@ -44,55 +44,6 @@ namespace {
     throw Ocpp16KeyMappingsError(error_message.str());
 }
 
-/// Why the entry cannot be used next to the entries accepted before it, if it cannot. Every target stores exactly one
-/// OCPP 1.6 key, and entries for known keys may only override the built-in mapping of OCPP16LegacyCtrlr keys.
-std::optional<std::string> find_conflict(const std::string& ocpp16_key, const std::pair<Component, Variable>& cv,
-                                         const Ocpp16KeyMappings& accepted,
-                                         const std::map<std::pair<Component, Variable>, std::string>& key_by_target) {
-    const auto& [component, variable] = cv;
-
-    // a second entry for a key is never used, whatever it targets
-    if (accepted.find(ocpp16_key) != accepted.end()) {
-        return std::string{"an earlier entry maps the same key"};
-    }
-
-    // Connection config is managed by the standardized OCPP 1.6 keys (with their reboot/reconnect
-    // semantics) or direct canonical CV access; a custom key would write it without either.
-    if (v16::is_connection_config_cv(component, variable)) {
-        return "it targets connection configuration " + describe_mapping_target(component, variable) +
-               ", which is managed via the standardized OCPP 1.6 keys";
-    }
-
-    // a key that cannot be overridden is the more useful reason than a problem with its target
-    if (const auto key = v16::keys::convert(ocpp16_key); key.has_value() && !v16::is_overridable_key(key.value())) {
-        const auto builtin = v16::keys::convert_v2(key.value());
-        const auto builtin_target =
-            builtin.has_value() ? describe_mapping_target(builtin->first, builtin->second) : std::string{"no variable"};
-        return "it is a built-in OCPP 1.6 key mapped to " + builtin_target +
-               "; only built-in keys mapped to OCPP16LegacyCtrlr can be custom-mapped, except NumberOfConnectors, "
-               "SupportedFeatureProfiles, MeterPublicKeys and DefaultPriceText";
-    }
-
-    if (v16::is_read_only_derived_cv(component, variable)) {
-        return "it targets " + describe_mapping_target(component, variable) +
-               ", whose value the OCPP 1.6 stack computes at runtime";
-    }
-
-    // the built-in table on purpose: a variable freed by an override in the same file is not reused
-    if (const auto owner = v16::keys::convert_v2(component, variable, AttributeEnum::Actual);
-        owner.has_value() && owner.value() != ocpp16_key) {
-        return "it targets " + describe_mapping_target(component, variable) +
-               ", which is the built-in mapping of OCPP 1.6 key '" + owner.value() + "'";
-    }
-
-    if (const auto it = key_by_target.find(cv); it != key_by_target.end()) {
-        return "it targets " + describe_mapping_target(component, variable) + ", which is already the target of key '" +
-               it->second + "'";
-    }
-
-    return std::nullopt;
-}
-
 [[noreturn]] void yaml_error_basic(c4::csubstr msg, const ryml::ErrorDataBasic& err, void*) {
     throw_yaml_error(msg, err.location);
 }
@@ -193,59 +144,100 @@ std::string describe_mapping_target(const Component& component, const Variable& 
     return result;
 }
 
+std::optional<KeyMappingConflict>
+find_key_mapping_conflict(const std::string& ocpp16_key, const std::pair<Component, Variable>& cv,
+                          const Ocpp16KeyMappings& accepted,
+                          const std::map<std::pair<Component, Variable>, std::string>& key_by_target) {
+    const auto& [component, variable] = cv;
+
+    // a second entry for a key is never used, whatever it targets
+    if (accepted.find(ocpp16_key) != accepted.end()) {
+        return KeyMappingConflict{true, "an earlier entry maps the same key"};
+    }
+
+    // Connection config is managed by the standardized OCPP 1.6 keys (with their reboot/reconnect
+    // semantics) or direct canonical CV access; a custom key would write it without either.
+    if (v16::is_connection_config_cv(component, variable)) {
+        return KeyMappingConflict{false, "it targets connection configuration " +
+                                             describe_mapping_target(component, variable) +
+                                             ", which is managed via the standardized OCPP 1.6 keys"};
+    }
+
+    // a key that cannot be overridden is the more useful reason than a problem with its target
+    if (const auto key = v16::keys::convert(ocpp16_key); key.has_value() && !v16::is_overridable_key(key.value())) {
+        const auto builtin = v16::keys::convert_v2(key.value());
+        const auto builtin_target =
+            builtin.has_value() ? describe_mapping_target(builtin->first, builtin->second) : std::string{"no variable"};
+        const bool in_use = builtin.has_value() && !(builtin->first == ControllerComponents::OCPP16LegacyCtrlr);
+        return KeyMappingConflict{
+            in_use, "it is a built-in OCPP 1.6 key mapped to " + builtin_target +
+                        "; only built-in keys mapped to OCPP16LegacyCtrlr can be custom-mapped, except "
+                        "NumberOfConnectors, SupportedFeatureProfiles, MeterPublicKeys and DefaultPriceText"};
+    }
+
+    if (v16::is_read_only_derived_cv(component, variable)) {
+        return KeyMappingConflict{false, "it targets " + describe_mapping_target(component, variable) +
+                                             ", whose value the OCPP 1.6 stack computes at runtime"};
+    }
+
+    // the built-in table on purpose: a variable freed by an override in the same file is not reused
+    if (const auto owner = v16::keys::convert_v2(component, variable, AttributeEnum::Actual);
+        owner.has_value() && owner.value() != ocpp16_key) {
+        return KeyMappingConflict{true, "it targets " + describe_mapping_target(component, variable) +
+                                            ", which is the built-in mapping of OCPP 1.6 key '" + owner.value() + "'"};
+    }
+
+    if (const auto it = key_by_target.find(cv); it != key_by_target.end()) {
+        return KeyMappingConflict{true, "it targets " + describe_mapping_target(component, variable) +
+                                            ", which is already the target of key '" + it->second + "'"};
+    }
+
+    return std::nullopt;
+}
+
+std::optional<std::string> find_mapping_target_problem(const std::string& ocpp16_key,
+                                                       const std::pair<Component, Variable>& cv,
+                                                       const MappingTargetLookup& lookup) {
+    const auto target = lookup(cv.first, cv.second);
+    if (!target.has_value()) {
+        return std::string{"which is not defined in the component configuration"};
+    }
+    if (!target->has_actual_attribute) {
+        return std::string{"which has no Actual attribute"};
+    }
+    const auto key = v16::keys::convert(ocpp16_key);
+    if (!key.has_value()) {
+        return std::nullopt;
+    }
+    const auto builtin = v16::keys::convert_v2(key.value());
+    if (!builtin.has_value()) {
+        return std::nullopt;
+    }
+    // missing at runtime once remove_overridden_ocpp16_legacy_variables removed it for this override
+    const auto legacy = lookup(builtin->first, builtin->second);
+    if (legacy.has_value() && legacy->data_type != target->data_type) {
+        return "with dataType " + conversions::data_enum_to_string(target->data_type) + ", but its built-in variable " +
+               describe_mapping_target(builtin->first, builtin->second) + " has dataType " +
+               conversions::data_enum_to_string(legacy->data_type);
+    }
+    return std::nullopt;
+}
+
 Ocpp16KeyMappings usable_key_mappings(const Ocpp16KeyMappings& mappings, const MappingTargetLookup& lookup,
                                       bool log_problems) {
-    // why the override target cannot hold the key's value, if it cannot
-    const auto find_problem = [&lookup](v16::keys::valid_keys key, const Component& component,
-                                        const Variable& variable) -> std::optional<std::string> {
-        const auto target = lookup(component, variable);
-        if (!target.has_value()) {
-            return std::string{"which is not defined in the component configuration"};
-        }
-        if (!target->has_actual_attribute) {
-            return std::string{"which has no Actual attribute"};
-        }
-        const auto builtin = v16::keys::convert_v2(key);
-        if (!builtin.has_value()) {
-            return std::nullopt;
-        }
-        // missing at runtime once remove_overridden_ocpp16_legacy_variables removed it for this override
-        const auto legacy = lookup(builtin->first, builtin->second);
-        if (legacy.has_value() && legacy->data_type != target->data_type) {
-            return "with dataType " + conversions::data_enum_to_string(target->data_type) +
-                   ", but its built-in variable " + describe_mapping_target(builtin->first, builtin->second) +
-                   " has dataType " + conversions::data_enum_to_string(legacy->data_type);
-        }
-        return std::nullopt;
-    };
-
     Ocpp16KeyMappings result;
     for (const auto& [ocpp16_key, cv] : mappings) {
-        const auto key = v16::keys::convert(ocpp16_key);
-        if (!key.has_value()) {
-            // The key is looked up in the device model on every access, so a kept entry would start to work once an
-            // owner registers its target at runtime
-            const auto target = lookup(cv.first, cv.second);
-            if (target.has_value() && target->has_actual_attribute) {
-                result.emplace(ocpp16_key, cv);
-            } else if (log_problems) {
-                EVLOG_error << "OCPP 1.6 key " << ocpp16_key << " is custom-mapped to "
-                            << describe_mapping_target(cv.first, cv.second) << ", which "
-                            << (target.has_value() ? "has no Actual attribute"
-                                                   : "is not defined in the component configuration")
-                            << "; the key is not available";
-            }
-            continue;
+        const auto problem = find_mapping_target_problem(ocpp16_key, cv, lookup);
+        if (!problem.has_value()) {
+            result.emplace(ocpp16_key, cv);
+        } else if (log_problems) {
+            // The key of a custom key is looked up in the device model on every access, so a kept entry would start
+            // to work once an owner registers its target at runtime
+            EVLOG_error << "OCPP 1.6 key " << ocpp16_key << " is custom-mapped to "
+                        << describe_mapping_target(cv.first, cv.second) << ", " << problem.value()
+                        << (v16::keys::convert(ocpp16_key).has_value() ? "; using its built-in mapping instead"
+                                                                       : "; the key is not available");
         }
-        if (const auto problem = find_problem(key.value(), cv.first, cv.second)) {
-            if (log_problems) {
-                EVLOG_error << "OCPP 1.6 key " << ocpp16_key << " is custom-mapped to "
-                            << describe_mapping_target(cv.first, cv.second) << ", " << problem.value()
-                            << "; using its built-in mapping instead";
-            }
-            continue;
-        }
-        result.emplace(ocpp16_key, cv);
     }
     return result;
 }
@@ -361,9 +353,9 @@ Ocpp16KeyMappings load_ocpp16_key_mappings_from_yaml(const std::filesystem::path
         }
 
         auto cv = std::make_pair(component, variable);
-        if (const auto conflict = find_conflict(ocpp16_key, cv, mappings, key_by_target)) {
+        if (const auto conflict = find_key_mapping_conflict(ocpp16_key, cv, mappings, key_by_target)) {
             EVLOG_error << "Ignoring the entry for key '" << ocpp16_key << "' in key mapping file '"
-                        << mapping_file_path.string() << "': " << conflict.value();
+                        << mapping_file_path.string() << "': " << conflict->reason;
             continue;
         }
 

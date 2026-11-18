@@ -272,3 +272,35 @@ async def test_value_changed_during_collection_is_passed_on(
 
     assert owners_of(result) == ["meter_1"]
     assert await asyncio.to_thread(changes.get, timeout=5) == change
+
+
+@pytest.mark.asyncio
+@pytest.mark.everest_core_config('probe-ocpp-device-model.yaml')
+async def test_ocpp16_key_and_its_rejection_are_passed_on(
+        everest_core: EverestCore, client: AsyncApiMqttHandler, probe_module: ProbeModule):
+    keyed = registration("meter_1")
+    keyed["components"][0]["variables"][0]["ocpp16_key"] = "MeterEnabled"
+
+    async def on_prompt(payload: str):
+        await publish(client, everest_core, "m2e/registration", keyed)
+
+    await client.register_handler(topic(everest_core, "e2m/get_registrations"), on_prompt)
+
+    result = await probe_module.call_command(CONNECTION, "get_registrations", {})
+
+    assert result["registrations"][0]["components"][0]["variables"][0]["ocpp16_key"] == "MeterEnabled"
+
+    results = await capture(client, everest_core, "e2m/set_registration_result")
+    rejection = {
+        "owner": "meter_1",
+        "status": "Accepted",
+        "rejected": [{
+            "component": {"name": "Powermeter", "evse": {"id": 1}},
+            "variable": {"name": "Enabled"},
+            "reason": "Ocpp16KeyInUse",
+        }],
+    }
+
+    await probe_module.call_command(CONNECTION, "set_registration_result", {"result": rejection})
+
+    assert await asyncio.wait_for(results.get(), 5) == rejection

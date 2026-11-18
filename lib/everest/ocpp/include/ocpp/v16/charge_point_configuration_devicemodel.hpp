@@ -154,6 +154,11 @@ public:
         return resolver;
     }
 
+    /// \brief The key mapping, to add and remove the keys of device model owners. load() keeps them.
+    VariableResolver& get_variable_resolver() {
+        return resolver;
+    }
+
     void check_integrity(int32_t expected_number_of_connectors) override;
 
     // UserConfig and Internal

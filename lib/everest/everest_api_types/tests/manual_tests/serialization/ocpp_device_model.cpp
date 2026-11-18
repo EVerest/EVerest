@@ -62,6 +62,7 @@ TEST(ocpp_device_model, strings_are_limited_to_the_lengths_of_the_interface) {
         {"/components/0/variables/0/characteristics/unit"_json_pointer, 16},
         {"/components/0/variables/0/characteristics/values_list"_json_pointer, 1000},
         {"/components/0/variables/0/attributes/0/value"_json_pointer, 2500},
+        {"/components/0/variables/0/ocpp16_key"_json_pointer, 50},
     };
     for (auto const& limit : limits) {
         SCOPED_TRACE(limit.field.to_string());
@@ -127,6 +128,31 @@ TEST(ocpp_device_model, severity_and_max_elements_are_bounded) {
 }
 
 } // namespace
+
+TEST(ocpp_device_model, ocpp16_key_round_trips_and_must_not_be_empty) {
+    auto reg = registration();
+    variable_of(reg)["ocpp16_key"] = "VendorCurrentLimit";
+    Registration parsed;
+    ASSERT_TRUE(deserialize(reg.dump(), parsed));
+    EXPECT_EQ(parsed.components.at(0).variables.at(0).ocpp16_key, "VendorCurrentLimit");
+    auto serialized = json::parse(serialize(parsed));
+    EXPECT_EQ(variable_of(serialized).at("ocpp16_key"), "VendorCurrentLimit");
+
+    variable_of(reg)["ocpp16_key"] = "";
+    EXPECT_FALSE(parses(reg));
+}
+
+TEST(ocpp_device_model, ocpp16_key_rejections_round_trip) {
+    for (const auto* reason : {"Ocpp16KeyInUse", "Ocpp16KeyInvalid"}) {
+        SCOPED_TRACE(reason);
+        auto text = json::parse(R"({"owner": "meter_1", "status": "Accepted", "rejected": [
+            {"component": {"name": "Powermeter"}, "variable": {"name": "CurrentLimit"}}]})");
+        text["rejected"][0]["reason"] = reason;
+        RegistrationResult parsed;
+        ASSERT_TRUE(deserialize(text.dump(), parsed));
+        EXPECT_EQ(json::parse(serialize(parsed)), text);
+    }
+}
 
 TEST(ocpp_device_model, invalid_registration_result_round_trips) {
     const auto text = json::parse(R"({"owner": "meter_1", "status": "Invalid", "rejected": []})");

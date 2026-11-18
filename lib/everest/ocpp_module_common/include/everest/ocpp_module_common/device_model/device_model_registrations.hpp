@@ -15,6 +15,7 @@ class ConfigServiceAccess;
 class ConfigServiceBinding;
 class EverestDeviceModel;
 class ExternalOwners;
+class Ocpp16KeyBinder;
 
 struct OwnerRegistrationResult {
     std::string owner;
@@ -42,9 +43,10 @@ public:
     /// \brief Registers the module configuration views of \p config_service with \p registry
     void register_config_service(ConfigServiceAccess& config_service, ocpp::v2::DeviceModelRegistryInterface& registry);
 
-    /// \brief Registers the owners of \p external_owners with \p registry. \p external_owners must outlive this
-    /// object.
-    void register_external_owners(ExternalOwners& external_owners, ocpp::v2::DeviceModelRegistryInterface& registry);
+    /// \brief Registers the owners of \p external_owners with \p registry, mapping the OCPP 1.6 keys they declare with
+    /// \p binder if given. \p external_owners and \p binder must outlive this object.
+    void register_external_owners(ExternalOwners& external_owners, ocpp::v2::DeviceModelRegistryInterface& registry,
+                                  Ocpp16KeyBinder* binder = nullptr);
 
     /// \returns The result of each registration, with its owner
     const std::vector<OwnerRegistrationResult>& results() const;

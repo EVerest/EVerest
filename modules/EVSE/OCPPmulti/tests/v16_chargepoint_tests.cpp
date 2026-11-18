@@ -10,7 +10,12 @@
 #include <gtest/gtest.h>
 
 #include <filesystem>
+#include <memory>
+#include <optional>
+#include <string>
+#include <vector>
 
+#include <everest/ocpp_module_common/device_model/external_owners.hpp>
 #include <everest/ocpp_module_common/error_mapping.hpp>
 
 namespace {
@@ -46,8 +51,26 @@ std::string vendor_error_code_orig(const Everest::error::Error& error) {
 namespace fs = std::filesystem;
 
 // ChargePointV16 on a real OCPP 1.6 stack backed by the device model; never started or connected
+/// \brief Accepts every write and records the results
+class OwnerConnection : public ocpp_module_common::device_model::DeviceModelOwnerConnection {
+public:
+    std::string module_id() const override {
+        return "device_model_api";
+    }
+    void set_registration_result(const types::ocpp_device_model::RegistrationResult& result) override {
+        this->results.push_back(result);
+    }
+    types::ocpp::SetVariableStatusEnumType
+    set_value(const types::ocpp_device_model::WriteRequest& /*request*/) override {
+        return types::ocpp::SetVariableStatusEnumType::Accepted;
+    }
+    std::vector<types::ocpp_device_model::RegistrationResult> results;
+};
+
 class ChargePointV16ConfigurationTest : public testing::Test {
 protected:
+    std::shared_ptr<OwnerConnection> m_owner_connection{std::make_shared<OwnerConnection>()};
+    ocpp_module_common::device_model::ExternalOwners m_external_owners{{m_owner_connection}};
     module::stub::QuietModuleAdapterStub m_adapter;
     Requirement m_requirement{"ocpp", 0};
     evse_securityIntf m_security{&m_adapter, m_requirement, "security", std::nullopt};
@@ -74,10 +97,13 @@ protected:
         args.connector_mapping = {{1, {{1, 1}}}, {2, {{1, 2}}}};
         args.v16_ocpp16_network_config_slot = 1;
         args.v16_enable_legacy_config_migration = false;
+        m_external_owners.set_startup_registrations(0, {});
+        args.external_owners = &m_external_owners;
         m_chargepoint.init(args);
     }
 
     void TearDown() override {
+        m_external_owners.detach();
         fs::remove_all(m_work_dir);
     }
 
@@ -235,6 +261,73 @@ TEST_F(ChargePointV16ConfigurationTest, monitoredKeyChangeStillReachesVariableSe
     const auto result = set_variable("ISO15118Ctrlr", "PnCEnabled", "false");
     ASSERT_EQ(result.attributeStatus, ocpp::v2::SetVariableStatusEnum::Accepted);
     EXPECT_EQ(monitored_value, "false");
+}
+
+TEST_F(ChargePointV16ConfigurationTest, unmonitoredKeyChangeStillReachesVariableSet) {
+    EXPECT_CALL(m_callbacks, cb_variable_set(testing::Truly([](const ocpp::v2::SetVariableData& data) {
+                    return data.component.name.get() == "ISO15118Ctrlr" && data.variable.name.get() == "PnCEnabled" &&
+                           data.attributeValue.get() == "false";
+                })))
+        .Times(1);
+
+    const auto result = set_variable("ISO15118Ctrlr", "PnCEnabled", "false");
+    ASSERT_EQ(result.attributeStatus, ocpp::v2::SetVariableStatusEnum::Accepted);
+}
+
+TEST_F(ChargePointV16ConfigurationTest, monitoredVariableIsReportedOnce) {
+    std::vector<std::string> reported;
+    m_chargepoint.register_variable_listener({"ISO15118Ctrlr"}, {"PnCEnabled"},
+                                             [&reported](const ocpp::v2::Component&, const ocpp::v2::Variable&,
+                                                         const std::string& value) { reported.push_back(value); });
+
+    ASSERT_EQ(set_variable("ISO15118Ctrlr", "PnCEnabled", "false").attributeStatus,
+              ocpp::v2::SetVariableStatusEnum::Accepted);
+    EXPECT_EQ(reported, std::vector<std::string>{"false"});
+}
+
+TEST_F(ChargePointV16ConfigurationTest, changeOfAnUnmonitoredKeyDoesNotReachTheListener) {
+    std::vector<std::string> reported;
+    m_chargepoint.register_variable_listener(
+        {"ISO15118Ctrlr"}, {"PnCEnabled"},
+        [&reported](const ocpp::v2::Component&, const ocpp::v2::Variable& variable, const std::string&) {
+            reported.push_back(variable.name.get());
+        });
+
+    ASSERT_EQ(set_variable("TxCtrlr", "EVConnectionTimeOut", "45").attributeStatus,
+              ocpp::v2::SetVariableStatusEnum::Accepted);
+    EXPECT_TRUE(reported.empty());
+}
+
+// The key of an owner's variable may be mapped after the variable is monitored
+TEST_F(ChargePointV16ConfigurationTest, monitoredVariableReportsChangesOfAKeyMappedLater) {
+    std::optional<std::string> monitored_value;
+    m_chargepoint.register_variable_listener({"CoolingUnit"}, {"FanSpeedLimit"},
+                                             [&monitored_value](const ocpp::v2::Component&, const ocpp::v2::Variable&,
+                                                                const std::string& value) { monitored_value = value; });
+
+    types::ocpp_device_model::VariableAttribute attribute;
+    attribute.value = "80";
+    attribute.mutability = types::ocpp_device_model::MutabilityEnum::ReadWrite;
+    types::ocpp_device_model::RegisteredVariable variable;
+    variable.variable.name = "FanSpeedLimit";
+    variable.characteristics.data_type = types::ocpp_device_model::DataEnum::integer;
+    variable.characteristics.supports_monitoring = false;
+    variable.attributes.push_back(attribute);
+    variable.ocpp16_key = "CoolingFanSpeedLimit";
+    types::ocpp_device_model::RegisteredComponent component;
+    component.component.name = "CoolingUnit";
+    component.variables.push_back(variable);
+    types::ocpp_device_model::Registration registration;
+    registration.owner = "cooling_unit";
+    registration.components.push_back(component);
+    m_external_owners.on_registration(0, registration);
+    ASSERT_EQ(m_owner_connection->results.size(), 1u);
+    ASSERT_TRUE(m_owner_connection->results.front().rejected.empty());
+
+    const auto result = set_variable("", "CoolingFanSpeedLimit", "60");
+    ASSERT_EQ(result.attributeStatus, ocpp::v2::SetVariableStatusEnum::Accepted);
+    EXPECT_EQ(monitored_value, "60");
+    EXPECT_EQ(get_variable("CoolingUnit", "FanSpeedLimit"), "60");
 }
 
 TEST_F(ChargePointV16ConfigurationTest, readOnlyKeyBackedVariableIsWritable) {

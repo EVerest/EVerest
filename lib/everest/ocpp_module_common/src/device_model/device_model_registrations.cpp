@@ -49,9 +49,10 @@ void DeviceModelRegistrations::register_config_service(ConfigServiceAccess& conf
 }
 
 void DeviceModelRegistrations::register_external_owners(ExternalOwners& external_owners,
-                                                        ocpp::v2::DeviceModelRegistryInterface& registry) {
+                                                        ocpp::v2::DeviceModelRegistryInterface& registry,
+                                                        Ocpp16KeyBinder* binder) {
     this->external_owners = &external_owners;
-    auto results = external_owners.register_with(registry);
+    auto results = external_owners.register_with(registry, binder);
     this->registration_results.insert(this->registration_results.end(), std::make_move_iterator(results.begin()),
                                       std::make_move_iterator(results.end()));
 }

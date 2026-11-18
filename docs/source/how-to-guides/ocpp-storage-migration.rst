@@ -266,6 +266,11 @@ that an external application registers through the
   Otherwise the entry is ignored with an error log, and the key keeps its
   built-in mapping until the next start.
 
+An external application can also declare the key of its variable itself, with
+``ocpp16_key`` in its registration, see :ref:`howto-ocpp-device-model`. The
+mapping file takes precedence: a key or a variable that the file names, whether
+or not its entry is used, is not available to an application.
+
 Other variables that are added to the device model at runtime, for example an
 EVerest module configuration value or a component that EVerest provides, are
 not mapping targets: an entry that names one is ignored with an error log. An

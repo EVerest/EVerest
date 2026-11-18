@@ -201,6 +201,8 @@ config_factory_result_t create_device_model_charge_point_configuration(
         ocpp::v16::ChargePointConfigurationDeviceModel::Load::Deferred,
         ocpp_module_common::device_model::is_external_owner);
 
+    auto key_binder = std::make_unique<ocpp_multi::V16KeyBinder>(
+        configuration->get_variable_resolver(), configuration->get_device_model(), context.custom_mappings);
     ocpp_module_common::device_model::DeviceModelRegistrations registrations;
     if (everest_device_model != nullptr) {
         registrations.register_everest_device_model(*everest_device_model, registry);
@@ -209,7 +211,7 @@ config_factory_result_t create_device_model_charge_point_configuration(
         registrations.register_config_service(*config_service, registry);
     }
     if (external_owners != nullptr) {
-        registrations.register_external_owners(*external_owners, registry);
+        registrations.register_external_owners(*external_owners, registry, key_binder.get());
     }
     // Also removes the monitors and stored values of variables registered in OCPP 2.x mode only, such as DER
     registry.remove_monitors_and_values_of_absent_variables();
@@ -218,7 +220,7 @@ config_factory_result_t create_device_model_charge_point_configuration(
     configuration->load();
     configuration->check_integrity(n_evse);
 
-    return {std::move(configuration), std::move(registrations)};
+    return {std::move(configuration), std::move(key_binder), std::move(registrations)};
 }
 
 /// \brief Loads the legacy OCPP 1.6 JSON config used as the one-time device-model migration source.

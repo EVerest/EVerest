@@ -40,6 +40,7 @@ constexpr std::size_t max_name_length = 50;
 constexpr std::size_t max_unit_length = 16;
 constexpr std::size_t max_values_list_length = 1000;
 constexpr std::size_t max_value_length = 2500;
+constexpr std::size_t max_ocpp16_key_length = 50;
 
 void check_length(std::string const& value, std::size_t max_length, std::string_view key) {
     if (value.size() > max_length) {
@@ -161,12 +162,14 @@ const EnumNames<RegistrationStatus, 3> registration_status_names{{
     {RegistrationStatus::Invalid, "Invalid"},
 }};
 
-const EnumNames<RegistrationRejectionReason, 5> registration_rejection_reason_names{{
+const EnumNames<RegistrationRejectionReason, 7> registration_rejection_reason_names{{
     {RegistrationRejectionReason::AlreadyDefined, "AlreadyDefined"},
     {RegistrationRejectionReason::NoAttributes, "NoAttributes"},
     {RegistrationRejectionReason::ReservedOwner, "ReservedOwner"},
     {RegistrationRejectionReason::InvalidNameKey, "InvalidNameKey"},
     {RegistrationRejectionReason::ReservedVariable, "ReservedVariable"},
+    {RegistrationRejectionReason::Ocpp16KeyInUse, "Ocpp16KeyInUse"},
+    {RegistrationRejectionReason::Ocpp16KeyInvalid, "Ocpp16KeyInvalid"},
 }};
 
 } // namespace
@@ -306,13 +309,20 @@ void to_json(json& j, RegisteredVariable const& k) noexcept {
     if (k.monitors) {
         j["monitors"] = k.monitors.value();
     }
+    if (k.ocpp16_key) {
+        j["ocpp16_key"] = k.ocpp16_key.value();
+    }
 }
 void from_json(const json& j, RegisteredVariable& k) {
-    check_properties(j, {"variable", "characteristics", "attributes", "monitors"}, "RegisteredVariable");
+    check_properties(j, {"variable", "characteristics", "attributes", "monitors", "ocpp16_key"}, "RegisteredVariable");
     k.variable = variable_value(j);
     k.characteristics = j.at("characteristics");
     k.attributes = j.at("attributes").get<std::vector<VariableAttribute>>();
     k.monitors = optional_object<std::vector<RegisteredMonitor>>(j, "monitors");
+    k.ocpp16_key = optional_string(j, "ocpp16_key", max_ocpp16_key_length);
+    if (k.ocpp16_key and k.ocpp16_key->empty()) {
+        throw std::invalid_argument("ocpp16_key must not be empty");
+    }
 }
 
 void to_json(json& j, RegisteredComponent const& k) noexcept {

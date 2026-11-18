@@ -201,6 +201,8 @@ RegistrationRejectionReason_Internal to_internal_api(RegistrationRejectionReason
         enum_case(ReservedOwner);
         enum_case(InvalidNameKey);
         enum_case(ReservedVariable);
+        enum_case(Ocpp16KeyInUse);
+        enum_case(Ocpp16KeyInvalid);
     }
     throw std::out_of_range("Unexpected value for ocpp_device_model::RegistrationRejectionReason_External");
 }
@@ -214,6 +216,8 @@ RegistrationRejectionReason_External to_external_api(RegistrationRejectionReason
         enum_case(ReservedOwner);
         enum_case(InvalidNameKey);
         enum_case(ReservedVariable);
+        enum_case(Ocpp16KeyInUse);
+        enum_case(Ocpp16KeyInvalid);
     }
     throw std::out_of_range("Unexpected value for ocpp_device_model::RegistrationRejectionReason_Internal");
 }
@@ -288,6 +292,7 @@ RegisteredVariable_Internal to_internal_api(RegisteredVariable_External const& v
     result.characteristics = to_internal_api(val.characteristics);
     result.attributes = vec_to_internal(val.attributes);
     result.monitors = opt_vec_to_internal(val.monitors);
+    result.ocpp16_key = val.ocpp16_key;
     return result;
 }
 
@@ -297,6 +302,7 @@ RegisteredVariable_External to_external_api(RegisteredVariable_Internal const& v
     result.characteristics = to_external_api(val.characteristics);
     result.attributes = vec_to_external(val.attributes);
     result.monitors = opt_vec_to_external(val.monitors);
+    result.ocpp16_key = val.ocpp16_key;
     return result;
 }
 

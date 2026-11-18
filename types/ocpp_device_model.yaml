@@ -201,6 +201,17 @@ types:
         items:
           type: object
           $ref: /ocpp_device_model#/RegisteredMonitor
+      ocpp16_key:
+        description: >-
+          OCPP 1.6 configuration key that serves the Actual attribute of the variable while the registration lasts, in
+          OCPP 1.6 mode only; ignored in OCPP 2.x mode. Either a key that the OCPP 1.6 stack does not know, or a
+          built-in key stored in OCPP16LegacyCtrlr, which the variable then holds instead. The key mapping file of the
+          OCPP service reserves every key and every variable it names: a variable whose key it names for another
+          variable, or that it maps to another key, is rejected with Ocpp16KeyInUse. So is a variable whose key another
+          owner holds. A variable whose key cannot be mapped to it is rejected with Ocpp16KeyInvalid.
+        type: string
+        minLength: 1
+        maxLength: 50
   RegisteredComponent:
     description: A component with the variables that an owner adds to it
     type: object
@@ -286,6 +297,11 @@ types:
         types, by its length for example, which makes the whole registration Invalid
       ReservedVariable: The OCPP service writes the variable from its own state, AuthCacheCtrlr.Storage or the
         variables of a NetworkConfiguration slot for example, so only the component config defines it
+      Ocpp16KeyInUse: In OCPP 1.6 mode, the ocpp16_key of the variable, or the variable itself, belongs to another
+        key: a built-in key, an entry of the key mapping file or the key of another owner's variable
+      Ocpp16KeyInvalid: In OCPP 1.6 mode, the ocpp16_key cannot be mapped to the variable: a built-in key that cannot
+        be overridden, a variable the OCPP 1.6 stack computes or that holds connection configuration, a variable
+        without an Actual attribute or, for a built-in key, with another data type than the key's built-in variable
     type: string
     enum:
       - AlreadyDefined
@@ -293,6 +309,8 @@ types:
       - ReservedOwner
       - InvalidNameKey
       - ReservedVariable
+      - Ocpp16KeyInUse
+      - Ocpp16KeyInvalid
   RejectedVariable:
     description: A variable of a registration that the device model rejected
     type: object

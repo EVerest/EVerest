@@ -52,6 +52,8 @@ enum class RegistrationRejectionReason {
     ReservedOwner,
     InvalidNameKey,
     ReservedVariable,
+    Ocpp16KeyInUse,
+    Ocpp16KeyInvalid,
 };
 
 struct VariableCharacteristics {
@@ -85,6 +87,7 @@ struct RegisteredVariable {
     VariableCharacteristics characteristics;
     std::vector<VariableAttribute> attributes;
     std::optional<std::vector<RegisteredMonitor>> monitors;
+    std::optional<std::string> ocpp16_key;
 };
 
 struct RegisteredComponent {

@@ -67,24 +67,50 @@ bool is_overridable_key(keys::valid_keys key) {
     return builtin.has_value() && builtin->first == ocpp::v2::ControllerComponents::OCPP16LegacyCtrlr;
 }
 
-VariableResolver::VariableResolver(const ocpp::v2::Ocpp16KeyMappings& custom_mappings) {
-    // the key that already owns a CV, so that every CV maps back to at most one key
-    const auto owner_of =
-        [this](const std::string& name,
-               const std::pair<ocpp::v2::Component, ocpp::v2::Variable>& cv) -> std::optional<std::string> {
-        if (auto builtin = keys::convert_v2(cv.first, cv.second, ocpp::v2::AttributeEnum::Actual);
-            builtin.has_value() && builtin.value() != name) {
-            return builtin;
-        }
-        if (const auto it = overrides_by_cv.find(cv); it != overrides_by_cv.end()) {
-            return std::string{keys::convert(it->second)};
-        }
-        if (const auto it = custom_reverse.find(cv); it != custom_reverse.end()) {
-            return it->second;
-        }
-        return std::nullopt;
-    };
+bool VariableResolver::Layer::holds_key(const std::string& key) const {
+    if (const auto known = keys::convert(key)) {
+        return overrides_by_key.find(known.value()) != overrides_by_key.end();
+    }
+    return custom.find(key) != custom.end();
+}
 
+std::optional<std::string>
+VariableResolver::Layer::key_of(const std::pair<ocpp::v2::Component, ocpp::v2::Variable>& cv) const {
+    if (const auto it = overrides_by_cv.find(cv); it != overrides_by_cv.end()) {
+        return std::string{keys::convert(it->second)};
+    }
+    if (const auto it = custom_reverse.find(cv); it != custom_reverse.end()) {
+        return it->second;
+    }
+    return std::nullopt;
+}
+
+void VariableResolver::Layer::add(const std::string& key,
+                                  const std::pair<ocpp::v2::Component, ocpp::v2::Variable>& cv) {
+    if (const auto known = keys::convert(key)) {
+        overrides_by_key.emplace(known.value(), cv);
+        overrides_by_cv.emplace(cv, known.value());
+        return;
+    }
+    custom.emplace(key, cv);
+    custom_reverse.emplace(cv, key);
+}
+
+std::optional<std::string>
+VariableResolver::holder_of(const std::string& key,
+                            const std::pair<ocpp::v2::Component, ocpp::v2::Variable>& cv) const {
+    if (auto builtin = keys::convert_v2(cv.first, cv.second, ocpp::v2::AttributeEnum::Actual);
+        builtin.has_value() && builtin.value() != key) {
+        return builtin;
+    }
+    if (auto holder = file.key_of(cv)) {
+        return holder;
+    }
+    return owner.key_of(cv);
+}
+
+VariableResolver::Layer VariableResolver::make_file_layer(const ocpp::v2::Ocpp16KeyMappings& custom_mappings) const {
+    Layer layer;
     for (const auto& [name, cv] : custom_mappings) {
         const auto key = keys::convert(name);
         if (key.has_value() && !is_overridable_key(key.value())) {
@@ -92,19 +118,68 @@ VariableResolver::VariableResolver(const ocpp::v2::Ocpp16KeyMappings& custom_map
                           << ocpp::v2::describe_mapping_target(cv.first, cv.second);
             continue;
         }
-        if (const auto owner = owner_of(name, cv)) {
+        if (owner.holds_key(name)) {
+            EVLOG_error << "OCPP 1.6 key " << name << " is custom-mapped to "
+                        << ocpp::v2::describe_mapping_target(cv.first, cv.second)
+                        << ", but a device model owner holds the key; ignoring the mapping";
+            continue;
+        }
+        auto holder = layer.key_of(cv);
+        if (!holder.has_value()) {
+            holder = holder_of(name, cv);
+        }
+        if (holder.has_value() && holder.value() != name) {
             EVLOG_error << "OCPP 1.6 key " << name << " is custom-mapped to "
                         << ocpp::v2::describe_mapping_target(cv.first, cv.second) << ", which is the target of key '"
-                        << owner.value() << "'; ignoring the mapping";
+                        << holder.value() << "'; ignoring the mapping";
             continue;
         }
-        if (!key.has_value()) {
-            this->custom_mappings.emplace(name, cv);
-            custom_reverse.emplace(cv, name);
-            continue;
+        layer.add(name, cv);
+    }
+    return layer;
+}
+
+VariableResolver::VariableResolver(const ocpp::v2::Ocpp16KeyMappings& custom_mappings) {
+    file = make_file_layer(custom_mappings);
+}
+
+void VariableResolver::replace_file_mappings(const ocpp::v2::Ocpp16KeyMappings& custom_mappings) {
+    std::unique_lock lock(mutex);
+    // the new layer is checked against the owner layer only, never against the file layer it replaces
+    file = Layer{};
+    file = make_file_layer(custom_mappings);
+}
+
+std::optional<std::string> VariableResolver::add_owner_key(const std::string& key, const ocpp::v2::Component& component,
+                                                           const ocpp::v2::Variable& variable) {
+    const auto cv = std::make_pair(component, variable);
+    std::unique_lock lock(mutex);
+    if (const auto known = keys::convert(key); known.has_value() && !is_overridable_key(known.value())) {
+        return "OCPP 1.6 key " + key + " cannot be custom-mapped";
+    }
+    if (file.holds_key(key) || owner.holds_key(key)) {
+        return "OCPP 1.6 key " + key + " is mapped already";
+    }
+    if (const auto holder = holder_of(key, cv)) {
+        return ocpp::v2::describe_mapping_target(component, variable) + " is the target of OCPP 1.6 key '" +
+               holder.value() + "'";
+    }
+    owner.add(key, cv);
+    return std::nullopt;
+}
+
+void VariableResolver::remove_owner_key(const std::string& key) {
+    std::unique_lock lock(mutex);
+    if (const auto known = keys::convert(key)) {
+        if (const auto it = owner.overrides_by_key.find(known.value()); it != owner.overrides_by_key.end()) {
+            owner.overrides_by_cv.erase(it->second);
+            owner.overrides_by_key.erase(it);
         }
-        overrides_by_key.emplace(key.value(), cv);
-        overrides_by_cv.emplace(cv, key.value());
+        return;
+    }
+    if (const auto it = owner.custom.find(key); it != owner.custom.end()) {
+        owner.custom_reverse.erase(it->second);
+        owner.custom.erase(it);
     }
 }
 
@@ -118,7 +193,16 @@ VariableResolver::key_to_cv(const std::string& key) const {
         }
         return known_key_to_cv(valid_key.value());
     }
-    if (const auto it = custom_mappings.find(key); it != custom_mappings.end()) {
+    return custom_key_to_cv(key);
+}
+
+std::optional<std::pair<ocpp::v2::Component, ocpp::v2::Variable>>
+VariableResolver::custom_key_to_cv(const std::string& key) const {
+    std::shared_lock lock(mutex);
+    if (const auto it = file.custom.find(key); it != file.custom.end()) {
+        return it->second;
+    }
+    if (const auto it = owner.custom.find(key); it != owner.custom.end()) {
         return it->second;
     }
     return std::nullopt;
@@ -126,17 +210,35 @@ VariableResolver::key_to_cv(const std::string& key) const {
 
 std::optional<std::string> VariableResolver::cv_to_key(const ocpp::v2::Component& component,
                                                        const ocpp::v2::Variable& variable) const {
-    if (auto standard = cv_to_known_key(component, variable)) {
+    std::shared_lock lock(mutex);
+    return cv_to_key_unlocked(component, variable);
+}
+
+std::optional<std::string> VariableResolver::cv_to_key_unlocked(const ocpp::v2::Component& component,
+                                                                const ocpp::v2::Variable& variable) const {
+    if (auto standard = cv_to_known_key_unlocked(component, variable, ocpp::v2::AttributeEnum::Actual)) {
         return standard;
     }
-    if (const auto it = custom_reverse.find({component, variable}); it != custom_reverse.end()) {
+    const auto cv = std::make_pair(component, variable);
+    if (const auto it = file.custom_reverse.find(cv); it != file.custom_reverse.end()) {
+        return it->second;
+    }
+    if (const auto it = owner.custom_reverse.find(cv); it != owner.custom_reverse.end()) {
         return it->second;
     }
     return std::nullopt;
 }
 
 keys::DeviceModel_CV VariableResolver::known_key_to_cv(keys::valid_keys key) const {
-    if (const auto it = overrides_by_key.find(key); it != overrides_by_key.end()) {
+    std::shared_lock lock(mutex);
+    return known_key_to_cv_unlocked(key);
+}
+
+keys::DeviceModel_CV VariableResolver::known_key_to_cv_unlocked(keys::valid_keys key) const {
+    if (const auto it = file.overrides_by_key.find(key); it != file.overrides_by_key.end()) {
+        return it->second;
+    }
+    if (const auto it = owner.overrides_by_key.find(key); it != owner.overrides_by_key.end()) {
         return it->second;
     }
     return keys::convert_v2(key);
@@ -145,14 +247,24 @@ keys::DeviceModel_CV VariableResolver::known_key_to_cv(keys::valid_keys key) con
 std::optional<std::string> VariableResolver::cv_to_known_key(const ocpp::v2::Component& component,
                                                              const ocpp::v2::Variable& variable,
                                                              ocpp::v2::AttributeEnum attribute) const {
+    std::shared_lock lock(mutex);
+    return cv_to_known_key_unlocked(component, variable, attribute);
+}
+
+std::optional<std::string> VariableResolver::cv_to_known_key_unlocked(const ocpp::v2::Component& component,
+                                                                      const ocpp::v2::Variable& variable,
+                                                                      ocpp::v2::AttributeEnum attribute) const {
     if (attribute == ocpp::v2::AttributeEnum::Actual) {
-        if (const auto it = overrides_by_cv.find({component, variable}); it != overrides_by_cv.end()) {
-            return std::string{keys::convert(it->second)};
+        const auto cv = std::make_pair(component, variable);
+        for (const auto* layer : {&file, &owner}) {
+            if (const auto it = layer->overrides_by_cv.find(cv); it != layer->overrides_by_cv.end()) {
+                return std::string{keys::convert(it->second)};
+            }
         }
     }
     auto builtin = keys::convert_v2(component, variable, attribute);
     if (builtin.has_value()) {
-        if (const auto key = keys::convert(builtin.value()); key.has_value() && is_overridden(key.value())) {
+        if (const auto key = keys::convert(builtin.value()); key.has_value() && is_overridden_unlocked(key.value())) {
             return std::nullopt;
         }
     }
@@ -160,7 +272,27 @@ std::optional<std::string> VariableResolver::cv_to_known_key(const ocpp::v2::Com
 }
 
 bool VariableResolver::is_overridden(keys::valid_keys key) const {
-    return overrides_by_key.find(key) != overrides_by_key.end();
+    std::shared_lock lock(mutex);
+    return is_overridden_unlocked(key);
+}
+
+bool VariableResolver::is_overridden_unlocked(keys::valid_keys key) const {
+    return file.overrides_by_key.find(key) != file.overrides_by_key.end() ||
+           owner.overrides_by_key.find(key) != owner.overrides_by_key.end();
+}
+
+std::map<keys::valid_keys, std::pair<ocpp::v2::Component, ocpp::v2::Variable>> VariableResolver::overrides() const {
+    std::shared_lock lock(mutex);
+    auto result = file.overrides_by_key;
+    result.insert(owner.overrides_by_key.begin(), owner.overrides_by_key.end());
+    return result;
+}
+
+ocpp::v2::Ocpp16KeyMappings VariableResolver::custom_keys() const {
+    std::shared_lock lock(mutex);
+    auto result = file.custom;
+    result.insert(owner.custom.begin(), owner.custom.end());
+    return result;
 }
 
 CVClass VariableResolver::classify(const ocpp::v2::Component& component, const ocpp::v2::Variable& variable) const {
