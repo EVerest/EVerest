@@ -601,7 +601,10 @@ components:
     send_raise_error:
       name: send_raise_error
       title: 'Send raise error'
-      summary: Raises an error on the EV's ev_manager implementation.
+      summary: >-
+        Raises an error on the EV's ev_manager implementation. The error is not delivered: the framework
+        logs and drops the raise, because ev_manager declares no generic errors, so evse_manager shows no
+        OtherError.
       contentType: application/json
       payload:
         $ref: '#/components/schemas/Error'
@@ -617,7 +620,8 @@ components:
       summary: >-
         Clears an error raised with raise_error. Without sub_type it clears every sub type of the
         type. With sub_type, it is rejected with reason "no such error active" when that pair is not
-        active.
+        active. Because raise_error is not delivered (ev_manager declares no generic errors), no such
+        error is ever active: a clear with sub_type is rejected, and one without it clears nothing.
       contentType: application/json
       payload:
         $ref: '#/components/schemas/Error'
@@ -1250,8 +1254,9 @@ components:
     CommunicationCheck:
       type: boolean
       description: >-
-        Send true at least every cfg_communication_check_to_s seconds to signal that the client is alive, otherwise
-        EVerest raises a CommunicationFault, which the next message clears. Send false to stop the check until the
+        Send true at least every cfg_communication_check_to_s seconds to signal that the client is alive. A missed
+        check logs "Communication check: FAILURE"; the CommunicationFault it raises is dropped, because ev_manager
+        declares no generic errors, so evse_manager shows no OtherError. Send false to stop the check until the
         module restarts.
     HeartBeatId:
       type: integer
