@@ -653,7 +653,11 @@ void Session::send_response() {
     last_response_tx_time = get_current_time_point();
     last_response_type = response_type;
 
-    timeouts.start_timeout(d20::TimeoutType::SEQUENCE, sequence_timeout_after_response(response_type));
+    const auto* d20_engine = std::get_if<D20SeccEngine>(&engine);
+    const auto charge_loop_next = d20_engine != nullptr and d20_engine->expects_charge_loop_request();
+    timeouts.start_timeout(d20::TimeoutType::SEQUENCE, charge_loop_next
+                                                           ? d20::TIMEOUT_SEQUENCE_CHARGE_LOOP
+                                                           : sequence_timeout_after_response(response_type));
 
     feedback.v2g_message(response_type, {response_buffer, response_size});
 

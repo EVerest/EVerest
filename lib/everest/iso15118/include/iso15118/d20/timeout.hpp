@@ -39,6 +39,8 @@ static_assert(TIMEOUT_TYPE_SIZE == to_underlying_value(TimeoutType::WELDING_VOLT
 
 constexpr auto TIMEOUT_ONGOING = 1000 * 55;
 constexpr auto TIMEOUT_SEQUENCE = 1000 * 60;
+// V2G_SECC_Sequence_Timeout while a ChargeLoopReq is the next request (Tables 216 and 217).
+constexpr auto TIMEOUT_SEQUENCE_CHARGE_LOOP = 500;
 // EvseV2G handle_stop_charging grants the same 10 s graceful-shutdown window.
 constexpr auto TIMEOUT_STOP_CHARGING_GUARD = 1000 * 10;
 // Short on purpose: the physical shutdown is enforced over the control pilot (IEC 61851-1/-23), not
