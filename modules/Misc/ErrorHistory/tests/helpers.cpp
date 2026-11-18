@@ -112,7 +112,10 @@ TestDatabase::TestDatabase(const fs::path& db_path_, const bool reset_) :
 }
 
 TestDatabase::~TestDatabase() {
-    fs::remove(db_path);
+    db.reset();
+    for (const auto* suffix : {"", "-wal", "-shm"}) {
+        fs::remove(db_path.string() + suffix);
+    }
 }
 
 void TestDatabase::add_error(Everest::error::ErrorPtr error) {
