@@ -3,6 +3,7 @@
 
 #include "energyImpl.hpp"
 #include "random_delay/random_delay_duration.hpp"
+#include "schedule_no_energy.hpp"
 
 #include <everest/helpers/phase_rotation.hpp>
 #include <everest/util/misc/container.hpp>
@@ -551,6 +552,12 @@ void energyImpl::handle_enforce_limits(types::energy::EnforcedLimits& value) {
 
         // update limit at the charger
         const auto valid_until = steady_clock::now() + seconds(value.valid_for);
+        const auto no_energy = schedule_no_energy_duration(value.schedule, date::utc_clock::now());
+        if (no_energy) {
+            mod->charger->set_no_energy_until(steady_clock::now() + no_energy.value());
+        } else {
+            mod->charger->set_no_energy_until(std::nullopt);
+        }
         if (limit >= 0) {
             // import
             mod->charger->set_max_current(limit, valid_until);

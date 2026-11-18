@@ -1009,9 +1009,8 @@ TEST_F(ChargerEvsePauseTest, UnplugWhilePausedStopsInsteadOfResuming) {
 }
 
 // ----------------------------------------------------------------------------
-// hlc_charge_loop_without_energy_pause: when the charge loop runs out of energy, an ISO 15118-20 dynamic control mode
-// session is paused instead of terminated. Scheduled control mode, DIN SPEC 70121 and ISO 15118-2 sessions are still
-// terminated.
+// When the charge loop runs out of energy, an ISO 15118-20 dynamic control mode session is paused instead of
+// terminated. Scheduled control mode, DIN SPEC 70121 and ISO 15118-2 sessions are still terminated.
 
 struct ChargerNoEnergyTest : public ChargerDlinkErrorTest {
     int pauses{0};
@@ -1027,8 +1026,7 @@ struct ChargerNoEnergyTest : public ChargerDlinkErrorTest {
     }
 
     /// Charging with no energy available (the EVSE limits are 0), contactor closed.
-    void run_charge_loop_without_energy(bool d20, bool dynamic_mode, bool pause_option) {
-        charger->get_config_context().hlc_charge_loop_without_energy_pause = pause_option;
+    void run_charge_loop_without_energy(bool d20, bool dynamic_mode) {
         setup_hlc_session_in(Charger::EvseState::Charging);
         auto& ctx = charger->get_shared_context();
         ctx.flag_ev_plugged_in = true;
@@ -1040,10 +1038,10 @@ struct ChargerNoEnergyTest : public ChargerDlinkErrorTest {
     }
 };
 
-TEST_F(ChargerNoEnergyTest, D20DynamicSessionIsPausedWithTheOption) {
+TEST_F(ChargerNoEnergyTest, D20DynamicSessionIsPaused) {
     // Current still flowing: [V2G20-2115] the pause may only be requested at 0 kW
     charger->update_dc_present_current(50.0f);
-    run_charge_loop_without_energy(true, true, true);
+    run_charge_loop_without_energy(true, true);
 
     EXPECT_EQ(charger->current_state(), Charger::EvseState::StoppingCharging);
     EXPECT_EQ(pauses, 0) << "no pause request before the output has ramped down";
@@ -1061,28 +1059,70 @@ TEST_F(ChargerNoEnergyTest, D20DynamicSessionIsPausedWithTheOption) {
     EXPECT_TRUE(charger->get_shared_context().hlc_session_paused_by_evse);
 }
 
-TEST_F(ChargerNoEnergyTest, D20ScheduledSessionIsTerminatedEvenWithTheOption) {
-    run_charge_loop_without_energy(true, false, true);
+TEST_F(ChargerNoEnergyTest, D20ScheduledSessionIsTerminated) {
+    run_charge_loop_without_energy(true, false);
 
     EXPECT_EQ(charger->current_state(), Charger::EvseState::StoppingCharging);
     EXPECT_EQ(pauses, 0);
     EXPECT_EQ(stops, 1);
 }
 
-TEST_F(ChargerNoEnergyTest, D20SessionIsTerminatedWithoutTheOption) {
-    run_charge_loop_without_energy(true, true, false);
+TEST_F(ChargerNoEnergyTest, Iso2SessionIsTerminated) {
+    run_charge_loop_without_energy(false, false);
 
     EXPECT_EQ(charger->current_state(), Charger::EvseState::StoppingCharging);
     EXPECT_EQ(pauses, 0);
     EXPECT_EQ(stops, 1);
 }
 
-TEST_F(ChargerNoEnergyTest, Iso2SessionIsTerminatedEvenWithTheOption) {
-    run_charge_loop_without_energy(false, false, true);
+// With a timeout, the charge loop is kept at 0 A until it ends. A schedule that shows no energy
+// until after the timeout pauses the dynamic mode session without waiting for it.
+
+TEST_F(ChargerNoEnergyTest, D20DynamicSessionWaitsForTimeoutWithoutSchedule) {
+    charger->get_config_context().hlc_charge_loop_without_energy_timeout_s = 100;
+    run_charge_loop_without_energy(true, true);
+    charger->run_state_machine();
+
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::Charging);
+    EXPECT_EQ(pauses, 0);
+    EXPECT_EQ(stops, 0);
+}
+
+TEST_F(ChargerNoEnergyTest, D20DynamicSessionIsPausedAtOnceWhenNoEnergyOutlastsTimeout) {
+    charger->get_config_context().hlc_charge_loop_without_energy_timeout_s = 100;
+    charger->set_no_energy_until(std::chrono::steady_clock::now() + std::chrono::seconds(200));
+    run_charge_loop_without_energy(true, true);
+    charger->run_state_machine();
 
     EXPECT_EQ(charger->current_state(), Charger::EvseState::StoppingCharging);
+    charger->run_state_machine();
+    EXPECT_EQ(pauses, 1);
+    EXPECT_EQ(stops, 0);
+}
+
+TEST_F(ChargerNoEnergyTest, D20DynamicSessionWaitsWhenEnergyReturnsBeforeTimeout) {
+    charger->get_config_context().hlc_charge_loop_without_energy_timeout_s = 100;
+    charger->set_no_energy_until(std::chrono::steady_clock::now() + std::chrono::seconds(50));
+    run_charge_loop_without_energy(true, true);
+    charger->run_state_machine();
+
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::Charging);
     EXPECT_EQ(pauses, 0);
-    EXPECT_EQ(stops, 1);
+    EXPECT_EQ(stops, 0);
+}
+
+// [V2G20-1198]: a scheduled control mode pause needs a 0 kW entry in the EV's power profile, which needs a schedule
+// renegotiation (not supported yet). Until then the session waits for the timeout and the schedule is ignored.
+// Change this test when scheduled control mode can pause without energy.
+TEST_F(ChargerNoEnergyTest, D20ScheduledSessionWaitsForTimeoutWhateverSchedule) {
+    charger->get_config_context().hlc_charge_loop_without_energy_timeout_s = 100;
+    charger->set_no_energy_until(std::chrono::steady_clock::now() + std::chrono::seconds(200));
+    run_charge_loop_without_energy(true, false);
+    charger->run_state_machine();
+
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::Charging);
+    EXPECT_EQ(pauses, 0);
+    EXPECT_EQ(stops, 0);
 }
 
 // [V2G3-M07-27]: after a wake-up from an EV pause the PLC link has to be detected within T_conn_max_comm,

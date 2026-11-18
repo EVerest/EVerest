@@ -967,6 +967,14 @@ void Charger::run_state_machine() {
                                 set_state(EvseState::StoppingCharging);
                                 break;
                             }
+                            if (no_energy_outlasts_timeout()) {
+                                session_log.evse(false, "No energy available and none scheduled within the ISO charge "
+                                                        "loop timeout, pausing now");
+                                internal_context.hlc_charge_loop_no_energy_timeout_running = false;
+                                internal_context.stopping_for_no_energy = true;
+                                set_state(EvseState::StoppingCharging);
+                                break;
+                            }
                         }
                     } else {
                         session_log.evse(
@@ -1657,6 +1665,11 @@ bool Charger::set_max_current(float c, std::chrono::time_point<std::chrono::stea
     return false;
 }
 
+void Charger::set_no_energy_until(std::optional<std::chrono::time_point<std::chrono::steady_clock>> until) {
+    Everest::scoped_lock_timeout lock(state_machine_mutex, Everest::MutexDescription::Charger_set_no_energy_until);
+    shared_context.no_energy_until = until;
+}
+
 // set pausing flag, it will be picked up by the state machine.
 bool Charger::pause_charging() {
     if (shared_context.flag_transaction_active) {
@@ -1683,8 +1696,16 @@ bool Charger::evse_pause_resumable() const {
 bool Charger::no_energy_pauses() const {
     // [V2G20-1198]: a scheduled pause needs a 0 kW EVPowerProfile entry, which needs a schedule renegotiation (not
     // supported yet)
-    return config_context.hlc_charge_loop_without_energy_pause and shared_context.hlc_d20_active and
-           shared_context.hlc_d20_dynamic_mode;
+    return shared_context.hlc_d20_active and shared_context.hlc_d20_dynamic_mode;
+}
+
+bool Charger::no_energy_outlasts_timeout() const {
+    if (not no_energy_pauses() or not shared_context.no_energy_until.has_value()) {
+        return false;
+    }
+    const auto timeout_end = internal_context.iso_charge_loop_no_energy_timeout_started +
+                             std::chrono::seconds(config_context.hlc_charge_loop_without_energy_timeout_s);
+    return shared_context.no_energy_until.value() > timeout_end;
 }
 
 void Charger::resume_evse_pause_marker() {
@@ -1989,7 +2010,6 @@ void Charger::setup(const SetupConfig& config) {
     config_context.sleep_before_enabling_pwm_hlc_mode_ms = config.sleep_before_enabling_pwm_hlc_mode_ms;
     config_context.session_id_type = config.session_id_type;
     config_context.hlc_charge_loop_without_energy_timeout_s = config.hlc_charge_loop_without_energy_timeout_s;
-    config_context.hlc_charge_loop_without_energy_pause = config.hlc_charge_loop_without_energy_pause;
 
     if (config_context.charge_mode == ChargeMode::DC) {
         shared_context.hlc_charging_active = true;

@@ -56,6 +56,7 @@ enum class MutexDescription {
     Charger_dc_renegotiation_started,
     Charger_errors_prevent_charging,
     Charger_set_max_current,
+    Charger_set_no_energy_until,
     Charger_switch_three_phases_while_charging,
     Charger_start_reinit,
     Charger_get_last_stop_transaction,
@@ -182,6 +183,8 @@ static std::string to_string(MutexDescription d) {
         return "Charger.cpp: errors_prevent_charging";
     case MutexDescription::Charger_set_max_current:
         return "Charger.cpp: set max current";
+    case MutexDescription::Charger_set_no_energy_until:
+        return "Charger.cpp: set_no_energy_until";
     case MutexDescription::Charger_switch_three_phases_while_charging:
         return "Charger.cpp switch_three_phases_while_charging";
     case MutexDescription::Charger_start_reinit:
