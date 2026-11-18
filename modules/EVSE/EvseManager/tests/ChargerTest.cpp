@@ -1622,6 +1622,81 @@ TEST_F(ChargerDlinkErrorTest, LinkLossX1DoesNotOutliveReinit) {
     EXPECT_EQ(slac_resets, 0);
 }
 
+// ----------------------------------------------------------------------------
+// X1 timer after a positive SessionStopRes: [V2G-DC-968] retain time, except after a terminate on an MCS
+// connector, where IEC 61851-23-3 Table CC.111 t109 lets the EVSE open S S3 only 5 s after the Res.
+
+struct ChargerSessionStopX1Test : public ChargerDlinkErrorTest {
+    std::chrono::milliseconds armed_hold() {
+        const auto& deadline = charger->get_internal_context().session_stop_pwm_off_deadline;
+        EXPECT_TRUE(deadline.has_value());
+        if (not deadline.has_value()) {
+            return std::chrono::milliseconds{0};
+        }
+        return std::chrono::ceil<std::chrono::milliseconds>(deadline.value() - std::chrono::steady_clock::now());
+    }
+
+    void expire_x1_timer() {
+        charger->get_internal_context().session_stop_pwm_off_deadline =
+            std::chrono::steady_clock::now() - std::chrono::milliseconds(1);
+    }
+};
+
+TEST_F(ChargerSessionStopX1Test, CcsTerminateUsesRetainTime) {
+    setup_hlc_session_in(Charger::EvseState::Charging);
+    charger->notify_session_stop_res_sent(types::iso15118::SessionStopAction::Terminate);
+
+    EXPECT_GT(armed_hold(), std::chrono::milliseconds(1450));
+    EXPECT_LE(armed_hold(), std::chrono::milliseconds(1550));
+}
+
+TEST_F(ChargerSessionStopX1Test, McsTerminateHoldsSS3ForFiveSeconds) {
+    charger->set_mcs_connector(true);
+    setup_hlc_session_in(Charger::EvseState::Charging);
+    charger->notify_session_stop_res_sent(types::iso15118::SessionStopAction::Terminate);
+
+    EXPECT_GT(armed_hold(), std::chrono::milliseconds(4900));
+    EXPECT_LE(armed_hold(), std::chrono::milliseconds(5000));
+}
+
+TEST_F(ChargerSessionStopX1Test, McsPauseUsesRetainTime) {
+    charger->set_mcs_connector(true);
+    setup_hlc_session_in(Charger::EvseState::Charging);
+    charger->notify_session_stop_res_sent(types::iso15118::SessionStopAction::Pause);
+
+    EXPECT_GT(armed_hold(), std::chrono::milliseconds(1450));
+    EXPECT_LE(armed_hold(), std::chrono::milliseconds(1550));
+}
+
+TEST_F(ChargerSessionStopX1Test, McsFailedTerminationSwitchesToX1AtOnce) {
+    charger->set_mcs_connector(true);
+    setup_hlc_session_in(Charger::EvseState::Charging);
+    charger->notify_session_stop_res_sent(types::iso15118::SessionStopAction::FailedTermination);
+
+    EXPECT_FALSE(charger->get_internal_context().session_stop_pwm_off_deadline.has_value());
+    EXPECT_EQ(observed_cp_state_commands, std::vector<std::string>{"X1"});
+}
+
+TEST_F(ChargerSessionStopX1Test, McsTerminateKeepsSS3ClosedUntilTheHoldExpires) {
+    charger->set_mcs_connector(true);
+    setup_hlc_session_in(Charger::EvseState::Charging);
+    charger->get_shared_context().flag_ev_plugged_in = true;
+
+    charger->notify_session_stop_res_sent(types::iso15118::SessionStopAction::Terminate);
+    // The data link goes down with the EV's TCP close and the EV leaves C, long before the hold has run out.
+    EXPECT_FALSE(charger->dlink_terminate());
+    charger->current_state(Charger::EvseState::ChargingPausedEV);
+    charger->run_state_machine();
+    charger->run_state_machine();
+    EXPECT_TRUE(observed_cp_state_commands.empty());
+    EXPECT_TRUE(charger->get_shared_context().pwm_running);
+
+    expire_x1_timer();
+    charger->run_state_machine();
+    EXPECT_EQ(observed_cp_state_commands, std::vector<std::string>{"X1"});
+    EXPECT_FALSE(charger->get_internal_context().session_stop_pwm_off_deadline.has_value());
+}
+
 } // namespace
 
 // ----------------------------------------------------------------------------
