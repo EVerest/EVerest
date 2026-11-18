@@ -617,10 +617,9 @@ components:
       name: send_clear_error
       title: 'Send clear error'
       summary: >-
-        Clears an error raised with raise_error. Without sub_type it clears every sub type of the
-        type. With sub_type, it is rejected with reason "no such error active" when that pair is not
-        active. raise_error is logged and dropped, because ev_manager declares no generic errors, so no such
-        error is ever active: a clear with sub_type is rejected, and one without it clears nothing.
+        raise_error is logged and dropped, because ev_manager declares no generic errors, so no such error
+        is ever active: with sub_type the clear is rejected with reason "no such error active", and
+        without it, it clears nothing.
       contentType: application/json
       payload:
         $ref: '#/components/schemas/Error'
@@ -1226,8 +1225,10 @@ components:
       description: |
         Type of error
         - CommunicationFault: The communication to the hardware or underlying driver is lost or has errors.
-        - VendorError: Vendor specific error code. Will stop charging session.
-        - VendorWarning: Vendor specific error code. Charging may continue.
+        - VendorError: Vendor specific error code.
+        - VendorWarning: Vendor specific error code.
+        On ev_controller every type is logged and dropped, because ev_manager declares no generic errors,
+        so evse_manager shows no OtherError.
 
       type: string
       enum:
