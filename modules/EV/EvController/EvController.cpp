@@ -65,9 +65,7 @@ void EvController::ready() {
     // here rather than on the loop thread.
     runtime->ctx_ptr()->kvs_load();
 
-    if (comm_check) {
-        comm_check->start(config.cfg_communication_check_to_s);
-    }
+    comm_check.value().start(config.cfg_communication_check_to_s);
     setup_heartbeat_generator();
 
     // The loop thread is a raw std::thread: an exception escaping its entry
@@ -85,7 +83,6 @@ void EvController::ready() {
         } catch (...) {
             on_loop_abort("unknown exception");
         }
-        loop_online = false;
     });
 }
 
@@ -138,9 +135,7 @@ void EvController::setup_heartbeat_generator() {
         }
         return true;
     };
-    if (comm_check) {
-        comm_check->heartbeat(config.cfg_heartbeat_interval_ms, action);
-    }
+    comm_check.value().heartbeat(config.cfg_heartbeat_interval_ms, action);
 }
 
 } // namespace module
