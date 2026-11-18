@@ -119,6 +119,12 @@ public:
         return *storage;
     }
 
+    /// \brief The key mapping in effect, without the entries whose target cannot hold the key's value (see
+    /// v2::usable_key_mappings).
+    const VariableResolver& get_variable_resolver() const {
+        return resolver;
+    }
+
     void check_integrity(int32_t expected_number_of_connectors) override;
 
     // UserConfig and Internal

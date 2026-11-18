@@ -190,6 +190,26 @@ protected:
         reopen(mappings);
     }
 
+    /// Registers an integer variable with the value 7 under a runtime owner
+    static void register_runtime_variable(ocpp::v2::DeviceModelRegistryInterface& registry,
+                                          const std::string& component, const std::string& variable) {
+        ocpp::v2::VariableAttribute attribute;
+        attribute.value = "7";
+        ocpp::v2::RegisteredVariable registered;
+        registered.variable = ocpp::v2::Variable{variable};
+        registered.characteristics.dataType = ocpp::v2::DataEnum::integer;
+        registered.characteristics.supportsMonitoring = false;
+        registered.attributes.push_back(attribute);
+        const auto result = registry.register_components(
+            "TEST_OWNER", {ocpp::v2::RegisteredComponent{ocpp::v2::Component{component}, {registered}}}, nullptr);
+        ASSERT_TRUE(result.rejected.empty());
+    }
+
+    void register_runtime_variable(const std::string& component, const std::string& variable) {
+        register_runtime_variable(dynamic_cast<ocpp::v2::DeviceModel&>(config->get_device_model()), component,
+                                  variable);
+    }
+
     bool in_device_model(const std::string& component, const std::string& variable) {
         return config->get_device_model()
             .get_mutability(ocpp::v2::Component{component}, ocpp::v2::Variable{variable},
@@ -310,36 +330,103 @@ TEST_F(LegacyKeyOverride, IntegrityCheckPassesWithExistingTarget) {
     EXPECT_NO_THROW(config->check_integrity(NUMBER_OF_CONNECTORS));
 }
 
-TEST_F(LegacyKeyOverride, IntegrityCheckFailsWhenTargetMissing) {
+TEST_F(LegacyKeyOverride, CustomKeyWithMissingTargetIsNotAvailable) {
+    migrate({});
+    reopen({{"VendorFanSpeed", {ocpp::v2::Component{"DoesNotExist"}, ocpp::v2::Variable{"FanSpeed"}}}});
+    EXPECT_NO_THROW(config->check_integrity(NUMBER_OF_CONNECTORS));
+    EXPECT_FALSE(config->get("VendorFanSpeed").has_value());
+
+    const auto all = config->get_all_key_value();
+    EXPECT_TRUE(std::none_of(all.begin(), all.end(), [](const auto& kv) { return kv.key == "VendorFanSpeed"; }));
+}
+
+// The target is registered as on every boot, after the configuration was constructed
+TEST_F(LegacyKeyOverride, CustomKeyWithRegisteredTargetIsNotAvailable) {
+    migrate({});
+    reopen({{"VendorFanSpeed", {ocpp::v2::Component{"VendorRuntime"}, ocpp::v2::Variable{"FanSpeed"}}}});
+    register_runtime_variable("VendorRuntime", "FanSpeed");
+
+    EXPECT_FALSE(config->get("VendorFanSpeed").has_value());
+    EXPECT_FALSE(config->get_variable_resolver().key_to_cv("VendorFanSpeed").has_value());
+    EXPECT_FALSE(config->get_variable_resolver()
+                     .cv_to_key(ocpp::v2::Component{"VendorRuntime"}, ocpp::v2::Variable{"FanSpeed"})
+                     .has_value());
+    EXPECT_EQ(device_model_value("VendorRuntime", "FanSpeed"), "7");
+}
+
+// A registration that precedes the configuration makes no difference
+TEST_F(LegacyKeyOverride, MappingsToVariablesRegisteredBeforehandAreIgnored) {
+    migrate({});
+    config.reset();
+    auto device_model = std::make_unique<ocpp::v2::DeviceModel>(
+        std::make_unique<ocpp::v2::DeviceModelStorageSqlite>((work_dir / "device_model.db").string()));
+    register_runtime_variable(*device_model, "VendorRuntime", "FanSpeed");
+    config = std::make_unique<ocpp::v16::ChargePointConfigurationDeviceModel>(
+        CONFIG_DIR_V16, std::move(device_model),
+        ocpp::v2::Ocpp16KeyMappings{
+            {"VendorFanSpeed", {ocpp::v2::Component{"VendorRuntime"}, ocpp::v2::Variable{"FanSpeed"}}},
+            {"LightIntensity", {ocpp::v2::Component{"VendorRuntime"}, ocpp::v2::Variable{"FanSpeed"}}}});
+
+    EXPECT_FALSE(config->get("VendorFanSpeed").has_value());
+    EXPECT_FALSE(config->get_variable_resolver().key_to_cv("VendorFanSpeed").has_value());
+    EXPECT_FALSE(config->get_variable_resolver().is_overridden(ocpp::v16::keys::valid_keys::LightIntensity));
+    const auto kv = config->get("LightIntensity");
+    ASSERT_TRUE(kv.has_value());
+    EXPECT_EQ(kv->value, MIGRATED_LIGHT_INTENSITY);
+}
+
+TEST_F(LegacyKeyOverride, MissingTargetFallsBackToBuiltinMapping) {
     migrate(light_intensity_override("DoesNotExist"));
-    EXPECT_THROW(config->check_integrity(NUMBER_OF_CONNECTORS), std::runtime_error);
+    EXPECT_NO_THROW(config->check_integrity(NUMBER_OF_CONNECTORS));
+    EXPECT_FALSE(config->get_variable_resolver().is_overridden(ocpp::v16::keys::valid_keys::LightIntensity));
+
+    EXPECT_EQ(device_model_value("OCPP16LegacyCtrlr", "LightIntensity"), MIGRATED_LIGHT_INTENSITY);
+    const auto kv = config->get("LightIntensity");
+    ASSERT_TRUE(kv.has_value());
+    EXPECT_EQ(kv->value, MIGRATED_LIGHT_INTENSITY);
 }
 
-TEST_F(LegacyKeyOverride, MigrationRejectsTargetWithOtherDataType) {
-    EXPECT_THROW(migrate(light_intensity_override("LightsOn")), ocpp::v2::Ocpp16KeyMappingsError);
+TEST_F(LegacyKeyOverride, TargetWithOtherDataTypeFallsBackToBuiltinMapping) {
+    migrate(light_intensity_override("LightsOn"));
+    EXPECT_NO_THROW(config->check_integrity(NUMBER_OF_CONNECTORS));
+    EXPECT_FALSE(config->get_variable_resolver().is_overridden(ocpp::v16::keys::valid_keys::LightIntensity));
+
+    EXPECT_EQ(device_model_value("OCPP16LegacyCtrlr", "LightIntensity"), MIGRATED_LIGHT_INTENSITY);
+    const auto kv = config->get("LightIntensity");
+    ASSERT_TRUE(kv.has_value());
+    EXPECT_EQ(kv->value, MIGRATED_LIGHT_INTENSITY);
 }
 
-TEST_F(LegacyKeyOverride, IntegrityCheckFailsForTargetWithOtherDataType) {
+TEST_F(LegacyKeyOverride, TargetWithOtherDataTypeIsDroppedWithoutMigration) {
     migrate({});
-    ASSERT_NO_THROW(config->check_integrity(NUMBER_OF_CONNECTORS));
     reopen(light_intensity_override("LightsOn"));
-    EXPECT_THROW(config->check_integrity(NUMBER_OF_CONNECTORS), std::runtime_error);
+    EXPECT_NO_THROW(config->check_integrity(NUMBER_OF_CONNECTORS));
+    EXPECT_FALSE(config->get_variable_resolver().is_overridden(ocpp::v16::keys::valid_keys::LightIntensity));
 }
 
-TEST_F(LegacyKeyOverride, UpdateRejectsTargetWithOtherDataType) {
+TEST_F(LegacyKeyOverride, UpdateKeepsBuiltInVariableForTargetWithOtherDataType) {
     migrate({});
-    EXPECT_THROW(update(light_intensity_override("LightsOn")), ocpp::v2::Ocpp16KeyMappingsError);
+    update(light_intensity_override("LightsOn"));
+    EXPECT_TRUE(in_device_model("OCPP16LegacyCtrlr", "LightIntensity"));
+    EXPECT_FALSE(config->get_variable_resolver().is_overridden(ocpp::v16::keys::valid_keys::LightIntensity));
 }
 
-TEST_F(LegacyKeyOverride, MigrationRejectsTargetWithoutActualAttribute) {
-    EXPECT_THROW(migrate(light_intensity_override("LightLevel")), ocpp::v2::Ocpp16KeyMappingsError);
+TEST_F(LegacyKeyOverride, TargetWithoutActualAttributeFallsBackToBuiltinMapping) {
+    migrate(light_intensity_override("LightLevel"));
+    EXPECT_NO_THROW(config->check_integrity(NUMBER_OF_CONNECTORS));
+    EXPECT_FALSE(config->get_variable_resolver().is_overridden(ocpp::v16::keys::valid_keys::LightIntensity));
+
+    EXPECT_EQ(device_model_value("OCPP16LegacyCtrlr", "LightIntensity"), MIGRATED_LIGHT_INTENSITY);
+    const auto kv = config->get("LightIntensity");
+    ASSERT_TRUE(kv.has_value());
+    EXPECT_EQ(kv->value, MIGRATED_LIGHT_INTENSITY);
 }
 
-TEST_F(LegacyKeyOverride, IntegrityCheckFailsForTargetWithoutActualAttribute) {
+TEST_F(LegacyKeyOverride, TargetWithoutActualAttributeIsDroppedWithoutMigration) {
     migrate({});
-    ASSERT_NO_THROW(config->check_integrity(NUMBER_OF_CONNECTORS));
     reopen(light_intensity_override("LightLevel"));
-    EXPECT_THROW(config->check_integrity(NUMBER_OF_CONNECTORS), std::runtime_error);
+    EXPECT_NO_THROW(config->check_integrity(NUMBER_OF_CONNECTORS));
+    EXPECT_FALSE(config->get_variable_resolver().is_overridden(ocpp::v16::keys::valid_keys::LightIntensity));
 }
 
 } // namespace

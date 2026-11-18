@@ -30,8 +30,6 @@ namespace ocpp::v2 {
 ///                             a fallback for keys absent from the built-in mapping table.
 /// \param network_config_slot  1-based NetworkConfiguration slot for connection-detail keys;
 ///                             0 disables migration of those keys.
-/// \throws Ocpp16KeyMappingsError when the target of an overridden key has no Actual attribute or another data
-///         type than the key's built-in variable.
 void patch_component_config_with_ocpp16(std::map<ComponentKey, std::vector<DeviceModelVariable>>& component_configs,
                                         ocpp::v16::ChargePointConfiguration& ocpp16_config,
                                         const Ocpp16KeyMappings& custom_key_mappings = {},
@@ -40,10 +38,8 @@ void patch_component_config_with_ocpp16(std::map<ComponentKey, std::vector<Devic
 /// \brief Remove the built-in OCPP16LegacyCtrlr variable of every key that \p custom_key_mappings maps to another
 /// variable in \p component_configs, so an OCPP 2.x CSMS does not see a variable that no longer holds the key's value.
 ///
-/// The built-in variable stays reserved for its key (see ocpp::v16::VariableResolver). An override target without an
-/// Actual attribute or with another data type than the built-in variable throws Ocpp16KeyMappingsError. An override
-/// whose target does not exist in \p component_configs keeps the built-in variable; the integrity check of the
-/// OCPP 1.6 device model configuration reports it.
+/// The built-in variable stays reserved for its key (see ocpp::v16::VariableResolver). An override that is ignored
+/// because its target cannot hold the key's value (see usable_key_mappings) keeps the built-in variable.
 ///
 /// \param component_configs    In-memory component config map to modify in place.
 /// \param custom_key_mappings  The OCPP 1.6 key mapping file entries.

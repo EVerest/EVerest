@@ -45,11 +45,9 @@ struct Ocpp16DeviceModelParams {
     bool FailOnDeviceModelConflicts;
 };
 
-/// \brief The device-model-backed configuration plus the custom 1.6 key mappings it was
-/// constructed with (shared mapping source for the variable resolver).
+/// \brief The device-model-backed configuration plus its registrations with the device model.
 struct config_factory_result_t {
     std::unique_ptr<ocpp::v16::ChargePointConfigurationDeviceModel> configuration;
-    ocpp::v2::Ocpp16KeyMappings custom_mappings;
     /// \brief The registrations with the device model of \p configuration. End them before \p configuration is
     /// destroyed; as the last member they end first when this result is destroyed.
     ocpp_module_common::device_model::DeviceModelRegistrations registrations;
@@ -71,7 +69,8 @@ struct config_factory_result_t {
 ///        outlive the returned configuration.
 /// \param config_service Access to the module configurations shown in the device model, if given. Must outlive the
 ///        returned binding.
-/// \return The configuration and the custom key mappings it uses.
+/// \return The configuration, whose get_variable_resolver() holds the key mappings in use, and its
+///         registrations.
 config_factory_result_t
 create_charge_point_configuration(const std::filesystem::path& ocpp_share_path, const Ocpp16DeviceModelParams& config,
                                   std::int32_t n_evse, const std::filesystem::path& everest_device_model_database_path,

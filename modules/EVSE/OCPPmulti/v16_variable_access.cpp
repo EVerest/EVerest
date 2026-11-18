@@ -91,7 +91,7 @@ void V16VariableAccess::warn_deprecated_key(const std::string& key) {
 // The resolver maps every CV back to at most one key, so path 2 never has to pick between keys.
 // Connection config (CVClass::ConnectionConfig) is only reachable via path 3 or a standard key whose
 // reboot/reconnect semantics live in the 1.6 stack: custom mappings targeting connection-config CVs
-// are rejected when the mapping file is loaded, so a custom key on paths 1/2 can never carry one.
+// are ignored when the mapping file is loaded, so a custom key on paths 1/2 can never carry one.
 std::vector<ocpp::v2::GetVariableResult>
 V16VariableAccess::get(const std::vector<ocpp::v2::GetVariableData>& requests) {
     std::vector<ocpp::v2::GetVariableResult> results;

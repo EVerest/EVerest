@@ -296,10 +296,9 @@ TEST_F(Configuration, setCustomKeyV2) {
 
     const std::string key{"GTCustom"};
     const std::string value{"GTCustomValue"};
-    createV2Config(create_custom_mappings({{key, {"SomeOtherCtrlr", "GTCustomVar"}}}));
-
-    // set an initial value
+    // a mapping target must exist when the configuration is created
     device_model->set("SomeOtherCtrlr", "GTCustomVar", "");
+    createV2Config(create_custom_mappings({{key, {"SomeOtherCtrlr", "GTCustomVar"}}}));
 
     EXPECT_TRUE(v2_config->get(key).has_value());
     auto kv = v2_config->get(key);
@@ -322,13 +321,12 @@ TEST_F(Configuration, setCustomKeyV2) {
 TEST_F(Configuration, SetV2) {
     using ConfigurationStatus = ocpp::v16::ConfigurationStatus;
     ASSERT_TRUE(device_model);
-    createV2Config(create_custom_mappings({{"ACustomKey", {"SomeOtherCtrlr", "ACustomKeyVar"}},
-                                           {"ACustomRWKey", {"SomeOtherCtrlr", "ACustomRWKeyVar"}}}));
-
-    // set an initial custom key value
+    // a mapping target must exist when the configuration is created
     device_model->set("SomeOtherCtrlr", "ACustomKeyVar", "");
     device_model->set("SomeOtherCtrlr", "ACustomRWKeyVar", "");
     device_model->set_readonly("ACustomKeyVar");
+    createV2Config(create_custom_mappings({{"ACustomKey", {"SomeOtherCtrlr", "ACustomKeyVar"}},
+                                           {"ACustomRWKey", {"SomeOtherCtrlr", "ACustomRWKeyVar"}}}));
 
     // non-existent key
     EXPECT_FALSE(v2_config->get("DoesNotExist").has_value());

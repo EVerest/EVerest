@@ -5,6 +5,7 @@
 /// \brief Tests that the OCPP 1.6 config factory backs the configuration with the device model database and takes
 /// over the EVerest device model database of earlier versions.
 
+#include <fstream>
 #include <gtest/gtest.h>
 
 #include <cstdlib>
@@ -218,6 +219,39 @@ TEST_F(ChargePointConfigFactoryV16Test, ConfigurationViewsAreRegistered) {
 
     result.registrations.end();
     EXPECT_EQ(config_service.handlers, 0);
+}
+
+// A module configuration view is registered at runtime, so the mapping file cannot give it an OCPP 1.6 key
+TEST_F(ChargePointConfigFactoryV16Test, MappingToConfigurationViewIsIgnored) {
+    const auto mapping_file = work_dir / "mappings.yaml";
+    std::ofstream(mapping_file) << R"yaml(
+mappings:
+  - ocpp16_key: AuthConnectionTimeout
+    component:
+      name: Auth
+      instance: auth
+    variable:
+      name: connection_timeout
+)yaml";
+    FakeConfigService config_service;
+    auto params = make_params();
+    params.Ocpp16KeyMappingsPath = mapping_file.string();
+    auto result = module::config_factory_v16::create_charge_point_configuration(work_dir, params, n_evse, {}, nullptr,
+                                                                                &config_service);
+
+    ocpp::v2::Component component = make_component("Auth");
+    component.instance = "auth";
+    const auto& resolver = result.configuration->get_variable_resolver();
+    EXPECT_FALSE(resolver.key_to_cv("AuthConnectionTimeout").has_value());
+    EXPECT_FALSE(resolver.cv_to_key(component, make_variable("connection_timeout")).has_value());
+    EXPECT_FALSE(result.configuration->get("AuthConnectionTimeout").has_value());
+
+    std::string value;
+    EXPECT_EQ(result.configuration->get_device_model().get_variable(component, make_variable("connection_timeout"),
+                                                                    ocpp::v2::AttributeEnum::Actual, value, false,
+                                                                    ocpp::v2::UnsetValue::NotSupported),
+              ocpp::v2::GetVariableStatusEnum::Accepted);
+    EXPECT_EQ(value, "60");
 }
 
 // The configuration views are stopped before the device model that holds them is destroyed
