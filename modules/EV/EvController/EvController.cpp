@@ -65,7 +65,8 @@ void EvController::ready() {
     // here rather than on the loop thread.
     runtime->ctx_ptr()->kvs_load();
 
-    comm_check.value().start(config.cfg_communication_check_to_s);
+    // NOLINTNEXTLINE(bugprone-unchecked-optional-access): engaged from construction until ~EvController resets it
+    comm_check->start(config.cfg_communication_check_to_s);
     setup_heartbeat_generator();
 
     // The loop thread is a raw std::thread: an exception escaping its entry
@@ -135,7 +136,8 @@ void EvController::setup_heartbeat_generator() {
         }
         return true;
     };
-    comm_check.value().heartbeat(config.cfg_heartbeat_interval_ms, action);
+    // NOLINTNEXTLINE(bugprone-unchecked-optional-access): engaged from construction until ~EvController resets it
+    comm_check->heartbeat(config.cfg_heartbeat_interval_ms, action);
 }
 
 } // namespace module
