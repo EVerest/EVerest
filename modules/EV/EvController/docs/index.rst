@@ -426,11 +426,14 @@ Inbound suffixes (``m2e/*``):
    * - ``raise_error``
      - ``RaiseErrorCmd``
      - ``Error`` (parsed on the MQTT thread; the queued event applies
-       ``p_ev_manager->raise_error`` on the loop thread)
+       ``p_ev_manager->raise_error`` on the loop thread). The raise is logged
+       and dropped, because ``ev_manager`` declares no generic errors, so
+       evse_manager shows no ``OtherError``.
    * - ``clear_error``
      - ``ClearErrorCmd``
      - ``Error`` (parsed on the MQTT thread; the queued event applies
-       ``p_ev_manager->clear_error`` on the loop thread)
+       ``p_ev_manager->clear_error`` on the loop thread). No such error is
+       ever active, since ``raise_error`` is dropped.
 
 Outbound suffixes (``e2m/*``):
 
@@ -865,7 +868,9 @@ on the same FSM event queue:
    that bypasses the queue, routed directly to ``comm_check``;
    ``raise_error`` / ``clear_error`` parse on the MQTT thread but enqueue a
    ``RaiseErrorCmd`` / ``ClearErrorCmd`` so the ``p_ev_manager`` interaction
-   runs on the loop thread.
+   runs on the loop thread. The raise is logged and dropped, because
+   ``ev_manager`` declares no generic errors, so evse_manager shows no
+   ``OtherError``, and no such error is ever active for ``clear_error``.
 
 2. **Peer-module variables**: ``PeerSubscriptions``
    (``main/PeerSubscriptions.cpp``) registers ``subscribe_*`` callbacks on
