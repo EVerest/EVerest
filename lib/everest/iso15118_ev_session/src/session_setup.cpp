@@ -167,20 +167,10 @@ std::optional<iso15118::ev::d20::der::SaeInverterProfile> load_sae_profile(const
     return profile;
 }
 
-std::optional<std::array<std::uint8_t, 6>> read_interface_mac(const std::string& device) {
-    if (device.empty()) {
-        return std::nullopt;
-    }
-    std::ifstream file("/sys/class/net/" + device + "/address");
-    if (not file.is_open()) {
-        return std::nullopt;
-    }
-    std::string line;
-    std::getline(file, line);
-
+std::optional<std::array<std::uint8_t, 6>> parse_mac(std::string_view text) {
     // At most two hex digits a field, so an out-of-range value cannot fold into the array.
     std::array<std::uint8_t, 6> mac{};
-    std::string_view rest{line};
+    std::string_view rest{text};
     for (std::size_t i = 0; i < mac.size(); ++i) {
         if (i > 0) {
             if (rest.empty() or rest.front() != ':') {
@@ -195,7 +185,23 @@ std::optional<std::array<std::uint8_t, 6>> read_interface_mac(const std::string&
         }
         rest.remove_prefix(static_cast<std::size_t>(end - field.data()));
     }
+    if (not rest.empty()) {
+        return std::nullopt;
+    }
     return mac;
+}
+
+std::optional<std::array<std::uint8_t, 6>> read_interface_mac(const std::string& device) {
+    if (device.empty()) {
+        return std::nullopt;
+    }
+    std::ifstream file("/sys/class/net/" + device + "/address");
+    if (not file.is_open()) {
+        return std::nullopt;
+    }
+    std::string line;
+    std::getline(file, line);
+    return parse_mac(line);
 }
 
 iso15118::ev::config::TlsMode tls_mode(const VehicleConfig& config) {

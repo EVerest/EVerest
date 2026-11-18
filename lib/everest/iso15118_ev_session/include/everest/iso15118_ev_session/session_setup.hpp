@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include <generated/types/iso15118.hpp>
@@ -104,6 +105,9 @@ std::optional<iso15118::ev::d20::der::DerControlFunctions> parse_der_iec_functio
 // The parsed and validated profile at `path`, the default one for an empty path. std::nullopt with error
 // set otherwise.
 std::optional<iso15118::ev::d20::der::SaeInverterProfile> load_sae_profile(const std::string& path, std::string& error);
+
+// A colon-separated MAC of six hex fields of one or two digits, or nullopt.
+std::optional<std::array<std::uint8_t, 6>> parse_mac(std::string_view text);
 
 // 6 byte MAC of `device` from sysfs, or nullopt on any failure.
 std::optional<std::array<std::uint8_t, 6>> read_interface_mac(const std::string& device);

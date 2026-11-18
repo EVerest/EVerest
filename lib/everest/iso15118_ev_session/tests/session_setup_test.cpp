@@ -4,6 +4,9 @@
 
 #include "value_of.hpp"
 
+#include <array>
+#include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -161,6 +164,29 @@ TEST(ApplyPresentValues, IgnoresANegativeAlarmStatus) {
     values.der_alarm_status = -1;
     session::apply_present_values(values, ac, dc, nullptr, "test");
     EXPECT_EQ(ac.der_alarm_status, 3U);
+}
+
+TEST(ParseMac, ReadsSixHexFields) {
+    EXPECT_EQ(session::parse_mac("02:1a:Bc:00:ff:7e"),
+              (std::array<std::uint8_t, 6>{0x02, 0x1a, 0xbc, 0x00, 0xff, 0x7e}));
+}
+
+TEST(ParseMac, ReadsSingleDigitFields) {
+    EXPECT_EQ(session::parse_mac("2:a:b:0:f:7"), (std::array<std::uint8_t, 6>{0x02, 0x0a, 0x0b, 0x00, 0x0f, 0x07}));
+}
+
+TEST(ParseMac, RejectsAThreeDigitField) {
+    EXPECT_EQ(session::parse_mac("02:1ab:bc:00:ff:7e"), std::nullopt);
+    EXPECT_EQ(session::parse_mac("02:1a:bc:00:ff:7e0"), std::nullopt);
+}
+
+TEST(ParseMac, RejectsAMissingField) {
+    EXPECT_EQ(session::parse_mac("02:1a:bc:00:ff"), std::nullopt);
+    EXPECT_EQ(session::parse_mac("02:1a::00:ff:7e"), std::nullopt);
+}
+
+TEST(ParseMac, RejectsAnEmptyString) {
+    EXPECT_EQ(session::parse_mac(""), std::nullopt);
 }
 
 } // namespace
