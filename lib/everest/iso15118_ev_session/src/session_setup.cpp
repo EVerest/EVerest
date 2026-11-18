@@ -389,10 +389,9 @@ iso15118::shared_datatypes::EnergyTransferMode to_iso2_transfer_mode(types::iso1
         return Out::DC_combo_core;
     case In::DC_unique:
         return Out::DC_unique;
+    // ISO 15118-2 and DIN SPEC 70121 have no bidirectional or megawatt service, so a pre-20 session
+    // offered next to these modes advertises the nearest DC equivalent.
     case In::DC_BPT:
-    // ISO 15118-2 and DIN SPEC 70121 have no megawatt service. This mapping is only reached when a
-    // pre-20 protocol is offered alongside MCS, and the nearest DC equivalent is then the only thing
-    // that can be advertised.
     case In::MCS_BPT:
         warn_unidirectional();
         return Out::DC_extended;
