@@ -36,6 +36,7 @@ Result DC_WeldingDetection::answer(const message_20::DC_WeldingDetectionRequest&
     const auto res = handle_request(req, m_ctx.session, present_voltage);
 
     m_ctx.respond(res);
+    m_ctx.feedback.response_code(res.response_code);
 
     if (res.response_code >= dt::ResponseCode::FAILED) {
         m_ctx.welding_detection.finish(m_ctx.feedback);
@@ -119,6 +120,7 @@ Result DC_WeldingDetection::feed(Event ev) {
 
         m_ctx.respond(res);
         apply_session_stop_response(m_ctx, *req, res);
+        m_ctx.feedback.response_code(res.response_code);
 
         return {};
     } else {
@@ -128,6 +130,7 @@ Result DC_WeldingDetection::feed(Event ev) {
         const message_20::Type req_type = variant->get_type();
         send_sequence_error(req_type, m_ctx);
 
+        m_ctx.feedback.response_code(dt::ResponseCode::FAILED_SequenceError);
         m_ctx.welding_detection.finish(m_ctx.feedback);
         m_ctx.session_stopped = true;
         return {};
