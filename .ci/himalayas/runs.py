@@ -5,6 +5,7 @@
 """Pick workflow runs and build outcomes from `gh api` JSON."""
 
 import argparse
+import datetime
 import json
 import re
 import sys
@@ -18,6 +19,25 @@ CROSS_STATUSES = {"success": "passed", "skipped": "skipped"}
 def pick_run(runs_json: dict, sha: str, event: str) -> dict | None:
     runs = [run for run in runs_json["workflow_runs"] if run["head_sha"] == sha and run["event"] == event]
     return max(runs, key=lambda run: (run.get("run_started_at") or "", run["created_at"]), default=None)
+
+
+def pick_dispatched(runs_json: dict, sha: str, after: str) -> dict | None:
+    after_time = datetime.datetime.fromisoformat(after)
+    runs = [
+        run
+        for run in runs_json["workflow_runs"]
+        if run["head_sha"] == sha
+        and run["event"] == "workflow_dispatch"
+        and datetime.datetime.fromisoformat(run["created_at"]) >= after_time
+    ]
+    return min(runs, key=lambda run: datetime.datetime.fromisoformat(run["created_at"]), default=None)
+
+
+def _target(triple: str, status: str, toolchain: str | None) -> dict:
+    target = {"target": triple, "status": status}
+    if toolchain is not None:
+        target["toolchain"] = toolchain
+    return target
 
 
 def _jobs(jobs_json: dict) -> list[dict]:
@@ -41,14 +61,14 @@ def build_outcome(jobs_json: dict) -> str:
     return "failed" if job is None else _step_status(job, "Compile")
 
 
-def native_targets(jobs_json: dict, toolchain: str) -> list[dict]:
+def native_targets(jobs_json: dict, toolchain: str | None) -> list[dict]:
     job = _job(jobs_json, "CMake GCC /")
     if job is None:
         return []
-    return [{"target": NATIVE_TARGET, "status": _step_status(job, "Compile"), "toolchain": toolchain}]
+    return [_target(NATIVE_TARGET, _step_status(job, "Compile"), toolchain)]
 
 
-def cross_targets(jobs_json: dict, toolchain: str) -> list[dict]:
+def cross_targets(jobs_json: dict, toolchain: str | None) -> list[dict]:
     targets = []
     for job in _jobs(jobs_json):
         match = CROSS_JOB.match(job["name"])
@@ -58,7 +78,7 @@ def cross_targets(jobs_json: dict, toolchain: str) -> list[dict]:
         if not PLATFORM_PATTERN.fullmatch(platform):
             raise ValueError(f"cross job platform is not an <arch>-<os>-<abi> triple: {platform!r}")
         status = CROSS_STATUSES.get(job["conclusion"], "failed")
-        targets.append({"target": platform, "status": status, "toolchain": toolchain})
+        targets.append(_target(platform, status, toolchain))
     return targets
 
 
@@ -68,9 +88,14 @@ def main() -> int:
     pick = commands.add_parser("pick-run", help="print the id of the newest run of a SHA and event")
     pick.add_argument("--sha", required=True)
     pick.add_argument("--event", required=True)
+    dispatched = commands.add_parser(
+        "pick-dispatched", help="print the id of the oldest workflow_dispatch run of a SHA created at or after a time"
+    )
+    dispatched.add_argument("--sha", required=True)
+    dispatched.add_argument("--after", required=True, help="ISO-8601 time the run was dispatched at")
     commands.add_parser("build-outcome", help="print passed or failed")
     targets = commands.add_parser("targets", help="print the build targets as a JSON list")
-    targets.add_argument("--toolchain", required=True, help='compiler and version, such as "gcc 13.2.0"')
+    targets.add_argument("--toolchain", help='compiler and version of the native target, such as "gcc 13.2.0"')
     targets.add_argument("--cross-jobs", metavar="FILE", help="jobs JSON of the run holding the cross builds")
     args = parser.parse_args()
 
@@ -81,13 +106,19 @@ def main() -> int:
             print(f"no {args.event} run for {args.sha}", file=sys.stderr)
             return 3
         print(run["id"])
+    elif args.command == "pick-dispatched":
+        run = pick_dispatched(data, args.sha, args.after)
+        if run is None:
+            print(f"no workflow_dispatch run for {args.sha} since {args.after}", file=sys.stderr)
+            return 3
+        print(run["id"])
     elif args.command == "build-outcome":
         print(build_outcome(data))
     else:
         result = native_targets(data, args.toolchain)
         if args.cross_jobs:
             with open(args.cross_jobs, encoding="utf-8") as f:
-                result += cross_targets(json.load(f), args.toolchain)
+                result += cross_targets(json.load(f), None)
         print(json.dumps(result))
     return 0
 

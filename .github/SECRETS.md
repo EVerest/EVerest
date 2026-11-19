@@ -44,7 +44,7 @@ principles 1, 3, 6 and 7, configured in `.github/zizmor.yml`.
 | `PRIVATE_DEPS_SSH_KEY` | SSH private key, optional | organisation or repository | read access to private dependency repositories | `job_build-cmake-gcc.yml`, `job_build-docs.yaml` |
 | `BACKPORT_APP_CLIENT_ID` | GitHub App client ID | organisation | identifies the backport App | `on_label.yaml` |
 | `BACKPORT_APP_PRIVATE_KEY` | GitHub App private key | organisation | `contents: write`, `pull-requests: write`, `metadata: read` on this repository | `on_label.yaml` |
-| `HIMALAYAS_ACCESSOR_CLIENT_ID` | GitHub App client ID | organisation | identifies the Himalayas App | `on_schedule_move-pointers.yaml` |
+| `HIMALAYAS_ACCESSOR_CLIENT_ID` | GitHub App client ID | organisation | identifies the Himalayas App | `on_schedule_move-pointers.yaml`, `on_pointer_moved.yaml` |
 | `HIMALAYAS_ACCESSOR_APP_PRIVATE_KEY` | GitHub App private key | organisation | `contents: write` on `EVerest/Himalayas`, used only for `repository_dispatch` | as above |
 
 ## Notes per secret
@@ -91,6 +91,10 @@ push itself uses `GITHUB_TOKEN`, so this token never reaches this repository.
 
 Absence: the pointer still moves, but minting the token fails, leaving the
 move unrecorded until the secret is set and the run is repeated.
+
+`on_pointer_moved.yaml` mints the same token to wake Himalayas once it has
+uploaded a pointer's CI record. Absence fails only that wake-up: the record
+is still uploaded, and Himalayas collects it on its next run.
 
 ## Forks
 

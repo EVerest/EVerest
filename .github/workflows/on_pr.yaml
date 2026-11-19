@@ -67,6 +67,9 @@ jobs:
 
   integration-tests:
     name: Integration
+    permissions:
+      contents: read
+      actions: read  # to download another run's artifacts when artifacts_run_id is set
     uses: ./.github/workflows/job_integrations-tests.yml
     needs:
       - setup-env
@@ -82,6 +85,9 @@ jobs:
 
   ocpp-tests:
     name: OCPP
+    permissions:
+      contents: read
+      actions: read  # to download another run's artifacts when artifacts_run_id is set
     uses: ./.github/workflows/job_ocpp-tests.yml
     needs:
       - setup-env
