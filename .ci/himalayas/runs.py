@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 # Copyright Pionix GmbH and Contributors to EVerest
-"""Pick workflow runs and build outcomes from `gh api` JSON."""
+"""Pick workflow runs, build outcomes and build targets from `gh api` JSON."""
 
 import argparse
 import json
