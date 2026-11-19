@@ -229,13 +229,13 @@ class TruncatedJobsTest(unittest.TestCase):
             jobs_json = load(name)
             jobs_json["jobs"].pop()
             calls = {
-                "build_outcome": lambda: build_outcome(jobs_json),
-                "native_targets": lambda: native_targets(jobs_json, TOOLCHAIN),
-                "cross_targets": lambda: cross_targets(jobs_json, CROSS_TOOLCHAINS),
+                "build_outcome": (build_outcome,),
+                "native_targets": (native_targets, TOOLCHAIN),
+                "cross_targets": (cross_targets, CROSS_TOOLCHAINS),
             }
-            for function, call in calls.items():
+            for function, (call, *args) in calls.items():
                 with self.subTest(name=name, function=function), self.assertRaises(ValueError):
-                    call()
+                    call(jobs_json, *args)
 
 
 class CliTest(unittest.TestCase):
