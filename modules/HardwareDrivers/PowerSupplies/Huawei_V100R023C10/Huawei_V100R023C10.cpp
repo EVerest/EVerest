@@ -7,6 +7,8 @@
 #include "connector_3/power_supply_DCImpl.hpp"
 #include "connector_4/power_supply_DCImpl.hpp"
 
+#include <evse_security/crypto/openssl/openssl_provider.hpp>
+
 namespace module {
 
 static ConnectorBase* get_connector_impl(Huawei_V100R023C10* mod, std::uint8_t connector) {
@@ -131,6 +133,10 @@ void Huawei_V100R023C10::init() {
     dispenser_config.telemetry_publisher = this->telemetry_publisher;
 
     if (config.tls_enabled) {
+        // Load the OpenSSL providers (e.g. tpm2 for TSS2 keys) explicitly, like EvseSecurity does. OPENSSL_CONF is
+        // ignored because the module runs with file capabilities (AT_SECURE).
+        { const evse_security::OpenSSLProvider provider; }
+
         tls_util::MutualTlsClientConfig mutual_tls_config;
         mutual_tls_config.ca_cert = config.psu_ca_cert;
         mutual_tls_config.client_cert = config.client_cert;
