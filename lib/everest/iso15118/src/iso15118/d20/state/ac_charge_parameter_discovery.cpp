@@ -129,10 +129,9 @@ Result AC_ChargeParameterDiscovery::feed(Event ev) {
         const auto& limits = m_ctx.session_config.ac_limits;
         const auto res = handle_request(*req, m_ctx.session, limits, present_powers);
 
-        m_ctx.respond(res);
-        m_ctx.feedback.response_code(res.response_code);
+        const auto response_code = m_ctx.respond_and_publish_response_code(res);
 
-        if (res.response_code >= message_20::datatypes::ResponseCode::FAILED) {
+        if (response_code >= message_20::datatypes::ResponseCode::FAILED) {
             m_ctx.session_stopped = true;
             return {};
         }
@@ -151,10 +150,9 @@ Result AC_ChargeParameterDiscovery::feed(Event ev) {
     } else if (const auto req = variant->get_if<message_20::SessionStopRequest>()) {
         const auto res = handle_request(*req, m_ctx.session);
 
-        m_ctx.respond(res);
-        mark_session_stop_response(m_ctx, *req, res);
+        const auto response_code = m_ctx.respond_and_publish_response_code(res);
+        mark_session_stop_response(m_ctx, *req, response_code);
         m_ctx.session_stopped = true;
-        m_ctx.feedback.response_code(res.response_code);
 
         return {};
     } else {
@@ -164,7 +162,6 @@ Result AC_ChargeParameterDiscovery::feed(Event ev) {
         // Sequence Error
         const message_20::Type req_type = variant->get_type();
         send_sequence_error(req_type, m_ctx);
-        m_ctx.feedback.response_code(dt::ResponseCode::FAILED_SequenceError);
 
         return {};
     }

@@ -52,9 +52,8 @@ Result SessionStop::feed(Event ev) {
     if (const auto req = variant->get_if<message_20::SessionStopRequest>()) {
         const auto res = handle_request(*req, m_ctx.session);
 
-        m_ctx.respond(res);
-        apply_session_stop_response(m_ctx, *req, res);
-        m_ctx.feedback.response_code(res.response_code);
+        const auto response_code = m_ctx.respond_and_publish_response_code(res);
+        apply_session_stop_response(m_ctx, *req, response_code);
 
         return {};
     } else {
@@ -64,18 +63,17 @@ Result SessionStop::feed(Event ev) {
         const message_20::Type req_type = variant->get_type();
         send_sequence_error(req_type, m_ctx);
 
-        m_ctx.feedback.response_code(dt::ResponseCode::FAILED_SequenceError);
         m_ctx.session_stopped = true;
         return {};
     }
 }
 
 void apply_session_stop_response(d20::Context& ctx, const message_20::SessionStopRequest& req,
-                                 const message_20::SessionStopResponse& res) {
-    mark_session_stop_response(ctx, req, res);
+                                 const dt::ResponseCode response_code) {
+    mark_session_stop_response(ctx, req, response_code);
 
     // Todo(sl): Tell the reason why the charger is stopping. Shutdown, Error, etc.
-    if (res.response_code >= dt::ResponseCode::FAILED) {
+    if (response_code >= dt::ResponseCode::FAILED) {
         ctx.session_stopped = true;
         ctx.pause_ctx.reset();
     } else if (req.charging_session == dt::ChargingSession::Pause) {
@@ -93,7 +91,7 @@ void apply_session_stop_response(d20::Context& ctx, const message_20::SessionSto
 }
 
 void mark_session_stop_response(d20::Context& ctx, const message_20::SessionStopRequest& req,
-                                const message_20::SessionStopResponse& res) {
+                                const dt::ResponseCode response_code) {
     if (req.ev_termination_code.has_value()) {
         logf_info("EV termination code: %s", req.ev_termination_code->c_str());
     }
@@ -108,7 +106,7 @@ void mark_session_stop_response(d20::Context& ctx, const message_20::SessionStop
     // ServiceRenegotiation keeps the session running); a FAILED Res ends the session with
     // immediate oscillator-off + SECC-side TCP close instead. Reported once the response
     // actually hit the wire (Session::send_response).
-    if (res.response_code == dt::ResponseCode::OK) {
+    if (response_code == dt::ResponseCode::OK) {
         if (req.charging_session != dt::ChargingSession::ServiceRenegotiation) {
             ctx.session_stop_res_pending = (req.charging_session == dt::ChargingSession::Pause)
                                                ? session::feedback::SessionStopAction::Pause

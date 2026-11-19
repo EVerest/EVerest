@@ -132,8 +132,10 @@ void D20SeccEngine::on_control_event(const d20::ControlEvent& event) {
         ctx.cache_present_values.emplace(*control_data);
         ctx.welding_detection.observe(*control_data);
     } else if (const auto control_data = ctx.get_control_event<d20::EvseError>()) {
-        // The DC status-code stamp is a -20-specific follow-up, but an emergency shutdown must still abort.
-        if (control_data->code == d20::EvseErrorCode::EmergencyShutdown) {
+        if (control_data->code == d20::EvseErrorCode::ErrorShutdown) {
+            logf_error("EVSE error shutdown reported; failing the next ISO 15118-20 response");
+            ctx.request_forced_failed_response();
+        } else if (control_data->code == d20::EvseErrorCode::EmergencyShutdown) {
             logf_error("EVSE emergency shutdown reported; aborting the ISO 15118-20 session");
             ctx.session_stopped = true;
         }
