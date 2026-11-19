@@ -69,6 +69,16 @@ static int connection_create_socket(struct sockaddr_in6* sockaddr) {
         return -1;
     }
 
+    // A previous connection on this port may still sit in TIME_WAIT.
+    if (setsockopt(s, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(enable)) == -1) {
+        if (!error_once) {
+            dlog(DLOG_LEVEL_ERROR, "setsockopt(SO_REUSEADDR) failed: %s", strerror(errno));
+            error_once = true;
+        }
+        close(s);
+        return -1;
+    }
+
     if (setsockopt(s, SOL_SOCKET, SO_REUSEPORT, &enable, sizeof(enable)) == -1) {
         if (!error_once) {
             dlog(DLOG_LEVEL_ERROR, "setsockopt(SO_REUSEPORT) failed: %s", strerror(errno));
