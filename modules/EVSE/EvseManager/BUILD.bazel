@@ -22,6 +22,7 @@ cc_everest_module(
             "*.hpp",
         ],
     ),
+    data = ["error_classification.yaml"],
     impls = IMPLS,
     deps = [
         "//lib/everest/everest_api_types:everest_api_types",
@@ -69,12 +70,17 @@ cc_test(
         "generated/modules/EvseManager/ld-ev.hpp",
     ],
     copts = ["-std=c++17"],
+    data = [
+        "error_classification.yaml",
+        "manifest.yaml",
+    ],
     defines = ["BUILD_TESTING_MODULE_EVSE_MANAGER"],
     includes = [
         ".",
         "generated/modules/EvseManager",
         "tests",
     ],
+    local_defines = ['EVSE_MANAGER_SOURCE_DIR=\\"modules/EVSE/EvseManager\\"'],
     target_compatible_with = CROSS_TEST_INCOMPATIBLE,
     deps = [
         "//interfaces:interfaces_lib",
@@ -82,6 +88,7 @@ cc_test(
         "//lib/everest/helpers",
         "//lib/everest/timer:libtimer",
         "//lib/everest/util",
+        "//lib/everest/yaml:everest_yaml",
         "//tests:module_adapter_stub",
         "@googletest//:gtest_main",
         "@sigslot",
