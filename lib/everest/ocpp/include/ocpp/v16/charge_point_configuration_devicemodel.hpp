@@ -58,6 +58,7 @@ protected:
     SetResult setInternalIgnoredProfilePurposesOffline(const std::string& value);
     SetResult setInternalOcspRequestInterval(const std::string& value);
     SetResult setInternalRejectRemoteStartTransactionWithoutConnectorId(const std::string& value);
+    SetResult setInternalBootNotificationAfterNetworkProfileSwitch(const std::string& value);
     SetResult setInternalRemoteStartTransactionWithoutConnectorIdFindFirst(const std::string& value);
     SetResult setInternalReportSuspendedEVSEReasonChange(const std::string& value);
     SetResult setInternalRetryBackoffRandomRange(const std::string& value);
@@ -243,6 +244,7 @@ public:
     std::optional<bool> getAllowChargingProfileWithoutStartSchedule() override;
     std::optional<bool> getQueueAllMessages() override;
     std::optional<bool> getRejectRemoteStartTransactionWithoutConnectorId() override;
+    std::optional<bool> getBootNotificationAfterNetworkProfileSwitch() override;
     std::optional<bool> getRemoteStartTransactionWithoutConnectorIdFindFirst() override;
     std::optional<bool> getReportClearedErrors() override;
     std::optional<int> getMessageQueueSizeThreshold() override;
@@ -305,6 +307,7 @@ public:
     std::optional<KeyValue> getPublicKeyKeyValue(std::uint32_t connector_id) override;
     std::optional<KeyValue> getQueueAllMessagesKeyValue() override;
     std::optional<KeyValue> getRejectRemoteStartTransactionWithoutConnectorIdKeyValue() override;
+    std::optional<KeyValue> getBootNotificationAfterNetworkProfileSwitchKeyValue() override;
     std::optional<KeyValue> getRemoteStartTransactionWithoutConnectorIdFindFirstKeyValue() override;
     std::optional<KeyValue> getReportClearedErrorsKeyValue() override;
     std::optional<KeyValue> getSeccLeafSubjectCommonNameKeyValue() override;
@@ -323,6 +326,7 @@ public:
     bool setMeterPublicKey(std::int32_t connector_id, const std::string& public_key_pem) override;
     void setOcspRequestInterval(std::int32_t ocsp_request_interval) override;
     void setRejectRemoteStartTransactionWithoutConnectorId(bool reject) override;
+    void setBootNotificationAfterNetworkProfileSwitch(bool enabled) override;
     void setRemoteStartTransactionWithoutConnectorIdFindFirst(bool find_first) override;
     void setReportSuspendedEVSEReasonChange(bool report_suspended_evse_reason_change) override;
     void setRetryBackoffRandomRange(std::int32_t retry_backoff_random_range) override;

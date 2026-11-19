@@ -166,6 +166,22 @@
             "type": "boolean",
             "default": false
         },
+        "BootNotificationAfterNetworkProfileSwitch": {
+            "variable_name": "BootNotificationAfterNetworkProfileSwitch",
+            "characteristics": {
+                "supportsMonitoring": true,
+                "dataType": "boolean"
+            },
+            "attributes": [
+                {
+                    "type": "Actual",
+                    "mutability": "ReadWrite"
+                }
+            ],
+            "description": "If true, a BootNotification.req is sent after connecting to a different Central System URL without a reboot (OCPP 2.0.1 B10.FR.10)",
+            "type": "boolean",
+            "default": true
+        },
         "RemoteStartTransactionWithoutConnectorIdFindFirst": {
             "variable_name": "RemoteStartTransactionWithoutConnectorIdFindFirst",
             "characteristics": {

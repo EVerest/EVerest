@@ -273,17 +273,24 @@ void ConnectivityManager::confirm_successful_connection() {
     // (per-slot Identity / MessageTimeout / SetVariables gating) assume.
     this->configuration.set_active_network_profile_slot(config_slot.value(), VARIABLE_ATTRIBUTE_VALUE_SOURCE_INTERNAL);
 
-    // Remember the slot of the last successful connection (B10.FR.07) and clear the fallback state,
-    // mirroring how the active security profile is remembered above.
-    {
-        auto state = this->m_state.handle();
-        state->last_successful_slot = config_slot.value();
-        state->failed_slots_since_success = 0;
-        state->in_fallback = false;
-    }
+    this->record_successful_connection();
 
     this->remove_network_connection_profiles_below_actual_security_profile();
     this->check_cache_for_invalid_security_profiles();
+}
+
+void ConnectivityManager::record_successful_connection() {
+    const auto config_slot = this->get_active_network_configuration_slot();
+    if (!config_slot.has_value()) {
+        EVLOG_warning << "record_successful_connection: no active configuration slot";
+        return;
+    }
+
+    // Remember the slot of the last successful connection (B10.FR.07) and clear the fallback state.
+    auto state = this->m_state.handle();
+    state->last_successful_slot = config_slot.value();
+    state->failed_slots_since_success = 0;
+    state->in_fallback = false;
 }
 
 void ConnectivityManager::try_connect_websocket() {

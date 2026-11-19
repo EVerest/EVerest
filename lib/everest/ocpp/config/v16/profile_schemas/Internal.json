@@ -325,6 +325,12 @@
             "type": "boolean",
             "readOnly": false
         },
+        "BootNotificationAfterNetworkProfileSwitch": {
+            "$comment": "If set to true, the charge point sends a BootNotification.req after it connected to a different Central System URL through another network connection profile or a changed one, without a reboot, as OCPP 2.0.1 B10.FR.10 requires. OCPP-J 1.6 section 5.4 advises against a BootNotification.req on reconnect, so it can be turned off. Defaults to true.",
+            "type": "boolean",
+            "readOnly": false,
+            "default": true
+        },
         "RemoteStartTransactionWithoutConnectorIdFindFirst": {
             "$comment": "If set to true, RemoteStartTransaction.req messages that do not contain a connectorId only reference the first connector available for remote start instead of all connectors. RejectRemoteStartTransactionWithoutConnectorId takes precedence over this key.",
             "type": "boolean",

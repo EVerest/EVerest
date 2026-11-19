@@ -463,6 +463,7 @@ This document contains the status of which OCPP 2.0.1 and OCPP2.1 numbered funct
 | B10.FR.07            | ✅     | tbd. we're looping over priorities and attempt to reconnect |
 | B10.FR.08 <br> (2.1) |        |                                                             |
 | B10.FR.09 <br> (2.1) |        |                                                             |
+| B10.FR.10            | ✅     | Sends a BootNotification (reason `Unknown`) and holds queued messages until it is accepted |
 
 ## Provisioning - Reset - Without Ongoing Transaction
 
