@@ -38,3 +38,17 @@ jobs:
           source-dir: source/
           extensions: hpp,cpp
           exclude: cache
+
+  himalayas-tests:
+    name: himalayas unit tests
+    runs-on: ${{ inputs.runner }}
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          sparse-checkout: .ci/himalayas
+      - name: Run unit tests
+        run: python3 -I -m unittest discover -s .ci/himalayas/tests -t .ci/himalayas -v
