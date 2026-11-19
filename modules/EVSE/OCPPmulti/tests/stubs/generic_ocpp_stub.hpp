@@ -21,8 +21,8 @@ namespace stubs {
 // The device model sources are the first base, so that they outlive GenericOcpp as in the module
 struct GenericOcppTester : private ocpp_multi::DeviceModelSources, public ocpp_multi::GenericOcpp {
     GenericOcppTester(ocpp_multi::GenericChargePointInterface& charge_point, const ModuleInfo& info,
-                      ocpp_multi::ConfigInterface& config, const provides_t& provides, const requires_t& requires) :
-        ocpp_multi::GenericOcpp(charge_point, info, config, provides, requires, *this) {
+                      ocpp_multi::ConfigInterface& config, const provides_t& provides, const requires_t& requirements) :
+        ocpp_multi::GenericOcpp(charge_point, info, config, provides, requirements, *this) {
     }
 
     using ocpp_multi::GenericOcpp::cb_all_connectors_unavailable;
