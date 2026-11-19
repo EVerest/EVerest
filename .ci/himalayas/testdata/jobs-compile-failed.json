@@ -1,0 +1,25 @@
+{
+  "total_count": 2,
+  "jobs": [
+    {
+      "name": "Bazel / build + test",
+      "conclusion": "success",
+      "steps": [
+        {
+          "name": "Build all",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "name": "CMake GCC / build + unit tests",
+      "conclusion": "failure",
+      "steps": [
+        {
+          "name": "Compile",
+          "conclusion": "failure"
+        }
+      ]
+    }
+  ]
+}
