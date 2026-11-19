@@ -831,16 +831,20 @@ std::vector<SetMonitoringResult> DeviceModel::set_monitors(const std::vector<Set
 
         // N04.FR.16 - If we find a monitor with this ID, and there's a comp/var mismatch, send a rejected result
         // N04.FR.13 - If we receive an ID but we can't find a monitor with this ID send a rejected result
+        // N04.FR.18 - If the ID belongs to a hardwired monitor send a rejected result, it cannot be replaced
         const bool request_has_id = request.id.has_value();
         bool id_found = false;
 
         if (request_has_id) {
             bool id_on_requested_variable = false;
+            bool id_is_hardwired = false;
             for (const auto& [component, variable_map] : this->device_model_map) {
                 for (const auto& [variable, variable_meta] : variable_map) {
-                    if (variable_meta.monitors.find(request.id.value()) != std::end(variable_meta.monitors)) {
+                    const auto monitor_it = variable_meta.monitors.find(request.id.value());
+                    if (monitor_it != std::end(variable_meta.monitors)) {
                         id_found = true;
                         id_on_requested_variable = (component == request.component and variable == request.variable);
+                        id_is_hardwired = monitor_it->second.type == VariableMonitorType::HardWiredMonitor;
                         break;
                     }
                 }
@@ -850,7 +854,7 @@ std::vector<SetMonitoringResult> DeviceModel::set_monitors(const std::vector<Set
                 }
             }
 
-            if (!id_found or !id_on_requested_variable) {
+            if (!id_found or !id_on_requested_variable or id_is_hardwired) {
                 result.status = SetMonitoringStatusEnum::Rejected;
                 set_monitors_res.push_back(result);
                 continue;
