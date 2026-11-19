@@ -677,7 +677,7 @@ void Session::handle_connection_event(io::ConnectionEvent event) {
     case Event::ACCEPTED:
         assert(state.connected == false);
         state.connected = true;
-        connection_established_time = get_current_time_point();
+        connection_accepted_time = get_current_time_point();
         logf_info("Accepted connection on port %d", connection->get_public_endpoint().port);
         // Guard the wait for the first request with the sequence timeout, so an EV that connects and
         // sends nothing is closed rather than left open (EvseV2G parity).
@@ -691,6 +691,7 @@ void Session::handle_connection_event(io::ConnectionEvent event) {
 
     case Event::OPEN:
         assert(state.connected);
+        connection_established_time = get_current_time_point();
         if (const auto new_vehicle_cert_hash = connection->get_vehicle_cert_hash()) {
             logf_info("Vehicle Cert is available");
             vehicle_cert_hash = new_vehicle_cert_hash;
