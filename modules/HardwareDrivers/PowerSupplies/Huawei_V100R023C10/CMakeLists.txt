@@ -13,6 +13,7 @@ ev_setup_cpp_module()
 target_link_libraries(${MODULE_NAME}
   PRIVATE
   fusion_charger_dispenser
+  everest::evse_security
 )
 
 target_link_libraries(${MODULE_NAME}
