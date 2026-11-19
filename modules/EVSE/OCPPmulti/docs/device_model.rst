@@ -682,9 +682,6 @@ libocpp deviates from OCPP in these points:
 * A preconfigured monitor the CSMS changed does not come back when SetMonitoringBase deletes the custom monitors,
   only at the next start or, for a registered variable, at the next registration (N03.FR.03, N03.FR.04;
   `#1994 <https://github.com/EVerest/EVerest/issues/1994>`_).
-* SetVariableMonitoring with the id of a hardwired monitor is accepted and stores the changed monitor as custom
-  (N04.FR.18; `#3399 <https://github.com/EVerest/EVerest/issues/3399>`_). A registration that
-  declares the hardwired monitor replaces it again.
 * A variable can have two monitors of the same type and severity (N04.FR.10;
   `#3400 <https://github.com/EVerest/EVerest/issues/3400>`_): the component configuration adds a
   declared monitor again at the next start next to the custom monitor the CSMS changed it into, and a
