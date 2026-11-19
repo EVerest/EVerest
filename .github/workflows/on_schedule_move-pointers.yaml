@@ -56,6 +56,8 @@ jobs:
         include:
           - pointer: testing/main
             tracks: main
+          - pointer: testing/stable-2026.10
+            tracks: stable/2026.10
           - pointer: testing/stable-2026.02
             tracks: stable/2026.02
     steps:
