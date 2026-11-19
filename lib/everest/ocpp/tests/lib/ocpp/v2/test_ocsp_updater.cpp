@@ -3,6 +3,7 @@
 
 #include <cstdlib>
 #include <iostream>
+#include <thread>
 
 #include <boost/date_time/posix_time/posix_time.hpp>
 #include <boost/interprocess/sync/interprocess_semaphore.hpp>
@@ -119,6 +120,24 @@ protected:
 
     boost::interprocess::interprocess_semaphore calls_complete = boost::interprocess::interprocess_semaphore(0);
 };
+
+/// \brief Starting an updater that is already running, e.g. on a second accepted BootNotification, keeps its single
+/// updater thread and still stops cleanly
+TEST_F(OcspUpdaterTest, test_start_twice) {
+    auto ocsp_updater = std::make_unique<v2::OcspUpdater>(this->evse_security, this->status_update);
+
+    EXPECT_CALL(*this->evse_security, get_v2g_ocsp_request_data()).Times(1).WillOnce(testing::Invoke([this]() {
+        this->calls_complete.post();
+        return std::vector<OCSPRequestData>{};
+    }));
+
+    ocsp_updater->start();
+    ocsp_updater->start();
+    EXPECT_TRUE(this->calls_complete.timed_wait(boost::posix_time::second_clock::universal_time() +
+                                                boost::posix_time::seconds(5)));
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    ocsp_updater->stop();
+}
 
 /// \brief Tests a successful update for multiple certs on boot
 TEST_F(OcspUpdaterTest, test_success_boot_many) {

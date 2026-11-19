@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright Pionix GmbH and Contributors to EVerest
 
+import asyncio
 import pytest
 from datetime import datetime, timezone
 
@@ -969,3 +970,71 @@ async def test_network_configuration_dm_end_to_end(
     )
 
     log.info("Step 4 PASSED: SetVariables on active slot 1 rejected with PriorityNetworkConf")
+
+
+B10_OCPP21_ADAPTIONS = GenericOCPP2XConfigAdjustment(
+    [
+        (OCPP2XConfigVariableIdentifier("InternalCtrlr", "SupportedOcppVersions", "Actual"), "ocpp2.1"),
+        (OCPP2XConfigVariableIdentifier("OCPPCommCtrlr", "NetworkConfigurationPriority", "Actual"), "1,2"),
+        (OCPP2XConfigVariableIdentifier("OCPPCommCtrlr", "NetworkProfileConnectionAttempts", "Actual"), 1),
+        (OCPP2XConfigVariableIdentifier("TxCtrlr", "TxStartPoint", "Actual"), "EVConnected"),
+    ]
+)
+
+
+@pytest.mark.asyncio
+@pytest.mark.ocpp_version("ocpp2.1")
+@pytest.mark.everest_core_config(get_everest_config_path_str("everest-config-ocpp201.yaml"))
+@pytest.mark.ocpp_config_adaptions(second_csms_network_profile(slot=2), B10_OCPP21_ADAPTIONS)
+async def test_b10_fr_10_boot_notification_after_profile_switch(
+    second_csms: CentralSystem,
+    charge_point_v21,
+    central_system_v21: CentralSystem,
+    test_controller: TestController,
+    test_utility: TestUtility,
+):
+    """
+    B10.FR.10: after the connection to the CSMS behind configuration slot 1 is lost and the charging station connects
+    through slot 2 instead, without rebooting, it re-registers with a BootNotification before anything else. A
+    transaction started while offline reaches the CSMS behind slot 2 only after that BootNotification was answered.
+    """
+    await stop_csms(central_system_v21)
+    test_controller.plug_in()
+
+    charge_point_slot_2 = await second_csms.wait_for_chargepoint(timeout=120, wait_for_bootnotification=False)
+    transaction_received = await wait_for_and_validate(
+        test_utility, charge_point_slot_2, "TransactionEvent", {"eventType": "Started"}, timeout=60
+    )
+
+    assert_registered_before(charge_point_slot_2, ["TransactionEvent"], reason="Unknown")
+    assert transaction_received, "the transaction started while offline was not sent after the switch"
+
+
+@pytest.mark.asyncio
+@pytest.mark.ocpp_version("ocpp2.1")
+@pytest.mark.everest_core_config(get_everest_config_path_str("everest-config-ocpp201.yaml"))
+@pytest.mark.ocpp_config_adaptions(
+    GenericOCPP2XConfigAdjustment(
+        [(OCPP2XConfigVariableIdentifier("InternalCtrlr", "SupportedOcppVersions", "Actual"), "ocpp2.1")]
+    )
+)
+async def test_b10_reconnect_same_profile_no_boot_notification(
+    charge_point_v21,
+    central_system_v21: CentralSystem,
+    test_controller: TestController,
+):
+    """Part 4 section 5.3: reconnecting through the same network connection profile does not send a BootNotification."""
+    test_controller.disconnect_websocket()
+    await asyncio.sleep(2)
+    test_controller.connect_websocket()
+
+    charge_point_reconnected = await central_system_v21.wait_for_chargepoint(wait_for_bootnotification=False)
+    await asyncio.sleep(5)
+
+    assert received_calls(charge_point_reconnected, "BootNotification") == []
+    heartbeats = len(received_calls(charge_point_reconnected, "Heartbeat"))
+    response = await charge_point_reconnected.call(call21.TriggerMessage(
+        requested_message=MessageTriggerEnumType.heartbeat))
+    assert response.status == TriggerMessageStatusEnumType.accepted
+    assert await wait_for_received_call(charge_point_reconnected, "Heartbeat", already_received=heartbeats), (
+        "the charging station sent nothing on the reconnected connection")

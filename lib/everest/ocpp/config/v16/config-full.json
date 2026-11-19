@@ -55,6 +55,7 @@
         "ConnectorEvseIds": "DE*PNX*100001,DE*PNX*100002",
         "AllowChargingProfileWithoutStartSchedule": false,
         "RejectRemoteStartTransactionWithoutConnectorId": false,
+        "BootNotificationAfterNetworkProfileSwitch": true,
         "RemoteStartTransactionWithoutConnectorIdFindFirst": false,
         "WaitForStopTransactionsOnResetTimeout": 60,
         "SwitchSecurityProfileConnectionTimeout": 30,

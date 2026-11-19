@@ -343,27 +343,50 @@ void ChargePointImpl::on_websocket_connected(const int configuration_slot,
         this->connection_state_changed_callback(true, configuration_slot, network_connection_profile);
     }
     this->publish_default_price(false);
-    const bool reconnected_while_booted = this->connection_state == ChargePointConnectionState::Booted;
+    const auto ocpp_csms_url =
+        normalised_csms_url(network_connection_profile.ocppCsmsUrl.get(), this->configuration.getChargePointId());
+    const auto registered =
+        this->registration_endpoints.connect(RegistrationEndpoint{configuration_slot, ocpp_csms_url});
+    const auto state_before_connect = this->connection_state.load();
+    const bool reconnected_while_booted = state_before_connect == ChargePointConnectionState::Booted;
+    const bool registration_known = reconnected_while_booted or
+                                    state_before_connect == ChargePointConnectionState::Pending or
+                                    state_before_connect == ChargePointConnectionState::Rejected;
+    // As OCPP 2.0.1 B10.FR.10 requires: another Central System may not know this charge point, so it registers again
+    // although it did not reboot. Until that BootNotification is accepted, queued messages are held. OCPP-J 1.6
+    // section 5.4 advises against a BootNotification on reconnect, so another slot towards the same Central System does
+    // not count, and it can be turned off.
+    const bool other_central_system = registered.has_value() and registered->ocpp_csms_url != ocpp_csms_url;
+    const bool register_again = other_central_system and registration_known and
+                                this->configuration.getBootNotificationAfterNetworkProfileSwitch().value_or(true);
     // Update connection state before resuming, otherwise a fast BootNotification.conf can be dropped as received while
     // disconnected
     this->connected_callback();
+    if (register_again) {
+        EVLOG_info << "Connected through configurationSlot " << configuration_slot << " ("
+                   << network_connection_profile.ocppCsmsUrl.get() << ") instead of configurationSlot "
+                   << registered->configuration_slot << " (" << registered->ocpp_csms_url
+                   << "), sending BootNotification.req to register again";
+        this->connection_state = ChargePointConnectionState::Connected;
+        this->registration_status = RegistrationStatus::Pending;
+        this->message_queue->reset_registration_status();
+        this->boot_notification_timer->stop();
+        this->boot_notification();
+    }
     this->message_queue->resume(this->message_queue_resume_delay);
-    if (reconnected_while_booted) {
+    if (reconnected_while_booted and not register_again) {
         // According to spec, a charge point should not send a BootNotification.req after a reconnect, still we send
         // StatusNotification.req for all connectors. Only after resuming: a paused queue would drop them.
         this->status->trigger_status_notifications();
+        this->connectivity_manager->record_successful_connection();
+        this->registration_endpoints.register_connected();
     }
 
     // There has been a successful connection so a subsequent
     // InvalidCSMSCertificate should be logged
     InvalidCSMSCertificate_logged = false;
 
-    // signal_set_charging_profiles_callback since composite schedule could have changed if
-    // IgnoredProfilePurposesOffline are configured when becoming online
-    if (this->signal_set_charging_profiles_callback != nullptr and
-        not this->configuration.getIgnoredProfilePurposesOffline().empty()) {
-        this->signal_set_charging_profiles_callback();
-    }
+    this->signal_charging_profiles_if_offline_purposes_ignored();
 }
 
 void ChargePointImpl::on_websocket_disconnected(const int configuration_slot,
@@ -382,8 +405,11 @@ void ChargePointImpl::on_websocket_disconnected(const int configuration_slot,
     if (this->v2g_certificate_timer != nullptr) {
         this->v2g_certificate_timer->stop();
     }
-    // signal_set_charging_profiles_callback since composite schedule could have changed if
-    // IgnoredProfilePurposesOffline are configured when becoming offline
+    this->signal_charging_profiles_if_offline_purposes_ignored();
+}
+
+void ChargePointImpl::signal_charging_profiles_if_offline_purposes_ignored() {
+    // With IgnoredProfilePurposesOffline the composite schedule depends on whether the charge point is online
     if (this->signal_set_charging_profiles_callback != nullptr and
         not this->configuration.getIgnoredProfilePurposesOffline().empty()) {
         this->signal_set_charging_profiles_callback();
@@ -1459,14 +1485,15 @@ void ChargePointImpl::connected_callback() {
         // connector status once the message queue resumed
         break;
     }
-    case ChargePointConnectionState::Pending: {
-        // in Pending state this can happen when we reconnected while the BootNotification had not been yet accepted
+    case ChargePointConnectionState::Pending:
+    case ChargePointConnectionState::Rejected: {
+        // reconnected while the BootNotification was answered Pending or Rejected: it is retried, or sent again at once
+        // when the connection moved to another Central System
         break;
     }
-    case ChargePointConnectionState::Rejected:
     case ChargePointConnectionState::Connected:
-        EVLOG_error << "Connected but not in state 'Disconnected' or 'Booted'. This can happen when the CSMS does not "
-                       "respond to the initial BootNotification.req at all or with a CALLERROR";
+        EVLOG_warning << "Connected while the BootNotification.req is not answered yet, it is sent again on this "
+                         "connection";
         break;
     }
 }
@@ -1529,7 +1556,7 @@ void ChargePointImpl::message_callback(const std::string& message) {
         }
         case ChargePointConnectionState::Connected: {
             if (enhanced_message.messageType == MessageType::BootNotificationResponse) {
-                this->handleBootNotificationResponse(json_message);
+                this->handleBootNotificationResponse(this->read_boot_notification_response(json_message));
             } else if (enhanced_message.messageTypeId == MessageTypeId::CALL) {
                 // we dont want to reply to this message
                 this->message_queue->reset_next_message_to_send();
@@ -1539,7 +1566,7 @@ void ChargePointImpl::message_callback(const std::string& message) {
         case ChargePointConnectionState::Rejected: {
             if (this->registration_status == RegistrationStatus::Rejected) {
                 if (enhanced_message.messageType == MessageType::BootNotificationResponse) {
-                    this->handleBootNotificationResponse(json_message);
+                    this->handleBootNotificationResponse(this->read_boot_notification_response(json_message));
                 } else if (enhanced_message.messageTypeId == MessageTypeId::CALL) {
                     // we dont want to reply to this message
                     this->message_queue->reset_next_message_to_send();
@@ -1550,7 +1577,7 @@ void ChargePointImpl::message_callback(const std::string& message) {
         case ChargePointConnectionState::Pending: {
             if (this->registration_status == RegistrationStatus::Pending) {
                 if (enhanced_message.messageType == MessageType::BootNotificationResponse) {
-                    this->handleBootNotificationResponse(json_message);
+                    this->handleBootNotificationResponse(this->read_boot_notification_response(json_message));
                 } else if (enhanced_message.messageType == MessageType::RemoteStartTransaction) {
                     RemoteStartTransactionResponse response;
                     response.status = RemoteStartStopStatus::Rejected;
@@ -1799,10 +1826,32 @@ void ChargePointImpl::handle_message(const EnhancedMessage<v16::MessageType>& me
     }
 }
 
+ocpp::CallResult<BootNotificationResponse> ChargePointImpl::read_boot_notification_response(const json& json_message) {
+    try {
+        ocpp::CallResult<BootNotificationResponse> call_result = json_message;
+        return call_result;
+    } catch (...) {
+        if (this->registration_status != RegistrationStatus::Accepted) {
+            // The message queue does not send a BootNotification.req again once the Central System answered it
+            const auto retry_interval = this->last_boot_notification_retry_interval.value_or(
+                std::chrono::seconds(DEFAULT_BOOT_NOTIFICATION_INTERVAL_S));
+            EVLOG_warning << "Could not read BootNotification.conf, sending BootNotification.req again in "
+                          << retry_interval.count() << "s";
+            this->boot_notification_timer->timeout(retry_interval);
+        }
+        throw;
+    }
+}
+
 void ChargePointImpl::handleBootNotificationResponse(ocpp::CallResult<BootNotificationResponse> call_result) {
     EVLOG_debug << "Received BootNotificationResponse: " << call_result.msg
                 << "\nwith messageId: " << call_result.uniqueId;
 
+    this->registration_endpoints.register_connected();
+    if (call_result.msg.status == RegistrationStatus::Accepted) {
+        // Before the dispatcher sees the acceptance: the queue refuses messages that require registration until then
+        this->message_queue->set_registration_status_accepted();
+    }
     this->registration_status = call_result.msg.status;
     this->boot_time = date::utc_clock::now();
     if (call_result.msg.interval > 0) {
@@ -1814,9 +1863,12 @@ void ChargePointImpl::handleBootNotificationResponse(ocpp::CallResult<BootNotifi
     if (call_result.msg.interval > 0) {
         boot_notification_retry_interval = call_result.msg.interval;
     }
+    if (call_result.msg.status != RegistrationStatus::Accepted) {
+        this->last_boot_notification_retry_interval = std::chrono::seconds(boot_notification_retry_interval);
+    }
 
     if (call_result.msg.status == RegistrationStatus::Accepted) {
-        this->message_queue->set_registration_status_accepted();
+        this->connectivity_manager->record_successful_connection();
         {
             auto handle = this->pending_firmware_status.handle();
             auto& pending = *handle;
@@ -1826,6 +1878,8 @@ void ChargePointImpl::handleBootNotificationResponse(ocpp::CallResult<BootNotifi
                 pending.reset();
             }
         }
+        // The composite schedule was signalled as offline when the connection came up before this registration
+        this->signal_charging_profiles_if_offline_purposes_ignored();
 
         if (this->set_system_time_callback != nullptr) {
             this->set_system_time_callback(call_result.msg.currentTime.to_rfc3339());
