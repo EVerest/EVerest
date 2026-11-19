@@ -591,8 +591,8 @@ SCENARIO("ISO15118-20 service detail state transitions") {
             REQUIRE(parameters.parameter[6].name == "GeneratorMode");
             REQUIRE(std::holds_alternative<int32_t>(parameters.parameter[6].value));
             REQUIRE(std::get<int32_t>(parameters.parameter[6].value) == 1);
-            // DetectionMethodGridCodeIslanding == Passive
-            REQUIRE(parameters.parameter[7].name == "DetectionMethodGridCodeIslanding");
+            // GridCodeIslandingDetectionMethod == Passive
+            REQUIRE(parameters.parameter[7].name == "GridCodeIslandingDetectionMethod");
             REQUIRE(std::holds_alternative<int32_t>(parameters.parameter[7].value));
             REQUIRE(std::get<int32_t>(parameters.parameter[7].value) == 2);
         }
