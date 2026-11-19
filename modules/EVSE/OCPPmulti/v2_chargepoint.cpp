@@ -12,6 +12,7 @@
 #include <everest/ocpp_module_common/conversions.hpp>
 #include <everest/ocpp_module_common/device_model/device_model_conflicts.hpp>
 #include <everest/ocpp_module_common/error_handling.hpp>
+#include <everest/ocpp_module_common/no_authorization.hpp>
 #include <ocpp/v2/availability_state_registration.hpp>
 #include <ocpp/v2/database_handler.hpp>
 #include <ocpp/v2/device_model.hpp>
@@ -779,7 +780,7 @@ ChargePointV2::on_event_session_started(std::int32_t evse_id, std::int32_t conne
             if (session_started.id_tag.value().parent_id_token.has_value()) {
                 group_id_token = to_ocpp_id_token(session_started.id_tag.value().parent_id_token.value());
             }
-            if (session_started.id_tag.value().authorization_type == types::authorization::AuthorizationType::OCPP) {
+            if (ocpp_module_common::is_remote_start(session_started.id_tag.value())) {
                 trigger_reason = ocpp::v2::TriggerReasonEnum::RemoteStart;
             }
         }
@@ -927,7 +928,7 @@ ChargePointV2::on_event_transaction_started(std::int32_t evse_id, std::int32_t c
                 tx_event = module::TxEvent::EV_CONNECTED;
             }
 
-            if (transaction_started.id_tag.authorization_type == types::authorization::AuthorizationType::OCPP) {
+            if (ocpp_module_common::is_remote_start(transaction_started.id_tag)) {
                 trigger_reason = ocpp::v2::TriggerReasonEnum::RemoteStart;
             }
 

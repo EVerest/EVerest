@@ -78,6 +78,9 @@ void TransactionBlock::on_transaction_started(const std::int32_t evse_id, const 
         include_signed);
 
     const auto& enhanced_transaction = evse_handle.get_transaction();
+    if (id_token.has_value()) {
+        enhanced_transaction->id_token_unvalidated = not this->authorization.is_auth_ctrlr_enabled();
+    }
     Transaction transaction{enhanced_transaction->transactionId};
     transaction.chargingState = charging_state;
     transaction.remoteStartId = remote_start_id;
@@ -349,6 +352,24 @@ void TransactionBlock::handle_transaction_event_response(const EnhancedMessage<M
 
     const IdToken& id_token = original_msg.idToken.value();
 
+    const auto evse_id = this->context.evse_manager.get_transaction_evseid(original_msg.transactionInfo.transactionId);
+
+    // C01.FR.01: an idToken of type NoAuthorization, or one reported while AuthCtrlr.Enabled was false, was not
+    // validated, so a status other than Accepted is neither cached nor stops or pauses the transaction. For a
+    // transaction that already ended, the current value of AuthCtrlr.Enabled decides.
+    const auto id_token_unvalidated = [&] {
+        if (evse_id.has_value()) {
+            if (const auto& transaction = this->context.evse_manager.get_evse(evse_id.value()).get_transaction();
+                transaction != nullptr) {
+                return transaction->id_token_unvalidated;
+            }
+        }
+        return not this->authorization.is_auth_ctrlr_enabled();
+    }();
+    if (id_token.type == IdTokenEnumStringType::NoAuthorization or id_token_unvalidated) {
+        return;
+    }
+
     // C03.FR.0x and C05.FR.01: We SHALL NOT store central information in the Authorization Cache
     // C10.FR.05
     if (id_token.type != IdTokenEnumStringType::Central and this->authorization.is_auth_cache_ctrlr_enabled()) {
@@ -366,25 +387,22 @@ void TransactionBlock::handle_transaction_event_response(const EnhancedMessage<M
         return;
     }
 
-    for (auto& evse : this->context.evse_manager) {
-        if (auto& transaction = evse.get_transaction();
-            transaction != nullptr and transaction->transactionId == original_msg.transactionInfo.transactionId) {
-            // Deal with invalid token for transaction
-            auto evse_id = evse.get_id();
-            if (this->context.device_model.get_value<bool>(ControllerComponentVariables::StopTxOnInvalidId)) {
-                this->stop_transaction_callback(evse_id, ReasonEnum::DeAuthorized);
-            } else {
-                if (this->context.device_model
-                        .get_optional_value<std::int32_t>(ControllerComponentVariables::MaxEnergyOnInvalidId)
-                        .has_value()) {
-                    // Energy delivery to the EV SHALL be allowed until the amount of energy specified in
-                    // MaxEnergyOnInvalidId has been reached.
-                    evse.start_checking_max_energy_on_invalid_id();
-                } else {
-                    this->pause_charging_callback(evse_id);
-                }
-            }
-            break;
+    if (not evse_id.has_value()) {
+        return;
+    }
+
+    // Deal with invalid token for transaction
+    if (this->context.device_model.get_value<bool>(ControllerComponentVariables::StopTxOnInvalidId)) {
+        this->stop_transaction_callback(evse_id.value(), ReasonEnum::DeAuthorized);
+    } else {
+        if (this->context.device_model
+                .get_optional_value<std::int32_t>(ControllerComponentVariables::MaxEnergyOnInvalidId)
+                .has_value()) {
+            // Energy delivery to the EV SHALL be allowed until the amount of energy specified in
+            // MaxEnergyOnInvalidId has been reached.
+            this->context.evse_manager.get_evse(evse_id.value()).start_checking_max_energy_on_invalid_id();
+        } else {
+            this->pause_charging_callback(evse_id.value());
         }
     }
 }
