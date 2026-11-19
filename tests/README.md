@@ -36,6 +36,7 @@ cd ~/checkout/everest-workspace/EVerest/tests
 ./run-tests.sh asyncapi        # async API tests only
 ./run-tests.sh integration  # core + framework + async
 ./run-tests.sh ocpp         # all OCPP tests (1.6, 2.0.1, 2.1)
+./run-tests.sh openadr      # OpenADR tests against a mock VTN (needs EVEREST_ENABLE_RS_SUPPORT=ON)
 ./run-tests.sh --serial all # run serially (no parallelism)
 ./run-tests.sh -j4 all      # limit to 4 parallel workers
 ./run-tests.sh --help       # show all options

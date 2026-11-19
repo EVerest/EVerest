@@ -68,6 +68,11 @@ any experimental option it was given.
        in EVerest may change without further notice. The maintainer of
        ``eebus-go``, the EEBUS stack underneath the ``eebus_grpc_api`` sidecar
        the module drives, will not maintain it going forward.
+   * - :ref:`RsOpenLEADR module <everest_modules_RsOpenLEADR>`
+     - 2026.10.0
+     - OpenADR 3.0 VEN applying import and export capacity limits from a VTN to
+       an EnergyNode. Configuration parameters and the integration in EVerest
+       may change without further notice, e.g. when adding OpenADR 3.1 support.
    * - :ref:`evse_security_consumer_API module <everest_modules_evse_security_consumer_API>`
        and its ``evse_security_consumer_API`` AsyncAPI specification
      - 2026.10.0

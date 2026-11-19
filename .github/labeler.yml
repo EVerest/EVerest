@@ -157,6 +157,7 @@ EnergyManagement:
           - modules/EnergyManagement/**
           - lib/everest/external_energy_limits/**
           - tests/eebus_tests/**
+          - tests/openadr_tests/**
 
 HardwareDrivers:
   - changed-files:

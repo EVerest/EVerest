@@ -2,6 +2,10 @@ ev_add_module(AcTemperatureDerating)
 ev_add_module(EnergyManager)
 ev_add_module(EnergyNode)
 
+if(EVEREST_ENABLE_RS_SUPPORT)
+    ev_add_module(RsOpenLEADR)
+endif()
+
 set(EVEREST_BUILD_MODULE_EEBUS "AUTO" CACHE STRING "Build the EEBUS module (AUTO, ON, OFF)")
 set_property(CACHE EVEREST_BUILD_MODULE_EEBUS PROPERTY STRINGS "AUTO" "ON" "OFF")
 string(TOUPPER "${EVEREST_BUILD_MODULE_EEBUS}" EEBUS_BUILD_MODE)

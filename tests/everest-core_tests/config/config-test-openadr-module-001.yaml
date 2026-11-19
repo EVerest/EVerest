@@ -1,0 +1,16 @@
+active_modules:
+  open_leader:
+    module: RsOpenLEADR
+    config_module:
+      # URL and credentials are set by the test to point to its mock VTN
+      openadr_vtn_url: "http://127.0.0.1:1"
+      openadr_vtn_program_id: "program-1"
+      openadr_vtn_event_target_type: "GROUP"
+      openadr_vtn_event_target_values: "group-1"
+      openadr_vtn_retrieve_schedule: "* * * * * *"
+    connections:
+      limits_iface:
+        - module_id: probe
+          implementation_id: external_limits
+  probe:
+    module: ProbeModule

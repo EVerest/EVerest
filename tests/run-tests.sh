@@ -8,7 +8,7 @@ set -euo pipefail
 # Suites:
 #   all             All tests
 #
-#   integration     Core, framework, async API, management API, and EEBUS tests
+#   integration     Core, framework, async API, management API, EEBUS and OpenADR tests
 #   core            Core tests only
 #   framework       Framework tests only
 #   asyncapi        Async API tests only
@@ -20,6 +20,7 @@ set -euo pipefail
 #   ocpp21          OCPP 2.1 tests only
 #
 #   eebus           EEBUS integration tests
+#   openadr         OpenADR (RsOpenLEADR) integration tests
 #
 # Options:
 #   -x                   stop on first error
@@ -209,6 +210,7 @@ case "$SUITE" in
         # eebus_tests are long-running, so run them first
         run_pytest_suite \
             eebus_tests/eebus_tests.py \
+            openadr_tests/openadr_tests.py \
             core_tests/*.py \
             framework_tests/*.py \
             async_api_tests/*.py \
@@ -222,6 +224,7 @@ case "$SUITE" in
         cd "$SCRIPT_DIR"
         run_pytest_suite \
             eebus_tests/eebus_tests.py \
+            openadr_tests/openadr_tests.py \
             core_tests/*.py \
             framework_tests/*.py \
             async_api_tests/*.py \
@@ -289,9 +292,15 @@ case "$SUITE" in
             eebus_tests/eebus_tests.py
         ;;
 
+    openadr)
+        cd "$SCRIPT_DIR"
+        run_pytest_suite \
+            openadr_tests/openadr_tests.py
+        ;;
+
     *)
         echo "Unknown suite: $SUITE" >&2
-        echo "Valid suites: all, integration, core, framework, asyncapi, management, ocpp, ocpp16, ocpp201, ocpp21, eebus" >&2
+        echo "Valid suites: all, integration, core, framework, asyncapi, management, ocpp, ocpp16, ocpp201, ocpp21, eebus, openadr" >&2
         exit 1
         ;;
 
