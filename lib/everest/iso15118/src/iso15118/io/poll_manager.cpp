@@ -37,6 +37,13 @@ PollManager::PollManager() {
     if (event_fd == -1) {
         log_and_throw("Failed to create eventfd");
     }
+    // Polled from the start: abort() must wake a poll() before the first register_fd(), and poll() must not be
+    // handed an empty set (fds == NULL, which some platforms reject).
+    poll_set = create_poll_set(registered_fds, event_fd);
+}
+
+PollManager::~PollManager() {
+    close(event_fd);
 }
 
 void PollManager::register_fd(int fd, PollCallback& poll_callback) {
