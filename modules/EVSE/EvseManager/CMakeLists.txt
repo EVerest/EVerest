@@ -24,6 +24,8 @@ target_sources(${MODULE_NAME}
         backtrace.cpp
         PersistentStore.cpp
         cable_check/PowerSupplyMeasurementWaiter.cpp
+        ev_side_voltage/EvSideVoltageCheck.cpp
+        ev_side_voltage/EvSideVoltageSource.cpp
         over_voltage/OverVoltageMonitor.cpp
         voltage_plausibility/VoltagePlausibilityMonitor.cpp
         welding_detection/WeldingDetectionVoltage.cpp

@@ -4,6 +4,7 @@
 
 import pytest
 import asyncio
+import logging
 import socket
 import struct
 from datetime import datetime, timezone
@@ -751,6 +752,143 @@ async def test_iso15118_dc_session(
 
     expected_protocol = "ISO15118-2-2013" if iso15118_version == "iso15118_dc_d2" else "ISO15118-20:DC"
     assert selected_protocol_mock.call_args[0][0] == expected_protocol
+
+
+class EvSideVoltageFromProbeAdjustmentStrategy(EverestConfigAdjustmentStrategy):
+    """
+    Adjustment strategy to let the probe module play the over voltage monitor that measures the voltage on the EV
+    side of the output contactors
+    """
+
+    def __init__(self, ev_protocol: str):
+        self.ev_protocol = ev_protocol
+
+    def adjust_everest_configuration(self, everest_config: Dict):
+        adjusted_config = deepcopy(everest_config)
+        evse_manager = adjusted_config["active_modules"]["evse_manager"]
+        evse_manager["config_module"]["ev_side_voltage_source"] = "over_voltage_monitor"
+        evse_manager["connections"]["over_voltage_monitor"] = [{"module_id": "probe", "implementation_id": "ovm"}]
+        adjusted_config["active_modules"]["iso15118_car"]["config_module"]["supported_protocols"] = self.ev_protocol
+        return adjusted_config
+
+
+EV_SIDE_VOLTAGE_HELD_LOG = "ChargeParameterDiscovery is held until it is below 60 V"
+CHARGE_PARAMETER_DISCOVERY_RES_LOG = "EVSE ISO V2G ChargeParameterDiscoveryRes"
+
+EV_SIDE_VOLTAGE_PARAMETERS = [
+    pytest.param(
+        protocol,
+        marks=[
+            pytest.mark.everest_core_config(config),
+            pytest.mark.everest_config_adaptions(EvSideVoltageFromProbeAdjustmentStrategy(protocol)),
+        ],
+        id=f"{module}_{protocol}",
+    )
+    for config, module in (("config-sil-dc.yaml", "d20"), ("config-sil-dc-evsev2g.yaml", "evsev2g"))
+    for protocol in ("ISO15118_2", "DIN70121")
+]
+
+
+class EvSideVoltageProbe:
+    """Publishes the EV side voltage as the over voltage monitor of the EvseManager."""
+
+    def __init__(self, probe_module: ProbeModule, voltage_V: float):
+        self.voltage_V = voltage_V
+        self._probe_module = probe_module
+        self._task = None
+        for command in ("set_limits", "start", "stop", "reset_over_voltage_error"):
+            probe_module.implement_command("ovm", command, lambda arguments: None)
+
+    async def _publish(self):
+        while True:
+            self._probe_module.publish_variable("ovm", "voltage_measurement_V", self.voltage_V)
+            await asyncio.sleep(0.2)
+
+    def start(self):
+        self._task = asyncio.create_task(self._publish())
+
+    async def stop(self):
+        self._task.cancel()
+        try:
+            await self._task
+        except asyncio.CancelledError:
+            pass
+
+
+async def setup_ev_side_voltage_probe(test_controller: TestController, everest_core: EverestCore, voltage_V: float):
+    """Returns (ev_side_voltage, session_event_mock, powermeter_mock); ev_side_voltage publishes already."""
+    test_controller.start()
+    probe_module = ProbeModule(everest_core.get_runtime_session())
+    ev_side_voltage = EvSideVoltageProbe(probe_module, voltage_V)
+    ready_mock = Mock()
+    probe_module.subscribe_variable("evse_manager", "ready", ready_mock)
+    probe_module.start()
+    await probe_module.wait_to_be_ready()
+    await wait_for_ready(ready_mock, timeout=5)
+    session_event_mock, powermeter_mock, _ = setup_evse_manager_monitoring(probe_module, "evse_manager")
+    ev_side_voltage.start()
+    return ev_side_voltage, session_event_mock, powermeter_mock
+
+
+@pytest.mark.asyncio
+@pytest.mark.xdist_group(name="ISO15118")
+@pytest.mark.probe_module(
+    connections={"evse_manager": [Requirement("evse_manager", "evse")]}
+)
+@pytest.mark.parametrize("ev_protocol", EV_SIDE_VOLTAGE_PARAMETERS)
+async def test_dc_charge_parameter_discovery_waits_for_ev_side_voltage(
+    ev_protocol, test_controller: TestController, everest_core: EverestCore, caplog
+):
+    """IEC 61851-23:2023 Table CC.8 t2 - t3: with 60 V or more on the EV side of the open output contactors
+    ChargeParameterDiscoveryRes stays Ongoing, so the session does not reach the cable check. It goes on once
+    the voltage is below 60 V."""
+    # EverestCore relays every line the modules print as a debug record.
+    caplog.set_level(logging.DEBUG)
+    ev_side_voltage, session_event_mock, powermeter_mock = await setup_ev_side_voltage_probe(
+        test_controller, everest_core, voltage_V=100.0
+    )
+    try:
+        test_controller.plug_in_dc_iso()
+        await wait_for_session_events(session_event_mock, BASIC_SESSION_START_SEQUENCE[:-1])
+
+        # Authorization to CableCheck takes well below a second when nothing holds it.
+        await asyncio.sleep(5)
+        events = [call[0][0].get("event") for call in session_event_mock.call_args_list]
+        assert "ChargingStarted" not in events
+        assert EV_SIDE_VOLTAGE_HELD_LOG in caplog.text
+        assert caplog.text.count(CHARGE_PARAMETER_DISCOVERY_RES_LOG) > 1
+        assert "Start cable check" not in caplog.text
+
+        ev_side_voltage.voltage_V = 0.0
+        await wait_for_session_events(session_event_mock, ["ChargingStarted"])
+        assert "Start cable check" in caplog.text
+        await assert_energy_exceeds(powermeter_mock, energy_threshold_wh=5, timeout=30)
+        await end_session(test_controller, session_event_mock)
+    finally:
+        await ev_side_voltage.stop()
+
+
+@pytest.mark.asyncio
+@pytest.mark.xdist_group(name="ISO15118")
+@pytest.mark.probe_module(
+    connections={"evse_manager": [Requirement("evse_manager", "evse")]}
+)
+@pytest.mark.parametrize("ev_protocol", EV_SIDE_VOLTAGE_PARAMETERS)
+async def test_dc_charge_parameter_discovery_is_not_held_below_60V(
+    ev_protocol, test_controller: TestController, everest_core: EverestCore, caplog
+):
+    """The EV side voltage is judged before the EV asks, so a session with less than 60 V at the connector gets
+    Finished in the first ChargeParameterDiscoveryRes."""
+    caplog.set_level(logging.DEBUG)
+    ev_side_voltage, session_event_mock, powermeter_mock = await setup_ev_side_voltage_probe(
+        test_controller, everest_core, voltage_V=0.0
+    )
+    try:
+        await run_basic_session(test_controller, session_event_mock, powermeter_mock, "plug_in_dc_iso")
+        assert caplog.text.count(CHARGE_PARAMETER_DISCOVERY_RES_LOG) == 1
+        assert EV_SIDE_VOLTAGE_HELD_LOG not in caplog.text
+    finally:
+        await ev_side_voltage.stop()
 
 
 @pytest.mark.asyncio

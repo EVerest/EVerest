@@ -464,6 +464,41 @@ SCENARIO("DIN SPEC 70121 SECC EV facts reported to the module") {
     }
 }
 
+SCENARIO("DIN SPEC 70121 SECC holds ChargeParameterDiscovery until the EV side voltage is below 60 V") {
+
+    Secc secc;
+
+    GIVEN("A machine in ChargeParameterDiscovery with 60 V or more on the EV side") {
+        to_charge_parameter_discovery(secc);
+        secc.fsm.context().session_config.dc_ev_side_voltage_safe = false;
+
+        WHEN("The EV asks for charge parameters") {
+            secc.drive(charge_parameter_req());
+
+            THEN("The answer is Ongoing and the machine stays") {
+                REQUIRE(secc.fsm.state() == StateID::ChargeParameterDiscovery);
+                const auto res = secc.fsm.response<message_din::ChargeParameterDiscoveryResponse>();
+                REQUIRE(res.has_value());
+                REQUIRE(res->response_code == dt::ResponseCode::OK);
+                REQUIRE(res->evse_processing == dt::EvseProcessing::Ongoing);
+                REQUIRE_FALSE(secc.fsm.context().session_stopped);
+            }
+
+            AND_WHEN("The voltage dropped and the EV asks again") {
+                secc.fsm.context().session_config.dc_ev_side_voltage_safe = true;
+                secc.drive(charge_parameter_req());
+
+                THEN("The answer is Finished and the machine moves to CableCheck") {
+                    REQUIRE(secc.fsm.state() == StateID::CableCheck);
+                    const auto res = secc.fsm.response<message_din::ChargeParameterDiscoveryResponse>();
+                    REQUIRE(res.has_value());
+                    REQUIRE(res->evse_processing == dt::EvseProcessing::Finished);
+                }
+            }
+        }
+    }
+}
+
 SCENARIO("DIN SPEC 70121 SECC no-energy pause") {
 
     Secc secc;

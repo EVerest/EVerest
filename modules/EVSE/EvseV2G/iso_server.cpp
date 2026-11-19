@@ -1511,6 +1511,9 @@ static enum v2g_event handle_iso_charge_parameter_discovery(struct v2g_connectio
 
     res->EVSEChargeParameter_isUsed = 0;
     res->EVSEProcessing = (iso2_EVSEProcessingType)conn->ctx->evse_v2g_data.evse_processing[PHASE_PARAMETER];
+    if (conn->ctx->is_dc_charger and conn->ctx->dc_ev_side_voltage_unsafe) {
+        res->EVSEProcessing = iso2_EVSEProcessingType_Ongoing; // IEC 61851-23:2023 Table CC.8 t2 - t3
+    }
 
     int64_t pmax{0};
 

@@ -223,11 +223,18 @@ struct UpdateIsolationStatus {
     IsolationStatus status{IsolationStatus::Invalid};
 };
 
+// Absolute voltage on the EV side of the open EVSE output contactors is below 60 V. DIN SPEC 70121 and
+// ISO 15118-2 hold ChargeParameterDiscoveryRes at EVSEProcessing Ongoing while it is not
+// (IEC 61851-23:2023 Table CC.8 t2 - t3). ISO 15118-20 ignores it.
+struct EvSideVoltageSafe {
+    bool safe{true};
+};
+
 using ControlEvent =
     std::variant<CableCheckFinished, PresentVoltageCurrent, MeterInfo, AuthorizationResponse, StopCharging,
                  PauseCharging, DcTransferLimits, AcTransferLimits, UpdateDynamicModeParameters, ClosedContactor,
                  AcTargetPower, AcPresentPower, EnergyServices, SupportedVASs, CertificateResponse, EvseError,
                  CpStateChanged, UpdateAcMaxCurrent, PhysicalValues, NoEnergyPause, UpdateIsolationStatus,
-                 UpdatePowersupplyLimits, DerSaeSetupConfig>;
+                 UpdatePowersupplyLimits, DerSaeSetupConfig, EvSideVoltageSafe>;
 
 } // namespace iso15118::d20

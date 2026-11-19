@@ -541,6 +541,19 @@ void TbdController::update_no_energy_pause(d20::NoEnergyPauseMode mode) {
     }
 }
 
+void TbdController::update_dc_ev_side_voltage_safe(bool safe) {
+
+    {
+        auto s = evse_setup.handle();
+        s->dc_ev_side_voltage_safe = safe;
+    }
+
+    std::lock_guard<std::mutex> lock(session_mutex);
+    if (session) {
+        session->push_control_event(d20::EvSideVoltageSafe{safe});
+    }
+}
+
 void TbdController::set_ssl_config(config::SSLConfig new_config) {
     auto handle = m_ssl_config.handle();
     *handle = std::move(new_config);

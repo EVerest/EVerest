@@ -64,6 +64,7 @@ protected:
     virtual void handle_update_dc_maximum_limits(types::iso15118::DcEvseMaximumLimits& maximum_limits) override;
     virtual void handle_update_dc_minimum_limits(types::iso15118::DcEvseMinimumLimits& minimum_limits) override;
     virtual void handle_update_isolation_status(types::iso15118::IsolationStatus& isolation_status) override;
+    virtual void handle_update_dc_ev_side_voltage_safe(bool& safe) override;
     virtual void
     handle_update_dc_present_values(types::iso15118::DcEvsePresentVoltageCurrent& present_voltage_current) override;
     virtual void handle_update_meter_info(types::powermeter::Powermeter& powermeter) override;

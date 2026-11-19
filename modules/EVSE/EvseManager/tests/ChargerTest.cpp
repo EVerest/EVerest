@@ -2015,6 +2015,10 @@ void ErrorHandling::clear_isolation_resistance_fault(const std::string& sub_type
 
 void ErrorHandling::raise_cable_check_fault(const std::string& description) {
 }
+void ErrorHandling::raise_reverse_voltage_fault(const std::string& description) {
+}
+void ErrorHandling::clear_reverse_voltage_fault() {
+}
 void ErrorHandling::clear_cable_check_fault() {
 }
 void ErrorHandling::clear_voltage_plausibility_fault() {

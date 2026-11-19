@@ -4,33 +4,11 @@
 #include "WeldingDetectionVoltage.hpp"
 
 #include <algorithm>
-#include <array>
 #include <utility>
 
 namespace module {
 
 namespace {
-constexpr std::array<std::pair<WeldingDetectionVoltageSource, const char*>, 4> SOURCE_NAMES{{
-    {WeldingDetectionVoltageSource::PowermeterCarSide, "powermeter_car_side"},
-    {WeldingDetectionVoltageSource::OverVoltageMonitor, "over_voltage_monitor"},
-    {WeldingDetectionVoltageSource::IsolationMonitor, "isolation_monitor"},
-    {WeldingDetectionVoltageSource::PowerSupply, "power_supply"},
-}};
-
-bool is_connected(WeldingDetectionVoltageSource source, const WeldingDetectionVoltageSources& connected) {
-    switch (source) {
-    case WeldingDetectionVoltageSource::PowermeterCarSide:
-        return connected.powermeter_car_side;
-    case WeldingDetectionVoltageSource::OverVoltageMonitor:
-        return connected.over_voltage_monitor;
-    case WeldingDetectionVoltageSource::IsolationMonitor:
-        return connected.isolation_monitor;
-    case WeldingDetectionVoltageSource::PowerSupply:
-        return true;
-    }
-    return false;
-}
-
 using Clock = std::chrono::steady_clock;
 
 bool is_due(const std::optional<Clock::time_point>& deadline, Clock::time_point now) {
@@ -38,42 +16,7 @@ bool is_due(const std::optional<Clock::time_point>& deadline, Clock::time_point 
 }
 } // namespace
 
-std::optional<WeldingDetectionVoltageSource> welding_detection_voltage_source_from_string(const std::string& s) {
-    for (const auto& [source, name] : SOURCE_NAMES) {
-        if (s == name) {
-            return source;
-        }
-    }
-    return std::nullopt;
-}
-
-std::string to_string(WeldingDetectionVoltageSource source) {
-    for (const auto& [candidate, name] : SOURCE_NAMES) {
-        if (candidate == source) {
-            return name;
-        }
-    }
-    return "unknown";
-}
-
-WeldingDetectionVoltageSource
-resolve_welding_detection_voltage_source(WeldingDetectionVoltageSource configured,
-                                         const WeldingDetectionVoltageSources& connected) {
-    if (is_connected(configured, connected)) {
-        return configured;
-    }
-    bool reached = false;
-    for (const auto& [source, name] : SOURCE_NAMES) {
-        reached = reached or source == configured;
-        // Only an explicit choice selects the isolation monitor, which deviates from IEC 61851-23 CC.9 t103.
-        if (reached and source != WeldingDetectionVoltageSource::IsolationMonitor and is_connected(source, connected)) {
-            return source;
-        }
-    }
-    return WeldingDetectionVoltageSource::PowerSupply;
-}
-
-WeldingDetectionVoltage::WeldingDetectionVoltage(WeldingDetectionVoltageSource source, PushCallback push,
+WeldingDetectionVoltage::WeldingDetectionVoltage(EvSideVoltageSource source, PushCallback push,
                                                  StopSourceCallback stop_source, WarningCallback warning,
                                                  Timing timing) :
     m_source(source),
@@ -84,14 +27,14 @@ WeldingDetectionVoltage::WeldingDetectionVoltage(WeldingDetectionVoltageSource s
     m_timer([this] { on_timer(); }) {
 }
 
-WeldingDetectionVoltage::WeldingDetectionVoltage(WeldingDetectionVoltageSource source, PushCallback push,
+WeldingDetectionVoltage::WeldingDetectionVoltage(EvSideVoltageSource source, PushCallback push,
                                                  StopSourceCallback stop_source, WarningCallback warning) :
     WeldingDetectionVoltage(source, std::move(push), std::move(stop_source), std::move(warning), Timing{}) {
 }
 
 WeldingDetectionVoltage::~WeldingDetectionVoltage() = default;
 
-WeldingDetectionVoltageSource WeldingDetectionVoltage::source() const {
+EvSideVoltageSource WeldingDetectionVoltage::source() const {
     return m_source;
 }
 
@@ -158,7 +101,7 @@ bool WeldingDetectionVoltage::holds_source() const {
     return state->active or state->stop_deferred;
 }
 
-void WeldingDetectionVoltage::update(WeldingDetectionVoltageSource source, float voltage_V) {
+void WeldingDetectionVoltage::update(EvSideVoltageSource source, float voltage_V) {
     if (source != m_source) {
         return;
     }

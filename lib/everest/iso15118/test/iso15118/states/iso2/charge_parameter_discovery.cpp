@@ -57,6 +57,43 @@ SCENARIO("ISO 15118-2 SECC ChargeParameterDiscovery handling") {
         }
     }
 
+    GIVEN("A DC request while the EV side voltage is not below 60 V") {
+        message_2::ChargeParameterDiscoveryRequest req;
+        req.requested_energy_transfer_mode = dt::EnergyTransferMode::DC_extended;
+        auto& ev = req.dc_ev_charge_parameter.emplace();
+        ev.ev_maximum_current_limit = dt::to_physical_value(200.0, dt::Unit::A);
+        ev.ev_maximum_voltage_limit = dt::to_physical_value(400.0, dt::Unit::V);
+
+        auto unsafe_config = make_config();
+        unsafe_config.dc_ev_side_voltage_safe = false;
+
+        const auto res = d2::state::handle_request(req, id, unsafe_config);
+        THEN("OK and Ongoing without a SAScheduleList (IEC 61851-23:2023 Table CC.8 t2 - t3)") {
+            REQUIRE(res.response_code == dt::ResponseCode::OK);
+            REQUIRE(res.evse_processing == dt::EVSEProcessing::Ongoing);
+            REQUIRE(res.dc_evse_charge_parameter.has_value());
+            REQUIRE_FALSE(res.sa_schedule_list.has_value());
+        }
+    }
+
+    GIVEN("An AC request while the EV side voltage is not below 60 V") {
+        message_2::ChargeParameterDiscoveryRequest req;
+        req.requested_energy_transfer_mode = dt::EnergyTransferMode::AC_three_phase_core;
+        auto& ev = req.ac_ev_charge_parameter.emplace();
+        ev.e_amount = dt::to_physical_value(10000.0, dt::Unit::Wh);
+        ev.ev_max_voltage = dt::to_physical_value(400.0, dt::Unit::V);
+        ev.ev_max_current = dt::to_physical_value(16.0, dt::Unit::A);
+        ev.ev_min_current = dt::to_physical_value(6.0, dt::Unit::A);
+
+        auto unsafe_config = make_config();
+        unsafe_config.dc_ev_side_voltage_safe = false;
+
+        const auto res = d2::state::handle_request(req, id, unsafe_config);
+        THEN("The DC check does not hold an AC session") {
+            REQUIRE(res.evse_processing == dt::EVSEProcessing::Finished);
+        }
+    }
+
     GIVEN("An EV whose maximum current does not exceed the EVSE minimum") {
         message_2::ChargeParameterDiscoveryRequest req;
         req.requested_energy_transfer_mode = dt::EnergyTransferMode::DC_extended;

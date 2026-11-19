@@ -70,6 +70,8 @@ struct EvseSetupConfig {
     // Consumed by the next session that starts, so it never leaks into a later one; a request arriving
     // while a session runs reaches it as a NoEnergyPause control event instead.
     d20::NoEnergyPauseMode no_energy_pause{d20::NoEnergyPauseMode::None};
+    // Kept across sessions, unlike no_energy_pause: the module reports every change, also between sessions.
+    bool dc_ev_side_voltage_safe{true};
     // Verbatim, because supported_energy_services above is the -20 view, which collapses modes into
     // service categories and loses e.g. the DC_core/DC_extended distinction.
     std::vector<shared_datatypes::EnergyTransferMode> pre20_energy_transfer_modes{};
@@ -146,6 +148,7 @@ struct SessionConfig {
     std::optional<float> iso2_ac_max_current{std::nullopt};
     d20::PhysicalValues physical_values{};
     d20::NoEnergyPauseMode no_energy_pause{d20::NoEnergyPauseMode::None};
+    bool dc_ev_side_voltage_safe{true};
     std::vector<shared_datatypes::EnergyTransferMode> pre20_energy_transfer_modes{};
     std::vector<VasService> pre20_vas_services{};
     uint32_t auth_timeout_eim_s{300};

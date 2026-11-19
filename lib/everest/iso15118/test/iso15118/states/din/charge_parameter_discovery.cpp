@@ -124,6 +124,16 @@ SCENARIO("DIN SECC ChargeParameterDiscovery state handling") {
         }
     }
 
+    GIVEN("A request while the EV side voltage is not below 60 V") {
+        auto req = make_request(session, dt::EnergyTransferMode::DC_extended);
+
+        const auto res = din::state::handle_request(req, make_config(), false, session);
+        THEN("OK and Ongoing (IEC 61851-23:2023 Table CC.8 t2 - t3)") {
+            REQUIRE(res.response_code == dt::ResponseCode::OK);
+            REQUIRE(res.evse_processing == dt::EvseProcessing::Ongoing);
+        }
+    }
+
     GIVEN("A request while the charger reports no energy available") {
         auto req = make_request(session, dt::EnergyTransferMode::DC_extended);
 

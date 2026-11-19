@@ -133,6 +133,7 @@ din::SessionConfig make_din_config(const session::SessionConfig& config) {
     }
     apply_physical_values(cfg, config.physical_values);
     cfg.no_energy_pause = config.no_energy_pause;
+    cfg.dc_ev_side_voltage_safe = config.dc_ev_side_voltage_safe;
     // DIN SPEC 70121 authorization is EIM only, so only that timeout applies.
     cfg.auth_timeout_eim_ms = session::auth_timeout_to_ms(config.auth_timeout_eim_s);
 
@@ -228,6 +229,11 @@ void DinSeccEngine::on_control_event(const d20::ControlEvent& event) {
 
     if (const auto* pause = std::get_if<d20::NoEnergyPause>(&event)) {
         ctx.session_config.no_energy_pause = pause->mode;
+        return;
+    }
+
+    if (const auto* voltage = std::get_if<d20::EvSideVoltageSafe>(&event)) {
+        ctx.session_config.dc_ev_side_voltage_safe = voltage->safe;
         return;
     }
 
