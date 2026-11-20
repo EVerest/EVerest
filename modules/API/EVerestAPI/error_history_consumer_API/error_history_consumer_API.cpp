@@ -51,7 +51,7 @@ void error_history_consumer_API::ready() {
 auto error_history_consumer_API::forward_and_cache_api_var(std::string const& var) {
     return helper.forward_and_cache_api_var(var, config.latch_variable_values, [](auto const& val) {
         using namespace API_types_ext;
-        return serialize(to_external_api(val));
+        return serialize(val);
     });
 }
 
@@ -88,7 +88,7 @@ void error_history_consumer_API::generate_api_cmd_get_errors() {
 
 void error_history_consumer_API::generate_api_var_error_events() {
     auto convert = [](auto const& ftor) {
-        return [ftor](auto&& elem) { return ftor(error_converter::framework_to_internal_api(elem)); };
+        return [ftor](auto&& elem) { return ftor(error_converter::framework_to_external_api(elem)); };
     };
     subscribe_global_all_errors(convert(forward_and_cache_api_var("error_raised")),
                                 convert(forward_and_cache_api_var("error_cleared")));
