@@ -4,6 +4,7 @@
 use nix::fcntl::{open, OFlag};
 use nix::sys::stat;
 use nix::unistd;
+use std::fs;
 use std::io::{self};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command};
@@ -11,6 +12,93 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
+use tempfile::TempDir;
+
+/// The directory the manager looks for the user-config in, next to the config.
+const USER_CONFIG_DIR: &str = "user-config";
+
+/// The directory the files of the tests go in: `TEST_TMPDIR` under Bazel, which removes it also
+/// after a test it killed, the temp directory of the system elsewhere.
+fn temp_root() -> PathBuf {
+    std::env::var_os("TEST_TMPDIR").map_or_else(std::env::temp_dir, PathBuf::from)
+}
+
+/// The directory of a test with a `setup` (`#[everestrs::test(setup = ...)]`). It holds a copy
+/// of the config of the test, which the manager loads, and the user-config the manager merges
+/// over it: a copy of the one of the EVerest prefix, if there is one. The setup writes into
+/// the directory. Dropping the `TestSetup` removes the directory.
+pub struct TestSetup {
+    prefix: PathBuf,
+    test_dir: TempDir,
+    config: PathBuf,
+}
+
+impl TestSetup {
+    /// Creates the directory of a test with a copy of `config`, and of its user-config if the
+    /// EVerest `prefix` has one. Under Bazel, the directory is in `TEST_TMPDIR`, which Bazel
+    /// also removes after a test it killed.
+    pub fn new(prefix: PathBuf, config: &Path) -> io::Result<Self> {
+        let name = config.file_name().ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("The config {config:?} is not a file"),
+            )
+        })?;
+        let test_dir = tempfile::Builder::new()
+            .prefix("everest_test_")
+            .tempdir_in(temp_root())?;
+        let this = Self {
+            prefix,
+            config: test_dir.path().join(name),
+            test_dir,
+        };
+        copy_writable(config, &this.config)?;
+        fs::create_dir(this.test_dir().join(USER_CONFIG_DIR))?;
+        let user_config = config.with_file_name(USER_CONFIG_DIR).join(name);
+        if user_config.exists() {
+            copy_writable(&user_config, &this.user_config())?;
+        }
+        Ok(this)
+    }
+
+    /// The EVerest prefix. Read-only, shared by all tests of the binary.
+    pub fn prefix(&self) -> &Path {
+        &self.prefix
+    }
+
+    /// The directory of the test, writable.
+    pub fn test_dir(&self) -> &Path {
+        self.test_dir.path()
+    }
+
+    /// The config the manager loads, in the directory of the test.
+    pub fn config(&self) -> &Path {
+        &self.config
+    }
+
+    /// The user-config the manager merges over the config (a JSON merge patch). It exists if
+    /// the EVerest prefix has one; a setup extending it keeps its entries.
+    pub fn user_config(&self) -> PathBuf {
+        self.config
+            .with_file_name(USER_CONFIG_DIR)
+            .join(self.config.file_name().expect("A file, see new"))
+    }
+}
+
+/// Copies `from` to `to`, writable whatever the mode of `from`: the runfiles of Bazel are
+/// read-only.
+fn copy_writable(from: &Path, to: &Path) -> io::Result<()> {
+    fs::write(to, fs::read(from)?)
+}
+
+/// An MQTT topic prefix of its own for a test, for the tests that share a broker: those of a
+/// binary, which run in parallel, and those of other binaries.
+pub fn unique_mqtt_prefix() -> String {
+    // Random, as process and thread ids repeat across binaries in PID namespaces of their own.
+    let mut random = [0u8; 8];
+    getrandom::getrandom(&mut random).expect("Failed to get random bytes");
+    format!("everest_test_{:016x}/", u64::from_ne_bytes(random))
+}
 
 /// Handle to a running EVerest manager process.
 ///
@@ -54,27 +142,30 @@ impl Manager {
             cmd.arg("--mqtt_everest_prefix").arg(mqtt_prefix);
         }
 
-        let mut fifo = None;
-
-        if !standalone.is_empty() {
-            let fifo_name = match mqtt_everest_prefix {
-                Some(p) => format!("status-{}.fifo", p.replace('/', "_")),
-                None => format!("status-{}.fifo", std::process::id()),
-            };
-            let fifo_path = std::env::temp_dir().join(fifo_name);
+        // The status fifo, in a directory of its own: its name is unique, whatever the MQTT
+        // prefix. The manager opens the fifo when it starts; the fifo goes with its directory
+        // once the manager is up.
+        let status = if standalone.is_empty() {
+            None
+        } else {
+            let dir = tempfile::Builder::new()
+                .prefix("everest_status_")
+                .tempdir_in(temp_root())?;
+            let fifo_path = dir.path().join("status.fifo");
             unistd::mkfifo(&fifo_path, stat::Mode::S_IRWXU)?;
 
-            fifo = Some(open(
+            let fifo = open(
                 &fifo_path,
                 OFlag::O_RDONLY | OFlag::O_NONBLOCK,
                 stat::Mode::empty(),
-            )?);
+            )?;
             cmd.arg("--status-fifo").arg(&fifo_path);
             cmd.arg("--standalone");
             for module_id in standalone {
                 cmd.arg(module_id);
             }
-        }
+            Some((dir, fifo))
+        };
 
         let child = Arc::new(Mutex::new(cmd.spawn().map_err(|e| {
             io::Error::new(
@@ -102,7 +193,7 @@ impl Manager {
         };
 
         // Wait for the manager to signal readiness via the status fifo.
-        if let Some(fd) = fifo {
+        if let Some((_status_dir, fd)) = status {
             let mut buf = [0u8; 256];
             let mut accumulated = String::new();
             loop {
@@ -149,6 +240,125 @@ impl Drop for Manager {
         let _ = self.child.lock().unwrap().kill();
         if let Err(panic) = self.watcher.take().expect("always there").join() {
             std::panic::resume_unwind(panic);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::os::unix::fs::PermissionsExt;
+
+    const CONFIG: &str = "config.yaml";
+    const CONFIG_CONTENT: &str = "arbitrary config";
+    const USER_CONFIG_CONTENT: &str = "arbitrary user-config";
+    const ARBITRARY_MODULE: &str = "arbitrary_module";
+    const ARBITRARY_MQTT_PREFIX: &str = "arbitrary_prefix/";
+
+    // A manager that only tells its status fifo that it waits for the standalone modules, then
+    // sleeps until killed. It notes the fifo in `status_fifos` of its prefix.
+    const FAKE_MANAGER: &str = r#"#!/bin/sh
+while [ $# -gt 0 ]; do
+    if [ "$1" = --status-fifo ]; then fifo=$2; fi
+    shift
+done
+echo "$fifo" >> "${0%/bin/manager}/status_fifos"
+echo WAITING_FOR_STANDALONE_MODULES > "$fifo"
+exec sleep 60
+"#;
+
+    // An EVerest prefix with a read-only config, as in the runfiles of Bazel, and a
+    // user-config next to it if one is given.
+    fn prefix_with(user_config: Option<&str>) -> TempDir {
+        let prefix = tempfile::tempdir().unwrap();
+        let config_dir = prefix.path().join("etc/everest");
+        fs::create_dir_all(config_dir.join(USER_CONFIG_DIR)).unwrap();
+        write_read_only(&config_dir.join(CONFIG), CONFIG_CONTENT);
+        if let Some(content) = user_config {
+            write_read_only(&config_dir.join(USER_CONFIG_DIR).join(CONFIG), content);
+        }
+        prefix
+    }
+
+    fn write_read_only(path: &Path, content: &str) {
+        fs::write(path, content).unwrap();
+        let mut permissions = fs::metadata(path).unwrap().permissions();
+        permissions.set_readonly(true);
+        fs::set_permissions(path, permissions).unwrap();
+    }
+
+    fn setup_in(prefix: &TempDir) -> TestSetup {
+        let config = prefix.path().join("etc/everest").join(CONFIG);
+        TestSetup::new(prefix.path().to_path_buf(), &config).unwrap()
+    }
+
+    // An EVerest prefix with the fake manager.
+    fn prefix_with_fake_manager() -> TempDir {
+        let prefix = prefix_with(None);
+        let manager = Manager::manager_binary(prefix.path());
+        fs::create_dir_all(manager.parent().unwrap()).unwrap();
+        fs::write(&manager, FAKE_MANAGER).unwrap();
+        fs::set_permissions(&manager, fs::Permissions::from_mode(0o755)).unwrap();
+        prefix
+    }
+
+    fn start_fake_manager(prefix: &TempDir) -> io::Result<Manager> {
+        let config = prefix.path().join("etc/everest").join(CONFIG);
+        Manager::start(
+            prefix.path(),
+            &config,
+            &[ARBITRARY_MODULE],
+            Some(ARBITRARY_MQTT_PREFIX),
+        )
+    }
+
+    #[test]
+    fn new_copies_the_config_and_its_user_config_writable() {
+        let prefix = prefix_with(Some(USER_CONFIG_CONTENT));
+
+        let setup = setup_in(&prefix);
+
+        // The manager looks for the user-config next to the config, under its name.
+        assert_eq!(setup.config(), setup.test_dir().join(CONFIG));
+        assert_eq!(fs::read_to_string(setup.config()).unwrap(), CONFIG_CONTENT);
+        assert_eq!(
+            setup.user_config(),
+            setup.test_dir().join(USER_CONFIG_DIR).join(CONFIG)
+        );
+        assert_eq!(
+            fs::read_to_string(setup.user_config()).unwrap(),
+            USER_CONFIG_CONTENT
+        );
+        let permissions = fs::metadata(setup.user_config()).unwrap().permissions();
+        assert!(!permissions.readonly());
+    }
+
+    #[test]
+    fn new_without_user_config_leaves_room_for_one() {
+        let prefix = prefix_with(None);
+
+        let setup = setup_in(&prefix);
+
+        assert!(!setup.user_config().exists());
+        assert!(setup.user_config().parent().unwrap().is_dir());
+    }
+
+    #[test]
+    fn start_leaves_no_status_fifo_behind() {
+        // Two starts, one after the other, with the same MQTT prefix: the status fifo once took
+        // its name from the prefix, and the first start left it in the way of the second.
+        let prefix = prefix_with_fake_manager();
+        for _ in 0..2 {
+            start_fake_manager(&prefix).unwrap();
+        }
+
+        let fifos = fs::read_to_string(prefix.path().join("status_fifos")).unwrap();
+        let fifos: Vec<&str> = fifos.lines().collect();
+        assert_eq!(fifos.len(), 2, "{fifos:?}");
+        // Each start has a fifo of its own, so starts at the same time do not collide either.
+        assert_ne!(fifos[0], fifos[1]);
+        for fifo in fifos {
+            assert!(!Path::new(fifo).exists(), "{fifo} is left");
         }
     }
 }

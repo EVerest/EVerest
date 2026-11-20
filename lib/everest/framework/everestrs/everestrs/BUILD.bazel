@@ -1,6 +1,6 @@
 load("@bazel_skylib//rules:run_binary.bzl", "run_binary")
 load("@rules_cc//cc:defs.bzl", "cc_library")
-load("@rules_rust//rust:defs.bzl", "rust_library")
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
 
 rust_library(
     name = "everestrs",
@@ -16,13 +16,21 @@ rust_library(
         "//lib/everest/framework/everestrs/everestrs-build",
         "@cxx.rs//:cxx",
         "@everest_framework_crate_index//:clap",
+        "@everest_framework_crate_index//:getrandom",
         "@everest_framework_crate_index//:log",
         "@everest_framework_crate_index//:nix",
         "@everest_framework_crate_index//:serde",
         "@everest_framework_crate_index//:serde_json",
         "@everest_framework_crate_index//:serde_yaml",
+        "@everest_framework_crate_index//:tempfile",
         "@everest_framework_crate_index//:thiserror",
     ],
+)
+
+rust_test(
+    name = "everestrs_test",
+    crate = ":everestrs",
+    edition = "2021",
 )
 
 run_binary(
