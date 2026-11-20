@@ -399,6 +399,7 @@ void EvseManager::ready() {
     const auto hw_caps = hw_capabilities.get();
     charger = std::make_unique<Charger>(bsp, error_handling, r_powermeter_billing(), store, hw_caps.connector_type,
                                         config.evse_id);
+    charger->set_mcs_connector(connector_type == types::evse_manager::ConnectorTypeEnum::cMCS);
 
     // Wired before allow_updates(): the capabilities callback may enable captive mode, which can lock at once.
     if (r_connector_lock.size() > 0) {
@@ -480,7 +481,7 @@ void EvseManager::ready() {
         });
 
         r_hlc[0]->subscribe_session_stop_res_sent([this](types::iso15118::SessionStopAction action) {
-            session_log.evse(true, "SessionStopRes sent, arming CP oscillator retain timer [V2G-DC-968]");
+            session_log.evse(true, "SessionStopRes sent");
             charger->notify_session_stop_res_sent(action);
             // Deliberately no r_slac call here: only the oscillator timing hangs off this event. The
             // PLC link must stay MATCHED so the EV's TCP close can still complete; link teardown

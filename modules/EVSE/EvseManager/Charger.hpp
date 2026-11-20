@@ -40,6 +40,7 @@
 #include <queue>
 #include <sigslot/signal.hpp>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "ErrorHandling.hpp"
@@ -230,10 +231,10 @@ public:
     // the caller then forwards a D-LINK_ERROR rather than a D-LINK_TERMINATE to the data link layer.
     bool dlink_terminate();
 
-    // A positive SessionStopRes was sent to the EV: remember terminate/pause and arm the
-    // CP-oscillator retain timer [V2G-DC-968] (PWM off V2G_SECC_CP_OSCILLATOR_RETAIN after the Res,
-    // independent of the EV's TCP close). The later dlink_terminate()/dlink_pause() still runs as
-    // today and applies a harmless second X1.
+    // A positive SessionStopRes was sent to the EV: remember terminate/pause and arm the timer that
+    // switches to X1 after the Res, independent of the EV's TCP close: [V2G-DC-968]
+    // V2G_SECC_CP_OSCILLATOR_RETAIN, or MCS_TERMINATE_SS3_HOLD after a terminate on an MCS connector.
+    // The later dlink_terminate()/dlink_pause() applies a harmless second X1.
     void notify_session_stop_res_sent(types::iso15118::SessionStopAction action);
 
     // The EV opened a new V2G session (application protocol negotiated).
@@ -284,6 +285,11 @@ public:
 
     void set_connector_type(types::evse_board_support::Connector_type t) {
         connector_type = t;
+    }
+
+    // The EVSE is configured with an MCS connector (IEC 61851-23-3 timing applies).
+    void set_mcs_connector(bool mcs) {
+        mcs_connector = mcs;
     }
 
     std::optional<types::evse_manager::StopTransactionReason> get_last_stop_transaction_reason();
@@ -569,8 +575,10 @@ private:
         types::evse_manager::ChargingPausedEVSEReasons last_charging_paused_evse_reasons;
 
         // Armed by notify_session_stop_res_sent(); when it expires, the state machine switches the
-        // CP oscillator off (X1), whatever state it is in ([V2G-DC-968] retain time).
+        // CP oscillator off (X1), whatever state it is in.
         std::optional<std::chrono::time_point<std::chrono::steady_clock>> session_stop_pwm_off_deadline{};
+        // Requirement that armed session_stop_pwm_off_deadline, for the session log.
+        std::string_view session_stop_pwm_off_requirement{};
 
         // StoppingCharging was entered for a user pause (flag_paused_by_evse), even if resume_charging() has
         // cleared that flag since.
@@ -609,6 +617,7 @@ private:
     const std::unique_ptr<PersistentStore>& store;
     std::atomic<types::evse_board_support::Connector_type> connector_type{
         types::evse_board_support::Connector_type::IEC62196Type2Cable};
+    std::atomic<bool> mcs_connector{false};
     const std::string evse_id;
 
     EventQueue<ErrorHandlingEvents> error_handling_event_queue;
@@ -634,6 +643,11 @@ private:
     // in [1.5 s, 1.7 s] after the Res; with the 100 ms main-loop tick the X1 lands in
     // [deadline, deadline + 100 ms], so 1550 ms centers it with >= 50 ms margin on both sides.
     static constexpr auto V2G_SECC_CP_OSCILLATOR_RETAIN = std::chrono::milliseconds(1550);
+    // IEC 61851-23-3 Table CC.111 t109: after SessionStopRes(Terminate) the EVSE may open S S3 (X1) 5 s after
+    // sending the Res. A pause opens S S3 right after the Res (t717) and keeps V2G_SECC_CP_OSCILLATOR_RETAIN.
+    // The conformance tests of the same standard (CC.7.5.20.7 6), CC.7.5.21.7) instead expect S S3 open 2 s after
+    // the Res; if a test lab goes by those, 2000 ms is the value to use.
+    static constexpr auto MCS_TERMINATE_SS3_HOLD = std::chrono::milliseconds(5000);
     static constexpr int T_REPLUG_MS = 4000;
     // 3 seconds according to IEC61851-1
     static constexpr int T_STEP_X1 = 3000;
