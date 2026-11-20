@@ -19,6 +19,26 @@ set(TEST_FUNCTIONAL_BLOCK_CONTEXT_SOURCES ${LIBOCPP_LIB_PATH}/ocpp/v2/average_me
                                           ${LIBOCPP_LIB_PATH}/ocpp/v2/evse.cpp
                                           ${LIBOCPP_LIB_PATH}/ocpp/v2/transaction.cpp)
 
+# Sources every functional block test without the timer stub needs, compiled once for all of them
+add_library(libocpp_test_functional_block_objects OBJECT
+            ${CMAKE_CURRENT_SOURCE_DIR}/../device_model_test_helper.cpp
+            ${TEST_FUNCTIONAL_BLOCK_CONTEXT_SOURCES}
+            ${LIBOCPP_LIB_PATH}/ocpp/v2/ctrlr_component_variables.cpp
+            ${LIBOCPP_LIB_PATH}/ocpp/v2/messages/GetCompositeSchedule.cpp
+            ${LIBOCPP_TEST_INCLUDE_COMMON_SOURCES}
+            ${LIBOCPP_TEST_INCLUDE_V2_SOURCES}
+)
+
+set_libocpp_unittest_compile_settings(libocpp_test_functional_block_objects)
+
+target_include_directories(libocpp_test_functional_block_objects PUBLIC
+        ${LIBOCPP_INCLUDE_PATH}
+        ${LIBOCPP_3RDPARTY_PATH}
+        ${CMAKE_CURRENT_SOURCE_DIR}/../mocks
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../common/mocks
+        ${LIBOCPP_TESTS_V2_ROOT_DIR}
+)
+
 
 set(TEST_SECURITY_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/../device_model_test_helper.cpp
             ${CMAKE_CURRENT_SOURCE_DIR}/../stubs/timer/timer_stub.cpp
@@ -52,57 +72,33 @@ target_include_directories(libocpp_test_security PUBLIC
 )
 
 
-set(TEST_AUTHORIZATION_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/../device_model_test_helper.cpp
-            ${TEST_FUNCTIONAL_BLOCK_CONTEXT_SOURCES}
+set(TEST_AUTHORIZATION_SOURCES
             ${LIBOCPP_LIB_PATH}/ocpp/v2/functional_blocks/authorization.cpp
-            ${LIBOCPP_LIB_PATH}/ocpp/v2/ctrlr_component_variables.cpp
             ${LIBOCPP_LIB_PATH}/ocpp/v2/messages/Authorize.cpp
             ${LIBOCPP_LIB_PATH}/ocpp/v2/messages/ClearCache.cpp
-            ${LIBOCPP_LIB_PATH}/ocpp/v2/messages/GetCompositeSchedule.cpp
             ${LIBOCPP_LIB_PATH}/ocpp/v2/messages/GetLocalListVersion.cpp
             ${LIBOCPP_LIB_PATH}/ocpp/v2/messages/SendLocalList.cpp
-            ${LIBOCPP_TEST_INCLUDE_COMMON_SOURCES}
-            ${LIBOCPP_TEST_INCLUDE_V2_SOURCES}
 )
 
 target_sources(libocpp_test_authorization PRIVATE
         ${TEST_AUTHORIZATION_SOURCES})
 
-target_include_directories(libocpp_test_authorization PUBLIC
-        ${LIBOCPP_INCLUDE_PATH}
-        ${LIBOCPP_3RDPARTY_PATH}
-        ${CMAKE_CURRENT_SOURCE_DIR}/../mocks
-        ${CMAKE_CURRENT_SOURCE_DIR}/../../common/mocks
-        ${LIBOCPP_TESTS_V2_ROOT_DIR}
-)
+target_link_libraries(libocpp_test_authorization PRIVATE libocpp_test_functional_block_objects)
 
-set(TEST_AVAILABILITY_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/../device_model_test_helper.cpp
-            ${TEST_FUNCTIONAL_BLOCK_CONTEXT_SOURCES}
+set(TEST_AVAILABILITY_SOURCES
             ${LIBOCPP_LIB_PATH}/ocpp/v2/functional_blocks/availability.cpp
-            ${LIBOCPP_LIB_PATH}/ocpp/v2/ctrlr_component_variables.cpp
             ${LIBOCPP_LIB_PATH}/ocpp/v2/messages/ChangeAvailability.cpp
-            ${LIBOCPP_LIB_PATH}/ocpp/v2/messages/GetCompositeSchedule.cpp
             ${LIBOCPP_LIB_PATH}/ocpp/v2/messages/Heartbeat.cpp
             ${LIBOCPP_LIB_PATH}/ocpp/v2/messages/StatusNotification.cpp
-            ${LIBOCPP_TEST_INCLUDE_COMMON_SOURCES}
-            ${LIBOCPP_TEST_INCLUDE_V2_SOURCES}
 )
 
 target_sources(libocpp_test_availability PRIVATE
         ${TEST_AVAILABILITY_SOURCES})
 
-target_include_directories(libocpp_test_availability PUBLIC
-        ${LIBOCPP_INCLUDE_PATH}
-        ${LIBOCPP_3RDPARTY_PATH}
-        ${CMAKE_CURRENT_SOURCE_DIR}/../mocks
-        ${CMAKE_CURRENT_SOURCE_DIR}/../../common/mocks
-        ${LIBOCPP_TESTS_V2_ROOT_DIR}
-)
+target_link_libraries(libocpp_test_availability PRIVATE libocpp_test_functional_block_objects)
 
-set(TEST_REMOTE_TRANSACTION_CONTROL_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/../device_model_test_helper.cpp
-            ${TEST_FUNCTIONAL_BLOCK_CONTEXT_SOURCES}
+set(TEST_REMOTE_TRANSACTION_CONTROL_SOURCES
             ${LIBOCPP_LIB_PATH}/ocpp/v2/functional_blocks/remote_transaction_control.cpp
-            ${LIBOCPP_LIB_PATH}/ocpp/v2/ctrlr_component_variables.cpp
             # smart_charging.cpp defines the stream operator for ProfileValidationResultEnum, which the smart
             # charging mock needs; profile.cpp and the charging profile related messages are its dependencies.
             ${LIBOCPP_LIB_PATH}/ocpp/v2/functional_blocks/smart_charging.cpp
@@ -117,7 +113,6 @@ set(TEST_REMOTE_TRANSACTION_CONTROL_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/../devic
             ${LIBOCPP_LIB_PATH}/ocpp/v2/messages/ClearChargingProfile.cpp
             ${LIBOCPP_LIB_PATH}/ocpp/v2/messages/Get15118EVCertificate.cpp
             ${LIBOCPP_LIB_PATH}/ocpp/v2/messages/GetChargingProfiles.cpp
-            ${LIBOCPP_LIB_PATH}/ocpp/v2/messages/GetCompositeSchedule.cpp
             ${LIBOCPP_LIB_PATH}/ocpp/v2/messages/LogStatusNotification.cpp
             ${LIBOCPP_LIB_PATH}/ocpp/v2/messages/NotifyEVChargingNeeds.cpp
             ${LIBOCPP_LIB_PATH}/ocpp/v2/messages/ReportChargingProfiles.cpp
@@ -126,45 +121,26 @@ set(TEST_REMOTE_TRANSACTION_CONTROL_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/../devic
             ${LIBOCPP_LIB_PATH}/ocpp/v2/messages/SetChargingProfile.cpp
             ${LIBOCPP_LIB_PATH}/ocpp/v2/messages/TriggerMessage.cpp
             ${LIBOCPP_LIB_PATH}/ocpp/v2/messages/UnlockConnector.cpp
-            ${LIBOCPP_TEST_INCLUDE_COMMON_SOURCES}
-            ${LIBOCPP_TEST_INCLUDE_V2_SOURCES}
 )
 
 target_sources(libocpp_test_remote_transaction_control PRIVATE
         ${TEST_REMOTE_TRANSACTION_CONTROL_SOURCES}
 )
 
-target_include_directories(libocpp_test_remote_transaction_control PUBLIC
-        ${LIBOCPP_INCLUDE_PATH}
-        ${LIBOCPP_3RDPARTY_PATH}
-        ${CMAKE_CURRENT_SOURCE_DIR}/../mocks
-        ${CMAKE_CURRENT_SOURCE_DIR}/../../common/mocks
-        ${LIBOCPP_TESTS_V2_ROOT_DIR}
-)
+target_link_libraries(libocpp_test_remote_transaction_control PRIVATE libocpp_test_functional_block_objects)
 
-set(TEST_TARIFF_AND_COST_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/../device_model_test_helper.cpp
-            ${TEST_FUNCTIONAL_BLOCK_CONTEXT_SOURCES}
+set(TEST_TARIFF_AND_COST_SOURCES
             ${LIBOCPP_LIB_PATH}/ocpp/v2/functional_blocks/tariff_and_cost.cpp
             ${LIBOCPP_LIB_PATH}/ocpp/v2/functional_blocks/display_message.cpp
-            ${LIBOCPP_LIB_PATH}/ocpp/v2/ctrlr_component_variables.cpp
             ${LIBOCPP_LIB_PATH}/ocpp/v2/messages/ClearDisplayMessage.cpp
-            ${LIBOCPP_LIB_PATH}/ocpp/v2/messages/GetCompositeSchedule.cpp
             ${LIBOCPP_LIB_PATH}/ocpp/v2/messages/GetDisplayMessages.cpp
             ${LIBOCPP_LIB_PATH}/ocpp/v2/messages/NotifyDisplayMessages.cpp
             ${LIBOCPP_LIB_PATH}/ocpp/v2/messages/SetDisplayMessage.cpp
             ${LIBOCPP_LIB_PATH}/ocpp/v2/messages/CostUpdated.cpp
             ${LIBOCPP_LIB_PATH}/ocpp/v2/messages/TransactionEvent.cpp
-            ${LIBOCPP_TEST_INCLUDE_COMMON_SOURCES}
-            ${LIBOCPP_TEST_INCLUDE_V2_SOURCES}
 )
 
 target_sources(libocpp_test_tariff_and_cost PRIVATE
         ${TEST_TARIFF_AND_COST_SOURCES})
 
-target_include_directories(libocpp_test_tariff_and_cost PUBLIC
-        ${LIBOCPP_INCLUDE_PATH}
-        ${LIBOCPP_3RDPARTY_PATH}
-        ${CMAKE_CURRENT_SOURCE_DIR}/../mocks
-        ${CMAKE_CURRENT_SOURCE_DIR}/../../common/mocks
-        ${LIBOCPP_TESTS_V2_ROOT_DIR}
-)
+target_link_libraries(libocpp_test_tariff_and_cost PRIVATE libocpp_test_functional_block_objects)

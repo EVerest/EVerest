@@ -70,21 +70,13 @@ set(LIBOCPP_TEST_INCLUDE_V2_SOURCES ${LIBOCPP_LIB_PATH}/ocpp/v16/ocpp_enums.cpp 
                                       ${LIBOCPP_LIB_PATH}/ocpp/common/schemas.cpp
 )
 
-function(add_libocpp_unittest)
-    set(oneValueArgs NAME PATH)
-    set(options)
-    set(multiValueArgs)
-    cmake_parse_arguments(arg "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
-    if (arg_PATH)
-        add_executable(${arg_NAME} ${arg_PATH})
-    else ()
-        add_executable(${arg_NAME})
-    endif()
-    add_test(NAME ${arg_NAME} COMMAND ${arg_NAME} WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
-    list(APPEND GCOVR_DEPENDENCIES ${arg_NAME})
-    target_link_libraries(${arg_NAME} PUBLIC ${GTEST_LIBRARIES})
+set(LIBOCPP_TESTS_ROOT_DIR ${CMAKE_CURRENT_SOURCE_DIR})
+
+# Compile settings shared by the test executables and the object libraries whose objects they link
+function(set_libocpp_unittest_compile_settings TARGET)
+    target_link_libraries(${TARGET} PUBLIC ${GTEST_LIBRARIES})
     # If the test is not linked against the ocpp library, most probably those libraries are needed to link against.
-    target_link_libraries(${arg_NAME} PRIVATE
+    target_link_libraries(${TARGET} PRIVATE
         SQLite3::SQLite3
         nlohmann_json::nlohmann_json
         nlohmann_json_schema_validator::validator
@@ -96,7 +88,7 @@ function(add_libocpp_unittest)
         everest::sqlite
     )
     # Paths are relative to the WORKING_DIRECTORY, so the compile flags don't differ between build trees.
-    target_compile_definitions(${arg_NAME}
+    target_compile_definitions(${TARGET}
         PRIVATE
             CONFIG_FILE_LOCATION_V16="resources/config/v16/config.json"
             USER_CONFIG_FILE_LOCATION_V16="resources/config/v16/user_config.json"
@@ -110,12 +102,27 @@ function(add_libocpp_unittest)
             MIGRATION_FILE_VERSION_V2=${MIGRATION_FILE_VERSION_V2}
             MIGRATION_DEVICE_MODEL_FILE_VERSION_V2=${MIGRATION_DEVICE_MODEL_FILE_VERSION_V2})
     # Some tests use "#define private public" to reach into the classes under test
-    target_compile_options(${arg_NAME} PRIVATE -pedantic-errors $<$<CXX_COMPILER_ID:Clang,AppleClang>:-Wno-keyword-macro>)
-    target_compile_features(${arg_NAME} PUBLIC cxx_std_17)
-    target_include_directories(${arg_NAME} PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}
-        ${CMAKE_CURRENT_SOURCE_DIR}/lib/ocpp/common
+    target_compile_options(${TARGET} PRIVATE -pedantic-errors $<$<CXX_COMPILER_ID:Clang,AppleClang>:-Wno-keyword-macro>)
+    target_compile_features(${TARGET} PUBLIC cxx_std_17)
+    target_include_directories(${TARGET} PRIVATE
+        ${LIBOCPP_TESTS_ROOT_DIR}
+        ${LIBOCPP_TESTS_ROOT_DIR}/lib/ocpp/common
         ${LIBOCPP_INCLUDE_PATH}
     )
+endfunction()
+
+function(add_libocpp_unittest)
+    set(oneValueArgs NAME PATH)
+    set(options)
+    set(multiValueArgs)
+    cmake_parse_arguments(arg "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
+    if (arg_PATH)
+        add_executable(${arg_NAME} ${arg_PATH})
+    else ()
+        add_executable(${arg_NAME})
+    endif()
+    add_test(NAME ${arg_NAME} COMMAND ${arg_NAME} WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+    list(APPEND GCOVR_DEPENDENCIES ${arg_NAME})
+    set_libocpp_unittest_compile_settings(${arg_NAME})
     message("Add test ${arg_NAME}")
 endfunction()
