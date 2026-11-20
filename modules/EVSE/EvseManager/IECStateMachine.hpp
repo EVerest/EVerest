@@ -187,6 +187,8 @@ private:
     std::atomic_bool force_unlocked{false};
 
     std::atomic_bool enabled{false};
+    // Last raw CP state the BSP reported while not enabled, fed to the state machine by enable(true).
+    std::atomic<std::optional<RawCPState>> raw_cp_state_while_disabled{std::nullopt};
     std::atomic_bool relais_on{false};
     std::atomic_bool state_e_triggered_through_handle{false};
 
