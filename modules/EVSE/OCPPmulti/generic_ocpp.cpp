@@ -30,7 +30,6 @@ constexpr const auto CONTRACT_CERTIFICATE_INSTALLATION_ENABLED_VAR_NAME = "Contr
 constexpr const auto EV_CONNECTION_TIMEOUT_VAR_NAME = "EVConnectionTimeOut";
 constexpr const auto MASTER_PASS_GROUP_ID_VAR_NAME = "MasterPassGroupId";
 constexpr const auto PNC_ENABLED_VAR_NAME = "PnCEnabled";
-constexpr const auto SETPOINT_PRIORITY_VAR_NAME = "SetpointPriority";
 constexpr const auto TX_START_POINT_VAR_NAME = "TxStartPoint";
 constexpr const auto TX_STOP_POINT_VAR_NAME = "TxStopPoint";
 
@@ -1446,7 +1445,7 @@ void GenericOcpp::cb_ocpp_messages(const std::string& message, ocpp::MessageDire
 
 bool GenericOcpp::cb_pause_charging(std::int32_t evse_id) {
     bool result{false};
-    if (evse_id > 0 && evse_id <= mv_requires.evse_manager.size()) {
+    if (evse_id > 0 && static_cast<std::size_t>(evse_id) <= mv_requires.evse_manager.size()) {
         result = mv_requires.evse_manager.at(evse_id - 1)->call_pause_charging();
     }
     return result;
@@ -1615,7 +1614,7 @@ void GenericOcpp::cb_reset(const std::optional<const std::int32_t>& evse_id, Res
 
 bool GenericOcpp::cb_resume_charging(std::int32_t evse_id) {
     bool result{false};
-    if (evse_id > 0 && evse_id <= mv_requires.evse_manager.size()) {
+    if (evse_id > 0 && static_cast<std::size_t>(evse_id) <= mv_requires.evse_manager.size()) {
         result = mv_requires.evse_manager.at(evse_id - 1)->call_resume_charging();
     }
     return result;
@@ -1748,7 +1747,7 @@ GenericOcpp::cb_stop_transaction(std::int32_t evse_id, types::evse_manager::Stop
 
     auto result = ocpp::v2::RequestStartStopStatusEnum::Rejected;
 
-    if (evse_id > 0 && evse_id <= mv_requires.evse_manager.size()) {
+    if (evse_id > 0 && static_cast<std::size_t>(evse_id) <= mv_requires.evse_manager.size()) {
         types::evse_manager::StopTransactionRequest req;
         req.reason = stop_reason;
         result = mv_requires.evse_manager.at(evse_id - 1)->call_stop_transaction(req)
@@ -1806,7 +1805,7 @@ void GenericOcpp::cb_transaction_event_response(const ocpp::v2::TransactionEvent
 ocpp::v2::UnlockConnectorResponse GenericOcpp::cb_unlock_connector(std::int32_t evse_id, std::int32_t connector_id) {
     // FIXME: This needs to properly handle different connectors
     ocpp::v2::UnlockConnectorResponse response;
-    if (evse_id > 0 && evse_id <= mv_requires.evse_manager.size()) {
+    if (evse_id > 0 && static_cast<std::size_t>(evse_id) <= mv_requires.evse_manager.size()) {
         if (mv_requires.evse_manager.at(evse_id - 1)->call_force_unlock(connector_id)) {
             response.status = ocpp::v2::UnlockStatusEnum::Unlocked;
         } else {
@@ -1825,7 +1824,7 @@ bool GenericOcpp::cb_update_allowed_energy_transfer_modes(
 
     bool result{false};
     const auto evse_id = m_transaction_handler->get_evse_id(transaction_id);
-    if (evse_id > 0 && evse_id <= mv_requires.evse_manager.size()) {
+    if (evse_id > 0 && static_cast<std::size_t>(evse_id) <= mv_requires.evse_manager.size()) {
         auto& evse = mv_requires.evse_manager.at(evse_id - 1); // evse_id starts at 1 if valid
 
         if (evse != nullptr) {
@@ -2507,7 +2506,7 @@ void GenericOcpp::set_external_limits(const std::vector<ocpp::v2::EnhancedCompos
 
 void GenericOcpp::wait_all_ready() {
     auto ready_handle = mv_evse_ready_map.handle();
-    ready_handle.wait([this, &ready_handle]() {
+    ready_handle.wait([&ready_handle]() {
         for (const auto& [evse, ready] : *ready_handle) {
             if (!ready) {
                 return false;

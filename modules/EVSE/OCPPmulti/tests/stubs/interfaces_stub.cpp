@@ -1002,7 +1002,7 @@ ModuleAdapter::ModuleAdapter() : m_error_type_map(std::make_shared<Everest::erro
                const Everest::error::ErrorCallback& cleared) { subscribe_error(type, raised, cleared); });
 
     m_error_manager_req_global = std::make_shared<Everest::error::ErrorManagerReqGlobal>(
-        m_error_type_map, m_error_database, [this](auto&&... args) {});
+        m_error_type_map, m_error_database, [](auto&&... args) {});
 
     m_mqtt_abstraction = std::make_shared<MqttStub>();
     m_config_client = std::make_shared<Everest::config::ConfigServiceClient>(m_mqtt_abstraction, "ocpp", m_module_names,
