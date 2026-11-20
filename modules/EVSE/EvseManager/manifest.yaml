@@ -569,6 +569,9 @@ config:
     description: >-
       Timeout (s) to allow HLC charge loop to continue without available energy; 
       when exceeded, the HLC session is stopped and PWM is disabled until energy returns.
+      An ISO 15118-20 dynamic control mode session is paused instead, and resumes once energy is
+      available again. If the energy schedule already shows no energy until after the timeout, that
+      session is paused without waiting for it.
       If set too long, some EVs stop the session on their own. Then it cannot be resumed
       when energy is available again.
     type: integer

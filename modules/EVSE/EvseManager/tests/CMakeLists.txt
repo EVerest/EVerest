@@ -27,6 +27,7 @@ target_sources(${TEST_TARGET_NAME} PRIVATE
     PowermeterLimitsTest.cpp
     PowerSupplyMeasurementWaiterTest.cpp
     RandomDelayDurationTest.cpp
+    ScheduleNoEnergyTest.cpp
     SessionLogTest.cpp
     V2gMessageTest.cpp
     VoltagePlausibilityMonitorTest.cpp
