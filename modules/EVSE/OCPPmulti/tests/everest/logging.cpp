@@ -31,7 +31,7 @@ namespace logging {
 UTestLogger::level_t UTestLogger::s_level{UTestLogger::level_t::Debug};
 
 UTestLogger::UTestLogger(std::ostream& stream, level_t level, const char* file, int line) :
-    m_level(level), m_stream(stream) {
+    m_stream(stream), m_level(level) {
     const auto f = std::filesystem::path((file == nullptr) ? "(unknown)" : file);
     m_out << to_string(level) << f.filename().string() << ':' << line << ' ';
 }
