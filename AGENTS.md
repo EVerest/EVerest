@@ -172,6 +172,9 @@ ISO 15118 has no dedicated suite. It is covered by `tests/core_tests/smoke_tests
 (AC and DC end to end), CSMS-side helpers in
 `tests/ocpp_tests/test_sets/validations.py`, and `modules/EVSE/EvseV2G/tests/`.
 
+The stdlib-only `.ci/himalayas` library has unittest suites in `.ci/himalayas/tests/`, run
+by the Lint workflow: `python3 -I -m unittest discover -s .ci/himalayas/tests -t .ci/himalayas -v`.
+
 ## Architecture
 
 Each module is an independent process. It declares the interfaces it provides and
