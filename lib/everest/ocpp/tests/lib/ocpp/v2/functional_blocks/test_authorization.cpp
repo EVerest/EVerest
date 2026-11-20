@@ -151,11 +151,26 @@ protected: // Functions
     }
 
     void set_allow_central_contract_validation(DeviceModel* device_model, const bool allow) {
-        const auto& allow_central_contract_validation = ControllerComponentVariables::CentralContractValidationAllowed;
-        EXPECT_EQ(device_model->set_value(allow_central_contract_validation.component,
-                                          allow_central_contract_validation.variable.value(), AttributeEnum::Actual,
-                                          allow ? "true" : "false", "default", true),
-                  SetVariableStatusEnum::Accepted);
+        const auto variable = ISO15118ComponentVariables::CentralContractValidationAllowed;
+        const auto component = ISO15118ComponentVariables::get_component_variable(1, variable).component;
+        if (!device_model->get_variable_meta_data(component, variable)) {
+            RegisteredComponent registered;
+            registered.component = component;
+            RegisteredVariable entry;
+            entry.variable = variable;
+            entry.characteristics.dataType = DataEnum::boolean;
+            entry.characteristics.supportsMonitoring = false;
+            VariableAttribute attribute;
+            attribute.value = allow ? "true" : "false";
+            attribute.mutability = MutabilityEnum::ReadWrite;
+            entry.attributes.push_back(attribute);
+            registered.variables.push_back(entry);
+            EXPECT_TRUE(device_model->register_components("EVEREST_CONFIG", {registered}, nullptr).rejected.empty());
+        } else {
+            EXPECT_EQ(device_model->set_value(component, variable, AttributeEnum::Actual, allow ? "true" : "false",
+                                              "default", true),
+                      SetVariableStatusEnum::Accepted);
+        }
     }
 
     void set_allow_contract_validation_offline(DeviceModel* device_model, const bool allow) {
@@ -486,7 +501,7 @@ TEST_F(AuthorizationTest, validate_token_accepted_central_token) {
     // For a central token, an authorize request should not be sent.
     id_token.type = IdTokenEnumStringType::Central;
     id_token.idToken = "test_token";
-    EXPECT_EQ(authorization->validate_token(id_token, std::nullopt, std::nullopt).idTokenInfo.status,
+    EXPECT_EQ(authorization->validate_token(id_token, std::nullopt, std::nullopt, 1).idTokenInfo.status,
               AuthorizationStatusEnum::Accepted);
 }
 
@@ -496,7 +511,7 @@ TEST_F(AuthorizationTest, validate_token_accepted_auth_ctrlr_disabled) {
     IdToken id_token;
     id_token.type = IdTokenEnumStringType::ISO14443;
     id_token.idToken = "test_token";
-    EXPECT_EQ(authorization->validate_token(id_token, std::nullopt, std::nullopt).idTokenInfo.status,
+    EXPECT_EQ(authorization->validate_token(id_token, std::nullopt, std::nullopt, 1).idTokenInfo.status,
               AuthorizationStatusEnum::Accepted);
 }
 
@@ -516,7 +531,7 @@ TEST_F(AuthorizationTest, validate_token_unknown) {
     id_token.type = IdTokenEnumStringType::ISO14443;
     id_token.idToken = "test_token";
 
-    EXPECT_EQ(authorization->validate_token(id_token, std::nullopt, std::nullopt).idTokenInfo.status,
+    EXPECT_EQ(authorization->validate_token(id_token, std::nullopt, std::nullopt, 1).idTokenInfo.status,
               AuthorizationStatusEnum::Unknown);
 }
 
@@ -537,7 +552,7 @@ TEST_F(AuthorizationTest, validate_token_local_auth_list_enabled_accepted) {
     id_token.type = IdTokenEnumStringType::ISO14443;
     id_token.idToken = "test_token";
 
-    EXPECT_EQ(authorization->validate_token(id_token, std::nullopt, std::nullopt).idTokenInfo.status,
+    EXPECT_EQ(authorization->validate_token(id_token, std::nullopt, std::nullopt, 1).idTokenInfo.status,
               AuthorizationStatusEnum::Accepted);
 }
 
@@ -560,7 +575,7 @@ TEST_F(AuthorizationTest, validate_token_local_auth_list_enabled_expired_offline
     id_token.type = IdTokenEnumStringType::ISO14443;
     id_token.idToken = "test_token";
 
-    EXPECT_EQ(authorization->validate_token(id_token, std::nullopt, std::nullopt).idTokenInfo.status,
+    EXPECT_EQ(authorization->validate_token(id_token, std::nullopt, std::nullopt, 1).idTokenInfo.status,
               AuthorizationStatusEnum::Unknown);
 }
 
@@ -585,7 +600,7 @@ TEST_F(AuthorizationTest, validate_token_local_auth_list_enabled_expired_online)
     id_token.type = IdTokenEnumStringType::ISO14443;
     id_token.idToken = "test_token";
 
-    EXPECT_EQ(authorization->validate_token(id_token, std::nullopt, std::nullopt).idTokenInfo.status,
+    EXPECT_EQ(authorization->validate_token(id_token, std::nullopt, std::nullopt, 1).idTokenInfo.status,
               AuthorizationStatusEnum::Invalid);
 }
 
@@ -607,7 +622,7 @@ TEST_F(AuthorizationTest, validate_token_local_auth_list_enabled_not_expired) {
     id_token.type = IdTokenEnumStringType::ISO14443;
     id_token.idToken = "test_token";
 
-    EXPECT_EQ(authorization->validate_token(id_token, std::nullopt, std::nullopt).idTokenInfo.status,
+    EXPECT_EQ(authorization->validate_token(id_token, std::nullopt, std::nullopt, 1).idTokenInfo.status,
               AuthorizationStatusEnum::Accepted);
 }
 
@@ -630,7 +645,7 @@ TEST_F(AuthorizationTest, validate_token_local_auth_list_enabled_unknown_no_remo
     id_token.type = IdTokenEnumStringType::ISO14443;
     id_token.idToken = "test_token";
 
-    EXPECT_EQ(authorization->validate_token(id_token, std::nullopt, std::nullopt).idTokenInfo.status,
+    EXPECT_EQ(authorization->validate_token(id_token, std::nullopt, std::nullopt, 1).idTokenInfo.status,
               AuthorizationStatusEnum::Unknown);
 }
 
@@ -655,7 +670,7 @@ TEST_F(AuthorizationTest, validate_token_local_auth_list_enabled_unknown_websock
     id_token.type = IdTokenEnumStringType::ISO14443;
     id_token.idToken = "test_token";
 
-    EXPECT_EQ(authorization->validate_token(id_token, std::nullopt, std::nullopt).idTokenInfo.status,
+    EXPECT_EQ(authorization->validate_token(id_token, std::nullopt, std::nullopt, 1).idTokenInfo.status,
               AuthorizationStatusEnum::Unknown);
 }
 
@@ -685,7 +700,7 @@ TEST_F(AuthorizationTest, validate_token_local_auth_list_enabled_connectivity_ma
     id_token.type = IdTokenEnumStringType::ISO14443;
     id_token.idToken = "test_token";
 
-    EXPECT_EQ(authorization->validate_token(id_token, std::nullopt, std::nullopt).idTokenInfo.status,
+    EXPECT_EQ(authorization->validate_token(id_token, std::nullopt, std::nullopt, 1).idTokenInfo.status,
               AuthorizationStatusEnum::Accepted);
 }
 
@@ -708,7 +723,7 @@ TEST_F(AuthorizationTest, validate_token_local_auth_list_enabled_disable_post_au
     id_token.type = IdTokenEnumStringType::ISO14443;
     id_token.idToken = "test_token";
 
-    EXPECT_EQ(authorization->validate_token(id_token, std::nullopt, std::nullopt).idTokenInfo.status,
+    EXPECT_EQ(authorization->validate_token(id_token, std::nullopt, std::nullopt, 1).idTokenInfo.status,
               AuthorizationStatusEnum::Blocked);
 }
 
@@ -733,7 +748,7 @@ TEST_F(AuthorizationTest, validate_token_local_auth_list_enabled_post_authorize_
     id_token.type = IdTokenEnumStringType::ISO14443;
     id_token.idToken = "test_token";
 
-    EXPECT_EQ(authorization->validate_token(id_token, std::nullopt, std::nullopt).idTokenInfo.status,
+    EXPECT_EQ(authorization->validate_token(id_token, std::nullopt, std::nullopt, 1).idTokenInfo.status,
               AuthorizationStatusEnum::Accepted);
 }
 
@@ -757,7 +772,7 @@ TEST_F(AuthorizationTest, validate_token_local_auth_list_enabled_disable_post_au
     id_token.type = IdTokenEnumStringType::ISO14443;
     id_token.idToken = "test_token";
 
-    EXPECT_EQ(authorization->validate_token(id_token, std::nullopt, std::nullopt).idTokenInfo.status,
+    EXPECT_EQ(authorization->validate_token(id_token, std::nullopt, std::nullopt, 1).idTokenInfo.status,
               AuthorizationStatusEnum::Unknown);
 }
 
@@ -778,7 +793,7 @@ TEST_F(AuthorizationTest, validate_token_emaid_authorize_request_accepted) {
 
     std::vector<OCSPRequestData> ocsp_request_data;
 
-    EXPECT_EQ(authorization->validate_token(id_token, std::nullopt, ocsp_request_data).idTokenInfo.status,
+    EXPECT_EQ(authorization->validate_token(id_token, std::nullopt, ocsp_request_data, 1).idTokenInfo.status,
               AuthorizationStatusEnum::Accepted);
 }
 
@@ -796,7 +811,7 @@ TEST_F(AuthorizationTest, validate_token_emaid_offline_no_certificate_contract_v
     id_token.type = IdTokenEnumStringType::eMAID;
     id_token.idToken = "test_token";
 
-    EXPECT_EQ(authorization->validate_token(id_token, "", std::nullopt).idTokenInfo.status,
+    EXPECT_EQ(authorization->validate_token(id_token, "", std::nullopt, 1).idTokenInfo.status,
               AuthorizationStatusEnum::NotAtThisTime);
 }
 
@@ -817,7 +832,7 @@ TEST_F(
     id_token.type = IdTokenEnumStringType::eMAID;
     id_token.idToken = "test_token";
 
-    const AuthorizeResponse response = authorization->validate_token(id_token, "", std::nullopt);
+    const AuthorizeResponse response = authorization->validate_token(id_token, "", std::nullopt, 1);
     EXPECT_EQ(response.idTokenInfo.status, AuthorizationStatusEnum::Unknown);
     EXPECT_EQ(response.certificateStatus, AuthorizeCertificateStatusEnum::Accepted);
 }
@@ -846,7 +861,7 @@ TEST_F(
     id_token.type = IdTokenEnumStringType::eMAID;
     id_token.idToken = "test_token";
 
-    EXPECT_EQ(authorization->validate_token(id_token, "", std::nullopt).idTokenInfo.status,
+    EXPECT_EQ(authorization->validate_token(id_token, "", std::nullopt, 1).idTokenInfo.status,
               AuthorizationStatusEnum::Accepted);
 }
 
@@ -867,7 +882,7 @@ TEST_F(AuthorizationTest,
     id_token.type = IdTokenEnumStringType::eMAID;
     id_token.idToken = "test_token";
 
-    const AuthorizeResponse response = authorization->validate_token(id_token, "", std::nullopt);
+    const AuthorizeResponse response = authorization->validate_token(id_token, "", std::nullopt, 1);
     EXPECT_EQ(response.idTokenInfo.status, AuthorizationStatusEnum::Expired);
     EXPECT_EQ(response.certificateStatus, AuthorizeCertificateStatusEnum::CertificateExpired);
 }
@@ -890,7 +905,7 @@ TEST_F(AuthorizationTest,
     id_token.type = IdTokenEnumStringType::eMAID;
     id_token.idToken = "test_token";
 
-    const AuthorizeResponse response = authorization->validate_token(id_token, "", std::nullopt);
+    const AuthorizeResponse response = authorization->validate_token(id_token, "", std::nullopt, 1);
     EXPECT_EQ(response.idTokenInfo.status, AuthorizationStatusEnum::Unknown);
 }
 
@@ -904,7 +919,38 @@ TEST_F(AuthorizationTest, validate_token_emaid_websocket_disconnected_certificat
     id_token.type = IdTokenEnumStringType::eMAID;
     id_token.idToken = "test_token";
 
-    EXPECT_EQ(authorization->validate_token(id_token, std::nullopt, std::nullopt).idTokenInfo.status,
+    EXPECT_EQ(authorization->validate_token(id_token, std::nullopt, std::nullopt, 1).idTokenInfo.status,
+              AuthorizationStatusEnum::Invalid);
+}
+
+TEST_F(AuthorizationTest, scoped_central_contract_validation_overrides_global_policy) {
+    set_allow_central_contract_validation(device_model, false);
+    RegisteredComponent component;
+    const auto variable = ISO15118ComponentVariables::CentralContractValidationAllowed;
+    component.component = ISO15118ComponentVariables::get_component_variable(2, variable).component;
+    RegisteredVariable registered;
+    registered.variable = variable;
+    registered.characteristics.dataType = DataEnum::boolean;
+    registered.characteristics.supportsMonitoring = false;
+    VariableAttribute attribute;
+    attribute.value = "true";
+    attribute.mutability = MutabilityEnum::ReadWrite;
+    registered.attributes.push_back(attribute);
+    component.variables.push_back(registered);
+    ASSERT_TRUE(device_model->register_components("EVEREST_CONFIG", {component}, nullptr).rejected.empty());
+    EXPECT_CALL(connectivity_manager, is_websocket_connected()).WillRepeatedly(Return(true));
+    EXPECT_CALL(evse_security, verify_certificate(_, DEFAULT_LEAF_CERT_TYPE))
+        .WillRepeatedly(Return(ocpp::CertificateValidationResult::IssuerNotFound));
+    EXPECT_CALL(mock_dispatcher, dispatch_call_async(_, _)).WillOnce(Return(std::async(std::launch::deferred, [this]() {
+        return create_example_authorize_response(AuthorizeCertificateStatusEnum::Accepted,
+                                                 AuthorizationStatusEnum::NoCredit);
+    })));
+    IdToken token;
+    token.type = IdTokenEnumStringType::eMAID;
+    token.idToken = "test_token";
+    EXPECT_EQ(authorization->validate_token(token, "", std::nullopt, 2).idTokenInfo.status,
+              AuthorizationStatusEnum::NoCredit);
+    EXPECT_EQ(authorization->validate_token(token, "", std::nullopt, 1).idTokenInfo.status,
               AuthorizationStatusEnum::Invalid);
 }
 
@@ -931,7 +977,7 @@ TEST_F(AuthorizationTest, validate_token_emaid_no_ocsp_websocket_connected) {
     IdToken id_token;
     id_token.type = IdTokenEnumStringType::eMAID;
     id_token.idToken = "test_token";
-    EXPECT_EQ(authorization->validate_token(id_token, "", std::nullopt).idTokenInfo.status,
+    EXPECT_EQ(authorization->validate_token(id_token, "", std::nullopt, 1).idTokenInfo.status,
               AuthorizationStatusEnum::Accepted);
 }
 
@@ -950,7 +996,7 @@ TEST_F(AuthorizationTest,
     IdToken id_token;
     id_token.type = IdTokenEnumStringType::eMAID;
     id_token.idToken = "test_token";
-    EXPECT_EQ(authorization->validate_token(id_token, "", std::nullopt).idTokenInfo.status,
+    EXPECT_EQ(authorization->validate_token(id_token, "", std::nullopt, 1).idTokenInfo.status,
               AuthorizationStatusEnum::Invalid);
 }
 
@@ -973,7 +1019,7 @@ TEST_F(AuthorizationTest,
     IdToken id_token;
     id_token.type = IdTokenEnumStringType::eMAID;
     id_token.idToken = "test_token";
-    EXPECT_EQ(authorization->validate_token(id_token, "", std::nullopt).idTokenInfo.status,
+    EXPECT_EQ(authorization->validate_token(id_token, "", std::nullopt, 1).idTokenInfo.status,
               AuthorizationStatusEnum::Blocked);
 }
 
@@ -990,7 +1036,7 @@ TEST_F(AuthorizationTest,
     IdToken id_token;
     id_token.type = IdTokenEnumStringType::eMAID;
     id_token.idToken = "test_token";
-    EXPECT_EQ(authorization->validate_token(id_token, "", std::nullopt).idTokenInfo.status,
+    EXPECT_EQ(authorization->validate_token(id_token, "", std::nullopt, 1).idTokenInfo.status,
               AuthorizationStatusEnum::Invalid);
 }
 
@@ -1011,7 +1057,7 @@ TEST_F(AuthorizationTest,
     IdToken id_token;
     id_token.type = IdTokenEnumStringType::eMAID;
     id_token.idToken = "test_token";
-    EXPECT_EQ(authorization->validate_token(id_token, "", std::nullopt).idTokenInfo.status,
+    EXPECT_EQ(authorization->validate_token(id_token, "", std::nullopt, 1).idTokenInfo.status,
               AuthorizationStatusEnum::NoCredit);
 }
 
@@ -1035,7 +1081,7 @@ TEST_F(AuthorizationTest, validate_token_auth_cache_accepted) {
     id_token.type = IdTokenEnumStringType::ISO14443;
     id_token.idToken = "test_token";
 
-    EXPECT_EQ(authorization->validate_token(id_token, std::nullopt, std::nullopt).idTokenInfo.status,
+    EXPECT_EQ(authorization->validate_token(id_token, std::nullopt, std::nullopt, 1).idTokenInfo.status,
               AuthorizationStatusEnum::Accepted);
 }
 
@@ -1059,7 +1105,7 @@ TEST_F(AuthorizationTest, validate_token_auth_local_pre_authorize_disabled) {
     id_token.type = IdTokenEnumStringType::ISO14443;
     id_token.idToken = "test_token";
 
-    EXPECT_EQ(authorization->validate_token(id_token, std::nullopt, std::nullopt).idTokenInfo.status,
+    EXPECT_EQ(authorization->validate_token(id_token, std::nullopt, std::nullopt, 1).idTokenInfo.status,
               AuthorizationStatusEnum::Accepted);
 }
 
@@ -1085,7 +1131,7 @@ TEST_F(AuthorizationTest, validate_token_auth_cache_blocked_post_authorize_disab
     id_token.type = IdTokenEnumStringType::ISO14443;
     id_token.idToken = "test_token";
 
-    EXPECT_EQ(authorization->validate_token(id_token, std::nullopt, std::nullopt).idTokenInfo.status,
+    EXPECT_EQ(authorization->validate_token(id_token, std::nullopt, std::nullopt, 1).idTokenInfo.status,
               AuthorizationStatusEnum::Blocked);
 }
 
@@ -1124,7 +1170,7 @@ TEST_F(AuthorizationTest, validate_token_auth_cache_invalid_post_authorize_enabl
     id_token.type = IdTokenEnumStringType::ISO14443;
     id_token.idToken = "test_token";
 
-    EXPECT_EQ(authorization->validate_token(id_token, std::nullopt, std::nullopt).idTokenInfo.status,
+    EXPECT_EQ(authorization->validate_token(id_token, std::nullopt, std::nullopt, 1).idTokenInfo.status,
               AuthorizationStatusEnum::Invalid);
 }
 
@@ -1147,7 +1193,7 @@ TEST_F(AuthorizationTest, validate_token_auth_cache_blocked_offline_tx_for_unkno
         .WillOnce(Return(authorization_cache_entry));
 
     IdToken id_token = get_id_token("test_token", IdTokenEnumStringType::ISO14443);
-    EXPECT_EQ(authorization->validate_token(id_token, std::nullopt, std::nullopt).idTokenInfo.status,
+    EXPECT_EQ(authorization->validate_token(id_token, std::nullopt, std::nullopt, 1).idTokenInfo.status,
               AuthorizationStatusEnum::Blocked);
 }
 
@@ -1170,7 +1216,7 @@ TEST_F(AuthorizationTest, validate_token_auth_cache_unknown_offline_tx_for_unkno
         .WillOnce(Return(authorization_cache_entry));
 
     IdToken id_token = get_id_token("test_token", IdTokenEnumStringType::ISO14443);
-    EXPECT_EQ(authorization->validate_token(id_token, std::nullopt, std::nullopt).idTokenInfo.status,
+    EXPECT_EQ(authorization->validate_token(id_token, std::nullopt, std::nullopt, 1).idTokenInfo.status,
               AuthorizationStatusEnum::Unknown);
 }
 
@@ -1188,7 +1234,7 @@ TEST_F(AuthorizationTest, validate_token_auth_cache_unknown_offline_not_cached) 
     EXPECT_CALL(this->database_handler_mock, authorization_cache_insert_entry(_, _)).Times(0);
 
     IdToken id_token = get_id_token("test_token", IdTokenEnumStringType::ISO14443);
-    EXPECT_EQ(authorization->validate_token(id_token, std::nullopt, std::nullopt).idTokenInfo.status,
+    EXPECT_EQ(authorization->validate_token(id_token, std::nullopt, std::nullopt, 1).idTokenInfo.status,
               AuthorizationStatusEnum::Unknown);
 }
 
@@ -1206,7 +1252,7 @@ TEST_F(AuthorizationTest, validate_token_auth_cache_no_authorize_response_not_ca
     EXPECT_CALL(this->database_handler_mock, authorization_cache_insert_entry(_, _)).Times(0);
 
     IdToken id_token = get_id_token("test_token", IdTokenEnumStringType::ISO14443);
-    EXPECT_EQ(authorization->validate_token(id_token, std::nullopt, std::nullopt).idTokenInfo.status,
+    EXPECT_EQ(authorization->validate_token(id_token, std::nullopt, std::nullopt, 1).idTokenInfo.status,
               AuthorizationStatusEnum::Unknown);
 }
 
@@ -1245,7 +1291,7 @@ TEST_F(AuthorizationTest, validate_token_auth_cache_cache_expired_and_status_inv
     // Since the auth cache is enabled, after authorizing, the entry is added to the authorization cache.
     EXPECT_CALL(this->database_handler_mock, authorization_cache_insert_entry(_, _));
 
-    EXPECT_EQ(authorization->validate_token(id_token, std::nullopt, std::nullopt).idTokenInfo.status,
+    EXPECT_EQ(authorization->validate_token(id_token, std::nullopt, std::nullopt, 1).idTokenInfo.status,
               AuthorizationStatusEnum::NotAllowedTypeEVSE);
 }
 
@@ -1282,7 +1328,7 @@ TEST_F(AuthorizationTest, validate_token_auth_cache_lifetime_expired) {
     // Since the auth cache is enabled, after authorizing, the entry is added to the authorization cache.
     EXPECT_CALL(this->database_handler_mock, authorization_cache_insert_entry(_, _));
 
-    EXPECT_EQ(authorization->validate_token(id_token, std::nullopt, std::nullopt).idTokenInfo.status,
+    EXPECT_EQ(authorization->validate_token(id_token, std::nullopt, std::nullopt, 1).idTokenInfo.status,
               AuthorizationStatusEnum::ConcurrentTx);
 }
 
@@ -1310,7 +1356,7 @@ TEST_F(AuthorizationTest, validate_token_auth_cache_exception) {
     EXPECT_CALL(this->database_handler_mock, authorization_cache_insert_entry(_, _));
 
     IdToken id_token = get_id_token("test_token", IdTokenEnumStringType::ISO14443);
-    EXPECT_EQ(authorization->validate_token(id_token, std::nullopt, std::nullopt).idTokenInfo.status,
+    EXPECT_EQ(authorization->validate_token(id_token, std::nullopt, std::nullopt, 1).idTokenInfo.status,
               AuthorizationStatusEnum::Accepted);
 }
 
@@ -1333,7 +1379,7 @@ TEST_F(AuthorizationTest,
     // Because of the database exception, and the websocket disabled, and offline tx for unknown id enabled, it will
     // just return 'Accepted'.
     IdToken id_token = get_id_token("test_token", IdTokenEnumStringType::ISO14443);
-    EXPECT_EQ(authorization->validate_token(id_token, std::nullopt, std::nullopt).idTokenInfo.status,
+    EXPECT_EQ(authorization->validate_token(id_token, std::nullopt, std::nullopt, 1).idTokenInfo.status,
               AuthorizationStatusEnum::Accepted);
 }
 
@@ -1372,7 +1418,7 @@ TEST_F(AuthorizationTest, validate_token_auth_cache_insert_entry_exception) {
     EXPECT_CALL(this->database_handler_mock, authorization_cache_insert_entry(_, _))
         .WillOnce(Throw(everest::db::Exception("Insert entry fails!")));
 
-    EXPECT_EQ(authorization->validate_token(id_token, std::nullopt, std::nullopt).idTokenInfo.status,
+    EXPECT_EQ(authorization->validate_token(id_token, std::nullopt, std::nullopt, 1).idTokenInfo.status,
               AuthorizationStatusEnum::Accepted);
 }
 
@@ -2159,7 +2205,7 @@ TEST_F(AuthorizationTest, online_local_pre_authorize_local_list) {
     id_token.type = IdTokenEnumStringType::ISO14443;
     id_token.idToken = "test_token";
 
-    EXPECT_EQ(authorization->validate_token(id_token, std::nullopt, std::nullopt).idTokenInfo.status,
+    EXPECT_EQ(authorization->validate_token(id_token, std::nullopt, std::nullopt, 1).idTokenInfo.status,
               AuthorizationStatusEnum::Accepted);
 }
 
@@ -2177,7 +2223,7 @@ TEST_F(AuthorizationTest, offline_local_pre_authorize_local_list) {
     id_token.type = IdTokenEnumStringType::ISO14443;
     id_token.idToken = "test_token";
 
-    EXPECT_EQ(authorization->validate_token(id_token, std::nullopt, std::nullopt).idTokenInfo.status,
+    EXPECT_EQ(authorization->validate_token(id_token, std::nullopt, std::nullopt, 1).idTokenInfo.status,
               AuthorizationStatusEnum::Unknown);
 }
 
@@ -2195,7 +2241,7 @@ TEST_F(AuthorizationTest, offline_local_pre_authorize_cache) {
     id_token.type = IdTokenEnumStringType::ISO14443;
     id_token.idToken = "test_token";
 
-    EXPECT_EQ(authorization->validate_token(id_token, std::nullopt, std::nullopt).idTokenInfo.status,
+    EXPECT_EQ(authorization->validate_token(id_token, std::nullopt, std::nullopt, 1).idTokenInfo.status,
               AuthorizationStatusEnum::Unknown);
 }
 
@@ -2208,6 +2254,6 @@ TEST_F(AuthorizationTest, start_button_auth) {
     id_token.type = IdTokenEnumStringType::NoAuthorization;
     id_token.idToken = "";
 
-    EXPECT_EQ(authorization->validate_token(id_token, std::nullopt, std::nullopt).idTokenInfo.status,
+    EXPECT_EQ(authorization->validate_token(id_token, std::nullopt, std::nullopt, 1).idTokenInfo.status,
               AuthorizationStatusEnum::Accepted);
 }

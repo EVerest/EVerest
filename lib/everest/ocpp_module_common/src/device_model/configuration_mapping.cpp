@@ -12,6 +12,7 @@
 #include <everest/logging.hpp>
 #include <everest/utils/yaml_loader.hpp>
 #include <nlohmann/json-schema.hpp>
+#include <ocpp/common/utils.hpp>
 #include <ocpp/v2/comparators.hpp>
 
 namespace ocpp_module_common::device_model {
@@ -27,6 +28,12 @@ ParameterKey key_of(const everest::config::ConfigurationParameterIdentifier& par
 void validate_target(const ConfigParameterBinding& mapping) {
     const auto& component = mapping.component;
     const auto& variable = mapping.variable;
+    if (ocpp::iequals(component.name.get(), "ISO15118Ctrlr") && !component.evse &&
+        (ocpp::iequals(variable.name.get(), "PnCEnabled") ||
+         ocpp::iequals(variable.name.get(), "CentralContractValidationAllowed") ||
+         ocpp::iequals(variable.name.get(), "ContractCertificateInstallationEnabled"))) {
+        throw std::invalid_argument("Plug & Charge mappings require EVSE scope");
+    }
     if (component.name.get().empty() || variable.name.get().empty() ||
         (component.instance.has_value() && component.instance->get().empty()) ||
         (variable.instance.has_value() && variable.instance->get().empty()) ||
@@ -182,8 +189,27 @@ void remove_mapped_configuration_variables(
     }
 }
 
+void remove_unscoped_pnc_variables(
+    std::map<ocpp::v2::ComponentKey, std::vector<ocpp::v2::DeviceModelVariable>>& component_configs) {
+    for (auto& [component, variables] : component_configs) {
+        if (!ocpp::iequals(component.name, "ISO15118Ctrlr") || component.evse_id.has_value()) {
+            continue;
+        }
+        variables.erase(std::remove_if(variables.begin(), variables.end(),
+                                       [](const auto& variable) {
+                                           return ocpp::iequals(variable.name, "PnCEnabled") ||
+                                                  ocpp::iequals(variable.name, "CentralContractValidationAllowed") ||
+                                                  ocpp::iequals(variable.name,
+                                                                "ContractCertificateInstallationEnabled");
+                                       }),
+                        variables.end());
+    }
+}
+
 void log_device_model(ocpp::v2::DeviceModelInterface& device_model) {
-    for (const auto& entry : device_model.get_base_report_data(ocpp::v2::ReportBaseEnum::FullInventory)) {
+    const auto report = device_model.get_base_report_data(ocpp::v2::ReportBaseEnum::FullInventory);
+    EVLOG_verbose << "Composed device model: " << report.size() << " component-variable entries";
+    for (const auto& entry : report) {
         EVLOG_verbose << "Device model: " << nlohmann::json(entry).dump();
     }
 }

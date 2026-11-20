@@ -13,6 +13,7 @@
 #include <everest/ocpp_module_common/device_model/config_service_binding.hpp>
 #include <everest/ocpp_module_common/device_model/configuration_mapping.hpp>
 #include <everest/ocpp_module_common/device_model/device_model_registrations.hpp>
+#include <ocpp/v2/ctrlr_component_variables.hpp>
 #include <ocpp/v2/device_model.hpp>
 #include <ocpp/v2/device_model_storage_sqlite.hpp>
 #include <ocpp/v2/init_device_model_db.hpp>
@@ -409,35 +410,46 @@ TEST(ConfigurationMappingTest, CheckedInExampleLoadsWithSchemaFile) {
     EXPECT_EQ(mappings.front().variable.name, "EVConnectionTimeOut");
 }
 
-TEST(ConfigurationMappingTest, AuthOnlyMappingsWriteThroughConfigServiceAndReportUpdates) {
+TEST(ConfigurationMappingTest, StationMappingsKeepEvseConfigurationIndependent) {
     const auto schemas = std::filesystem::path(CUSTOM_ERROR_MAPPING_SCHEMAS_DIR);
-    const auto mappings = dm::load_configuration_mappings(schemas / "configuration_mapping_auth.yaml",
+    const auto mappings = dm::load_configuration_mappings(schemas / "configuration_mapping.yaml",
                                                           schemas / "configuration_mapping.schema.json");
-    ASSERT_EQ(mappings.size(), 2u);
+    ASSERT_EQ(mappings.size(), 8u);
     FakeConfigService config_service;
     config_service.configs.at({"auth", "Auth"})[Everest::config::MODULE_IMPLEMENTATION_ID].push_back(
         make_parameter("master_pass_group_id", std::string(""), everest::config::Datatype::String,
                        everest::config::Mutability::ReadWrite));
+    for (const auto& module_id : {"evse_manager_1", "evse_manager_2"}) {
+        auto& parameters =
+            config_service.configs[{module_id, "EvseManager"}][Everest::config::MODULE_IMPLEMENTATION_ID];
+        for (const auto& parameter : {"payment_enable_contract", "central_contract_validation_allowed",
+                                      "contract_certificate_installation_enabled"}) {
+            parameters.push_back(make_parameter(parameter, true, everest::config::Datatype::Boolean,
+                                                everest::config::Mutability::ReadWrite));
+        }
+    }
     FakeRegistry registry;
     const auto binding = dm::ConfigServiceBinding::create(config_service, registry, mappings, false);
     EXPECT_NE(registry.find("TxCtrlr", "EVConnectionTimeOut"), nullptr);
     EXPECT_NE(registry.find("AuthCtrlr", "MasterPassGroupId"), nullptr);
     for (const auto& mapping : mappings) {
-        EXPECT_EQ(mapping.parameter.module_id, "auth");
         const auto& parameter = mapping.parameter.configuration_parameter_name;
-        const std::string value = parameter == "connection_timeout" ? "90" : "Managers";
+        const std::string value = parameter == "connection_timeout"     ? "90"
+                                  : parameter == "master_pass_group_id" ? "Managers"
+                                                                        : "false";
         EXPECT_EQ(binding->set_value(mapping.component, mapping.variable, AttributeEnum::Actual, value, "csms"),
                   SetVariableStatusEnum::Accepted);
         ASSERT_FALSE(config_service.writes.empty());
+        EXPECT_EQ(config_service.writes.back().first.module_id, mapping.parameter.module_id);
         EXPECT_EQ(config_service.writes.back().first.configuration_parameter_name, parameter);
-        config_service.publish("auth", std::nullopt, parameter, value);
-        ASSERT_FALSE(registry.notified.empty());
+        const auto notifications = registry.notified.size();
+        config_service.publish(mapping.parameter.module_id, std::nullopt, parameter, value);
+        ASSERT_EQ(registry.notified.size(), notifications + 1);
         EXPECT_EQ(registry.notified.back().component, mapping.component);
         EXPECT_EQ(registry.notified.back().variable, mapping.variable);
         EXPECT_EQ(registry.notified.back().value, value);
     }
-    EXPECT_EQ(config_service.writes.size(), 2u);
-    EXPECT_EQ(registry.notified.size(), 2u);
+    EXPECT_EQ(config_service.writes.size(), mappings.size());
 }
 
 TEST(ConfigurationMappingTest, MissingOrInvalidSchemaFailsWithItsPath) {
@@ -537,6 +549,51 @@ TEST(ConfigurationMappingTest, LoaderEnforcesSchemaBeforeConvertingIdentifiers) 
             EXPECT_NE(std::string(e.what()).find(path.string()), std::string::npos);
         }
     }
+    std::filesystem::remove_all(work_dir);
+}
+
+TEST(ConfigurationMappingTest, RemovesGlobalPncValuesFromExistingDatabaseAndPreservesScopedValues) {
+    const auto work_dir = test_support::create_unique_directory("ocpp_scoped_pnc");
+    const auto database = work_dir / "device_model.db";
+    auto [component, variables] = ocpp::v2::parse_component_config_from_string(R"({
+      "name": "ISO15118Ctrlr", "properties": {
+        "PnCEnabled": {"variable_name": "PnCEnabled", "characteristics": {"dataType": "boolean", "supportsMonitoring": true},
+          "attributes": [{"type": "Actual", "mutability": "ReadWrite", "value": "true"}]},
+        "CentralContractValidationAllowed": {"variable_name": "CentralContractValidationAllowed", "characteristics": {"dataType": "boolean", "supportsMonitoring": true},
+          "attributes": [{"type": "Actual", "mutability": "ReadWrite", "value": "true"}]},
+        "ContractCertificateInstallationEnabled": {"variable_name": "ContractCertificateInstallationEnabled", "characteristics": {"dataType": "boolean", "supportsMonitoring": true},
+          "attributes": [{"type": "Actual", "mutability": "ReadWrite", "value": "true"}]},
+        "Enabled": {"variable_name": "Enabled", "characteristics": {"dataType": "boolean", "supportsMonitoring": true},
+          "attributes": [{"type": "Actual", "mutability": "ReadWrite", "value": "true"}]}
+      }})");
+    auto scoped = component;
+    scoped.evse_id = 2;
+    std::map<ocpp::v2::ComponentKey, std::vector<ocpp::v2::DeviceModelVariable>> components{{component, variables},
+                                                                                            {scoped, variables}};
+    {
+        ocpp::v2::InitDeviceModelDb db(database, DEVICE_MODEL_MIGRATIONS_DIR);
+        db.initialize_database(components, true, false);
+    }
+    dm::remove_unscoped_pnc_variables(components);
+    ASSERT_EQ(components.at(component).size(), 1u);
+    EXPECT_EQ(components.at(component).front().name, "Enabled");
+    EXPECT_EQ(components.at(scoped).size(), 4u);
+    {
+        ocpp::v2::InitDeviceModelDb db(database, DEVICE_MODEL_MIGRATIONS_DIR);
+        db.initialize_database(components, false, false);
+    }
+    ocpp::v2::DeviceModel model(std::make_unique<ocpp::v2::DeviceModelStorageSqlite>(database));
+    for (const auto& name :
+         {"PnCEnabled", "CentralContractValidationAllowed", "ContractCertificateInstallationEnabled"}) {
+        EXPECT_FALSE(model.get_variable_meta_data({"ISO15118Ctrlr"}, {name}));
+        const auto cv = ocpp::v2::ISO15118ComponentVariables::get_component_variable(2, {name});
+        EXPECT_TRUE(model.get_variable_meta_data(cv.component, *cv.variable));
+    }
+    FakeConfigService config_service;
+    auto mapping = timeout_mapping();
+    mapping.component.name = "ISO15118Ctrlr";
+    mapping.variable.name = "PnCEnabled";
+    EXPECT_THROW(dm::build_configuration_views(config_service.configs, {}, {mapping}, false), std::invalid_argument);
     std::filesystem::remove_all(work_dir);
 }
 

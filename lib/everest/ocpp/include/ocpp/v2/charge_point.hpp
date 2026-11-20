@@ -161,6 +161,11 @@ public:
     /// \param request
     virtual Get15118EVCertificateResponse
     on_get_15118_ev_certificate_request(const Get15118EVCertificateRequest& request) = 0;
+    virtual Get15118EVCertificateResponse
+    on_get_15118_ev_certificate_request(const Get15118EVCertificateRequest& request,
+                                        std::optional<std::int32_t> /*evse_id*/) {
+        return on_get_15118_ev_certificate_request(request);
+    }
 
     /// \brief Event handler that should be called when a transaction has started
     /// \param evse_id
@@ -311,6 +316,11 @@ public:
     /// \return AuthorizeResponse containing the result of the validation
     virtual AuthorizeResponse validate_token(const IdToken id_token, const std::optional<CiString<10000>>& certificate,
                                              const std::optional<std::vector<OCSPRequestData>>& ocsp_request_data) = 0;
+    virtual AuthorizeResponse validate_token(const IdToken id_token, const std::optional<CiString<10000>>& certificate,
+                                             const std::optional<std::vector<OCSPRequestData>>& ocsp_request_data,
+                                             std::optional<std::int32_t> /*evse_id*/) {
+        return validate_token(id_token, certificate, ocsp_request_data);
+    }
 
     /// \brief Data transfer mechanism initiated by charger
     /// \param vendorId
@@ -641,6 +651,8 @@ public:
 
     Get15118EVCertificateResponse
     on_get_15118_ev_certificate_request(const Get15118EVCertificateRequest& request) override;
+    Get15118EVCertificateResponse on_get_15118_ev_certificate_request(const Get15118EVCertificateRequest& request,
+                                                                      std::optional<std::int32_t> evse_id) override;
 
     void on_transaction_started(const std::int32_t evse_id, const std::int32_t connector_id,
                                 const std::string& session_id, const DateTime& timestamp,
@@ -684,6 +696,9 @@ public:
 
     AuthorizeResponse validate_token(const IdToken id_token, const std::optional<CiString<10000>>& certificate,
                                      const std::optional<std::vector<OCSPRequestData>>& ocsp_request_data) override;
+    AuthorizeResponse validate_token(const IdToken id_token, const std::optional<CiString<10000>>& certificate,
+                                     const std::optional<std::vector<OCSPRequestData>>& ocsp_request_data,
+                                     std::optional<std::int32_t> evse_id) override;
 
     void on_event(const std::vector<EventData>& events) override;
 

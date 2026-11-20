@@ -1235,8 +1235,16 @@ ChargePointConfigurationDeviceModel::ChargePointConfigurationDeviceModel(
 
     // Mirror OCPP 1.6 behavior: add behind-the-scenes profiles only when the corresponding
     // OCPP 1.6 parameter set is present in migrated configuration values.
+    bool scoped_pnc_present = false;
+    for (const auto& entry : storage->get_base_report_data(v2::ReportBaseEnum::FullInventory)) {
+        if (entry.component.name == "ISO15118Ctrlr" && entry.component.evse && entry.variable.name == "PnCEnabled") {
+            scoped_pnc_present = true;
+            break;
+        }
+    }
     const bool pnc_config_present =
-        get_optional<std::string>(*storage, resolver, keys::valid_keys::ISO15118PnCEnabled).has_value() &&
+        (scoped_pnc_present ||
+         get_optional<std::string>(*storage, resolver, keys::valid_keys::ISO15118PnCEnabled).has_value()) &&
         get_optional<std::string>(*storage, resolver, keys::valid_keys::ISO15118CertificateManagementEnabled)
             .has_value() &&
         get_optional<std::string>(*storage, resolver, keys::valid_keys::ContractValidationOffline).has_value();
@@ -1266,6 +1274,16 @@ void ChargePointConfigurationDeviceModel::check_integrity(int32_t expected_numbe
     namespace NC = ocpp::v2::NetworkConfigurationComponentVariables;
     namespace CC = ocpp::v2::ControllerComponentVariables;
     std::vector<std::string> errors;
+    bool scoped_pnc_present = false;
+    for (const auto& entry : storage->get_base_report_data(v2::ReportBaseEnum::FullInventory)) {
+        if (entry.component.name == "ISO15118Ctrlr" && entry.component.evse && entry.variable.name == "PnCEnabled") {
+            scoped_pnc_present = true;
+            break;
+        }
+    }
+    if (scoped_pnc_present) {
+        supported_feature_profiles.insert(SupportedFeatureProfiles::PnC);
+    }
 
     // Helper: check a key is present in storage.
     // Uses get_optional so both regular keys (VariableAttribute.value) and max-limit keys
@@ -1375,7 +1393,9 @@ void ChargePointConfigurationDeviceModel::check_integrity(int32_t expected_numbe
     });
 
     check_profile(SupportedFeatureProfiles::PnC, [&](auto require_for_profile) {
-        require_for_profile(keys::valid_keys::ISO15118PnCEnabled);
+        if (!scoped_pnc_present) {
+            require_for_profile(keys::valid_keys::ISO15118PnCEnabled);
+        }
         require_for_profile(keys::valid_keys::ContractValidationOffline);
     });
 

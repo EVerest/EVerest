@@ -35,6 +35,7 @@ private:
     // written from command threads (register_variable_listener), read from libocpp callback thread
     everest::lib::util::monitor<listener_t> m_variable_listener;
     ConnectorStructureV16 m_connector_mapping;
+    std::map<std::int32_t, std::int32_t> m_extensions_evse_ids;
 
     struct evse_connector_t {
         std::int32_t evse_id;      // EVerest EVSE id
@@ -132,9 +133,6 @@ public:
     // ------------------------------------------------------------------------
     // GenericChargePointConfiguration
 
-    std::optional<bool> get_central_contract_validation_allowed() override;
-    std::optional<bool> get_contract_certificate_installation_enabled() override;
-    std::optional<bool> get_pnc_enabled() override;
     std::optional<std::int32_t> get_ev_connection_timeout() override;
     std::optional<std::string> get_setpoint_priority() override;
     std::optional<std::string> get_master_pass_group_id() override;

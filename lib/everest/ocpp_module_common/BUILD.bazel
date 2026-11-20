@@ -49,15 +49,15 @@ cc_library(
 genrule(
     name = "configuration_mapping_share_files",
     srcs = [
-        "schemas/configuration_mapping_auth.yaml",
+        "schemas/configuration_mapping.yaml",
         "schemas/configuration_mapping.schema.json",
     ],
     outs = [
-        "share/everest/modules/OCPPmulti/configuration_mapping_auth.yaml",
+        "share/everest/modules/OCPPmulti/configuration_mapping.yaml",
         "share/everest/modules/OCPPmulti/configuration_mapping.schema.json",
     ],
     cmd = "mkdir -p $(RULEDIR)/share/everest/modules/OCPPmulti && " +
-          "cp $(location schemas/configuration_mapping_auth.yaml) $(RULEDIR)/share/everest/modules/OCPPmulti/ && " +
+          "cp $(location schemas/configuration_mapping.yaml) $(RULEDIR)/share/everest/modules/OCPPmulti/ && " +
           "cp $(location schemas/configuration_mapping.schema.json) $(RULEDIR)/share/everest/modules/OCPPmulti/",
     visibility = ["//visibility:public"],
 )
@@ -78,7 +78,7 @@ cc_test(
     data = glob(["tests/data/*.json"]) + [
         "schemas/custom_error_mapping.example.json",
         "schemas/configuration_mapping.example.yaml",
-        "schemas/configuration_mapping_auth.yaml",
+        "schemas/configuration_mapping.yaml",
         "schemas/configuration_mapping.schema.json",
         "//errors",
         "//lib/everest/ocpp:device_model_migrations",

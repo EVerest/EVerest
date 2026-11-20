@@ -14,6 +14,7 @@
 #include <ocpp/v2/functional_blocks/security.hpp>
 #undef private
 #include <ocpp/v2/messages/CertificateSigned.hpp>
+#include <ocpp/v2/messages/Get15118EVCertificate.hpp>
 #include <ocpp/v2/messages/InstallCertificate.hpp>
 #include <ocpp/v2/messages/Reset.hpp>
 #include <ocpp/v2/messages/SecurityEventNotification.hpp>
@@ -184,6 +185,29 @@ protected: // Functions
                   SetVariableStatusEnum::Accepted);
     }
 };
+
+TEST_F(SecurityTest, scoped_certificate_installation_disabled_overrides_global_enabled) {
+    const auto variable = ISO15118ComponentVariables::ContractCertificateInstallationEnabled;
+    set_bool_variable(device_model, ControllerComponentVariables::ContractCertificateInstallationEnabled, true);
+    RegisteredComponent component;
+    component.component = ISO15118ComponentVariables::get_component_variable(2, variable).component;
+    RegisteredVariable registered;
+    registered.variable = variable;
+    registered.characteristics.dataType = DataEnum::boolean;
+    registered.characteristics.supportsMonitoring = false;
+    VariableAttribute attribute;
+    attribute.value = "false";
+    attribute.mutability = MutabilityEnum::ReadWrite;
+    registered.attributes.push_back(attribute);
+    component.variables.push_back(registered);
+    ASSERT_TRUE(device_model->register_components("EVEREST_CONFIG", {component}, nullptr).rejected.empty());
+    Get15118EVCertificateRequest request;
+    request.iso15118SchemaVersion = "urn:iso:15118:2:2013:MsgDef";
+    request.action = CertificateActionEnum::Install;
+    request.exiRequest = "ZXhp";
+    EXPECT_CALL(mock_dispatcher, dispatch_call_async(_, _)).Times(0);
+    EXPECT_EQ(security.on_get_15118_ev_certificate_request(request, 2).status, Iso15118EVCertificateStatusEnum::Failed);
+}
 
 TEST_F(SecurityTest, handle_message_not_implemented) {
     // Try to handle a message with the wrong type, should throw an exception.

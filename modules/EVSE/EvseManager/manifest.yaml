@@ -35,6 +35,7 @@ config:
     description: Set to true to enable contract (aka plug and charge) authorization
     type: boolean
     default: true
+    mutability: ReadWrite
   ac_nominal_voltage:
     description: Nominal AC voltage between phase and neutral in Volt
     type: number
@@ -484,11 +485,13 @@ config:
       If true, contract may be present in PaymentOptionList if TLS is used.
     type: boolean
     default: false
+    mutability: ReadWrite
   contract_certificate_installation_enabled:
     description: >-
       Used for ISO15118 plug and charge: Indicates if the charger supports contract CertificateInstall and CertificateUpdate
     type: boolean
     default: true
+    mutability: ReadWrite
   inoperative_error_use_vendor_id:
     description: >-
       When raising evse_manager/Inoperative use the vendor ID from the original cause

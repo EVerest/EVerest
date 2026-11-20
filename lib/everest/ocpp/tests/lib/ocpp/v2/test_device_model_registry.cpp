@@ -144,6 +144,40 @@ protected:
 
 } // namespace
 
+TEST_F(DeviceModelRegistryTest, iso15118_settings_are_scoped_without_global_fallback) {
+    const auto variable = ISO15118ComponentVariables::PnCEnabled;
+    const auto global = ControllerComponents::ISO15118Ctrlr;
+    ASSERT_EQ(dm->set_value(global, variable, AttributeEnum::Actual, "true", "test"), SetVariableStatusEnum::Accepted);
+    RegisteredComponent component;
+    component.component = ISO15118ComponentVariables::get_component_variable(1, variable).component;
+    component.variables.push_back(
+        make_registered_variable("PnCEnabled", "false", MutabilityEnum::ReadWrite, DataEnum::boolean));
+    ASSERT_TRUE(dm->register_components(OWNER, {component}, provider).rejected.empty());
+    EXPECT_EQ(ISO15118ComponentVariables::get_optional_bool(*dm, variable, 1), false);
+    EXPECT_EQ(ISO15118ComponentVariables::get_optional_bool(*dm, variable, 2), std::nullopt);
+    EXPECT_EQ(ISO15118ComponentVariables::get_optional_bool(*dm, variable), std::nullopt);
+    EXPECT_EQ(ISO15118ComponentVariables::get_optional_bool(*dm, variable, 0), std::nullopt);
+
+    ASSERT_EQ(dm->notify_value_changed(component.component, variable, AttributeEnum::Actual, "true", OWNER),
+              SetVariableStatusEnum::Accepted);
+    ASSERT_EQ(dm->set_value(global, variable, AttributeEnum::Actual, "false", "test"), SetVariableStatusEnum::Accepted);
+    EXPECT_EQ(ISO15118ComponentVariables::get_optional_bool(*dm, variable, 1), true);
+    EXPECT_EQ(ISO15118ComponentVariables::get_optional_bool(*dm, variable, 2), std::nullopt);
+}
+
+TEST_F(DeviceModelRegistryTest, iso15118_unset_scoped_setting_does_not_use_global_value) {
+    const auto variable = ISO15118ComponentVariables::ContractCertificateInstallationEnabled;
+    ASSERT_EQ(dm->set_value(ControllerComponents::ISO15118Ctrlr, variable, AttributeEnum::Actual, "true", "test"),
+              SetVariableStatusEnum::Accepted);
+    RegisteredComponent component;
+    component.component = ISO15118ComponentVariables::get_component_variable(1, variable).component;
+    auto registered = make_registered_variable(variable.name, "false", MutabilityEnum::ReadWrite, DataEnum::boolean);
+    registered.attributes.front().value.reset();
+    component.variables.push_back(registered);
+    ASSERT_TRUE(dm->register_components(OWNER, {component}, provider).rejected.empty());
+    EXPECT_EQ(ISO15118ComponentVariables::get_optional_bool(*dm, variable, 1), std::nullopt);
+}
+
 TEST_F(DeviceModelRegistryTest, registered_variable_is_part_of_the_model) {
     register_config_view();
 

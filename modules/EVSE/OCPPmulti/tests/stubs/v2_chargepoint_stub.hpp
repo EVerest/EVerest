@@ -34,6 +34,9 @@ struct Ocpp2ChargePointMock : public ocpp::v2::ChargePointInterface {
     MOCK_METHOD(void, on_session_started, (const std::int32_t evse_id, const std::int32_t connector_id), (override));
     MOCK_METHOD(ocpp::v2::Get15118EVCertificateResponse, on_get_15118_ev_certificate_request,
                 (const ocpp::v2::Get15118EVCertificateRequest& request), (override));
+    MOCK_METHOD(ocpp::v2::Get15118EVCertificateResponse, on_get_15118_ev_certificate_request,
+                (const ocpp::v2::Get15118EVCertificateRequest& request, std::optional<std::int32_t> evse_id),
+                (override));
     MOCK_METHOD(void, on_transaction_started,
                 (const std::int32_t evse_id, const std::int32_t connector_id, const std::string& session_id,
                  const ocpp::DateTime& timestamp, const ocpp::v2::TriggerReasonEnum trigger_reason,
@@ -85,6 +88,11 @@ struct Ocpp2ChargePointMock : public ocpp::v2::ChargePointInterface {
     MOCK_METHOD(ocpp::v2::AuthorizeResponse, validate_token,
                 (const ocpp::v2::IdToken id_token, const std::optional<ocpp::CiString<10000>>& certificate,
                  const std::optional<std::vector<ocpp::v2::OCSPRequestData>>& ocsp_request_data),
+                (override));
+    MOCK_METHOD(ocpp::v2::AuthorizeResponse, validate_token,
+                (const ocpp::v2::IdToken id_token, const std::optional<ocpp::CiString<10000>>& certificate,
+                 const std::optional<std::vector<ocpp::v2::OCSPRequestData>>& ocsp_request_data,
+                 std::optional<std::int32_t> evse_id),
                 (override));
     MOCK_METHOD(std::optional<ocpp::v2::DataTransferResponse>, data_transfer_req,
                 (const ocpp::CiString<255>& vendorId, const std::optional<ocpp::CiString<50>>& messageId,

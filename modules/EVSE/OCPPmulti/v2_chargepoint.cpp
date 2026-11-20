@@ -21,11 +21,8 @@
 
 namespace {
 
-constexpr const auto CENTRAL_CONTRACT_VALIDATION_ALLOWED_VAR_NAME = "CentralContractValidationAllowed";
-constexpr const auto CONTRACT_CERTIFICATE_INSTALLATION_ENABLED_VAR_NAME = "ContractCertificateInstallationEnabled";
 constexpr const auto EV_CONNECTION_TIMEOUT_VAR_NAME = "EVConnectionTimeOut";
 constexpr const auto MASTER_PASS_GROUP_ID_VAR_NAME = "MasterPassGroupId";
-constexpr const auto PNC_ENABLED_VAR_NAME = "PnCEnabled";
 constexpr const auto SETPOINT_PRIORITY_VAR_NAME = "SetpointPriority";
 constexpr const auto TX_START_POINT_VAR_NAME = "TxStartPoint";
 constexpr const auto TX_STOP_POINT_VAR_NAME = "TxStopPoint";
@@ -473,14 +470,19 @@ ocpp::v2::Callbacks ChargePointV2::configure_callbacks() {
 }
 
 void ChargePointV2::init(init_args_t& args) {
-    if (!args.configuration_mappings.empty()) {
-        if (args.config_service == nullptr) {
+    m_extensions_evse_ids = args.extensions_evse_ids;
+    m_connector_mapping = args.connector_mapping;
+    {
+        if (!args.configuration_mappings.empty() && args.config_service == nullptr) {
             throw std::invalid_argument("Configuration mappings require ConfigService");
         }
         auto components = ocpp::v2::get_all_component_configs(args.v2_device_model_config_path);
         ocpp::v2::ensure_ocpp16_legacy_ctrlr(components);
-        module::device_model::remove_mapped_configuration_variables(components, args.configuration_mappings,
-                                                                    args.config_service->get_module_configs());
+        module::device_model::remove_unscoped_pnc_variables(components);
+        if (!args.configuration_mappings.empty()) {
+            module::device_model::remove_mapped_configuration_variables(components, args.configuration_mappings,
+                                                                        args.config_service->get_module_configs());
+        }
         ocpp::v2::InitDeviceModelDb init_db(args.v2_device_model_database_path,
                                             args.v2_device_model_database_migration_path);
         init_db.initialize_database(components, false, false);
@@ -488,11 +490,7 @@ void ChargePointV2::init(init_args_t& args) {
     }
     // initialise libocpp device model
     auto device_model_storage =
-        args.configuration_mappings.empty()
-            ? std::make_unique<ocpp::v2::DeviceModelStorageSqlite>(args.v2_device_model_database_path,
-                                                                   args.v2_device_model_database_migration_path,
-                                                                   args.v2_device_model_config_path)
-            : std::make_unique<ocpp::v2::DeviceModelStorageSqlite>(args.v2_device_model_database_path);
+        std::make_unique<ocpp::v2::DeviceModelStorageSqlite>(args.v2_device_model_database_path);
     module::device_model::migrate_everest_device_model_database(
         args.everest_device_model_database_path, args.v2_device_model_database_path, *device_model_storage);
 
@@ -567,18 +565,6 @@ ChargePointV2::data_transfer_req(const ocpp::v2::DataTransferRequest& request) {
     return m_charge_point->data_transfer_req(request);
 }
 
-std::optional<bool> ChargePointV2::get_central_contract_validation_allowed() {
-    return get_bool(ocpp::v2::ControllerComponents::ISO15118Ctrlr, {CENTRAL_CONTRACT_VALIDATION_ALLOWED_VAR_NAME},
-                    ocpp::v2::AttributeEnum::Actual);
-}
-std::optional<bool> ChargePointV2::get_contract_certificate_installation_enabled() {
-    return get_bool(ocpp::v2::ControllerComponents::ISO15118Ctrlr, {CONTRACT_CERTIFICATE_INSTALLATION_ENABLED_VAR_NAME},
-                    ocpp::v2::AttributeEnum::Actual);
-}
-std::optional<bool> ChargePointV2::get_pnc_enabled() {
-    return get_bool(ocpp::v2::ControllerComponents::ISO15118Ctrlr, {PNC_ENABLED_VAR_NAME},
-                    ocpp::v2::AttributeEnum::Actual);
-}
 std::optional<std::int32_t> ChargePointV2::get_ev_connection_timeout() {
     return get_int32(ocpp::v2::ControllerComponents::TxCtrlr, {EV_CONNECTION_TIMEOUT_VAR_NAME},
                      ocpp::v2::AttributeEnum::Actual);
@@ -983,7 +969,19 @@ void ChargePointV2::on_firmware_update_status_notification(std::int32_t request_
 void ChargePointV2::on_get_15118_ev_certificate_request(std::int32_t extensions_id,
                                                         const ocpp::v2::Get15118EVCertificateRequest& request) {
     check_configured("on_get_15118_ev_certificate_request");
-    const auto response = m_charge_point->on_get_15118_ev_certificate_request(request);
+    std::optional<std::int32_t> evse_id;
+    const auto found = m_extensions_evse_ids.find(extensions_id);
+    if (found != m_extensions_evse_ids.end()) {
+        evse_id = found->second;
+    } else {
+        EVLOG_warning << "No EVSE mapping for ISO 15118 extension " << extensions_id
+                      << "; rejecting certificate request";
+        ocpp::v2::Get15118EVCertificateResponse response;
+        response.status = ocpp::v2::Iso15118EVCertificateStatusEnum::Failed;
+        m_callbacks_ptr->cb_get_15118_ev_certificate_response(extensions_id, response, request.action);
+        return;
+    }
+    const auto response = m_charge_point->on_get_15118_ev_certificate_request(request, evse_id);
     m_callbacks_ptr->cb_get_15118_ev_certificate_response(extensions_id, response, request.action);
 }
 void ChargePointV2::on_log_status_notification(ocpp::v2::UploadLogStatusEnum status, std::int32_t requestId) {
@@ -1093,7 +1091,27 @@ ocpp::v2::AuthorizeResponse ChargePointV2::validate_token(const types::authoriza
             ocsp_request_data_opt =
                 to_ocpp_ocsp_request_data_vector(provided_token.iso15118CertificateHashData.value());
         }
-        response = m_charge_point->validate_token(id_token, certificate_opt, ocsp_request_data_opt);
+        std::optional<std::int32_t> evse_id;
+        if (provided_token.connectors && provided_token.connectors->size() == 1) {
+            const auto connector = provided_token.connectors->front();
+            for (const auto& [candidate_evse, connectors] : m_connector_mapping) {
+                for (const auto& [local_connector, global_connector] : connectors) {
+                    if (global_connector == connector) {
+                        evse_id = candidate_evse;
+                        break;
+                    }
+                }
+                if (evse_id) {
+                    break;
+                }
+            }
+        }
+        if (!evse_id && (certificate_opt || ocsp_request_data_opt)) {
+            EVLOG_warning << "Certificate authorization has no unique EVSE context; rejecting token";
+            response.idTokenInfo.status = ocpp::v2::AuthorizationStatusEnum::Invalid;
+            return response;
+        }
+        response = m_charge_point->validate_token(id_token, certificate_opt, ocsp_request_data_opt, evse_id);
 
         // Publish tariff message on the session_cost interface
         const auto validation_result = module::conversions::to_everest_validation_result(response);

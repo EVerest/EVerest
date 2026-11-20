@@ -130,7 +130,7 @@ active_modules:
     module: OCPPmulti
     config_module:
       Mode: Only2
-      ConfigurationMappingsPath: configuration_mapping_auth.yaml
+      ConfigurationMappingsPath: configuration_mapping.yaml
     connections:
       evse_manager:
         - module_id: evse_manager_1
@@ -163,6 +163,12 @@ active_modules:
       config:
         modules:
           auth:
+            allow_read: true
+            allow_write: true
+          evse_manager_1:
+            allow_read: true
+            allow_write: true
+          evse_manager_2:
             allow_read: true
             allow_write: true
   evse_security:

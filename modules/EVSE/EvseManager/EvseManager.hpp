@@ -64,7 +64,10 @@
 namespace module {
 
 struct RwConf {
+    bool payment_enable_contract;
     bool keep_cable_locked;
+    bool central_contract_validation_allowed;
+    bool contract_certificate_installation_enabled;
 };
 
 struct RwConfUpdate {
@@ -79,13 +82,22 @@ struct RwConfUpdate {
     // executing your module code, so guard rw_config with a mutex both here
     // and wherever your module accesses config or rw_config
     // e.g.
-    // ConfigChangeResult on_keep_cable_locked_changed(const bool& value) override {
+    // ConfigChangeResult on_payment_enable_contract_changed(const bool& value) override {
     //     std::scoped_lock lock(config_mutex);
-    //     rw_config.keep_cable_locked = value;
+    //     rw_config.payment_enable_contract = value;
     //     return ConfigChangeResult::Accepted();
     // }
 
+    virtual ConfigChangeResult on_payment_enable_contract_changed(const bool& /* value */) {
+        return ConfigChangeResult::Rejected("handler not implemented");
+    }
     virtual ConfigChangeResult on_keep_cable_locked_changed(const bool& /* value */) {
+        return ConfigChangeResult::Rejected("handler not implemented");
+    }
+    virtual ConfigChangeResult on_central_contract_validation_allowed_changed(const bool& /* value */) {
+        return ConfigChangeResult::Rejected("handler not implemented");
+    }
+    virtual ConfigChangeResult on_contract_certificate_installation_enabled_changed(const bool& /* value */) {
         return ConfigChangeResult::Rejected("handler not implemented");
     }
 };
@@ -96,7 +108,6 @@ struct Conf {
     std::string evse_id;
     std::string evse_id_din;
     bool payment_enable_eim;
-    bool payment_enable_contract;
     double ac_nominal_voltage;
     double ac_nominal_frequency;
     double ac_max_reactive_power;
@@ -157,8 +168,6 @@ struct Conf {
     bool fail_on_powermeter_errors;
     bool raise_mrec9;
     int sleep_before_enabling_pwm_hlc_mode_ms;
-    bool central_contract_validation_allowed;
-    bool contract_certificate_installation_enabled;
     bool inoperative_error_use_vendor_id;
     double voltage_plausibility_max_spread_threshold_V;
     int voltage_plausibility_fault_duration_ms;
@@ -175,9 +184,16 @@ struct Conf {
     bool debug_emit_cp_state_hpav_frames;
     std::string debug_cp_state_hpav_device;
 
+    const bool& payment_enable_contract;
     const bool& keep_cable_locked;
+    const bool& central_contract_validation_allowed;
+    const bool& contract_certificate_installation_enabled;
 
-    Conf(const RwConf& rw) : keep_cable_locked(rw.keep_cable_locked) {
+    Conf(const RwConf& rw) :
+        payment_enable_contract(rw.payment_enable_contract),
+        keep_cable_locked(rw.keep_cable_locked),
+        central_contract_validation_allowed(rw.central_contract_validation_allowed),
+        contract_certificate_installation_enabled(rw.contract_certificate_installation_enabled) {
     }
 };
 
@@ -313,6 +329,9 @@ public:
     std::unique_ptr<PersistentStore> store;
 
     ConfigChangeResult on_keep_cable_locked_changed(const bool& value) override;
+    ConfigChangeResult on_payment_enable_contract_changed(const bool& value) override;
+    ConfigChangeResult on_central_contract_validation_allowed_changed(const bool& value) override;
+    ConfigChangeResult on_contract_certificate_installation_enabled_changed(const bool& value) override;
     // Guards rw_config, bsp_connector_type and the bsp hand-over; the handler runs on a config service
     // thread and may fire before ready() constructs bsp.
     std::mutex keep_cable_locked_mutex;
@@ -375,6 +394,7 @@ private:
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
     // insert your private definitions here
     std::mutex powersupply_capabilities_mutex;
+    std::mutex pnc_config_mutex;
     types::power_supply_DC::Capabilities powersupply_capabilities;
     std::optional<types::power_supply_DC::Capabilities> last_hlc_capabilities;
     std::mutex dc_external_derate_mutex;

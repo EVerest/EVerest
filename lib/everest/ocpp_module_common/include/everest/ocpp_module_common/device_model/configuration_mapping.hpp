@@ -30,6 +30,10 @@ void remove_mapped_configuration_variables(
     const std::vector<ConfigParameterBinding>& mappings,
     const std::map<Everest::config::ModuleIdType, everest::config::ModuleConfigurationParameters>& module_configs);
 
+/// \brief Removes station-wide Plug & Charge settings; OCPPmulti exposes these through per-EVSE ConfigService bindings.
+void remove_unscoped_pnc_variables(
+    std::map<ocpp::v2::ComponentKey, std::vector<ocpp::v2::DeviceModelVariable>>& component_configs);
+
 /// \brief Logs the readable device model at verbose level. Write-only values are excluded by the report API.
 void log_device_model(ocpp::v2::DeviceModelInterface& device_model);
 

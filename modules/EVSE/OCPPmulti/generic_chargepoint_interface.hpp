@@ -204,9 +204,6 @@ struct GenericChargePointInterface {
 
     // ------------------------------------------------------------------------
     // GenericChargePointConfiguration
-    virtual std::optional<bool> get_central_contract_validation_allowed() = 0;
-    virtual std::optional<bool> get_contract_certificate_installation_enabled() = 0;
-    virtual std::optional<bool> get_pnc_enabled() = 0;
     virtual std::optional<std::int32_t> get_ev_connection_timeout() = 0;
     virtual std::optional<std::string> get_master_pass_group_id() = 0;
     virtual std::optional<std::string> get_setpoint_priority() = 0;
@@ -247,6 +244,7 @@ struct GenericChargePointInterface {
         bool fail_on_device_model_conflicts{false};
         std::vector<ocpp_module_common::device_model::ConfigParameterBinding> configuration_mappings;
         bool expose_unmapped_configuration{true};
+        std::map<std::int32_t, std::int32_t> extensions_evse_ids;
     };
 
     using listener_t = std::function<void(const ocpp::v2::Component& component, const ocpp::v2::Variable& variable,

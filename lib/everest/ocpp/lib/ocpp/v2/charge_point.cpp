@@ -227,8 +227,13 @@ void ChargePoint::on_session_started(const std::int32_t evse_id, const std::int3
 
 Get15118EVCertificateResponse
 ChargePoint::on_get_15118_ev_certificate_request(const Get15118EVCertificateRequest& request) {
-
     return this->security->on_get_15118_ev_certificate_request(request);
+}
+
+Get15118EVCertificateResponse
+ChargePoint::on_get_15118_ev_certificate_request(const Get15118EVCertificateRequest& request,
+                                                 std::optional<std::int32_t> evse_id) {
+    return this->security->on_get_15118_ev_certificate_request(request, evse_id);
 }
 
 void ChargePoint::on_transaction_started(const std::int32_t evse_id, const std::int32_t connector_id,
@@ -420,7 +425,13 @@ std::optional<std::string> ChargePoint::get_evse_transaction_id(std::int32_t evs
 
 AuthorizeResponse ChargePoint::validate_token(const IdToken id_token, const std::optional<CiString<10000>>& certificate,
                                               const std::optional<std::vector<OCSPRequestData>>& ocsp_request_data) {
-    auto response = this->authorization->validate_token(id_token, certificate, ocsp_request_data);
+    return validate_token(id_token, certificate, ocsp_request_data, std::nullopt);
+}
+
+AuthorizeResponse ChargePoint::validate_token(const IdToken id_token, const std::optional<CiString<10000>>& certificate,
+                                              const std::optional<std::vector<OCSPRequestData>>& ocsp_request_data,
+                                              std::optional<std::int32_t> evse_id) {
+    auto response = this->authorization->validate_token(id_token, certificate, ocsp_request_data, evse_id);
 
     // I04: if the CSMS provided no specific tariff, inject the TariffFallbackMessage so
     // the display can show the price to the EV Driver.

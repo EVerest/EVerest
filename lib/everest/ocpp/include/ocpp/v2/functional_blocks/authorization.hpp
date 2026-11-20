@@ -4,6 +4,7 @@
 #pragma once
 
 #include <ocpp/v2/message_handler.hpp>
+#include <ocpp/v2/messages/Authorize.hpp>
 
 namespace ocpp::v2 {
 struct FunctionalBlockContext;
@@ -39,6 +40,11 @@ public:
     /// \return AuthorizeResponse containing the result of the validation
     virtual AuthorizeResponse validate_token(const IdToken id_token, const std::optional<CiString<10000>>& certificate,
                                              const std::optional<std::vector<OCSPRequestData>>& ocsp_request_data) = 0;
+    virtual AuthorizeResponse validate_token(const IdToken id_token, const std::optional<CiString<10000>>& certificate,
+                                             const std::optional<std::vector<OCSPRequestData>>& ocsp_request_data,
+                                             std::optional<std::int32_t> /*evse_id*/) {
+        return validate_token(id_token, certificate, ocsp_request_data);
+    }
 };
 
 class Authorization : public AuthorizationInterface {
@@ -73,6 +79,9 @@ public:
     /// \return AuthorizeResponse containing the result of the validation
     AuthorizeResponse validate_token(const IdToken id_token, const std::optional<CiString<10000>>& certificate,
                                      const std::optional<std::vector<OCSPRequestData>>& ocsp_request_data) override;
+    AuthorizeResponse validate_token(const IdToken id_token, const std::optional<CiString<10000>>& certificate,
+                                     const std::optional<std::vector<OCSPRequestData>>& ocsp_request_data,
+                                     std::optional<std::int32_t> evse_id) override;
 
 private: // Functions
     void stop_auth_cache_cleanup_thread();

@@ -351,7 +351,6 @@ protected:
 
     void ready_custom_error_mapping(const GenericChargePointInterface::ConnectorStructure& evse_connector_structure);
     void ready_event_queue();
-    void ready_module_configuration();
     void ready_transaction_handler();
 
     // Pop-and-set discipline for configure_network promises: find the pending request keyed by \p request_id

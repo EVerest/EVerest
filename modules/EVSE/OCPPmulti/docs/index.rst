@@ -58,8 +58,10 @@ component/variables. An empty path disables explicit mappings. Relative paths ar
 
 The checked-in example and schema are
 ``lib/everest/ocpp_module_common/schemas/configuration_mapping.example.yaml`` and
-``lib/everest/ocpp_module_common/schemas/configuration_mapping.schema.json``. The schema and ``configuration_mapping_auth.yaml`` are installed into
-``<prefix>/share/everest/modules/OCPPmulti/``; the example remains in the repository for reference and tests.
+``lib/everest/ocpp_module_common/schemas/configuration_mapping.schema.json``. The schema and the ready-to-use
+``configuration_mapping.yaml`` are installed into
+``<prefix>/share/everest/modules/OCPPmulti/``;
+the example remains in the repository for reference and tests.
 Copy the example from the repository, adapt its source module ids to the station, and set
 ``ConfigurationMappingsPath`` to that file. The example is not enabled by default. The loader validates each YAML
 document against ``configuration_mapping.schema.json`` from the module's ``OCPPmulti`` share directory before
@@ -69,12 +71,47 @@ validation needs no network access. An empty ``ConfigurationMappingsPath`` skips
 The example's YAML language-server directive enables editor validation when its schema path resolves; adjust it
 to the installed schema location if the example is copied elsewhere.
 
-All shipped OCPP SIL configurations select ``configuration_mapping_auth.yaml`` and grant ConfigService read/write
-access to ``auth``. It binds ``connection_timeout`` to ``TxCtrlr / EVConnectionTimeOut`` and
-``master_pass_group_id`` to ``AuthCtrlr / MasterPassGroupId``. Adapt the source module id and access grants for
-custom stations. OCPPmulti does not call Auth's legacy setter commands at startup or on variable changes.
-The initial mapped values come from ConfigService, not retained OCPP database values. Without these mappings,
-the standard OCPP variables do not control Auth. Plug & Charge command propagation is unchanged.
+The shipped ``configuration_mapping.yaml`` is enabled by ``config-sil-ocpp.yaml``, ``config-sil-ocpp201.yaml`` and
+``config-sil-ocpp-multi.yaml``. It binds ``auth.connection_timeout`` and ``auth.master_pass_group_id`` to their
+standard OCPP variables, and supplies separate ``ISO15118Ctrlr`` components scoped to EVSE 1 and EVSE 2 for
+``PnCEnabled``, ``CentralContractValidationAllowed`` and ``ContractCertificateInstallationEnabled``. These bind
+to the corresponding parameters of ``evse_manager_1`` and ``evse_manager_2``. Those configurations grant OCPPmulti
+ConfigService read/write access to the three source modules. Adapt the file and access grants for other module ids
+or EVSE counts; the module default remains an empty mapping path.
+
+All shipped OCPP SIL configurations select the full ``configuration_mapping.yaml`` and grant read/write access to
+Auth and both EvseManagers. Custom deployments must supply all three scoped bindings for each EVSE that
+uses Plug & Charge.
+
+Custom deployments must configure both Auth mappings and grant ConfigService access if the standard OCPP variables
+are to control Auth. OCPPmulti does not call Auth's ``set_connection_timeout`` or ``set_master_pass_group_id``
+commands, either at startup or on variable changes. With no mapping, those OCPP variables do not configure Auth.
+ConfigService supplies the initial values, so values retained in the OCPP database or legacy OCPP JSON configuration
+do not overwrite Auth's configuration. Migrate desired timeout and master-pass values to the EVerest configuration
+or set them through ConfigService after enabling the mappings.
+
+OCPPmulti exposes ``PnCEnabled``, ``CentralContractValidationAllowed`` and
+``ContractCertificateInstallationEnabled`` only with EVSE scope. Their unscoped definitions are removed before
+initializing or updating the device-model database, including values retained from earlier deployments. Other
+ISO15118Ctrlr variables remain unchanged. Explicit unscoped Plug & Charge mappings are rejected.
+
+Each scoped variable is owned by its corresponding ConfigService parameter. OCPP writes go through ConfigService;
+accepted ConfigService changes update only the matching EVSE variable. There is no broadcast, global fallback or
+consensus requirement. Legacy Auth and Plug & Charge setter commands are not called by OCPPmulti.
+
+Certificate requests obtain their EVSE id from the ``extensions_15118`` connection's EVerest mapping; token
+validation resolves a single global connector id through the connector map. Certificate requests and certificate
+authorization without a unique positive EVSE context fail with a warning. Missing or unreadable scoped settings do
+not enable the corresponding feature. The station-wide SECC certificate-expiry warning checks whether any EVSE has
+Plug & Charge enabled.
+
+OCPP 1.6 unscoped Plug & Charge keys cannot select an EVSE and are not supported for these bindings. Use canonical
+EVSE-scoped access through the EVerest OCPP interface, or configure distinct custom keys for individual EVSEs.
+The OCPP 1.6 Plug & Charge data-transfer path receives the originating EVSE's effective settings explicitly, without
+consulting the removed global variables. Existing global values must be migrated to each EvseManager's EVerest
+configuration or written through ConfigService. Auth's two mapped settings and EvseManager's three Plug & Charge
+settings support immediate ConfigService changes. Plug & Charge changes affect subsequent decisions, not an
+ISO 15118 exchange already in progress. Other mapped parameters retain their owning module's restart semantics.
 
 For example, using the module id ``auth`` from the station configuration:
 
@@ -389,8 +426,9 @@ Requires: auth (1)
 
 **Interface**: :ref:`auth <everest_interfaces_auth>`
 
-Typically fulfilled by the :ref:`Auth <everest_modules_Auth>` module. Authorization configuration uses ConfigService
-mappings rather than the Auth setter commands. See the configuration service mappings section above.
+Typically fulfilled by the :ref:`Auth <everest_modules_Auth>` module. Authorization-related configuration is
+applied through ConfigService mappings, not this interface's setter commands. Configure mappings for
+``TxCtrlr / EVConnectionTimeOut`` and ``AuthCtrlr / MasterPassGroupId`` as described above.
 
 Requires: charger_information (0-1)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

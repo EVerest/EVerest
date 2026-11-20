@@ -157,7 +157,7 @@ active_modules:
     module: OCPPmulti
     config_module:
       Mode: Only1.6
-      ConfigurationMappingsPath: configuration_mapping_auth.yaml
+      ConfigurationMappingsPath: configuration_mapping.yaml
       EnableLegacyConfigMigration: true
       ChargePointConfigPath: config-docker.json
       CompositeScheduleIntervalS: 0
@@ -193,6 +193,12 @@ active_modules:
       config:
         modules:
           auth:
+            allow_read: true
+            allow_write: true
+          evse_manager_1:
+            allow_read: true
+            allow_write: true
+          evse_manager_2:
             allow_read: true
             allow_write: true
   evse_security:

@@ -104,7 +104,6 @@ struct GenericOcppTester : private ocpp_multi::DeviceModelSources, public ocpp_m
     using ocpp_multi::GenericOcpp::process_tx_event_effect;
     using ocpp_multi::GenericOcpp::publish_charging_schedules;
     using ocpp_multi::GenericOcpp::ready_event_queue;
-    using ocpp_multi::GenericOcpp::ready_module_configuration;
     using ocpp_multi::GenericOcpp::ready_transaction_handler;
     using ocpp_multi::GenericOcpp::set_external_limits;
     using ocpp_multi::GenericOcpp::wait_all_ready;

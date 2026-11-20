@@ -23,6 +23,8 @@ private:
     std::shared_ptr<EvseSecurity> m_evse_security;
     ocpp_multi::GenericChargePointCallbacks* m_callbacks_ptr{nullptr};
     std::shared_ptr<ocpp::v2::DeviceModel> m_device_model;
+    std::map<std::int32_t, std::int32_t> m_extensions_evse_ids;
+    ConnectorStructureV16 m_connector_mapping;
     // With m_device_model: end_device_model_registrations() ends them before that device model is replaced or
     // destroyed
     ocpp_module_common::device_model::DeviceModelRegistrations m_device_model_registrations;
@@ -81,9 +83,6 @@ public:
 
     // ------------------------------------------------------------------------
     // GenericChargePointConfiguration
-    std::optional<bool> get_central_contract_validation_allowed() override;
-    std::optional<bool> get_contract_certificate_installation_enabled() override;
-    std::optional<bool> get_pnc_enabled() override;
     std::optional<std::int32_t> get_ev_connection_timeout() override;
     std::optional<std::string> get_setpoint_priority() override;
     std::optional<std::string> get_master_pass_group_id() override;
@@ -186,6 +185,11 @@ protected:
     ocpp::v2::Callbacks configure_callbacks();
     void set_charge_point(std::unique_ptr<ocpp::v2::ChargePointInterface> charge_point) {
         m_charge_point = std::move(charge_point);
+    }
+    void set_evse_context(const ConnectorStructureV16& connectors,
+                          const std::map<std::int32_t, std::int32_t>& extensions) {
+        m_connector_mapping = connectors;
+        m_extensions_evse_ids = extensions;
     }
 };
 

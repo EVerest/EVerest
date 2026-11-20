@@ -1500,6 +1500,25 @@ ComponentVariable get_component_variable(const std::int32_t evse_id, const Varia
 
 namespace ISO15118ComponentVariables {
 
+const Variable PnCEnabled = {"PnCEnabled"};
+const Variable CentralContractValidationAllowed = {"CentralContractValidationAllowed"};
+const Variable ContractCertificateInstallationEnabled = {"ContractCertificateInstallationEnabled"};
+
+std::optional<bool> get_optional_bool(const DeviceModelVariablesInterface& device_model, const Variable& variable,
+                                      std::optional<std::int32_t> evse_id) {
+    std::string value;
+    if (!evse_id || *evse_id <= 0) {
+        return std::nullopt;
+    }
+    const auto scoped = get_component_variable(*evse_id, variable);
+    const auto status = device_model.get_variable(scoped.component, variable, AttributeEnum::Actual, value, true,
+                                                  UnsetValue::NotSupported);
+    if (status != GetVariableStatusEnum::Accepted || !is_boolean(value)) {
+        return std::nullopt;
+    }
+    return ocpp::conversions::string_to_bool(value);
+}
+
 const Variable Available = {"Available"};
 const Variable Enabled = {"Enabled"};
 const Variable ServiceRenegotiationSupport = {"ServiceRenegotiationSupport"};

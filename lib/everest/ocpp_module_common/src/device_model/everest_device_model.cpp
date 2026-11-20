@@ -378,7 +378,7 @@ DerCtrlrComponent der_ctrlr_component(const bool der_wired,
         // between two true ones.
         return DerCtrlrComponent::None;
     }
-    if (mode == types::evse_manager::ChargeMode::DC) {
+    if (mode == types::evse_manager::ChargeMode::DC) { 
         // No HLC check: EvseManager refuses to start a DC EVSE without HLC and SLAC wired, so a DC
         // connector that reported no HLC could not have booted (EvseManager.cpp, "DC mode requires
         // slac, HLC and powersupply DCDC to be connected").

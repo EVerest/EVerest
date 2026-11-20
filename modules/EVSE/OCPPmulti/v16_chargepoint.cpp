@@ -4,6 +4,7 @@
 #include "v16_chargepoint.hpp"
 
 #include <everest/ocpp_module_common/error_mapping.hpp>
+#include <ocpp/v2/ctrlr_component_variables.hpp>
 
 #include "charge_point_config_factory_v16.hpp"
 #include "ocpp_module_common_aliases.hpp"
@@ -415,6 +416,27 @@ ocpp::v16::ErrorInfo ChargePointV16::convert_error(const Everest::error::Error& 
 }
 
 ocpp::v2::AuthorizeResponse ChargePointV16::validate_pnc(const types::authorization::ProvidedIdToken& provided_token) {
+    std::optional<std::int32_t> evse_id;
+    if (provided_token.connectors && provided_token.connectors->size() == 1) {
+        const auto evse = evse_from_ocpp_connector(provided_token.connectors->front());
+        if (evse) {
+            evse_id = evse->evse_id;
+        }
+    }
+    if (!evse_id) {
+        EVLOG_warning << "Plug & Charge authorization requires a unique EVSE";
+        ocpp::v2::AuthorizeResponse response;
+        response.idTokenInfo.status = ocpp::v2::AuthorizationStatusEnum::Invalid;
+        return response;
+    }
+    auto& model = m_charge_point_configuration->get_device_model();
+    const auto enabled = ocpp::v2::ISO15118ComponentVariables::get_optional_bool(
+                             model, ocpp::v2::ISO15118ComponentVariables::PnCEnabled, evse_id)
+                             .value_or(false);
+    const auto central_validation =
+        ocpp::v2::ISO15118ComponentVariables::get_optional_bool(
+            model, ocpp::v2::ISO15118ComponentVariables::CentralContractValidationAllowed, evse_id)
+            .value_or(false);
     std::string emaid = provided_token.id_token.value;
     std::optional<std::string> opt_certificate = provided_token.certificate;
 
@@ -424,7 +446,8 @@ ocpp::v2::AuthorizeResponse ChargePointV16::validate_pnc(const types::authorizat
             module::conversions::to_ocpp_ocsp_request_data_vector(provided_token.iso15118CertificateHashData.value());
     }
 
-    return m_charge_point->data_transfer_pnc_authorize(emaid, opt_certificate, ocsp_request_data_opt);
+    return m_charge_point->data_transfer_pnc_authorize(emaid, opt_certificate, ocsp_request_data_opt, enabled,
+                                                       central_validation);
 }
 
 ocpp::v2::AuthorizeResponse
@@ -581,6 +604,7 @@ void ChargePointV16::configure_data_model(const config_info_t& config,
 }
 
 void ChargePointV16::init(init_args_t& args) {
+    m_extensions_evse_ids = args.extensions_evse_ids;
 
     const auto ocpp_share_path = args.share_path / "OCPP";
     const auto sql_init_path = ocpp_share_path / SQL_CORE_MIGRATIONS;
@@ -677,20 +701,6 @@ ChargePointV16::data_transfer_req(const ocpp::v2::DataTransferRequest& request) 
         result = std::move(response);
     }
     return result;
-}
-
-std::optional<bool> ChargePointV16::get_central_contract_validation_allowed() {
-    check_configured("get_central_contract_validation_allowed");
-    return get<bool>(*m_charge_point, CENTRAL_CONTRACT_VALIDATION_ALLOWED_VARIABLE);
-}
-
-std::optional<bool> ChargePointV16::get_contract_certificate_installation_enabled() {
-    return {};
-}
-
-std::optional<bool> ChargePointV16::get_pnc_enabled() {
-    check_configured("get_pnc_enabled");
-    return get<bool>(*m_charge_point, ISO15118_PNC_ENABLED_CONFIG_KEY);
 }
 
 std::optional<std::int32_t> ChargePointV16::get_ev_connection_timeout() {
@@ -965,8 +975,26 @@ void ChargePointV16::on_firmware_update_status_notification(std::int32_t request
 void ChargePointV16::on_get_15118_ev_certificate_request(std::int32_t extensions_id,
                                                          const ocpp::v2::Get15118EVCertificateRequest& request) {
     check_configured("on_get_15118_ev_certificate_request");
+    const auto found = m_extensions_evse_ids.find(extensions_id);
+    const bool enabled =
+        found != m_extensions_evse_ids.end() &&
+        ocpp::v2::ISO15118ComponentVariables::get_optional_bool(
+            m_charge_point_configuration->get_device_model(),
+            ocpp::v2::ISO15118ComponentVariables::ContractCertificateInstallationEnabled, found->second)
+            .value_or(false) &&
+        ocpp::v2::ISO15118ComponentVariables::get_optional_bool(m_charge_point_configuration->get_device_model(),
+                                                                ocpp::v2::ISO15118ComponentVariables::PnCEnabled,
+                                                                found->second)
+            .value_or(false);
+    if (!enabled) {
+        EVLOG_warning << "Certificate installation requires EVSE-specific Plug & Charge settings and extension mapping";
+        ocpp::v2::Get15118EVCertificateResponse response;
+        response.status = ocpp::v2::Iso15118EVCertificateStatusEnum::Failed;
+        m_callbacks_ptr->cb_get_15118_ev_certificate_response(extensions_id, response, request.action);
+        return;
+    }
     m_charge_point->data_transfer_pnc_get_15118_ev_certificate(extensions_id, request.exiRequest,
-                                                               request.iso15118SchemaVersion, request.action);
+                                                               request.iso15118SchemaVersion, request.action, true);
 }
 
 void ChargePointV16::on_log_status_notification(ocpp::v2::UploadLogStatusEnum status, std::int32_t requestId) {

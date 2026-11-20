@@ -106,16 +106,20 @@ EnhancedIdTagInfo ChargePoint::authorize_id_token(CiString<20> id_token) {
 ocpp::v2::AuthorizeResponse ChargePoint::data_transfer_pnc_authorize(
 
     const std::string& emaid, const std::optional<std::string>& certificate,
-    const std::optional<std::vector<ocpp::v2::OCSPRequestData>>& iso15118_certificate_hash_data) {
-    return this->charge_point->data_transfer_pnc_authorize(emaid, certificate, iso15118_certificate_hash_data);
+    const std::optional<std::vector<ocpp::v2::OCSPRequestData>>& iso15118_certificate_hash_data,
+    std::optional<bool> pnc_enabled, std::optional<bool> central_contract_validation_allowed) {
+    return this->charge_point->data_transfer_pnc_authorize(emaid, certificate, iso15118_certificate_hash_data,
+                                                           pnc_enabled, central_contract_validation_allowed);
 }
 
-void ChargePoint::data_transfer_pnc_get_15118_ev_certificate(
-    const std::int32_t connector_id, const std::string& exi_request, const std::string& iso15118_schema_version,
-    const ocpp::v2::CertificateActionEnum& certificate_action) {
+void ChargePoint::data_transfer_pnc_get_15118_ev_certificate(const std::int32_t connector_id,
+                                                             const std::string& exi_request,
+                                                             const std::string& iso15118_schema_version,
+                                                             const ocpp::v2::CertificateActionEnum& certificate_action,
+                                                             std::optional<bool> enabled) {
 
     this->charge_point->data_transfer_pnc_get_15118_ev_certificate(connector_id, exi_request, iso15118_schema_version,
-                                                                   certificate_action);
+                                                                   certificate_action, enabled);
 }
 
 std::optional<DataTransferResponse> ChargePoint::data_transfer(const CiString<255>& vendorId,

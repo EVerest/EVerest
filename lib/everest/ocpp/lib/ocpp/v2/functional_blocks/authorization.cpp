@@ -163,6 +163,13 @@ void ocpp::v2::Authorization::authorization_cache_delete_entry(const std::string
 ocpp::v2::AuthorizeResponse
 ocpp::v2::Authorization::validate_token(const IdToken id_token, const std::optional<CiString<10000>>& certificate,
                                         const std::optional<std::vector<OCSPRequestData>>& ocsp_request_data) {
+    return validate_token(id_token, certificate, ocsp_request_data, std::nullopt);
+}
+
+ocpp::v2::AuthorizeResponse
+ocpp::v2::Authorization::validate_token(const IdToken id_token, const std::optional<CiString<10000>>& certificate,
+                                        const std::optional<std::vector<OCSPRequestData>>& ocsp_request_data,
+                                        std::optional<std::int32_t> evse_id) {
     // TODO(piet): C01.FR.17
 
     AuthorizeResponse response;
@@ -185,6 +192,11 @@ ocpp::v2::Authorization::validate_token(const IdToken id_token, const std::optio
 
     // C07: Authorization using contract certificates
     if (id_token.type == IdTokenEnumStringType::eMAID) {
+        if ((!evse_id || *evse_id <= 0) && (certificate || ocsp_request_data)) {
+            EVLOG_warning << "Contract certificate authorization requires a positive EVSE id";
+            response.idTokenInfo.status = AuthorizationStatusEnum::Invalid;
+            return response;
+        }
         // Temporary variable that is set to true to avoid immediate response to allow the local auth list
         // or auth cache to be tried
         bool try_local_auth_list_or_cache = false;
@@ -202,8 +214,8 @@ ocpp::v2::Authorization::validate_token(const IdToken id_token, const std::optio
             EVLOG_info << "Local contract validation result: " << local_verify_result;
 
             const bool central_contract_validation_allowed =
-                this->context.device_model
-                    .get_optional_value<bool>(ControllerComponentVariables::CentralContractValidationAllowed)
+                ISO15118ComponentVariables::get_optional_bool(
+                    this->context.device_model, ISO15118ComponentVariables::CentralContractValidationAllowed, evse_id)
                     .value_or(false);
             const bool contract_validation_offline =
                 this->context.device_model

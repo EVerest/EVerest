@@ -208,9 +208,12 @@ void EvseManager::init() {
         EVLOG_warning << "DC mode without isolation monitoring configured, please check your national regulations.";
     }
 
-    pnc_enabled = config.payment_enable_contract;
-    central_contract_validation_allowed = config.central_contract_validation_allowed;
-    contract_certificate_installation_enabled = config.contract_certificate_installation_enabled;
+    {
+        std::lock_guard lock(pnc_config_mutex);
+        pnc_enabled = config.payment_enable_contract;
+        central_contract_validation_allowed = config.central_contract_validation_allowed;
+        contract_certificate_installation_enabled = config.contract_certificate_installation_enabled;
+    }
     fake_dc_enabled = config.ac_with_soc;
 
     reserved = false;
@@ -2021,6 +2024,27 @@ bool EvseManager::is_reserved() {
 
 bool EvseManager::get_hlc_waiting_for_auth_pnc() {
     return hlc_waiting_for_auth_pnc;
+}
+
+EvseManager::ConfigChangeResult EvseManager::on_payment_enable_contract_changed(const bool& value) {
+    std::lock_guard lock(pnc_config_mutex);
+    set_pnc_enabled(value);
+    rw_config.payment_enable_contract = value;
+    return ConfigChangeResult::Accepted();
+}
+
+EvseManager::ConfigChangeResult EvseManager::on_central_contract_validation_allowed_changed(const bool& value) {
+    std::lock_guard lock(pnc_config_mutex);
+    set_central_contract_validation_allowed(value);
+    rw_config.central_contract_validation_allowed = value;
+    return ConfigChangeResult::Accepted();
+}
+
+EvseManager::ConfigChangeResult EvseManager::on_contract_certificate_installation_enabled_changed(const bool& value) {
+    std::lock_guard lock(pnc_config_mutex);
+    set_contract_certificate_installation_enabled(value);
+    rw_config.contract_certificate_installation_enabled = value;
+    return ConfigChangeResult::Accepted();
 }
 
 void EvseManager::set_pnc_enabled(const bool value) {

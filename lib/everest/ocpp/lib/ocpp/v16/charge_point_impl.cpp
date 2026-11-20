@@ -3865,12 +3865,13 @@ bool ChargePointImpl::is_iso15118_certificate_management_enabled() {
 ocpp::v2::AuthorizeResponse ChargePointImpl::data_transfer_pnc_authorize(
 
     const std::string& emaid, const std::optional<std::string>& certificate,
-    const std::optional<std::vector<ocpp::v2::OCSPRequestData>>& iso15118_certificate_hash_data) {
+    const std::optional<std::vector<ocpp::v2::OCSPRequestData>>& iso15118_certificate_hash_data,
+    std::optional<bool> pnc_enabled, std::optional<bool> central_contract_validation_allowed) {
 
     ocpp::v2::AuthorizeResponse authorize_response;
     authorize_response.idTokenInfo.status = ocpp::v2::AuthorizationStatusEnum::Invalid;
 
-    if (!this->is_pnc_enabled()) {
+    if (!(pnc_enabled ? *pnc_enabled : this->is_pnc_enabled())) {
         EVLOG_warning << "Received request to send DataTransfer(Authorize.req) while PnC is disabled";
         return authorize_response;
     }
@@ -3899,8 +3900,10 @@ ocpp::v2::AuthorizeResponse ChargePointImpl::data_transfer_pnc_authorize(
         const CertificateValidationResult local_verify_result = this->evse_security->verify_certificate(
             certificate.value(), {ocpp::LeafCertificateType::MO, ocpp::LeafCertificateType::V2G});
         EVLOG_info << "Local contract validation result: " << local_verify_result;
-        const auto central_contract_validation_allowed =
-            this->configuration.getCentralContractValidationAllowed().value_or(false);
+        const bool allow_central_validation =
+            central_contract_validation_allowed
+                ? *central_contract_validation_allowed
+                : this->configuration.getCentralContractValidationAllowed().value_or(false);
         const auto contract_validation_offline = this->configuration.getContractValidationOffline();
         const auto local_authorize_offline = this->configuration.getLocalAuthorizeOffline();
 
@@ -3909,7 +3912,7 @@ ocpp::v2::AuthorizeResponse ChargePointImpl::data_transfer_pnc_authorize(
         if (this->connectivity_manager->is_websocket_connected()) {
             if (local_verify_result == CertificateValidationResult::IssuerNotFound) {
                 // C07.FR.06: Pass contract validation to CSMS when no contract root is found
-                if (central_contract_validation_allowed) {
+                if (allow_central_validation) {
                     EVLOG_info << "Online: No local contract root found. Pass contract validation to CSMS";
                     authorize_req.certificate = certificate.value();
                     forward_to_csms = true;
@@ -3927,7 +3930,7 @@ ocpp::v2::AuthorizeResponse ChargePointImpl::data_transfer_pnc_authorize(
                     forward_to_csms = true;
                 } else {
                     EVLOG_warning << "Online: OCSP data could not be generated";
-                    if (central_contract_validation_allowed) {
+                    if (allow_central_validation) {
                         EVLOG_info << "Online: OCSP data could not be generated. Pass contract validation to CSMS";
                         authorize_req.certificate = certificate.value();
                         forward_to_csms = true;
@@ -4074,9 +4077,9 @@ void ChargePointImpl::data_transfer_pnc_sign_certificate() {
 
 void ChargePointImpl::data_transfer_pnc_get_15118_ev_certificate(
     const std::int32_t connector_id, const std::string& exi_request, const std::string& iso15118_schema_version,
-    const ocpp::v2::CertificateActionEnum& certificate_action) {
+    const ocpp::v2::CertificateActionEnum& certificate_action, std::optional<bool> enabled) {
 
-    if (!this->is_pnc_enabled()) {
+    if (!(enabled ? *enabled : this->is_pnc_enabled())) {
         EVLOG_warning
             << "Received request to send DataTransfer(Get15118EVCertificateRequest.req) while PnC is disabled";
         return;

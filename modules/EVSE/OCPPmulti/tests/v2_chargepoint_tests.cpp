@@ -31,6 +31,7 @@ struct TestChargePointV2 : public ChargePointV2 {
     using ChargePointV2::ChargePointV2;
     using ChargePointV2::configure_callbacks;
     using ChargePointV2::set_charge_point;
+    using ChargePointV2::set_evse_context;
 };
 
 types::powermeter::Powermeter meter_value_wh(float energy_wh_import) {
@@ -85,6 +86,38 @@ protected:
 };
 
 // TransactionEvent(Started) carries token, group token, reservation and remote start id
+TEST_F(ChargePointV2Test, certificateAuthorizationUsesGlobalConnectorMappingForEvseContext) {
+    m_chargepoint.set_evse_context({{1, {{1, 1}}}, {2, {{1, 2}}}}, {});
+    types::authorization::ProvidedIdToken token;
+    token.id_token = {"DEPNX123", types::authorization::IdTokenType::eMAID};
+    token.authorization_type = types::authorization::AuthorizationType::PlugAndCharge;
+    token.connectors = std::vector<std::int32_t>{2};
+    token.certificate = "certificate";
+    ocpp::v2::AuthorizeResponse response;
+    response.idTokenInfo.status = ocpp::v2::AuthorizationStatusEnum::Accepted;
+    EXPECT_CALL(*m_libocpp, validate_token(_, _, _, std::optional<std::int32_t>{2})).WillOnce(Return(response));
+    EXPECT_EQ(m_chargepoint.validate_token(token).idTokenInfo.status, response.idTokenInfo.status);
+
+    token.connectors = std::vector<std::int32_t>{1, 2};
+    EXPECT_CALL(*m_libocpp, validate_token(_, _, _, std::optional<std::int32_t>{})).Times(0);
+    EXPECT_EQ(m_chargepoint.validate_token(token).idTokenInfo.status, ocpp::v2::AuthorizationStatusEnum::Invalid);
+}
+
+TEST_F(ChargePointV2Test, certificateRequestUsesExtensionMappingNotItsIndex) {
+    m_chargepoint.set_evse_context({}, {{0, 2}, {1, 1}});
+    ocpp::v2::Get15118EVCertificateRequest request;
+    request.iso15118SchemaVersion = "urn:iso:15118:2:2013:MsgDef";
+    request.action = ocpp::v2::CertificateActionEnum::Install;
+    request.exiRequest = "ZXhp";
+    ocpp::v2::Get15118EVCertificateResponse response;
+    response.status = ocpp::v2::Iso15118EVCertificateStatusEnum::Failed;
+    EXPECT_CALL(*m_libocpp, on_get_15118_ev_certificate_request(_, std::optional<std::int32_t>{2}))
+        .WillOnce(Return(response));
+    m_chargepoint.on_get_15118_ev_certificate_request(0, request);
+    EXPECT_CALL(*m_libocpp, on_get_15118_ev_certificate_request(_, std::optional<std::int32_t>{})).Times(0);
+    m_chargepoint.on_get_15118_ev_certificate_request(7, request);
+}
+
 TEST_F(ChargePointV2Test, transactionStartedReportsTokenData) {
     make_transaction_data(ocpp::v2::TriggerReasonEnum::CablePluggedIn, ocpp::v2::ChargingStateEnum::EVConnected);
 

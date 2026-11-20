@@ -604,7 +604,9 @@ public:
     /// \return
     ocpp::v2::AuthorizeResponse data_transfer_pnc_authorize(
         const std::string& emaid, const std::optional<std::string>& certificate,
-        const std::optional<std::vector<ocpp::v2::OCSPRequestData>>& iso15118_certificate_hash_data);
+        const std::optional<std::vector<ocpp::v2::OCSPRequestData>>& iso15118_certificate_hash_data,
+        std::optional<bool> pnc_enabled = std::nullopt,
+        std::optional<bool> central_contract_validation_allowed = std::nullopt);
 
     /// \brief  Uses data transfer mechanism to get 15118 ev certificate from CSMS. This function can be called when the
     /// EVCC requests the update or installation of a contract certificate as part of the ISO15118
@@ -615,7 +617,8 @@ public:
     /// \param certificate_action Install or Update
     void data_transfer_pnc_get_15118_ev_certificate(const std::int32_t connector_id, const std::string& exi_request,
                                                     const std::string& iso15118_schema_version,
-                                                    const ocpp::v2::CertificateActionEnum& certificate_action);
+                                                    const ocpp::v2::CertificateActionEnum& certificate_action,
+                                                    std::optional<bool> enabled = std::nullopt);
 
     /// \brief Allows the exchange of arbitrary \p data identified by a \p vendorId and \p messageId with a central
     /// system \returns the DataTransferResponse

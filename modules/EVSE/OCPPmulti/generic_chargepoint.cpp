@@ -96,21 +96,6 @@ GenericChargePoint::data_transfer_req(const ocpp::v2::DataTransferRequest& reque
     return m_active_ptr->data_transfer_req(request);
 }
 
-std::optional<bool> GenericChargePoint::get_central_contract_validation_allowed() {
-    check_configured("get_central_contract_validation_allowed");
-    return m_active_ptr->get_central_contract_validation_allowed();
-}
-
-std::optional<bool> GenericChargePoint::get_contract_certificate_installation_enabled() {
-    check_configured("get_contract_certificate_installation_enabled");
-    return m_active_ptr->get_contract_certificate_installation_enabled();
-}
-
-std::optional<bool> GenericChargePoint::get_pnc_enabled() {
-    check_configured("get_pnc_enabled");
-    return m_active_ptr->get_pnc_enabled();
-}
-
 std::optional<std::int32_t> GenericChargePoint::get_ev_connection_timeout() {
     check_configured("get_ev_connection_timeout");
     return m_active_ptr->get_ev_connection_timeout();

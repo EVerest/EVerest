@@ -393,6 +393,12 @@ ComponentVariable get_component_variable(const std::int32_t evse_id, const Varia
 } // namespace V2xComponentVariables
 
 namespace ISO15118ComponentVariables {
+extern const Variable PnCEnabled;
+extern const Variable CentralContractValidationAllowed;
+extern const Variable ContractCertificateInstallationEnabled;
+/// \brief Reads an EVSE-specific setting. Missing EVSE context or values yield std::nullopt; no global fallback.
+std::optional<bool> get_optional_bool(const DeviceModelVariablesInterface& device_model, const Variable& variable,
+                                      std::optional<std::int32_t> evse_id = std::nullopt);
 extern const Variable Enabled;
 extern const Variable ServiceRenegotiationSupport;
 extern const Variable ProtocolSupported;

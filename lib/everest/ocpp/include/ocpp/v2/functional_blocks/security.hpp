@@ -7,6 +7,7 @@
 #include <variant>
 
 #include <ocpp/v2/message_handler.hpp>
+#include <ocpp/v2/messages/Get15118EVCertificate.hpp>
 #include <ocpp/v2/ocpp_types.hpp>
 #include <ocpp/v2/ocsp_updater.hpp>
 
@@ -50,6 +51,11 @@ public:
 
     virtual Get15118EVCertificateResponse
     on_get_15118_ev_certificate_request(const Get15118EVCertificateRequest& request) = 0;
+    virtual Get15118EVCertificateResponse
+    on_get_15118_ev_certificate_request(const Get15118EVCertificateRequest& request,
+                                        std::optional<std::int32_t> /*evse_id*/) {
+        return on_get_15118_ev_certificate_request(request);
+    }
 };
 
 class Security : public SecurityInterface {
@@ -64,6 +70,8 @@ public:
     void stop_certificate_expiration_check_timers() override;
     Get15118EVCertificateResponse
     on_get_15118_ev_certificate_request(const Get15118EVCertificateRequest& request) override;
+    Get15118EVCertificateResponse on_get_15118_ev_certificate_request(const Get15118EVCertificateRequest& request,
+                                                                      std::optional<std::int32_t> evse_id) override;
 
     /* OCPP message requests */
     void security_event_notification_req(const CiString<50>& event_type, const std::optional<CiString<255>>& tech_info,

@@ -223,18 +223,18 @@ TEST(ChargePointV16, encodePauseReasonsFitsCiString) {
 
 TEST_F(ChargePointV16ConfigurationTest, monitoredKeyChangeStillReachesVariableSet) {
     std::optional<std::string> monitored_value;
-    m_chargepoint.register_variable_listener({"ISO15118Ctrlr"}, {"PnCEnabled"},
+    m_chargepoint.register_variable_listener({"TxCtrlr"}, {"EVConnectionTimeOut"},
                                              [&monitored_value](const ocpp::v2::Component&, const ocpp::v2::Variable&,
                                                                 const std::string& value) { monitored_value = value; });
 
     EXPECT_CALL(m_callbacks, cb_variable_set(testing::Truly([](const ocpp::v2::SetVariableData& data) {
-                    return data.component.name.get() == "ISO15118Ctrlr" && data.variable.name.get() == "PnCEnabled" &&
-                           data.attributeValue.get() == "false";
+                    return data.component.name.get() == "TxCtrlr" &&
+                           data.variable.name.get() == "EVConnectionTimeOut" && data.attributeValue.get() == "91";
                 })));
 
-    const auto result = set_variable("ISO15118Ctrlr", "PnCEnabled", "false");
+    const auto result = set_variable("TxCtrlr", "EVConnectionTimeOut", "91");
     ASSERT_EQ(result.attributeStatus, ocpp::v2::SetVariableStatusEnum::Accepted);
-    EXPECT_EQ(monitored_value, "false");
+    EXPECT_EQ(monitored_value, "91");
 }
 
 TEST_F(ChargePointV16ConfigurationTest, readOnlyKeyBackedVariableIsWritable) {

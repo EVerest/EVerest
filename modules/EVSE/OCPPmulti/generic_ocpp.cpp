@@ -18,6 +18,7 @@
 #include <ocpp/v2/ctrlr_component_variables.hpp>
 #include <utils/exceptions.hpp>
 
+#include <algorithm>
 #include <cmath>
 #include <thread>
 
@@ -26,9 +27,6 @@ namespace fs = std::filesystem;
 namespace {
 
 // OCPP 2.0.1 specific configuration variable names
-constexpr const auto CENTRAL_CONTRACT_VALIDATION_ALLOWED_VAR_NAME = "CentralContractValidationAllowed";
-constexpr const auto CONTRACT_CERTIFICATE_INSTALLATION_ENABLED_VAR_NAME = "ContractCertificateInstallationEnabled";
-constexpr const auto PNC_ENABLED_VAR_NAME = "PnCEnabled";
 constexpr const auto SETPOINT_PRIORITY_VAR_NAME = "SetpointPriority";
 constexpr const auto TX_START_POINT_VAR_NAME = "TxStartPoint";
 constexpr const auto TX_STOP_POINT_VAR_NAME = "TxStopPoint";
@@ -620,6 +618,12 @@ void GenericOcpp::ready(const ConfigServiceClient& client) {
             : share_path / "OCPPmulti" / configuration_mappings_path,
         share_path / "OCPPmulti" / "configuration_mapping.schema.json");
     args.expose_unmapped_configuration = mv_config.getExposeUnmappedConfiguration();
+    for (std::size_t index = 0; index < mv_requires.extensions_15118.size(); ++index) {
+        const auto& mapping = mv_requires.extensions_15118[index]->get_mapping();
+        if (mapping && mapping->evse > 0) {
+            args.extensions_evse_ids.emplace(static_cast<std::int32_t>(index), mapping->evse);
+        }
+    }
 
     // if charger information interface is connected, override only these specific
     // properties which were loaded from configuration file(s)
@@ -639,7 +643,6 @@ void GenericOcpp::ready(const ConfigServiceClient& client) {
         grid_support_heartbeat_timer_start();
     }
 
-    ready_module_configuration();
     ready_transaction_handler();
 
     const auto boot_reason = to_ocpp_boot_reason(mv_requires.system.call_get_boot_reason());
@@ -835,24 +838,6 @@ bool GenericOcpp::enqueue_if_not_started(std::int32_t evse_id, const Event& even
         result = true;
     }
     return result;
-}
-
-void GenericOcpp::ready_module_configuration() {
-    types::evse_manager::PlugAndChargeConfiguration pnc_config;
-
-    const auto iso15118_pnc_enabled = mv_charge_point.get_pnc_enabled();
-    pnc_config.pnc_enabled = iso15118_pnc_enabled;
-
-    const auto central_contract_validation_allowed = mv_charge_point.get_central_contract_validation_allowed();
-    pnc_config.central_contract_validation_allowed = central_contract_validation_allowed;
-
-    const auto contract_certificate_installation_enabled =
-        mv_charge_point.get_contract_certificate_installation_enabled();
-    pnc_config.contract_certificate_installation_enabled = contract_certificate_installation_enabled;
-
-    for (const auto& evse_manager : mv_requires.evse_manager) {
-        evse_manager->call_set_plug_and_charge_configuration(pnc_config);
-    }
 }
 
 void GenericOcpp::ready_transaction_handler() {
@@ -1902,28 +1887,6 @@ void GenericOcpp::cb_variable_set(const ocpp::v2::SetVariableData& set_variable_
                 EVLOG_warning << "Could not set TxStartPoints";
             } else {
                 m_transaction_handler->set_tx_start_points(tx_start_points);
-            }
-        }
-    } else if (component == ControllerComponents::ISO15118Ctrlr) {
-        if (name == PNC_ENABLED_VAR_NAME) {
-            types::evse_manager::PlugAndChargeConfiguration pnc_config;
-            pnc_config.pnc_enabled = ocpp::conversions::string_to_bool(set_variable_data.attributeValue.get());
-            for (const auto& evse_manager : mv_requires.evse_manager) {
-                evse_manager->call_set_plug_and_charge_configuration(pnc_config);
-            }
-        } else if (name == CENTRAL_CONTRACT_VALIDATION_ALLOWED_VAR_NAME) {
-            types::evse_manager::PlugAndChargeConfiguration pnc_config;
-            pnc_config.central_contract_validation_allowed =
-                ocpp::conversions::string_to_bool(set_variable_data.attributeValue.get());
-            for (const auto& evse_manager : mv_requires.evse_manager) {
-                evse_manager->call_set_plug_and_charge_configuration(pnc_config);
-            }
-        } else if (name == CONTRACT_CERTIFICATE_INSTALLATION_ENABLED_VAR_NAME) {
-            types::evse_manager::PlugAndChargeConfiguration pnc_config;
-            pnc_config.contract_certificate_installation_enabled =
-                ocpp::conversions::string_to_bool(set_variable_data.attributeValue.get());
-            for (const auto& evse_manager : mv_requires.evse_manager) {
-                evse_manager->call_set_plug_and_charge_configuration(pnc_config);
             }
         }
     } else if ((component.name == "DCDERCtrlr" || component.name == "ACDERCtrlr") and name == "Enabled" and

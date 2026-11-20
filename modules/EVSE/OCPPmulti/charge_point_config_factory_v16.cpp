@@ -152,6 +152,7 @@ void initialize_device_model_direct(const DeviceModelInitializationContext& cont
     ocpp::v2::ensure_ocpp16_legacy_ctrlr(component_configs);
     ocpp::v2::remove_overridden_ocpp16_legacy_variables(component_configs, load_custom_mappings(context));
     patch_number_of_connectors(component_configs, n_evse);
+    ocpp_module_common::device_model::remove_unscoped_pnc_variables(component_configs);
     if (!context.configuration_mappings.empty()) {
         ocpp_module_common::device_model::remove_mapped_configuration_variables(
             component_configs, context.configuration_mappings, context.config_service->get_module_configs());
@@ -185,6 +186,7 @@ void initialize_device_model_with_migration(const fs::path& ocpp_share_path, con
     ocpp::v2::patch_component_config_with_ocpp16(component_configs, *legacy_charge_point_config, custom_mappings,
                                                  context.ocpp16_network_config_slot);
     ocpp::v2::remove_overridden_ocpp16_legacy_variables(component_configs, custom_mappings);
+    ocpp_module_common::device_model::remove_unscoped_pnc_variables(component_configs);
 
     if (!context.configuration_mappings.empty()) {
         ocpp_module_common::device_model::remove_mapped_configuration_variables(

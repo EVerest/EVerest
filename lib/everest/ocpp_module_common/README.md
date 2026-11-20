@@ -21,8 +21,21 @@ identifiers, OCPP identifier lengths and positive 32-bit EVSE/connector ids. Sou
 ownership checks then validate the mappings against the deployment. The caller supplies the schema path;
 OCPPmulti uses `configuration_mapping.schema.json` from its module share directory, independently of the mapping
 file's location or `$schema` reference. A missing or invalid schema fails loading. An empty mapping path skips both
-files. CMake and Bazel supply the Auth mapping file and schema in the OCPPmulti share directory; packaging must keep it aligned with
-the loader. The example remains in the repository for reference and tests; it is not installed or enabled automatically.
+files. CMake and Bazel supply the schema and `configuration_mapping.yaml` in the OCPPmulti share directory;
+packaging must keep the schema aligned with the loader. The mapping file targets `auth` and two managers named
+`evse_manager_1` and `evse_manager_2`, with EVSE-scoped Plug & Charge variables. The standard OCPP 1.6, OCPP 2.x and
+combined SIL configurations enable it and grant access to those modules. Other deployments must adapt the module
+ids, EVSE scope and access grants. The example remains in the repository for reference and tests; it is not installed.
+
+All shipped OCPP configurations select the full mapping file and grant access to Auth and both EvseManagers.
+Custom deployments must supply scoped bindings for every participating EVSE.
+Initial values come from ConfigService, not retained OCPP values.
+
+OCPPmulti does not propagate Auth or Plug & Charge settings through legacy commands. Its database preparation
+removes unscoped `PnCEnabled`, `CentralContractValidationAllowed` and `ContractCertificateInstallationEnabled`
+variables while preserving other ISO15118Ctrlr settings. Explicit unscoped mappings for those names are rejected.
+Scoped values have no global fallback, aggregation or fan-out. OCPP 1.6 unscoped keys cannot address them; use
+canonical component/EVSE/variable access or explicit per-EVSE custom key mappings.
 
 `build_configuration_views` combines these mappings with optional automatic views of **unmapped** parameters.
 `remove_mapped_configuration_variables` validates the JSON target datatype and Actual attribute, then removes the
@@ -35,7 +48,9 @@ changes update the OCPP view. ConfigService owns persistence; the device model o
 Writes return the ConfigService result. `RebootRequired` leaves the effective cached value alone.
 Accepted external changes enter through `notify_value_changed`, which notifies listeners and monitors without
 calling the provider or persisting another copy. Reports read this composed in-memory model. `log_device_model`
-uses FullInventory reports, which scrub write-only values.
+logs the composed model at verbose (`VERB`) level after registration for both OCPP protocol paths, without a
+module configuration parameter. The dump starts with the component-variable entry count, followed by each
+entry as JSON. It uses FullInventory reports, which scrub write-only values.
 
 Both OCPPmulti protocol paths use these helpers. The operator-facing configuration and YAML example are documented
 in `modules/EVSE/OCPPmulti/docs/index.rst` from the repository root. Telemetry producers remain separate runtime

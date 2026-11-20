@@ -48,7 +48,7 @@ if(BUILD_TESTING)
     add_subdirectory(tests)
 endif()
 install(FILES
-    "${PROJECT_SOURCE_DIR}/lib/everest/ocpp_module_common/schemas/configuration_mapping_auth.yaml"
+    "${PROJECT_SOURCE_DIR}/lib/everest/ocpp_module_common/schemas/configuration_mapping.yaml"
     "${PROJECT_SOURCE_DIR}/lib/everest/ocpp_module_common/schemas/configuration_mapping.schema.json"
     DESTINATION "${CMAKE_INSTALL_DATADIR}/everest/modules/${MODULE_NAME}"
 )

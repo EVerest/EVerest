@@ -279,78 +279,23 @@ TEST_F(GenericOcppRequiresTester, callResumeCharging) {
     EXPECT_EQ(received_1[0], json{});
 }
 
-TEST_F(GenericOcppRequiresTester, callSetPlugAndChargeConfiguration) {
-    // call_set_plug_and_charge_configuration() used in
-    // - ready_module_configuration()
-    // - cb_variable_set(ocpp::v2::SetVariableData)
-    //
-    // ISO15118Ctrlr:
-    // - PnCEnabled
-    // - CentralContractValidationAllowed
-    // - ContractCertificateInstallationEnabled
-
-    using ocpp::v2::Component;
-    using ocpp::v2::SetVariableData;
-    using ocpp::v2::Variable;
-
-    // there are 2 EVSE Managers - check routing to the correct manager
-    std::vector<json> received_0;
-    std::vector<json> received_1;
-    interfaces->subscribe_var(
-        "evse_manager", "call_set_plug_and_charge_configuration", 0,
-        [&received_0](const auto&, const auto&, const auto& data) { received_0.push_back(data); });
-    interfaces->subscribe_var(
-        "evse_manager", "call_set_plug_and_charge_configuration", 1,
-        [&received_1](const auto&, const auto&, const auto& data) { received_1.push_back(data); });
-
-    // cb_pause_charging ignores the result
-    // interfaces->add_cmd_result(R"(false)"_json);
-    // interfaces->add_cmd_result(R"(true)"_json);
-
-    ocpp->ready_module_configuration();
-    SetVariableData data{"true", {{"ISO15118Ctrlr"}}, {{"PnCEnabled"}}};
-    // CiString<2500> attributeValue;
-    // Component component;
-    // Variable variable;
-    // std::optional<AttributeEnum> attributeType;
-    // std::optional<CustomData> customData;
-
-    data.attributeValue = "false";
-
-    data.variable.name = "PnCEnabled";
-    ocpp->cb_variable_set(data);
-    data.variable.name = "CentralContractValidationAllowed";
-    ocpp->cb_variable_set(data);
-    data.variable.name = "ContractCertificateInstallationEnabled";
-    ocpp->cb_variable_set(data);
-
-    data.attributeValue = "true";
-
-    data.variable.name = "PnCEnabled";
-    ocpp->cb_variable_set(data);
-    data.variable.name = "CentralContractValidationAllowed";
-    ocpp->cb_variable_set(data);
-    data.variable.name = "ContractCertificateInstallationEnabled";
-    ocpp->cb_variable_set(data);
-
-    const std::vector<json> expected{
-        R"({"plug_and_charge_configuration":{"central_contract_validation_allowed":true,"contract_certificate_installation_enabled":true,"pnc_enabled":true}})"_json,
-        R"({"plug_and_charge_configuration":{"pnc_enabled":false}})"_json,
-        R"({"plug_and_charge_configuration":{"central_contract_validation_allowed":false}})"_json,
-        R"({"plug_and_charge_configuration":{"contract_certificate_installation_enabled":false}})"_json,
-        R"({"plug_and_charge_configuration":{"pnc_enabled":true}})"_json,
-        R"({"plug_and_charge_configuration":{"central_contract_validation_allowed":true}})"_json,
-        R"({"plug_and_charge_configuration":{"contract_certificate_installation_enabled":true}})"_json,
-    };
-
-    ASSERT_EQ(received_0.size(), expected.size());
-    ASSERT_EQ(received_1.size(), expected.size());
-
-    for (std::uint8_t i = 0; i < expected.size(); i++) {
-        SCOPED_TRACE(std::to_string(i));
-        EXPECT_EQ(received_0[i], expected[i]);
-        EXPECT_EQ(received_1[i], expected[i]);
+TEST_F(GenericOcppRequiresTester, PlugAndChargeDoesNotUseLegacyCommands) {
+    std::vector<json> received;
+    for (int index : {0, 1}) {
+        interfaces->subscribe_var(
+            "evse_manager", "call_set_plug_and_charge_configuration", index,
+            [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
     }
+    for (const auto& name :
+         {"PnCEnabled", "CentralContractValidationAllowed", "ContractCertificateInstallationEnabled"}) {
+        ocpp::v2::SetVariableData data{"false", {{"ISO15118Ctrlr"}}, {{name}}};
+        ocpp->cb_variable_set(data);
+        ocpp::v2::EVSE evse;
+        evse.id = 1;
+        data.component.evse = evse;
+        ocpp->cb_variable_set(data);
+    }
+    EXPECT_TRUE(received.empty());
 }
 
 TEST_F(GenericOcppRequiresTester, callStopTransaction) {

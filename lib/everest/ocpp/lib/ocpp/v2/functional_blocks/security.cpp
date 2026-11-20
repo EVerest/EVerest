@@ -11,6 +11,8 @@
 #include <ocpp/common/ocpp_logging.hpp>
 #include <ocpp/v2/ctrlr_component_variables.hpp>
 #include <ocpp/v2/device_model.hpp>
+#include <ocpp/v2/evse.hpp>
+#include <ocpp/v2/evse_manager.hpp>
 #include <ocpp/v2/functional_blocks/functional_block_context.hpp>
 #include <ocpp/v2/utils.hpp>
 
@@ -87,10 +89,15 @@ void Security::stop_certificate_signed_timer() {
 
 Get15118EVCertificateResponse
 Security::on_get_15118_ev_certificate_request(const Get15118EVCertificateRequest& request) {
+    return on_get_15118_ev_certificate_request(request, std::nullopt);
+}
+
+Get15118EVCertificateResponse Security::on_get_15118_ev_certificate_request(const Get15118EVCertificateRequest& request,
+                                                                            std::optional<std::int32_t> evse_id) {
     Get15118EVCertificateResponse response;
 
-    if (!this->context.device_model
-             .get_optional_value<bool>(ControllerComponentVariables::ContractCertificateInstallationEnabled)
+    if (!ISO15118ComponentVariables::get_optional_bool(
+             this->context.device_model, ISO15118ComponentVariables::ContractCertificateInstallationEnabled, evse_id)
              .value_or(false)) {
         EVLOG_warning << "Can not fulfill Get15118EVCertificateRequest because ContractCertificateInstallationEnabled "
                          "is configured as false!";
@@ -725,8 +732,14 @@ void Security::check_secc_certificates_expiration() {
     if (!this->context.device_model
              .get_optional_value<bool>(ControllerComponentVariables::V2GCertificateInstallationEnabled)
              .value_or(false)) {
-        if (this->context.device_model.get_optional_value<bool>(ControllerComponentVariables::PnCEnabled)
-                .value_or(false)) {
+        bool pnc_enabled = false;
+        for (const auto& evse : this->context.evse_manager) {
+            pnc_enabled =
+                pnc_enabled || ISO15118ComponentVariables::get_optional_bool(
+                                   this->context.device_model, ISO15118ComponentVariables::PnCEnabled, evse.get_id())
+                                   .value_or(false);
+        }
+        if (pnc_enabled) {
             EVLOG_warning << "PnC is enabled but V2G certificate installation is not, so no certificate expiration "
                              "check is performed.";
         }

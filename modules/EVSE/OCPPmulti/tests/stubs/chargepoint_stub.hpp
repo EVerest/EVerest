@@ -79,9 +79,6 @@ struct ChargePointStub : public ocpp_multi::GenericChargePointInterface {
     // ------------------------------------------------------------------------
     // GenericChargePointConfiguration
 
-    std::optional<bool> get_central_contract_validation_allowed() override;
-    std::optional<bool> get_contract_certificate_installation_enabled() override;
-    std::optional<bool> get_pnc_enabled() override;
     std::optional<std::int32_t> get_ev_connection_timeout() override;
     std::optional<std::string> get_setpoint_priority() override;
     std::optional<std::string> get_master_pass_group_id() override;
