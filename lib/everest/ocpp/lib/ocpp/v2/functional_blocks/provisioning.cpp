@@ -105,7 +105,7 @@ void Provisioning::handle_message(const ocpp::EnhancedMessage<MessageType>& mess
 void Provisioning::boot_notification_req(const BootReasonEnum& reason, const bool initiated_by_trigger_message) {
     EVLOG_debug << "Sending BootNotification";
     if (reason != BootReasonEnum::Triggered) {
-        this->last_boot_reason = reason;
+        this->m_last_boot_reason = reason;
     }
     BootNotificationRequest req;
 
@@ -142,7 +142,7 @@ void Provisioning::boot_notification_req(const BootReasonEnum& reason, const boo
 
 void Provisioning::retry_boot_notification_req() {
     this->boot_notification_timer.stop();
-    this->boot_notification_req(this->last_boot_reason);
+    this->boot_notification_req(this->m_last_boot_reason);
 }
 
 void Provisioning::stop_bootnotification_timer() {
@@ -215,10 +215,10 @@ CallResult<BootNotificationResponse> Provisioning::read_boot_notification_respon
         if (this->registration_status != RegistrationStatusEnum::Accepted) {
             // The message queue does not send a BootNotificationRequest again once the CSMS answered it
             const auto retry_interval =
-                this->last_boot_notification_retry_interval.value_or(DEFAULT_BOOT_NOTIFICATION_RETRY_INTERVAL);
+                this->m_last_boot_notification_retry_interval.value_or(DEFAULT_BOOT_NOTIFICATION_RETRY_INTERVAL);
             EVLOG_warning << "Could not read BootNotificationResponse, sending BootNotificationRequest again in "
                           << retry_interval.count() << "s";
-            this->boot_notification_timer.timeout([this]() { this->boot_notification_req(this->last_boot_reason); },
+            this->boot_notification_timer.timeout([this]() { this->boot_notification_req(this->m_last_boot_reason); },
                                                   retry_interval);
         }
         throw;
@@ -271,8 +271,8 @@ void Provisioning::handle_boot_notification_response(CallResult<BootNotification
         if (msg.interval > 0) {
             retry_interval = std::chrono::seconds(msg.interval);
         }
-        this->last_boot_notification_retry_interval = retry_interval;
-        this->boot_notification_timer.timeout([this]() { this->boot_notification_req(this->last_boot_reason); },
+        this->m_last_boot_notification_retry_interval = retry_interval;
+        this->boot_notification_timer.timeout([this]() { this->boot_notification_req(this->m_last_boot_reason); },
                                               retry_interval);
     }
 
@@ -953,8 +953,11 @@ Provisioning::set_variables_internal(const std::vector<SetVariableData>& set_var
 
 std::optional<int> Provisioning::active_network_profile_slot() const {
     // ActiveNetworkProfile is persisted once the CSMS accepted the charging station. Until then, for example while it
-    // registers through another profile (B10.FR.10), the connected slot is the active one.
-    if (this->context.connectivity_manager.is_websocket_connected()) {
+    // registers through another profile (B10.FR.10), the connected slot is the active one. Once accepted, the
+    // persisted slot is authoritative: the connectivity manager's slot follows NetworkConfigurationPriority, which
+    // may no longer list the connected slot.
+    if (this->registration_status != RegistrationStatusEnum::Accepted and
+        this->context.connectivity_manager.is_websocket_connected()) {
         const auto connected_slot = this->context.connectivity_manager.get_active_network_configuration_slot();
         if (connected_slot.has_value()) {
             return connected_slot;

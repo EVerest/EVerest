@@ -98,7 +98,7 @@ private:
     bool InvalidCSMSCertificate_logged{false};
     std::atomic<ChargePointConnectionState> connection_state{ChargePointConnectionState::Disconnected};
     std::atomic<RegistrationStatus> registration_status{RegistrationStatus::Pending};
-    RegistrationEndpoints registration_endpoints;
+    RegistrationEndpoints m_registration_endpoints;
     DiagnosticsStatus diagnostics_status{DiagnosticsStatus::Idle};
     FirmwareStatus firmware_status{FirmwareStatus::Idle};
     struct PendingFirmwareStatus {
@@ -148,7 +148,7 @@ private:
     std::unique_ptr<Everest::SteadyTimer> boot_notification_timer;
     /// \brief Retry interval of the last BootNotification.conf that was not Accepted, used again when a
     /// BootNotification.conf cannot be read
-    std::optional<std::chrono::seconds> last_boot_notification_retry_interval;
+    std::optional<std::chrono::seconds> m_last_boot_notification_retry_interval;
     std::unique_ptr<Everest::SteadyTimer> heartbeat_timer;
     std::unique_ptr<ClockAlignedTimer> clock_aligned_meter_values_timer;
     std::vector<std::unique_ptr<Everest::SteadyTimer>> status_notification_timers;

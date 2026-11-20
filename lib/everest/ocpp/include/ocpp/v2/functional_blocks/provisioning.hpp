@@ -113,10 +113,10 @@ private:
 
     Everest::SteadyTimer boot_notification_timer;
     /// \brief Reason of the last BootNotification.req not requested by TriggerMessage, repeated when it is retried
-    std::atomic<BootReasonEnum> last_boot_reason{BootReasonEnum::PowerUp};
+    std::atomic<BootReasonEnum> m_last_boot_reason{BootReasonEnum::PowerUp};
     /// \brief Retry interval of the last BootNotificationResponse that was not Accepted, used again when a
     /// BootNotificationResponse cannot be read
-    std::optional<std::chrono::seconds> last_boot_notification_retry_interval;
+    std::optional<std::chrono::seconds> m_last_boot_notification_retry_interval;
 
     // Functions
     /* OCPP message requests */
@@ -159,7 +159,8 @@ private:
     std::optional<std::string> validate_network_profile_security_preconditions(int32_t configuration_slot,
                                                                                const NetworkConnectionProfile& profile);
 
-    /// \brief The slot of the network connection profile in use: the connected one, else the persisted one
+    /// \brief The slot of the network connection profile in use: the connected one while not registered, else the
+    /// persisted one
     std::optional<int> active_network_profile_slot() const;
 
     /// \brief B09.FR.26/27: Clear the given NetworkConfiguration variable on the currently active slot

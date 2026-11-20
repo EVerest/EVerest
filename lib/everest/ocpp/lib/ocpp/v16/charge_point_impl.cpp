@@ -346,7 +346,7 @@ void ChargePointImpl::on_websocket_connected(const int configuration_slot,
     const auto ocpp_csms_url =
         normalised_csms_url(network_connection_profile.ocppCsmsUrl.get(), this->configuration.getChargePointId());
     const auto registered =
-        this->registration_endpoints.connect(RegistrationEndpoint{configuration_slot, ocpp_csms_url});
+        this->m_registration_endpoints.connect(RegistrationEndpoint{configuration_slot, ocpp_csms_url});
     const auto state_before_connect = this->connection_state.load();
     const bool reconnected_while_booted = state_before_connect == ChargePointConnectionState::Booted;
     const bool registration_known = reconnected_while_booted or
@@ -379,7 +379,7 @@ void ChargePointImpl::on_websocket_connected(const int configuration_slot,
         // StatusNotification.req for all connectors. Only after resuming: a paused queue would drop them.
         this->status->trigger_status_notifications();
         this->connectivity_manager->record_successful_connection();
-        this->registration_endpoints.register_connected();
+        this->m_registration_endpoints.register_connected();
     }
 
     // There has been a successful connection so a subsequent
@@ -1261,7 +1261,10 @@ bool ChargePointImpl::restart(const std::map<int, ChargePointStatus>& connector_
     if (this->stopped) {
         EVLOG_info << "Restarting OCPP Chargepoint";
         this->database_handler->open_connection();
-        // instantiating new message queue on restart
+        // The new message queue holds messages that require registration until it sees an accepted
+        // BootNotification.conf, which is only handled before the charge point is Booted
+        this->connection_state = ChargePointConnectionState::Disconnected;
+        this->registration_status = RegistrationStatus::Pending;
         this->message_queue = this->create_message_queue();
         this->message_dispatcher =
             std::make_unique<MessageDispatcher>(*this->message_queue, this->configuration, this->registration_status);
@@ -1833,7 +1836,7 @@ ocpp::CallResult<BootNotificationResponse> ChargePointImpl::read_boot_notificati
     } catch (...) {
         if (this->registration_status != RegistrationStatus::Accepted) {
             // The message queue does not send a BootNotification.req again once the Central System answered it
-            const auto retry_interval = this->last_boot_notification_retry_interval.value_or(
+            const auto retry_interval = this->m_last_boot_notification_retry_interval.value_or(
                 std::chrono::seconds(DEFAULT_BOOT_NOTIFICATION_INTERVAL_S));
             EVLOG_warning << "Could not read BootNotification.conf, sending BootNotification.req again in "
                           << retry_interval.count() << "s";
@@ -1847,7 +1850,7 @@ void ChargePointImpl::handleBootNotificationResponse(ocpp::CallResult<BootNotifi
     EVLOG_debug << "Received BootNotificationResponse: " << call_result.msg
                 << "\nwith messageId: " << call_result.uniqueId;
 
-    this->registration_endpoints.register_connected();
+    this->m_registration_endpoints.register_connected();
     if (call_result.msg.status == RegistrationStatus::Accepted) {
         // Before the dispatcher sees the acceptance: the queue refuses messages that require registration until then
         this->message_queue->set_registration_status_accepted();
@@ -1864,7 +1867,7 @@ void ChargePointImpl::handleBootNotificationResponse(ocpp::CallResult<BootNotifi
         boot_notification_retry_interval = call_result.msg.interval;
     }
     if (call_result.msg.status != RegistrationStatus::Accepted) {
-        this->last_boot_notification_retry_interval = std::chrono::seconds(boot_notification_retry_interval);
+        this->m_last_boot_notification_retry_interval = std::chrono::seconds(boot_notification_retry_interval);
     }
 
     if (call_result.msg.status == RegistrationStatus::Accepted) {

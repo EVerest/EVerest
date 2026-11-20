@@ -445,11 +445,11 @@ TEST_F(ChargePointProfileSwitchTest, SwitchToDifferentSlotWithSameCsmsUrlSendsNo
 
     charge_point->on_websocket_disconnected(SLOT_1, slot_profile(SLOT_1));
     charge_point->on_websocket_connected(SLOT_2, slot_profile(SLOT_1), ocpp::OcppProtocolVersion::v16);
-    std::this_thread::sleep_for(SETTLE_TIME);
+    EXPECT_TRUE(wait_for_action_count("StatusNotification", status_notifications_before_switch + 1, WAIT_TIMEOUT))
+        << "the reconnect did not report the connector status";
+    wait_until_settled();
 
     EXPECT_EQ(count_action("BootNotification"), 1);
-    EXPECT_GT(count_action("StatusNotification"), status_notifications_before_switch)
-        << "the reconnect did not report the connector status";
 
     stop_charge_point(*charge_point);
 }
@@ -530,6 +530,26 @@ TEST_F(ChargePointProfileSwitchTest, AcceptedReRegistrationSignalsChargingProfil
 
     EXPECT_GT(signals.load(), signals_before_accepted)
         << "the composite schedule was not signalled after the registration was accepted";
+
+    stop_charge_point(*charge_point);
+}
+
+// restart() creates a new message queue that holds messages requiring registration until it sees an accepted
+// BootNotification.conf, so the charge point registers from scratch instead of staying Booted.
+TEST_F(ChargePointProfileSwitchTest, RestartRegistersAgainAndSendsStatusNotifications) {
+    auto charge_point = start_registered_on(SLOT_1);
+    wait_until_settled();
+    const auto status_notifications_before_restart = count_action("StatusNotification");
+    ASSERT_GT(status_notifications_before_restart, 0)
+        << "the accepted start-up registration sent no StatusNotification";
+
+    stop_charge_point(*charge_point);
+    ASSERT_TRUE(charge_point->restart({}, BootReasonEnum::PowerUp));
+    charge_point->on_websocket_connected(SLOT_1, slot_profile(SLOT_1), ocpp::OcppProtocolVersion::v16);
+    ASSERT_TRUE(wait_for_action_count("BootNotification", 2, WAIT_TIMEOUT)) << "no BootNotification.req after restart";
+
+    EXPECT_TRUE(wait_for_action_count("StatusNotification", 2 * status_notifications_before_restart, WAIT_TIMEOUT))
+        << "the charge point did not report the connector status after restarting";
 
     stop_charge_point(*charge_point);
 }

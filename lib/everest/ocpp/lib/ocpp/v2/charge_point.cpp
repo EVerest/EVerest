@@ -1145,7 +1145,7 @@ void ChargePoint::message_callback(const std::string& message) {
         enhanced_message.messageTypeId == MessageTypeId::CALLRESULT) {
         // Before the response is handled, so a reconnect that sees its registration status compares against the
         // endpoint that gave it
-        this->registration_endpoints.register_connected();
+        this->m_registration_endpoints.register_connected();
     }
     try {
         if (this->registration_status == RegistrationStatusEnum::Accepted) {
@@ -1296,7 +1296,7 @@ void ChargePoint::on_websocket_connected(const int configuration_slot,
     const auto identity =
         this->device_model->get_optional_value<std::string>(ControllerComponentVariables::SecurityCtrlrIdentity)
             .value_or("");
-    const auto registered = this->registration_endpoints.connect(RegistrationEndpoint{
+    const auto registered = this->m_registration_endpoints.connect(RegistrationEndpoint{
         configuration_slot, normalised_csms_url(network_connection_profile.ocppCsmsUrl.get(), identity)});
     if (registered.has_value()) {
         EVLOG_info << "Connected through configurationSlot " << configuration_slot << " ("
