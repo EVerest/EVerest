@@ -263,6 +263,7 @@ SessionConfig::SessionConfig(EvseSetupConfig config) :
     iso2_ac_max_current(config.iso2_ac_max_current),
     physical_values(config.physical_values),
     no_energy_pause(config.no_energy_pause),
+    dc_ev_side_voltage_safe(config.dc_ev_side_voltage_safe),
     pre20_energy_transfer_modes(std::move(config.pre20_energy_transfer_modes)),
     pre20_vas_services(std::move(config.pre20_vas_services)),
     auth_timeout_eim_s(config.auth_timeout_eim_s),

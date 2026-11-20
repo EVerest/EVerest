@@ -258,6 +258,16 @@ cmds:
         description: Result of the isolation monitoring
         type: string
         $ref: /iso15118#/IsolationStatus
+  update_dc_ev_side_voltage_safe:
+    description: >-
+      Report whether the absolute voltage between DC+ and DC- on the EV side of the open EVSE output
+      contactors is below 60 V. While it is not, DIN SPEC 70121 and ISO 15118-2 answer
+      ChargeParameterDiscoveryRes with EVSEProcessing Ongoing [IEC 61851-23:2023 Table CC.8 t2 - t3].
+      The value persists across sessions; without a call it is safe.
+    arguments:
+      safe:
+        description: True if the voltage is below 60 V
+        type: boolean
   update_dc_present_values:
     description: >-
       Update the present values from the DC powersupply. Call it for every new measurement,

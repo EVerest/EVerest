@@ -18,7 +18,7 @@ using namespace std::chrono_literals;
 
 namespace {
 
-using Source = WeldingDetectionVoltageSource;
+using Source = EvSideVoltageSource;
 
 struct Recorder {
     std::mutex mtx;
@@ -65,37 +65,33 @@ WeldingDetectionVoltage::Timing idle_timing() {
 
 } // namespace
 
-TEST(WeldingDetectionVoltageSourceTest, parses_config_values) {
-    EXPECT_EQ(welding_detection_voltage_source_from_string("powermeter_car_side"), Source::PowermeterCarSide);
-    EXPECT_EQ(welding_detection_voltage_source_from_string("over_voltage_monitor"), Source::OverVoltageMonitor);
-    EXPECT_EQ(welding_detection_voltage_source_from_string("isolation_monitor"), Source::IsolationMonitor);
-    EXPECT_EQ(welding_detection_voltage_source_from_string("power_supply"), Source::PowerSupply);
-    EXPECT_FALSE(welding_detection_voltage_source_from_string("imd").has_value());
+TEST(EvSideVoltageSourceTest, parses_config_values) {
+    EXPECT_EQ(ev_side_voltage_source_from_string("powermeter_car_side"), Source::PowermeterCarSide);
+    EXPECT_EQ(ev_side_voltage_source_from_string("over_voltage_monitor"), Source::OverVoltageMonitor);
+    EXPECT_EQ(ev_side_voltage_source_from_string("isolation_monitor"), Source::IsolationMonitor);
+    EXPECT_EQ(ev_side_voltage_source_from_string("power_supply"), Source::PowerSupply);
+    EXPECT_FALSE(ev_side_voltage_source_from_string("imd").has_value());
     EXPECT_EQ(to_string(Source::OverVoltageMonitor), "over_voltage_monitor");
 }
 
-TEST(WeldingDetectionVoltageSourceTest, keeps_a_connected_source) {
-    const WeldingDetectionVoltageSources all{true, true, true};
-    EXPECT_EQ(resolve_welding_detection_voltage_source(Source::PowermeterCarSide, all), Source::PowermeterCarSide);
-    EXPECT_EQ(resolve_welding_detection_voltage_source(Source::IsolationMonitor, all), Source::IsolationMonitor);
-    EXPECT_EQ(resolve_welding_detection_voltage_source(Source::PowerSupply, all), Source::PowerSupply);
+TEST(EvSideVoltageSourceTest, keeps_a_connected_source) {
+    const EvSideVoltageSources all{true, true, true};
+    EXPECT_EQ(resolve_ev_side_voltage_source(Source::PowermeterCarSide, all), Source::PowermeterCarSide);
+    EXPECT_EQ(resolve_ev_side_voltage_source(Source::IsolationMonitor, all), Source::IsolationMonitor);
+    EXPECT_EQ(resolve_ev_side_voltage_source(Source::PowerSupply, all), Source::PowerSupply);
 }
 
-TEST(WeldingDetectionVoltageSourceTest, falls_back_in_order) {
-    EXPECT_EQ(resolve_welding_detection_voltage_source(Source::PowermeterCarSide, {false, true, true}),
+TEST(EvSideVoltageSourceTest, falls_back_in_order) {
+    EXPECT_EQ(resolve_ev_side_voltage_source(Source::PowermeterCarSide, {false, true, true}),
               Source::OverVoltageMonitor);
-    EXPECT_EQ(resolve_welding_detection_voltage_source(Source::PowermeterCarSide, {false, false, false}),
-              Source::PowerSupply);
+    EXPECT_EQ(resolve_ev_side_voltage_source(Source::PowermeterCarSide, {false, false, false}), Source::PowerSupply);
     // Never back up the chain.
-    EXPECT_EQ(resolve_welding_detection_voltage_source(Source::IsolationMonitor, {true, true, false}),
-              Source::PowerSupply);
+    EXPECT_EQ(resolve_ev_side_voltage_source(Source::IsolationMonitor, {true, true, false}), Source::PowerSupply);
 }
 
-TEST(WeldingDetectionVoltageSourceTest, never_falls_back_to_the_isolation_monitor) {
-    EXPECT_EQ(resolve_welding_detection_voltage_source(Source::PowermeterCarSide, {false, false, true}),
-              Source::PowerSupply);
-    EXPECT_EQ(resolve_welding_detection_voltage_source(Source::OverVoltageMonitor, {true, false, true}),
-              Source::PowerSupply);
+TEST(EvSideVoltageSourceTest, never_falls_back_to_the_isolation_monitor) {
+    EXPECT_EQ(resolve_ev_side_voltage_source(Source::PowermeterCarSide, {false, false, true}), Source::PowerSupply);
+    EXPECT_EQ(resolve_ev_side_voltage_source(Source::OverVoltageMonitor, {true, false, true}), Source::PowerSupply);
 }
 
 TEST(WeldingDetectionVoltageTest, pushes_only_the_selected_source_while_active) {

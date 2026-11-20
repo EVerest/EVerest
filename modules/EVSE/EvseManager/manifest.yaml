@@ -248,16 +248,23 @@ config:
       Set to 0 unless you really know what you are doing.
     type: integer
     default: 0
-  welding_detection_voltage_source:
+  ev_side_voltage_source:
     description: >-
-      Voltage measurement reported to the EV as EVSE present voltage during DC welding detection, from
-      PowerDelivery(Stop) until SessionStop. It has to be the side B voltage at the vehicle connector with the
-      EVSE contactors open (IEC 61851-23:2023 CC.7.6.17), so the selected source must measure on the EV side of
-      the EVSE output contactors; a meter or monitor between the power supply and the contactors, like the power
-      supply itself, sees only the power supply output once the contactors are open. If the selected source is
-      not connected, the next connected one in the order powermeter_car_side, over_voltage_monitor, power_supply
-      is used and a warning is printed; isolation_monitor is only used when configured. Outside welding
-      detection the power supply measurement is always reported. The over voltage monitor and the isolation
+      Measurement of the DC voltage on the EV side of the EVSE output contactors (present voltage at side B
+      at the vehicle connector). The selected source must measure on the EV side of the contactors; a meter
+      or monitor between the power supply and the contactors, like the power supply itself, sees only the
+      power supply output once the contactors are open. If the selected source is not connected, the next
+      connected one in the order powermeter_car_side, over_voltage_monitor, power_supply is used and a
+      warning is printed; isolation_monitor is only used when configured.
+      It is used with open contactors for two things.
+      Before the cable check: DIN SPEC 70121 and ISO 15118-2 answer ChargeParameterDiscoveryRes with
+      EVSEProcessing Ongoing until the absolute voltage is below 60 V, and a voltage below -60 V for 400 ms
+      after that is an error shutdown (IEC 61851-23:2023 Table CC.8). The source has to publish at least once
+      per second all the time for this, also while idle. The isolation monitor is disabled at that point,
+      so with isolation_monitor the power supply measurement is used here.
+      During welding detection, from PowerDelivery(Stop) until SessionStop: it is reported to the EV as EVSE
+      present voltage (IEC 61851-23:2023 CC.7.6.17). Outside welding detection the power supply measurement
+      is always reported. The over voltage monitor and the isolation
       monitor keep running until welding detection ends. For the isolation monitor this deviates from
       IEC 61851-23:2023 Table CC.9 t103, which requires the EVSE IMD to be disabled when side B is disabled, and
       the EV may enable its own IMD (t104): only use it with an IMD that measures the voltage without its

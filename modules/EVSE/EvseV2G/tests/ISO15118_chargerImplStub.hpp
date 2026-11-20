@@ -105,6 +105,9 @@ struct ISO15118_chargerImplStub : public ISO15118_chargerImplBase {
     virtual void handle_update_isolation_status(types::iso15118::IsolationStatus& isolation_status) {
         std::cout << "ISO15118_chargerImplBase::handle_update_isolation_status called" << std::endl;
     }
+    virtual void handle_update_dc_ev_side_voltage_safe(bool& safe) {
+        std::cout << "ISO15118_chargerImplBase::handle_update_dc_ev_side_voltage_safe called" << std::endl;
+    }
     virtual void
     handle_update_dc_present_values(types::iso15118::DcEvsePresentVoltageCurrent& present_voltage_current) {
         std::cout << "ISO15118_chargerImplBase::handle_update_dc_present_values called" << std::endl;

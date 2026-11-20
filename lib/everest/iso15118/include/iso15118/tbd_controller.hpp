@@ -115,6 +115,7 @@ public:
     // Arm a no-energy pause (IEC 61851-23:2023 CC.3.5.3). Applied to the running session right away and
     // stored for the next session to start, which consumes it.
     void update_no_energy_pause(d20::NoEnergyPauseMode mode);
+    void update_dc_ev_side_voltage_safe(bool safe);
 
     // The DER limits are read when a SessionConfig is built, so an update applies to the next session.
     void update_der_iec_limits(const std::optional<d20::IecDerTransferLimits>&);

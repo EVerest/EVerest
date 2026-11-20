@@ -129,6 +129,7 @@ d2::SessionConfig make_d2_config(const session::SessionConfig& config, bool tls_
     out.central_contract_validation_allowed = config.central_contract_validation_allowed;
     out.receipt_required = config.iso2_receipt_required;
     out.no_energy_pause = config.no_energy_pause;
+    out.dc_ev_side_voltage_safe = config.dc_ev_side_voltage_safe;
     out.auth_timeout_eim_ms = session::auth_timeout_to_ms(config.auth_timeout_eim_s);
     out.auth_timeout_pnc_ms = session::auth_timeout_to_ms(config.auth_timeout_pnc_s);
 
@@ -317,6 +318,11 @@ void D2SeccEngine::on_control_event(const d20::ControlEvent& event) {
         info.meter_id = meter->meter_id;
         info.meter_reading = meter->meter_reading_wh;
         ctx.set_meter_info(info);
+        return;
+    }
+
+    if (const auto* voltage = std::get_if<d20::EvSideVoltageSafe>(&event)) {
+        ctx.session_config.dc_ev_side_voltage_safe = voltage->safe;
         return;
     }
 

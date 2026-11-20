@@ -104,6 +104,8 @@ public:
     void raise_cable_check_fault(const std::string& description);
     void clear_cable_check_fault();
 
+    void raise_reverse_voltage_fault(const std::string& description);
+    void clear_reverse_voltage_fault();
     void raise_voltage_plausibility_fault(const std::string& description);
     void clear_voltage_plausibility_fault();
 

@@ -749,6 +749,9 @@ static enum v2g_event handle_din_charge_parameter(struct v2g_connection* conn) {
     res->EVSEProcessing = ((uint8_t)0 == conn->ctx->evse_v2g_data.evse_processing[PHASE_PARAMETER])
                               ? din_EVSEProcessingType_Finished
                               : din_EVSEProcessingType_Ongoing;
+    if (conn->ctx->dc_ev_side_voltage_unsafe) {
+        res->EVSEProcessing = din_EVSEProcessingType_Ongoing; // IEC 61851-23:2023 Table CC.8 t2 - t3
+    }
 
     if ((unsigned int)1 == res->DC_EVSEChargeParameter.EVSEMaximumPowerLimit_isUsed) {
         res->SAScheduleList.SAScheduleTuple.array[0].PMaxSchedule.PMaxScheduleEntry.array[0].PMax =

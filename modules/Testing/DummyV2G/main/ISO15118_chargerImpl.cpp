@@ -121,6 +121,10 @@ void ISO15118_chargerImpl::handle_update_isolation_status(types::iso15118::Isola
     // your code for cmd update_isolation_status goes here
 }
 
+void ISO15118_chargerImpl::handle_update_dc_ev_side_voltage_safe(bool& safe) {
+    // your code for cmd update_dc_ev_side_voltage_safe goes here
+}
+
 void ISO15118_chargerImpl::handle_update_dc_present_values(
     types::iso15118::DcEvsePresentVoltageCurrent& present_voltage_current) {
     // your code for cmd update_dc_present_values goes here

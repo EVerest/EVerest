@@ -22,7 +22,8 @@ description: >-
   to be done in the OVM device itself; while charging, EVerest compares voltage_measurement_V with the limits only as
   a slow backup. It is also used to validate that all voltage sources of the charging port see the same voltage to
   ensure they are correctly wired to the same charging port. If it is not available in hardware, do not publish the
-  voltage_measurement_V at all.
+  voltage_measurement_V at all. Publish it independent of whether monitoring is active: EvseManager can use it as
+  the voltage on the EV side of the output contactors before the cable check (ev_side_voltage_source).
 cmds:
   set_limits:
     description: >-

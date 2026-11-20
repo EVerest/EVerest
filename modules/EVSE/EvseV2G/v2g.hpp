@@ -280,8 +280,11 @@ struct v2g_context {
                                       immediately without response message) */
     std::atomic<bool> terminate_connection_on_failed_response;
     std::atomic<bool> contactor_is_closed; /* Actual contactor state */
-    long long int response_wait_ms;        /* Time the current request handler waited for another module, not counted as
-                                              response processing time */
+    /* IEC 61851-23:2023 Table CC.8 t2 - t3: DC ChargeParameterDiscoveryRes stays Ongoing while set. Kept across
+       sessions. */
+    std::atomic<bool> dc_ev_side_voltage_unsafe;
+    long long int response_wait_ms; /* Time the current request handler waited for another module, not counted as
+                                       response processing time */
 
     struct {
         bool meter_info_is_used;
