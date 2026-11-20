@@ -1,7 +1,11 @@
 description: Payment terminal module for Feig devices.
 config:
   ip:
-    description: IP Address of Feig terminal, like "192.168.0.1"
+    description: >-
+      IP Address of Feig terminal, like "192.168.0.1". If empty, the address is
+      looked up via mDNS as "cvend-<feig_serial>.local" - and looked up again
+      whenever the connection to the terminal fails.
+    default: ""
     type: string
   feig_serial:
     description: >-
