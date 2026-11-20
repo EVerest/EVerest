@@ -162,6 +162,7 @@ active_modules:
     module: OCPPmulti
     config_module:
       Mode: Only1.6
+      ConfigurationMappingsPath: configuration_mapping_auth.yaml
       EnableLegacyConfigMigration: true
       ChargePointConfigPath: config-docker.json
     connections:
@@ -192,6 +193,12 @@ active_modules:
           implementation_id: external_limits
         - module_id: evse_manager_2_ocpp_sink
           implementation_id: external_limits
+    access:
+      config:
+        modules:
+          auth:
+            allow_read: true
+            allow_write: true
   ocpp_api:
     module: ocpp_consumer_API
     config_module:

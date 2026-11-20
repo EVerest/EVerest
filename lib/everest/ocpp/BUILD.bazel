@@ -1,5 +1,11 @@
 load("@rules_cc//cc:defs.bzl", "cc_library")
 
+filegroup(
+    name = "device_model_migrations",
+    srcs = glob(["config/common/device_model_migrations/*.sql"]),
+    visibility = ["//visibility:public"],
+)
+
 exports_files(["config"])
 
 # Mirrors the CMake configure_file step in lib/CMakeLists.txt that embeds the

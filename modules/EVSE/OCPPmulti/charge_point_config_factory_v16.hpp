@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include <everest/exceptions.hpp>
 #include <everest/logging.hpp>
@@ -43,6 +44,8 @@ struct Ocpp16DeviceModelParams {
     std::string UserConfigPath;
     /// \brief Whether conflicts between the component config and the registrations stop the start
     bool FailOnDeviceModelConflicts;
+    std::vector<ocpp_module_common::device_model::ConfigParameterBinding> configuration_mappings;
+    bool expose_unmapped_configuration{true};
 };
 
 /// \brief The device-model-backed configuration plus the custom 1.6 key mappings it was

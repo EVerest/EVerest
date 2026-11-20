@@ -20,6 +20,7 @@ target_sources(ocpp_module_common
         src/transaction_handler.cpp
         src/v16/conversions.cpp
         src/device_model/config_service_binding.cpp
+        src/device_model/configuration_mapping.cpp
         src/device_model/definitions.cpp
         src/device_model/device_model_conflicts.cpp
         src/device_model/device_model_registrations.cpp
@@ -62,6 +63,7 @@ target_link_libraries(ocpp_module_common
         everest::framework
     PRIVATE
         everest::ocpp_conversions
+        everest::yaml
         nlohmann_json_schema_validator::validator
 )
 

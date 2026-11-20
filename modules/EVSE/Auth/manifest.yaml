@@ -20,6 +20,7 @@ config:
       to provide authorization after a car is plugged in. It is also the maximum time the PlugEvents and PlugEventsLIFO
       algorithms wait for a plug in.
     type: integer
+    mutability: ReadWrite
   master_pass_group_id:
     description: >-
       Tokens whose group id equals this value belong to the master pass group. Such tokens can stop any ongoing
@@ -27,6 +28,7 @@ config:
       any ongoing transaction when an EV has to be towed away. If left empty, the master pass group is not used.
     type: string
     default: ""
+    mutability: ReadWrite
   prioritize_authorization_over_stopping_transaction:
     description: >-
       Boolean value to describe the handling of parent id tokens.

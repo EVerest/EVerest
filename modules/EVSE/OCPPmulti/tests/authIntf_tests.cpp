@@ -18,10 +18,18 @@
 namespace {
 using namespace stubs;
 
-TEST_F(GenericOcppRequiresTester, callSetConnectionTimeout) {
-    // call_set_connection_timeout() used in
-    // cb_variable_set
-    // ready_module_configuration
+TEST_F(GenericOcppRequiresTester, AuthParametersAreNotForwardedThroughLegacyCommands) {
+    std::vector<json> received;
+    interfaces->subscribe_var("auth", "call_set_connection_timeout",
+                              [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
+    interfaces->subscribe_var("auth", "call_set_master_pass_group_id",
+                              [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
+    ocpp->cb_variable_set({"90", {"TxCtrlr"}, {"EVConnectionTimeOut"}});
+    ocpp->cb_variable_set({"Managers", {"AuthCtrlr"}, {"MasterPassGroupId"}});
+    EXPECT_TRUE(received.empty());
+}
+
+TEST_F(GenericOcppRequiresTester, UnmappedConnectionTimeoutDoesNotUseLegacyCommands) {
 
     using ocpp::v2::AttributeEnum;
 
@@ -36,19 +44,13 @@ TEST_F(GenericOcppRequiresTester, callSetConnectionTimeout) {
     // std::optional<AttributeEnum> attributeType;
     // std::optional<CustomData> customData;
 
-    ocpp->ready_module_configuration();
     ocpp->cb_variable_set(set_data);
 
-    ASSERT_EQ(received.size(), 2);
+    EXPECT_TRUE(received.empty());
     ASSERT_EQ(chargepoint.get_int32(set_data.component, set_data.variable, AttributeEnum::Actual), 60);
-    EXPECT_EQ(received[0], R"({"connection_timeout":60})"_json);
-    EXPECT_EQ(received[1], R"({"connection_timeout":800})"_json);
 }
 
-TEST_F(GenericOcppRequiresTester, callSetMasterPassGroupId) {
-    // call_set_master_pass_group_id() used in
-    // cb_variable_set
-    // ready_module_configuration
+TEST_F(GenericOcppRequiresTester, UnmappedMasterPassGroupDoesNotUseLegacyCommands) {
 
     using ocpp::v2::AttributeEnum;
 
@@ -63,13 +65,10 @@ TEST_F(GenericOcppRequiresTester, callSetMasterPassGroupId) {
     // std::optional<AttributeEnum> attributeType;
     // std::optional<CustomData> customData;
 
-    ocpp->ready_module_configuration();
     ocpp->cb_variable_set(set_data);
 
-    ASSERT_EQ(received.size(), 2);
+    EXPECT_TRUE(received.empty());
     ASSERT_EQ(chargepoint.get_string(set_data.component, set_data.variable, AttributeEnum::Actual), "Managers");
-    EXPECT_EQ(received[0], R"({"master_pass_group_id":"Managers"})"_json);
-    EXPECT_EQ(received[1], R"({"master_pass_group_id":"Students"})"_json);
 }
 
 } // namespace

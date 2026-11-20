@@ -132,6 +132,8 @@ struct ConfigInterface {
     [[nodiscard]] virtual int getOcpp16NetworkConfigSlot() const = 0;
     [[nodiscard]] virtual std::string getEverestDeviceModelDatabasePath() const = 0;
     [[nodiscard]] virtual bool getFailOnDeviceModelConflicts() const = 0;
+    [[nodiscard]] virtual std::string getConfigurationMappingsPath() const = 0;
+    [[nodiscard]] virtual bool getExposeUnmappedConfiguration() const = 0;
     [[nodiscard]] virtual int getGridSupportHeartbeatS() const = 0;
     [[nodiscard]] virtual std::string getMessageLogPath() const = 0;
     [[nodiscard]] virtual int getMessageQueueResumeDelay() const = 0;

@@ -536,6 +536,8 @@ void ChargePointV16::configure_data_model(const config_info_t& config,
         config.chargepoint_config_path,              // ChargePointConfigPath
         config.user_config_path,                     // UserConfigPath
         config.fail_on_device_model_conflicts,       // FailOnDeviceModelConflicts
+        config.configuration_mappings,
+        config.expose_unmapped_configuration,
     };
 
     end_device_model_registrations();
@@ -605,6 +607,8 @@ void ChargePointV16::init(init_args_t& args) {
         args.v16_enable_legacy_config_migration,
         args.everest_device_model_database_path.string(),
         args.fail_on_device_model_conflicts,
+        args.configuration_mappings,
+        args.expose_unmapped_configuration,
     };
 
     configure_data_model(config, args.everest_device_model, args.config_service);

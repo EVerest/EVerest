@@ -67,13 +67,17 @@ to_variable_characteristics(const everest::config::ConfigurationParameterCharact
 class ConfigServiceBinding final : public ocpp::v2::VariableValueProvider,
                                    public std::enable_shared_from_this<ConfigServiceBinding> {
 public:
-    /// \brief Registers the module configuration views with \p registry, with the binding as their provider, which
+    /// \brief Registers explicit mappings and optionally unmapped module configuration views with \p registry,
+    /// with the binding as their provider, which
     /// \p registry shares the ownership of until stop(). \p config_service must outlive the binding. Call stop()
     /// before \p registry is destroyed.
     static std::shared_ptr<ConfigServiceBinding> create(ConfigServiceAccess& config_service,
-                                                        ocpp::v2::DeviceModelRegistryInterface& registry);
+                                                        ocpp::v2::DeviceModelRegistryInterface& registry,
+                                                        std::vector<ConfigParameterBinding> mappings = {},
+                                                        bool expose_unmapped = true);
 
-    ConfigServiceBinding(ConfigServiceAccess& config_service, ocpp::v2::DeviceModelRegistryInterface& registry);
+    ConfigServiceBinding(ConfigServiceAccess& config_service, ocpp::v2::DeviceModelRegistryInterface& registry,
+                         std::vector<ConfigParameterBinding> mappings = {}, bool expose_unmapped = true);
     /// \brief Stops reporting changes, but leaves the registry alone: while the registry shares the ownership, the
     /// binding is destroyed only after stop() or together with the registry.
     ~ConfigServiceBinding() override;
@@ -123,6 +127,8 @@ private:
 
     ConfigServiceAccess& config_service;
     ocpp::v2::DeviceModelRegistryInterface& registry;
+    std::vector<ConfigParameterBinding> m_mappings;
+    bool m_expose_unmapped;
     everest::lib::util::monitor<State> state;
     std::vector<std::function<void()>> unregister_update_handler_functions;
     bool stopped{false};

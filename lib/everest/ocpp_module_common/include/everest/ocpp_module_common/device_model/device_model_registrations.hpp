@@ -7,6 +7,7 @@
 #include <string>
 #include <vector>
 
+#include <everest/ocpp_module_common/device_model/config_service_binding.hpp>
 #include <ocpp/v2/device_model_registry_interface.hpp>
 
 namespace ocpp_module_common::device_model {
@@ -38,7 +39,8 @@ public:
                                        ocpp::v2::DeviceModelRegistryInterface& registry);
 
     /// \brief Registers the module configuration views of \p config_service with \p registry
-    void register_config_service(ConfigServiceAccess& config_service, ocpp::v2::DeviceModelRegistryInterface& registry);
+    void register_config_service(ConfigServiceAccess& config_service, ocpp::v2::DeviceModelRegistryInterface& registry,
+                                 const std::vector<ConfigParameterBinding>& mappings = {}, bool expose_unmapped = true);
 
     /// \returns The result of each registration, with its owner
     const std::vector<OwnerRegistrationResult>& results() const;

@@ -2079,6 +2079,28 @@ TEST_F(AuthTest, test_validation_result_evse_ids_restrict_selected_evse) {
     ASSERT_FALSE(this->auth_receiver->get_authorization(1));
 }
 
+TEST_F(AuthTest, ClearingMasterPassGroupRestoresNormalAuthorization) {
+    this->auth_handler->set_master_pass_group_id(PARENT_ID_TOKEN);
+    this->auth_handler->set_master_pass_group_id("");
+    const auto session_event = get_session_started_event(types::evse_manager::StartSessionReason::EVConnected);
+    this->auth_handler->handle_session_event(1, session_event);
+    const auto token = get_provided_token(VALID_TOKEN_1, std::vector<int32_t>{1});
+    EXPECT_CALL(mock_publish_token_validation_status_callback, Call(_, TokenValidationStatus::Processing));
+    EXPECT_CALL(mock_publish_token_validation_status_callback, Call(_, TokenValidationStatus::Accepted));
+    EXPECT_CALL(mock_publish_token_validation_status_callback, Call(_, TokenValidationStatus::UsedToStart));
+    EXPECT_EQ(this->auth_handler->on_token(token), TokenHandlingResult::USED_TO_START_TRANSACTION);
+    EXPECT_TRUE(this->auth_receiver->get_authorization(0));
+}
+
+TEST_F(AuthTest, UpdatedConnectionTimeoutAppliesToSubsequentPlugWaits) {
+    this->auth_handler->set_connection_timeout(0);
+    const auto token = get_provided_token(VALID_TOKEN_1, std::vector<int32_t>{1, 2});
+    EXPECT_CALL(mock_publish_token_validation_status_callback, Call(_, TokenValidationStatus::Processing));
+    EXPECT_CALL(mock_publish_token_validation_status_callback, Call(_, TokenValidationStatus::Accepted));
+    EXPECT_CALL(mock_publish_token_validation_status_callback, Call(_, TokenValidationStatus::TimedOut));
+    EXPECT_EQ(this->auth_handler->on_token(token), TokenHandlingResult::TIMEOUT);
+}
+
 TEST_F(AuthTest, test_master_pass_group_id) {
     // set master group id to parent id token
     this->auth_handler->set_master_pass_group_id(PARENT_ID_TOKEN);

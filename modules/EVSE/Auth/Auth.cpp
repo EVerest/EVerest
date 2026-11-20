@@ -24,11 +24,15 @@ void Auth::init() {
     invoke_init(*p_main);
     invoke_init(*p_reservation);
 
-    this->auth_handler = std::make_unique<AuthHandler>(
-        string_to_selection_algorithm(this->config.selection_algorithm), this->config.connection_timeout,
-        this->config.plug_in_timeout_enabled, this->config.prioritize_authorization_over_stopping_transaction,
-        this->config.ignore_connector_faults, this->config.stop_transaction_on_reswipe, this->info.id,
-        (!this->r_kvs.empty() ? this->r_kvs.at(0).get() : nullptr));
+    {
+        std::lock_guard lock(runtime_config_mutex);
+        this->auth_handler = std::make_unique<AuthHandler>(
+            string_to_selection_algorithm(this->config.selection_algorithm), this->config.connection_timeout,
+            this->config.plug_in_timeout_enabled, this->config.prioritize_authorization_over_stopping_transaction,
+            this->config.ignore_connector_faults, this->config.stop_transaction_on_reswipe, this->info.id,
+            (!this->r_kvs.empty() ? this->r_kvs.at(0).get() : nullptr));
+        this->auth_handler->set_master_pass_group_id(this->config.master_pass_group_id);
+    }
 
     for (const auto& token_provider : this->r_token_provider) {
         token_provider->subscribe_provided_token([this](ProvidedIdToken provided_token) {
@@ -245,6 +249,29 @@ void Auth::ready() {
     }
 
     this->auth_handler->initialize();
+}
+
+void Auth::shutdown() {
+    invoke_shutdown(*p_main);
+    invoke_shutdown(*p_reservation);
+}
+
+Auth::ConfigChangeResult Auth::on_connection_timeout_changed(const int& value) {
+    std::lock_guard lock(runtime_config_mutex);
+    if (auth_handler) {
+        auth_handler->set_connection_timeout(value);
+    }
+    rw_config.connection_timeout = value;
+    return ConfigChangeResult::Accepted();
+}
+
+Auth::ConfigChangeResult Auth::on_master_pass_group_id_changed(const std::string& value) {
+    std::lock_guard lock(runtime_config_mutex);
+    if (auth_handler) {
+        auth_handler->set_master_pass_group_id(value);
+    }
+    rw_config.master_pass_group_id = value;
+    return ConfigChangeResult::Accepted();
 }
 
 void Auth::set_connection_timeout(int& connection_timeout) {

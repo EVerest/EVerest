@@ -49,6 +49,77 @@ reference section of this page (taken from the module's ``manifest.yaml``). The 
 (``ChargePointConfigPath``, ``UserConfigPath``, ``EnableLegacyConfigMigration``, ``Ocpp16KeyMappingsPath``,
 ``Ocpp16NetworkConfigSlot``) are described in context in the OCPP 1.6 configuration section below.
 
+Configuration service mappings
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+``ConfigurationMappingsPath`` selects a YAML file mapping EVerest configuration parameters to device model
+component/variables. An empty path disables explicit mappings. Relative paths are resolved from the module's
+``OCPPmulti`` share directory.
+
+The checked-in example and schema are
+``lib/everest/ocpp_module_common/schemas/configuration_mapping.example.yaml`` and
+``lib/everest/ocpp_module_common/schemas/configuration_mapping.schema.json``. The schema and ``configuration_mapping_auth.yaml`` are installed into
+``<prefix>/share/everest/modules/OCPPmulti/``; the example remains in the repository for reference and tests.
+Copy the example from the repository, adapt its source module ids to the station, and set
+``ConfigurationMappingsPath`` to that file. The example is not enabled by default. The loader validates each YAML
+document against ``configuration_mapping.schema.json`` from the module's ``OCPPmulti`` share directory before
+resolving its sources. This schema is a required runtime resource when explicit mappings are enabled; a missing or
+invalid schema stops startup. Its location does not depend on the mapping file or its ``$schema`` reference, and
+validation needs no network access. An empty ``ConfigurationMappingsPath`` skips loading both files.
+The example's YAML language-server directive enables editor validation when its schema path resolves; adjust it
+to the installed schema location if the example is copied elsewhere.
+
+All shipped OCPP SIL configurations select ``configuration_mapping_auth.yaml`` and grant ConfigService read/write
+access to ``auth``. It binds ``connection_timeout`` to ``TxCtrlr / EVConnectionTimeOut`` and
+``master_pass_group_id`` to ``AuthCtrlr / MasterPassGroupId``. Adapt the source module id and access grants for
+custom stations. OCPPmulti does not call Auth's legacy setter commands at startup or on variable changes.
+The initial mapped values come from ConfigService, not retained OCPP database values. Without these mappings,
+the standard OCPP variables do not control Auth. Plug & Charge command propagation is unchanged.
+
+For example, using the module id ``auth`` from the station configuration:
+
+.. code-block:: yaml
+
+   mappings:
+     - ocpp:
+         component:
+           name: TxCtrlr
+         variable:
+           name: EVConnectionTimeOut
+       everest:
+         module_id: auth
+         parameter: connection_timeout
+
+Each entry binds the ``ocpp`` variable to the ``everest`` parameter. Writes through OCPP are delegated to ConfigService,
+and accepted configuration changes update the OCPP view; ConfigService remains the authoritative persistent owner.
+The file requires ``mappings`` with ``ocpp`` and ``everest`` endpoints; ``configuration``, ``source`` and ``target``
+are not accepted as aliases.
+
+``everest.implementation_id`` optionally addresses an implementation parameter; omitting it addresses module-level
+configuration. The ``ocpp`` endpoint uses component and variable identifiers, including optional ``instance`` fields and
+``component.evse`` with a positive ``id`` and optional positive ``connectorId``. Each parameter and each target may
+appear only once. Unknown fields, inaccessible or missing parameters, incompatible JSON target datatypes, and
+ambiguous mappings stop startup. Variables reserved for the OCPP stack or claimed by another runtime owner cannot
+be mapped; a rejected explicit mapping also stops startup.
+
+ConfigService is the persistent owner of mapped values. A mapped target is removed from the component JSON
+definitions before database initialization and registered from ConfigService, even when no JSON definition exists.
+The configuration parameter supplies datatype, mutability, unit and limits. Existing device model values do not
+overwrite the EVerest configuration at startup, and mapped writes are not persisted a second time in the device
+model database. ConfigService must grant OCPPmulti the necessary access to the source module.
+
+Reads and reports use the device model's in-memory view. Writes go through ConfigService and return its result,
+including ``RebootRequired``: a value awaiting restart does not replace the currently effective value. Changes
+accepted through another ConfigService client update the view and notify device model listeners without writing
+back to ConfigService. Readable values use the common monitoring path; write-only values remain unreadable and
+unmonitorable. The same mappings apply in OCPP 1.6 and OCPP 2.x; OCPP 1.6 legacy keys retain their existing
+key-to-component/variable addressing.
+
+``ExposeUnmappedConfiguration`` defaults to ``true`` to expose the remaining parameters under module-named
+components. Set it to ``false`` for a curated configuration surface containing only explicit mappings. A mapped
+parameter never has a second automatic writable view. This option affects configuration only: it does not discover
+or expose telemetry. Telemetry integration uses separate value ownership and explicit integrator-selected mappings.
+
 Renamed configuration keys
 ^^^^^^^^^^^^^^^^^^^^^^^^^^
 
@@ -318,11 +389,8 @@ Requires: auth (1)
 
 **Interface**: :ref:`auth <everest_interfaces_auth>`
 
-Typically fulfilled by the :ref:`Auth <everest_modules_Auth>` module. Used to apply authorization-related
-configuration when configured and/or changed by the CSMS:
-
-* **set_connection_timeout** (e.g. on a **SetVariables.req(EVConnectionTimeout)**)
-* **set_master_pass_group_id** (e.g. on a **SetVariables.req(MasterPassGroupId)**)
+Typically fulfilled by the :ref:`Auth <everest_modules_Auth>` module. Authorization configuration uses ConfigService
+mappings rather than the Auth setter commands. See the configuration service mappings section above.
 
 Requires: charger_information (0-1)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

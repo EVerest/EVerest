@@ -5,7 +5,7 @@
 
 //
 // AUTO GENERATED - MARKED REGIONS WILL BE KEPT
-// template version 2
+// template version 3
 //
 
 #include "ld-ev.hpp"
@@ -26,7 +26,9 @@
 #include <everest/util/async/monitor.hpp>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <queue>
+#include <utils/mqtt_config_service.hpp>
 #include <variant>
 
 using namespace types::evse_manager;
@@ -58,17 +60,52 @@ struct EventQueueState {
 
 namespace module {
 
-struct Conf {
-    std::string selection_algorithm;
+struct RwConf {
     int connection_timeout;
     std::string master_pass_group_id;
+};
+
+struct RwConfUpdate {
+    using ConfigChangeResult = Everest::config::ConfigChangeResult;
+
+    virtual ~RwConfUpdate() = default;
+
+    // override in class Auth adding the implementation to Auth.cpp
+    // or inline
+    //
+    // note: these handlers are invoked from a different thread than the one
+    // executing your module code, so guard rw_config with a mutex both here
+    // and wherever your module accesses config or rw_config
+    // e.g.
+    // ConfigChangeResult on_connection_timeout_changed(const int& value) override {
+    //     std::scoped_lock lock(config_mutex);
+    //     rw_config.connection_timeout = value;
+    //     return ConfigChangeResult::Accepted();
+    // }
+
+    virtual ConfigChangeResult on_connection_timeout_changed(const int& /* value */) {
+        return ConfigChangeResult::Rejected("handler not implemented");
+    }
+    virtual ConfigChangeResult on_master_pass_group_id_changed(const std::string& /* value */) {
+        return ConfigChangeResult::Rejected("handler not implemented");
+    }
+};
+
+struct Conf {
+    std::string selection_algorithm;
     bool prioritize_authorization_over_stopping_transaction;
     bool ignore_connector_faults;
     bool plug_in_timeout_enabled;
     bool stop_transaction_on_reswipe;
+
+    const int& connection_timeout;
+    const std::string& master_pass_group_id;
+
+    Conf(const RwConf& rw) : connection_timeout(rw.connection_timeout), master_pass_group_id(rw.master_pass_group_id) {
+    }
 };
 
-class Auth : public Everest::ModuleBase {
+class Auth : public Everest::ModuleBase, public RwConfUpdate {
 public:
     Auth() = delete;
     Auth(const ModuleInfo& info, std::unique_ptr<authImplBase> p_main,
@@ -76,7 +113,7 @@ public:
          std::vector<std::unique_ptr<auth_token_providerIntf>> r_token_provider,
          std::vector<std::unique_ptr<auth_token_validatorIntf>> r_token_validator,
          std::vector<std::unique_ptr<evse_managerIntf>> r_evse_manager, std::vector<std::unique_ptr<kvsIntf>> r_kvs,
-         Conf& config) :
+         Conf& config, RwConf& rw_config) :
         ModuleBase(info),
         p_main(std::move(p_main)),
         p_reservation(std::move(p_reservation)),
@@ -84,7 +121,8 @@ public:
         r_token_validator(std::move(r_token_validator)),
         r_evse_manager(std::move(r_evse_manager)),
         r_kvs(std::move(r_kvs)),
-        config(config){};
+        config(config),
+        rw_config(rw_config){};
 
     const std::unique_ptr<authImplBase> p_main;
     const std::unique_ptr<reservationImplBase> p_reservation;
@@ -93,10 +131,13 @@ public:
     const std::vector<std::unique_ptr<evse_managerIntf>> r_evse_manager;
     const std::vector<std::unique_ptr<kvsIntf>> r_kvs;
     const Conf& config;
+    RwConf& rw_config;
 
     // ev@1fce4c5e-0ab8-41bb-90f7-14277703d2ac:v1
     // insert your public definitions here
     std::unique_ptr<AuthHandler> auth_handler;
+    ConfigChangeResult on_connection_timeout_changed(const int& value) override;
+    ConfigChangeResult on_master_pass_group_id_changed(const std::string& value) override;
 
     /**
      * @brief Set the connection timeout for the auth handler
@@ -124,10 +165,12 @@ private:
     friend class LdEverest;
     void init();
     void ready();
+    void shutdown();
 
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
     // insert your private definitions here
     everest::lib::util::monitor<EventQueueState> event_state;
+    std::mutex runtime_config_mutex;
     std::map<int32_t, int32_t> m_evse_index_by_id;
 
     evse_managerIntf* evse_manager_by_id(int32_t evse_id) const;

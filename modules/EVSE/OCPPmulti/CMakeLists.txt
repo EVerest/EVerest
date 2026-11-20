@@ -47,4 +47,9 @@ target_link_libraries(${MODULE_NAME}
 if(BUILD_TESTING)
     add_subdirectory(tests)
 endif()
+install(FILES
+    "${PROJECT_SOURCE_DIR}/lib/everest/ocpp_module_common/schemas/configuration_mapping_auth.yaml"
+    "${PROJECT_SOURCE_DIR}/lib/everest/ocpp_module_common/schemas/configuration_mapping.schema.json"
+    DESTINATION "${CMAKE_INSTALL_DATADIR}/everest/modules/${MODULE_NAME}"
+)
 # ev@c55432ab-152c-45a9-9d2e-7281d50c69c3:v1

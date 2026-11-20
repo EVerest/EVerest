@@ -62,6 +62,8 @@ public:
     [[nodiscard]] int getOcpp16NetworkConfigSlot() const override;
     [[nodiscard]] std::string getEverestDeviceModelDatabasePath() const override;
     [[nodiscard]] bool getFailOnDeviceModelConflicts() const override;
+    [[nodiscard]] std::string getConfigurationMappingsPath() const override;
+    [[nodiscard]] bool getExposeUnmappedConfiguration() const override;
     [[nodiscard]] int getGridSupportHeartbeatS() const override;
     [[nodiscard]] std::string getMessageLogPath() const override;
     [[nodiscard]] int getMessageQueueResumeDelay() const override;
@@ -91,6 +93,8 @@ struct Conf {
     std::string Ocpp16KeyMappingsPath;
     bool EnableExternalWebsocketControl;
     std::string EverestDeviceModelDatabasePath;
+    std::string ConfigurationMappingsPath;
+    bool ExposeUnmappedConfiguration;
     bool FailOnDeviceModelConflicts;
     int GridSupportHeartbeatS;
     std::string MessageLogPath;

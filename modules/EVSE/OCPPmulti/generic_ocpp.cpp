@@ -11,6 +11,7 @@
 #include <everest/external_energy_limits/external_energy_limits.hpp>
 #include <everest/ocpp_module_common/conversions.hpp>
 #include <everest/ocpp_module_common/custom_error_mapping_validation.hpp>
+#include <everest/ocpp_module_common/device_model/configuration_mapping.hpp>
 #include <everest/ocpp_module_common/external_limits.hpp>
 #include <ld-ev.hpp>
 #include <ocpp/v2/component_state_manager.hpp>
@@ -27,8 +28,6 @@ namespace {
 // OCPP 2.0.1 specific configuration variable names
 constexpr const auto CENTRAL_CONTRACT_VALIDATION_ALLOWED_VAR_NAME = "CentralContractValidationAllowed";
 constexpr const auto CONTRACT_CERTIFICATE_INSTALLATION_ENABLED_VAR_NAME = "ContractCertificateInstallationEnabled";
-constexpr const auto EV_CONNECTION_TIMEOUT_VAR_NAME = "EVConnectionTimeOut";
-constexpr const auto MASTER_PASS_GROUP_ID_VAR_NAME = "MasterPassGroupId";
 constexpr const auto PNC_ENABLED_VAR_NAME = "PnCEnabled";
 constexpr const auto SETPOINT_PRIORITY_VAR_NAME = "SetpointPriority";
 constexpr const auto TX_START_POINT_VAR_NAME = "TxStartPoint";
@@ -614,6 +613,13 @@ void GenericOcpp::ready(const ConfigServiceClient& client) {
     };
     // clang-format on
     args.fail_on_device_model_conflicts = mv_config.getFailOnDeviceModelConflicts();
+    const fs::path configuration_mappings_path = mv_config.getConfigurationMappingsPath();
+    args.configuration_mappings = module::device_model::load_configuration_mappings(
+        configuration_mappings_path.empty() || configuration_mappings_path.is_absolute()
+            ? configuration_mappings_path
+            : share_path / "OCPPmulti" / configuration_mappings_path,
+        share_path / "OCPPmulti" / "configuration_mapping.schema.json");
+    args.expose_unmapped_configuration = mv_config.getExposeUnmappedConfiguration();
 
     // if charger information interface is connected, override only these specific
     // properties which were loaded from configuration file(s)
@@ -832,16 +838,6 @@ bool GenericOcpp::enqueue_if_not_started(std::int32_t evse_id, const Event& even
 }
 
 void GenericOcpp::ready_module_configuration() {
-    const auto ev_connection_timeout = mv_charge_point.get_ev_connection_timeout();
-    if (ev_connection_timeout) {
-        mv_requires.auth.call_set_connection_timeout(ev_connection_timeout.value());
-    }
-
-    const auto master_pass_group_id = mv_charge_point.get_master_pass_group_id();
-    if (master_pass_group_id) {
-        mv_requires.auth.call_set_master_pass_group_id(master_pass_group_id.value());
-    }
-
     types::evse_manager::PlugAndChargeConfiguration pnc_config;
 
     const auto iso15118_pnc_enabled = mv_charge_point.get_pnc_enabled();
@@ -1893,15 +1889,7 @@ void GenericOcpp::cb_variable_set(const ocpp::v2::SetVariableData& set_variable_
     const auto& name = set_variable_data.variable.name.get();
 
     if (component == ControllerComponents::TxCtrlr) {
-        if (name == EV_CONNECTION_TIMEOUT_VAR_NAME) {
-            try {
-                auto ev_connection_timeout = std::stoi(set_variable_data.attributeValue.get());
-                mv_requires.auth.call_set_connection_timeout(ev_connection_timeout);
-            } catch (const std::exception& e) {
-                EVLOG_error << "Could not parse EVConnectionTimeOut and did not set it in Auth module, error: "
-                            << e.what();
-            }
-        } else if (name == TX_STOP_POINT_VAR_NAME) {
+        if (name == TX_STOP_POINT_VAR_NAME) {
             const auto tx_stop_points = get_tx_start_stop_points(set_variable_data.attributeValue.get());
             if (tx_stop_points.empty()) {
                 EVLOG_warning << "Could not set TxStartPoints";
@@ -1915,10 +1903,6 @@ void GenericOcpp::cb_variable_set(const ocpp::v2::SetVariableData& set_variable_
             } else {
                 m_transaction_handler->set_tx_start_points(tx_start_points);
             }
-        }
-    } else if (component == ControllerComponents::AuthCtrlr) {
-        if (name == MASTER_PASS_GROUP_ID_VAR_NAME) {
-            mv_requires.auth.call_set_master_pass_group_id(set_variable_data.attributeValue.get());
         }
     } else if (component == ControllerComponents::ISO15118Ctrlr) {
         if (name == PNC_ENABLED_VAR_NAME) {

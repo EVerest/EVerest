@@ -2,7 +2,9 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 
 #include <everest/ocpp_module_common/device_model/config_service_binding.hpp>
+#include <everest/ocpp_module_common/device_model/configuration_mapping.hpp>
 
+#include <algorithm>
 #include <set>
 #include <stdexcept>
 #include <tuple>
@@ -212,15 +214,22 @@ ConfigServiceBinding::key_of(const everest::config::ConfigurationParameterIdenti
 }
 
 std::shared_ptr<ConfigServiceBinding> ConfigServiceBinding::create(ConfigServiceAccess& config_service,
-                                                                   ocpp::v2::DeviceModelRegistryInterface& registry) {
-    auto binding = std::make_shared<ConfigServiceBinding>(config_service, registry);
+                                                                   ocpp::v2::DeviceModelRegistryInterface& registry,
+                                                                   std::vector<ConfigParameterBinding> mappings,
+                                                                   bool expose_unmapped) {
+    auto binding =
+        std::make_shared<ConfigServiceBinding>(config_service, registry, std::move(mappings), expose_unmapped);
     binding->start();
     return binding;
 }
 
 ConfigServiceBinding::ConfigServiceBinding(ConfigServiceAccess& config_service,
-                                           ocpp::v2::DeviceModelRegistryInterface& registry) :
-    config_service(config_service), registry(registry) {
+                                           ocpp::v2::DeviceModelRegistryInterface& registry,
+                                           std::vector<ConfigParameterBinding> mappings, bool expose_unmapped) :
+    config_service(config_service),
+    registry(registry),
+    m_mappings(std::move(mappings)),
+    m_expose_unmapped(expose_unmapped) {
 }
 
 ConfigServiceBinding::~ConfigServiceBinding() {
@@ -255,6 +264,12 @@ void ConfigServiceBinding::start() {
             module_id_type.module_id,
             [this](const Everest::config::ConfigUpdateNotification& notification) { on_config_update(notification); });
         if (not unregister.has_value()) {
+            if (std::any_of(this->m_mappings.begin(), this->m_mappings.end(), [&](const auto& mapping) {
+                    return mapping.parameter.module_id == module_id_type.module_id;
+                })) {
+                throw std::invalid_argument("Cannot subscribe to an explicitly mapped configuration source: " +
+                                            module_id_type.module_id);
+            }
             EVLOG_warning << "Configuration changes of module " << module_id_type.module_id
                           << " are not delivered: its views keep the values read at start";
             continue;
@@ -263,7 +278,8 @@ void ConfigServiceBinding::start() {
     }
 
     const auto module_configs = this->config_service.get_module_configs();
-    const auto views = build_module_configuration_views(module_configs, this->config_service.get_mappings());
+    const auto views = build_configuration_views(module_configs, this->config_service.get_mappings(), this->m_mappings,
+                                                 this->m_expose_unmapped);
 
     std::map<ParameterKey, const everest::config::ConfigurationParameter*> parameters;
     for (const auto& [module_id_type, module_config] : module_configs) {
@@ -286,6 +302,13 @@ void ConfigServiceBinding::start() {
             registered.characteristics = to_variable_characteristics(parameter->characteristics);
             registered.attributes.push_back(make_actual_attribute(*parameter));
         } catch (const std::exception& e) {
+            if (std::any_of(this->m_mappings.begin(), this->m_mappings.end(), [&](const auto& mapping) {
+                    return key_of(mapping.parameter).module_id == key.module_id &&
+                           key_of(mapping.parameter).implementation_id == key.implementation_id &&
+                           key_of(mapping.parameter).name == key.name;
+                })) {
+                throw;
+            }
             EVLOG_error << "Could not add the configuration parameter " << key.module_id << "." << view.variable.name
                         << " to the OCPP device model: " << e.what();
             continue;
@@ -313,6 +336,14 @@ void ConfigServiceBinding::start() {
     for (const auto& rejected : result.rejected) {
         EVLOG_warning << "The OCPP device model rejected the configuration parameter view " << rejected.component << "."
                       << rejected.variable;
+        const auto explicit_mapping =
+            std::find_if(this->m_mappings.begin(), this->m_mappings.end(), [&](const auto& m) {
+                return m.component == rejected.component && m.variable == rejected.variable;
+            });
+        if (explicit_mapping != this->m_mappings.end()) {
+            this->stop();
+            throw std::invalid_argument("The OCPP device model rejected an explicit configuration mapping");
+        }
     }
     this->state.handle()->registration_result = result;
 

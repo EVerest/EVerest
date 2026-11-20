@@ -220,6 +220,38 @@ TEST_F(ChargePointConfigFactoryV16Test, ConfigurationViewsAreRegistered) {
     EXPECT_EQ(config_service.handlers, 0);
 }
 
+TEST_F(ChargePointConfigFactoryV16Test, MappedTimeoutIsServedThroughTheLegacyKey) {
+    FakeConfigService config_service;
+    auto params = make_params();
+    ocpp_module_common::device_model::ConfigParameterBinding mapping;
+    mapping.parameter.module_id = "auth";
+    mapping.parameter.configuration_parameter_name = "connection_timeout";
+    mapping.component.name = "TxCtrlr";
+    mapping.variable.name = "EVConnectionTimeOut";
+    params.configuration_mappings = {mapping};
+    params.expose_unmapped_configuration = false;
+    auto result = module::config_factory_v16::create_charge_point_configuration(work_dir, params, n_evse, {}, nullptr,
+                                                                                &config_service);
+    auto& model = result.configuration->get_device_model();
+    std::string value;
+    EXPECT_EQ(model.get_variable(mapping.component, mapping.variable, ocpp::v2::AttributeEnum::Actual, value, false,
+                                 ocpp::v2::UnsetValue::NotSupported),
+              ocpp::v2::GetVariableStatusEnum::Accepted);
+    EXPECT_EQ(value, "60");
+    EXPECT_EQ(result.configuration->set("ConnectionTimeOut", "90"), ocpp::v16::ConfigurationStatus::Accepted);
+    model.get_variable(mapping.component, mapping.variable, ocpp::v2::AttributeEnum::Actual, value, false,
+                       ocpp::v2::UnsetValue::NotSupported);
+    EXPECT_EQ(value, "90");
+    ocpp::v2::Component automatic = make_component("Auth");
+    automatic.instance = "auth";
+    EXPECT_EQ(model.get_variable(automatic, make_variable("connection_timeout"), ocpp::v2::AttributeEnum::Actual, value,
+                                 false, ocpp::v2::UnsetValue::NotSupported),
+              ocpp::v2::GetVariableStatusEnum::UnknownComponent);
+    ocpp::v2::DeviceModelStorageSqlite storage(params.DeviceModelDatabasePath);
+    EXPECT_EQ(storage.get_device_model().at(mapping.component).count(mapping.variable), 0u);
+    EXPECT_TRUE(storage.get_stored_values().empty());
+}
+
 // The configuration views are stopped before the device model that holds them is destroyed
 TEST_F(ChargePointConfigFactoryV16Test, FailedStartStopsConfigurationViews) {
     stubs::ModuleInterfaces interfaces;

@@ -23,6 +23,8 @@ struct ConfigStub : public ocpp_multi::ConfigInterface {
     bool EnableLegacyConfigMigration{false};
     std::string EverestDeviceModelDatabasePath{"everest.db"};
     bool FailOnDeviceModelConflicts{false};
+    std::string ConfigurationMappingsPath;
+    bool ExposeUnmappedConfiguration{true};
     int GridSupportHeartbeatS{60};
     int Ocpp16NetworkConfigSlot{1};
     std::string MessageLogPath{"log"};
@@ -76,6 +78,12 @@ struct ConfigStub : public ocpp_multi::ConfigInterface {
     }
     [[nodiscard]] bool getFailOnDeviceModelConflicts() const override {
         return FailOnDeviceModelConflicts;
+    }
+    [[nodiscard]] std::string getConfigurationMappingsPath() const override {
+        return ConfigurationMappingsPath;
+    }
+    [[nodiscard]] bool getExposeUnmappedConfiguration() const override {
+        return ExposeUnmappedConfiguration;
     }
     [[nodiscard]] int getGridSupportHeartbeatS() const override {
         return GridSupportHeartbeatS;

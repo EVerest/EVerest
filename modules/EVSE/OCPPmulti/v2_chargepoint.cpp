@@ -2,6 +2,7 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 
 #include "v2_chargepoint.hpp"
+#include <everest/ocpp_module_common/device_model/configuration_mapping.hpp>
 
 #include <everest/ocpp_module_common/error_mapping.hpp>
 
@@ -472,10 +473,26 @@ ocpp::v2::Callbacks ChargePointV2::configure_callbacks() {
 }
 
 void ChargePointV2::init(init_args_t& args) {
+    if (!args.configuration_mappings.empty()) {
+        if (args.config_service == nullptr) {
+            throw std::invalid_argument("Configuration mappings require ConfigService");
+        }
+        auto components = ocpp::v2::get_all_component_configs(args.v2_device_model_config_path);
+        ocpp::v2::ensure_ocpp16_legacy_ctrlr(components);
+        module::device_model::remove_mapped_configuration_variables(components, args.configuration_mappings,
+                                                                    args.config_service->get_module_configs());
+        ocpp::v2::InitDeviceModelDb init_db(args.v2_device_model_database_path,
+                                            args.v2_device_model_database_migration_path);
+        init_db.initialize_database(components, false, false);
+        init_db.close_connection();
+    }
     // initialise libocpp device model
-    auto device_model_storage = std::make_unique<ocpp::v2::DeviceModelStorageSqlite>(
-        args.v2_device_model_database_path, args.v2_device_model_database_migration_path,
-        args.v2_device_model_config_path);
+    auto device_model_storage =
+        args.configuration_mappings.empty()
+            ? std::make_unique<ocpp::v2::DeviceModelStorageSqlite>(args.v2_device_model_database_path,
+                                                                   args.v2_device_model_database_migration_path,
+                                                                   args.v2_device_model_config_path)
+            : std::make_unique<ocpp::v2::DeviceModelStorageSqlite>(args.v2_device_model_database_path);
     module::device_model::migrate_everest_device_model_database(
         args.everest_device_model_database_path, args.v2_device_model_database_path, *device_model_storage);
 
@@ -487,11 +504,13 @@ void ChargePointV2::init(init_args_t& args) {
         m_device_model_registrations.register_everest_device_model(*args.everest_device_model, *m_device_model);
     }
     if (args.config_service != nullptr) {
-        m_device_model_registrations.register_config_service(*args.config_service, *m_device_model);
+        m_device_model_registrations.register_config_service(
+            *args.config_service, *m_device_model, args.configuration_mappings, args.expose_unmapped_configuration);
     }
     ocpp::v2::register_availability_states(*m_device_model, args.evse_connector_structure);
     module::device_model::check_device_model_conflicts(m_device_model_registrations.results(),
                                                        args.fail_on_device_model_conflicts);
+    module::device_model::log_device_model(*m_device_model);
 
     const auto ocpp_share_path = args.share_path / "OCPP201";
     const auto sql_init_path = ocpp_share_path / SQL_CORE_MIGRATIONS;

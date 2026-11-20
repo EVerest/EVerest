@@ -129,6 +129,7 @@ active_modules:
     module: OCPPmulti
     config_module:
       Mode: Only2
+      ConfigurationMappingsPath: configuration_mapping_auth.yaml
     connections:
       evse_manager:
         - module_id: evse_manager_1

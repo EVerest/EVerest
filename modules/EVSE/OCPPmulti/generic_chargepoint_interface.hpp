@@ -245,6 +245,8 @@ struct GenericChargePointInterface {
         std::optional<types::charger_information::ChargerInformation> charger_info;
         /// \brief Whether conflicts between the component config and the registrations stop the start
         bool fail_on_device_model_conflicts{false};
+        std::vector<ocpp_module_common::device_model::ConfigParameterBinding> configuration_mappings;
+        bool expose_unmapped_configuration{true};
     };
 
     using listener_t = std::function<void(const ocpp::v2::Component& component, const ocpp::v2::Variable& variable,

@@ -53,6 +53,12 @@ std::string ConfigAccess::getEverestDeviceModelDatabasePath() const {
 bool ConfigAccess::getFailOnDeviceModelConflicts() const {
     return m_config.FailOnDeviceModelConflicts;
 }
+std::string ConfigAccess::getConfigurationMappingsPath() const {
+    return m_config.ConfigurationMappingsPath;
+}
+bool ConfigAccess::getExposeUnmappedConfiguration() const {
+    return m_config.ExposeUnmappedConfiguration;
+}
 int ConfigAccess::getOcpp16NetworkConfigSlot() const {
     return m_config.Ocpp16NetworkConfigSlot;
 }

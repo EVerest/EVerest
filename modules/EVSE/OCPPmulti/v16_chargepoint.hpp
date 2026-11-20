@@ -61,6 +61,8 @@ private:
         // EVerest device model database of earlier versions, taken over at the first start
         std::string everest_device_model_database_path;
         bool fail_on_device_model_conflicts;
+        std::vector<ocpp_module_common::device_model::ConfigParameterBinding> configuration_mappings;
+        bool expose_unmapped_configuration{true};
     };
 
     void check_configured(const std::string_view& fn);

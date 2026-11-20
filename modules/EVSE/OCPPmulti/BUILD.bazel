@@ -16,7 +16,10 @@ cc_everest_module(
         "grid_support/*.cpp",
         "grid_support/*.hpp",
     ]),
-    data = ["//lib/everest/ocpp:module_share_files"],
+    data = [
+        "//lib/everest/ocpp:module_share_files",
+        "//lib/everest/ocpp_module_common:configuration_mapping_share_files",
+    ],
     impls = IMPLS,
     deps = [
         "//third-party/bazel/openssl:crypto",

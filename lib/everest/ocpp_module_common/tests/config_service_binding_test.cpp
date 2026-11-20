@@ -4,12 +4,14 @@
 #include <gtest/gtest.h>
 
 #include <filesystem>
+#include <fstream>
 #include <map>
 #include <memory>
 #include <string>
 #include <vector>
 
 #include <everest/ocpp_module_common/device_model/config_service_binding.hpp>
+#include <everest/ocpp_module_common/device_model/configuration_mapping.hpp>
 #include <everest/ocpp_module_common/device_model/device_model_registrations.hpp>
 #include <ocpp/v2/device_model.hpp>
 #include <ocpp/v2/device_model_storage_sqlite.hpp>
@@ -80,6 +82,9 @@ public:
     std::optional<std::function<void()>>
     register_config_update_handler(const std::string& module_id,
                                    Everest::config::ConfigServiceClient::ConfigUpdateHandler handler) override {
+        if (this->deny_subscription) {
+            return std::nullopt;
+        }
         const auto id = this->next_handler_id++;
         this->handlers[module_id].emplace(id, std::move(handler));
         return [this, module_id, id]() { this->handlers[module_id].erase(id); };
@@ -112,6 +117,7 @@ public:
     std::vector<std::pair<everest::config::ConfigurationParameterIdentifier, std::string>> writes;
     std::map<std::string, std::map<int, Everest::config::ConfigServiceClient::ConfigUpdateHandler>> handlers;
     int next_handler_id{0};
+    bool deny_subscription{false};
     Everest::config::SetConfigResult result{
         Everest::config::ResponseStatus::Ok, {}, everest::config::SetConfigStatus::Accepted};
 };
@@ -217,6 +223,435 @@ TEST(ConfigServiceBindingTest, RegistersOneComponentPerModuleUnderEverestConfig)
             EXPECT_FALSE(component.component.evse.has_value());
         }
     }
+}
+
+namespace {
+
+dm::ConfigParameterBinding timeout_mapping() {
+    dm::ConfigParameterBinding mapping;
+    mapping.parameter.module_id = "auth";
+    mapping.parameter.configuration_parameter_name = "connection_timeout";
+    mapping.component.name = "TxCtrlr";
+    mapping.variable.name = "EVConnectionTimeOut";
+    return mapping;
+}
+
+} // namespace
+
+TEST(ConfigurationMappingTest, ExplicitMappingReplacesAutomaticView) {
+    FakeConfigService config_service;
+    FakeRegistry registry;
+    const auto mapping = timeout_mapping();
+    const auto binding = dm::ConfigServiceBinding::create(config_service, registry, {mapping});
+    ASSERT_NE(registry.find("TxCtrlr", "EVConnectionTimeOut"), nullptr);
+    EXPECT_EQ(registry.find("Auth", "connection_timeout"), nullptr);
+    EXPECT_NE(registry.find("Auth", "main.secret"), nullptr);
+
+    EXPECT_EQ(binding->set_value(mapping.component, mapping.variable, AttributeEnum::Actual, "90", "csms"),
+              SetVariableStatusEnum::Accepted);
+    ASSERT_EQ(config_service.writes.size(), 1u);
+    EXPECT_EQ(config_service.writes.front().first.module_id, "auth");
+    EXPECT_EQ(config_service.writes.front().first.configuration_parameter_name, "connection_timeout");
+    config_service.publish("auth", std::nullopt, "connection_timeout", "120");
+    ASSERT_EQ(registry.notified.size(), 1u);
+    EXPECT_EQ(registry.notified.front().component, mapping.component);
+    EXPECT_EQ(registry.notified.front().variable, mapping.variable);
+    EXPECT_EQ(registry.notified.front().value, "120");
+    EXPECT_EQ(config_service.writes.size(), 1u);
+}
+
+TEST(ConfigurationMappingTest, ImplementationAndScopedTargetKeepTheirIdentities) {
+    FakeConfigService config_service;
+    auto mapping = timeout_mapping();
+    mapping.parameter.module_implementation_id = "main";
+    mapping.parameter.configuration_parameter_name = "secret";
+    mapping.component.instance = "controller";
+    ocpp::v2::EVSE evse;
+    evse.id = 1;
+    evse.connectorId = 2;
+    mapping.component.evse = evse;
+    mapping.variable.instance = "credential";
+    FakeRegistry registry;
+    const auto binding = dm::ConfigServiceBinding::create(config_service, registry, {mapping}, false);
+    ASSERT_EQ(registry.components.size(), 1u);
+    EXPECT_EQ(registry.components.front().component, mapping.component);
+    EXPECT_EQ(registry.components.front().variables.front().variable, mapping.variable);
+    EXPECT_EQ(binding->set_value(mapping.component, mapping.variable, AttributeEnum::Actual, "updated", "csms"),
+              SetVariableStatusEnum::Accepted);
+    ASSERT_EQ(config_service.writes.size(), 1u);
+    EXPECT_EQ(config_service.writes.front().first.module_implementation_id, "main");
+    EXPECT_EQ(config_service.writes.front().first.configuration_parameter_name, "secret");
+}
+
+TEST(ConfigurationMappingTest, AutomaticExposureCanBeDisabled) {
+    FakeConfigService config_service;
+    FakeRegistry registry;
+    const auto binding = dm::ConfigServiceBinding::create(config_service, registry, {timeout_mapping()}, false);
+    ASSERT_EQ(registry.components.size(), 1u);
+    EXPECT_NE(registry.find("TxCtrlr", "EVConnectionTimeOut"), nullptr);
+    EXPECT_EQ(registry.find("Auth", "main.secret"), nullptr);
+    EXPECT_EQ(registry.find("EvseManager", "session_logging"), nullptr);
+}
+
+TEST(ConfigurationMappingTest, ExplicitMappingRequiresChangeNotifications) {
+    FakeConfigService config_service;
+    config_service.deny_subscription = true;
+    FakeRegistry registry;
+    EXPECT_THROW(dm::ConfigServiceBinding::create(config_service, registry, {timeout_mapping()}, false),
+                 std::invalid_argument);
+    EXPECT_EQ(registry.provider, nullptr);
+}
+
+TEST(ConfigurationMappingTest, RejectedExplicitRegistrationCleansUpTheProvider) {
+    class RejectingRegistry : public FakeRegistry {
+    public:
+        ocpp::v2::ComponentRegistrationResult
+        register_components(const std::string& owner, const std::vector<ocpp::v2::RegisteredComponent>& components,
+                            std::shared_ptr<ocpp::v2::VariableValueProvider> provider) override {
+            FakeRegistry::register_components(owner, components, std::move(provider));
+            const auto mapping = timeout_mapping();
+            return {{{mapping.component, mapping.variable, ocpp::v2::RegistrationRejectionReason::AlreadyDefined,
+                      "other"}}};
+        }
+    } registry;
+    FakeConfigService config_service;
+    EXPECT_THROW(dm::ConfigServiceBinding::create(config_service, registry, {timeout_mapping()}, false),
+                 std::invalid_argument);
+    ASSERT_EQ(registry.unregistered.size(), 1u);
+    for (const auto& [module, handlers] : config_service.handlers) {
+        EXPECT_TRUE(handlers.empty());
+    }
+}
+
+TEST(ConfigurationMappingTest, RejectsUnknownSourcesAndDuplicateSourcesOrTargets) {
+    FakeConfigService config_service;
+    const auto build = [&](const std::vector<dm::ConfigParameterBinding>& mappings) {
+        return dm::build_configuration_views(config_service.configs, config_service.mappings, mappings, true);
+    };
+    auto mapping = timeout_mapping();
+    auto other = mapping;
+    other.parameter.configuration_parameter_name = "missing";
+    EXPECT_THROW(build({other}), std::invalid_argument);
+    other = mapping;
+    other.variable.name = "Other";
+    EXPECT_THROW(build({mapping, other}), std::invalid_argument);
+    other = mapping;
+    other.parameter.module_implementation_id = "main";
+    other.parameter.configuration_parameter_name = "secret";
+    other.component.name = "txctrlr";
+    other.variable.name = "evconnectiontimeout";
+    EXPECT_THROW(build({mapping, other}), std::invalid_argument);
+    other = mapping;
+    other.component = make_component("Auth", "auth");
+    other.variable.name = "main.secret";
+    EXPECT_THROW(build({other}), std::invalid_argument);
+    config_service.configs.at({"auth", "Auth"})[Everest::config::MODULE_IMPLEMENTATION_ID]
+        .front()
+        .characteristics.datatype = everest::config::Datatype::Unknown;
+    EXPECT_THROW(build({mapping}), std::out_of_range);
+}
+
+TEST(ConfigurationMappingTest, LoadsScopedYamlAndRejectsInvalidFiles) {
+    const auto schema_path =
+        std::filesystem::path(CUSTOM_ERROR_MAPPING_SCHEMAS_DIR) / "configuration_mapping.schema.json";
+    const auto work_dir = test_support::create_unique_directory("ocpp_configuration_mapping");
+    const auto path = work_dir / "mapping.yaml";
+    const auto write = [&](const std::string& yaml) { std::ofstream(path) << yaml; };
+    write(R"(mappings:
+  - everest:
+      module_id: connector_1
+      implementation_id: main
+      parameter: enabled
+    ocpp:
+      component:
+        name: ISO15118Ctrlr
+        instance: controller
+        evse:
+          id: 1
+          connectorId: 2
+      variable:
+        name: Enabled
+        instance: pnc
+)");
+    const auto mappings = dm::load_configuration_mappings(path, schema_path);
+    ASSERT_EQ(mappings.size(), 1u);
+    EXPECT_EQ(mappings.front().parameter.module_implementation_id, "main");
+    EXPECT_EQ(mappings.front().component.instance, "controller");
+    ASSERT_TRUE(mappings.front().component.evse.has_value());
+    EXPECT_EQ(mappings.front().component.evse->id, 1);
+    EXPECT_EQ(mappings.front().component.evse->connectorId, 2);
+    EXPECT_EQ(mappings.front().variable.instance, "pnc");
+    EXPECT_TRUE(dm::load_configuration_mappings({}, work_dir / "missing.schema.json").empty());
+    EXPECT_THROW(dm::load_configuration_mappings(work_dir / "missing.yaml", schema_path), std::invalid_argument);
+    for (const auto& yaml :
+         {"mappings: {}", "mappings: []\nunknown: true", "mappings: [{}]", "mappings: [", R"(mappings:
+  - everest: {module_id: auth, parameter: connection_timeout}
+    ocpp: {component: {name: TxCtrlr, evse: {id: 0}}, variable: {name: EVConnectionTimeOut}}
+)",
+          R"(mappings:
+  - everest: {module_id: auth, parameter: connection_timeout, typo: true}
+    ocpp: {component: {name: TxCtrlr}, variable: {name: EVConnectionTimeOut}}
+)"}) {
+        write(yaml);
+        EXPECT_THROW(dm::load_configuration_mappings(path, schema_path), std::invalid_argument) << yaml;
+    }
+    std::filesystem::remove_all(work_dir);
+}
+
+TEST(ConfigurationMappingTest, CheckedInExampleLoadsWithSchemaFile) {
+    const auto schemas = std::filesystem::path(CUSTOM_ERROR_MAPPING_SCHEMAS_DIR);
+    const auto mappings = dm::load_configuration_mappings(schemas / "configuration_mapping.example.yaml",
+                                                          schemas / "configuration_mapping.schema.json");
+    ASSERT_EQ(mappings.size(), 1u);
+    EXPECT_EQ(mappings.front().parameter.module_id, "auth");
+    EXPECT_EQ(mappings.front().parameter.configuration_parameter_name, "connection_timeout");
+    EXPECT_EQ(mappings.front().component.name, "TxCtrlr");
+    EXPECT_EQ(mappings.front().variable.name, "EVConnectionTimeOut");
+}
+
+TEST(ConfigurationMappingTest, AuthOnlyMappingsWriteThroughConfigServiceAndReportUpdates) {
+    const auto schemas = std::filesystem::path(CUSTOM_ERROR_MAPPING_SCHEMAS_DIR);
+    const auto mappings = dm::load_configuration_mappings(schemas / "configuration_mapping_auth.yaml",
+                                                          schemas / "configuration_mapping.schema.json");
+    ASSERT_EQ(mappings.size(), 2u);
+    FakeConfigService config_service;
+    config_service.configs.at({"auth", "Auth"})[Everest::config::MODULE_IMPLEMENTATION_ID].push_back(
+        make_parameter("master_pass_group_id", std::string(""), everest::config::Datatype::String,
+                       everest::config::Mutability::ReadWrite));
+    FakeRegistry registry;
+    const auto binding = dm::ConfigServiceBinding::create(config_service, registry, mappings, false);
+    EXPECT_NE(registry.find("TxCtrlr", "EVConnectionTimeOut"), nullptr);
+    EXPECT_NE(registry.find("AuthCtrlr", "MasterPassGroupId"), nullptr);
+    for (const auto& mapping : mappings) {
+        EXPECT_EQ(mapping.parameter.module_id, "auth");
+        const auto& parameter = mapping.parameter.configuration_parameter_name;
+        const std::string value = parameter == "connection_timeout" ? "90" : "Managers";
+        EXPECT_EQ(binding->set_value(mapping.component, mapping.variable, AttributeEnum::Actual, value, "csms"),
+                  SetVariableStatusEnum::Accepted);
+        ASSERT_FALSE(config_service.writes.empty());
+        EXPECT_EQ(config_service.writes.back().first.configuration_parameter_name, parameter);
+        config_service.publish("auth", std::nullopt, parameter, value);
+        ASSERT_FALSE(registry.notified.empty());
+        EXPECT_EQ(registry.notified.back().component, mapping.component);
+        EXPECT_EQ(registry.notified.back().variable, mapping.variable);
+        EXPECT_EQ(registry.notified.back().value, value);
+    }
+    EXPECT_EQ(config_service.writes.size(), 2u);
+    EXPECT_EQ(registry.notified.size(), 2u);
+}
+
+TEST(ConfigurationMappingTest, MissingOrInvalidSchemaFailsWithItsPath) {
+    const auto work_dir = test_support::create_unique_directory("ocpp_configuration_mapping_invalid_schema");
+    const auto schema_path = work_dir / "schema.json";
+    const auto mapping_path =
+        std::filesystem::path(CUSTOM_ERROR_MAPPING_SCHEMAS_DIR) / "configuration_mapping.example.yaml";
+    const auto expect_failure = [&] {
+        try {
+            dm::load_configuration_mappings(mapping_path, schema_path);
+            ADD_FAILURE() << "Accepted missing or invalid schema";
+        } catch (const std::invalid_argument& e) {
+            EXPECT_NE(std::string(e.what()).find(schema_path.string()), std::string::npos);
+        }
+    };
+    expect_failure();
+    for (const auto& schema : {"{", R"({"type": "not-a-json-schema-type"})"}) {
+        std::ofstream(schema_path) << schema;
+        expect_failure();
+    }
+    std::filesystem::remove_all(work_dir);
+}
+
+TEST(ConfigurationMappingTest, UsesSuppliedSchemaInsteadOfDocumentReference) {
+    const auto work_dir = test_support::create_unique_directory("ocpp_configuration_mapping_supplied_schema");
+    const auto schema_path = work_dir / "schema.json";
+    const auto mapping_path = work_dir / "mapping.yaml";
+    std::ofstream(mapping_path) << R"({"$schema": "missing.schema.json", "mappings": []})";
+    std::ofstream(schema_path) << "true";
+    EXPECT_TRUE(dm::load_configuration_mappings(mapping_path, schema_path).empty());
+    std::ofstream(schema_path) << "false";
+    EXPECT_THROW(dm::load_configuration_mappings(mapping_path, schema_path), std::invalid_argument);
+    std::filesystem::remove_all(work_dir);
+}
+
+TEST(ConfigurationMappingTest, LoaderEnforcesSchemaBeforeConvertingIdentifiers) {
+    const auto schema_path =
+        std::filesystem::path(CUSTOM_ERROR_MAPPING_SCHEMAS_DIR) / "configuration_mapping.schema.json";
+    const auto work_dir = test_support::create_unique_directory("ocpp_configuration_mapping_schema");
+    const auto path = work_dir / "mapping.yaml";
+    const nlohmann::json valid = {
+        {"mappings",
+         {{{"everest", {{"module_id", "auth"}, {"parameter", "connection_timeout"}}},
+           {"ocpp", {{"component", {{"name", "TxCtrlr"}}}, {"variable", {{"name", "EVConnectionTimeOut"}}}}}}}}};
+    const auto write = [&](const nlohmann::json& document) { std::ofstream(path) << document.dump(); };
+    auto document = valid;
+    document["$schema"] = "configuration_mapping.schema.json";
+    write(document);
+    EXPECT_EQ(dm::load_configuration_mappings(path, schema_path).size(), 1u);
+    write({{"mappings", nlohmann::json::array()}});
+    EXPECT_TRUE(dm::load_configuration_mappings(path, schema_path).empty());
+
+    document = valid;
+    document["configuration"] = document.at("mappings");
+    document.erase("mappings");
+    write(document);
+    EXPECT_THROW(dm::load_configuration_mappings(path, schema_path), std::invalid_argument);
+    for (const auto& [endpoint, legacy] : {std::pair{"everest", "source"}, std::pair{"ocpp", "target"}}) {
+        document = valid;
+        auto& mapping = document["mappings"][0];
+        mapping[legacy] = mapping.at(endpoint);
+        mapping.erase(endpoint);
+        write(document);
+        EXPECT_THROW(dm::load_configuration_mappings(path, schema_path), std::invalid_argument) << legacy;
+    }
+
+    const std::vector<std::pair<std::string, nlohmann::json>> invalid_values = {
+        {"/mappings", nlohmann::json::object()},
+        {"/mappings/0/everest/module_id", ""},
+        {"/mappings/0/everest/parameter", false},
+        {"/mappings/0/everest/implementation_id", nullptr},
+        {"/mappings/0/ocpp/component/name", std::string(51, 'x')},
+        {"/mappings/0/ocpp/component/instance", ""},
+        {"/mappings/0/ocpp/component/evse", {{"id", 0}}},
+        {"/mappings/0/ocpp/component/evse", {{"id", -1}}},
+        {"/mappings/0/ocpp/component/evse", {{"id", 2147483648LL}}},
+        {"/mappings/0/ocpp/component/evse", {{"id", 1.5}}},
+        {"/mappings/0/ocpp/component/evse", {{"id", "1"}}},
+        {"/mappings/0/ocpp/component/evse", {{"connectorId", 1}}},
+        {"/mappings/0/ocpp/component/evse", {{"id", 1}, {"connectorId", 0}}},
+        {"/mappings/0/ocpp/component/evse", {{"id", 1}, {"unknown", true}}},
+        {"/mappings/0/ocpp/variable/name", ""},
+        {"/mappings/0/ocpp/variable/instance", std::string(51, 'x')},
+        {"/mappings/0/ocpp/variable/typo", "bad"},
+        {"/mappings/0/ocpp/typo", true},
+        {"/mappings/0/typo", true},
+        {"/unknown", true},
+    };
+    for (const auto& [pointer, value] : invalid_values) {
+        document = valid;
+        document[nlohmann::json::json_pointer(pointer)] = value;
+        write(document);
+        try {
+            dm::load_configuration_mappings(path, schema_path);
+            ADD_FAILURE() << "Accepted invalid mapping at " << pointer << ": " << value;
+        } catch (const std::invalid_argument& e) {
+            EXPECT_NE(std::string(e.what()).find(path.string()), std::string::npos);
+        }
+    }
+    std::filesystem::remove_all(work_dir);
+}
+
+TEST(ConfigurationMappingTest, RemovesOnlyCompatibleExplicitTargetsFromComponentConfig) {
+    FakeConfigService config_service;
+    auto [component, variables] = ocpp::v2::parse_component_config_from_string(R"({
+      "name": "TxCtrlr", "properties": {
+        "EVConnectionTimeOut": {
+          "variable_name": "EVConnectionTimeOut",
+          "characteristics": {"dataType": "integer", "supportsMonitoring": true},
+          "attributes": [{"type": "Actual", "mutability": "ReadWrite", "value": "30"}]
+        }
+      }
+    })");
+    std::map<ocpp::v2::ComponentKey, std::vector<ocpp::v2::DeviceModelVariable>> components{{component, variables}};
+    const auto mapping = timeout_mapping();
+    components.at(component).front().characteristics.dataType = ocpp::v2::DataEnum::string;
+    EXPECT_THROW(dm::remove_mapped_configuration_variables(components, {mapping}, config_service.configs),
+                 std::invalid_argument);
+    EXPECT_EQ(components.at(component).size(), 1u);
+    components.at(component) = variables;
+    components.at(component).front().attributes.clear();
+    EXPECT_THROW(dm::remove_mapped_configuration_variables(components, {mapping}, config_service.configs),
+                 std::invalid_argument);
+    components.at(component) = variables;
+    dm::remove_mapped_configuration_variables(components, {mapping}, config_service.configs);
+    EXPECT_TRUE(components.at(component).empty());
+    EXPECT_EQ(components.size(), 1u);
+    dm::remove_mapped_configuration_variables(components, {mapping}, config_service.configs);
+}
+
+TEST(ConfigurationMappingTest, ValuesReportsAndMonitorsUseConfigServiceAcrossRestarts) {
+    const auto work_dir = test_support::create_unique_directory("ocpp_mapped_config");
+    const auto db_path = work_dir / "device_model.db";
+    const auto mapping = timeout_mapping();
+    FakeConfigService config_service;
+    auto [component, variables] = ocpp::v2::parse_component_config_from_string(R"({
+      "name": "TxCtrlr", "properties": {
+        "EVConnectionTimeOut": {
+          "variable_name": "EVConnectionTimeOut",
+          "characteristics": {"dataType": "integer", "supportsMonitoring": true},
+          "attributes": [{"type": "Actual", "mutability": "ReadWrite", "value": "30"}]
+        }
+      }
+    })");
+    std::map<ocpp::v2::ComponentKey, std::vector<ocpp::v2::DeviceModelVariable>> components{{component, variables}};
+    {
+        ocpp::v2::InitDeviceModelDb init_db(db_path, DEVICE_MODEL_MIGRATIONS_DIR);
+        init_db.initialize_database(components, true, false);
+    }
+    {
+        ocpp::v2::DeviceModelStorageSqlite storage(db_path);
+        EXPECT_EQ(storage.set_variable_attribute_value(mapping.component, mapping.variable, AttributeEnum::Actual,
+                                                       "200", "csms"),
+                  SetVariableStatusEnum::Accepted);
+    }
+    dm::remove_mapped_configuration_variables(components, {mapping}, config_service.configs);
+    {
+        ocpp::v2::InitDeviceModelDb init_db(db_path, DEVICE_MODEL_MIGRATIONS_DIR);
+        init_db.initialize_database(components, false, false);
+    }
+    std::optional<std::int64_t> monitor_id;
+    for (int boot = 0; boot < 2; ++boot) {
+        ocpp::v2::DeviceModel device_model(std::make_unique<ocpp::v2::DeviceModelStorageSqlite>(db_path));
+        const auto binding = dm::ConfigServiceBinding::create(config_service, device_model, {mapping}, false);
+        ASSERT_TRUE(binding->registration_result().rejected.empty());
+        std::string value;
+        ASSERT_EQ(device_model.get_variable(mapping.component, mapping.variable, AttributeEnum::Actual, value, false,
+                                            ocpp::v2::UnsetValue::NotSupported),
+                  ocpp::v2::GetVariableStatusEnum::Accepted);
+        EXPECT_EQ(value, "60");
+        const auto report = device_model.get_base_report_data(ocpp::v2::ReportBaseEnum::FullInventory);
+        ASSERT_EQ(report.size(), 1u);
+        EXPECT_EQ(report.front().variableAttribute.front().value, "60");
+
+        if (boot == 0) {
+            ocpp::v2::SetMonitoringData monitor;
+            monitor.component = mapping.component;
+            monitor.variable = mapping.variable;
+            monitor.type = ocpp::v2::MonitorEnum::Delta;
+            monitor.value = 10;
+            monitor.severity = 3;
+            const auto results = device_model.set_monitors({monitor});
+            ASSERT_EQ(results.size(), 1u);
+            ASSERT_EQ(results.front().status, ocpp::v2::SetMonitoringStatusEnum::Accepted);
+            monitor_id = results.front().id;
+        } else {
+            const auto metadata = device_model.get_variable_meta_data(mapping.component, mapping.variable);
+            ASSERT_TRUE(metadata.has_value());
+            EXPECT_EQ(metadata->monitors.count(monitor_id.value()), 1u);
+        }
+        int notifications = 0;
+        device_model.register_variable_listener([&](const auto& monitors, const auto&, const auto&, const auto&,
+                                                    const auto&, const auto& previous, const auto& current) {
+            ++notifications;
+            EXPECT_EQ(monitors.count(monitor_id.value()), 1u);
+            EXPECT_EQ(previous, "60");
+            EXPECT_EQ(current, "120");
+        });
+        config_service.publish("auth", std::nullopt, "connection_timeout", "120");
+        EXPECT_EQ(notifications, 1);
+        EXPECT_TRUE(config_service.writes.empty());
+        config_service.result.set_status = everest::config::SetConfigStatus::RebootRequired;
+        EXPECT_EQ(device_model.set_value(mapping.component, mapping.variable, AttributeEnum::Actual, "150", "csms"),
+                  SetVariableStatusEnum::RebootRequired);
+        config_service.writes.clear();
+        device_model.get_variable(mapping.component, mapping.variable, AttributeEnum::Actual, value, false,
+                                  ocpp::v2::UnsetValue::NotSupported);
+        EXPECT_EQ(value, "120");
+        binding->stop();
+        ocpp::v2::DeviceModelStorageSqlite storage(db_path);
+        EXPECT_EQ(storage.get_device_model().count(mapping.component), 0u);
+        EXPECT_TRUE(storage.get_stored_values().empty());
+    }
+    std::filesystem::remove_all(work_dir);
 }
 
 TEST(ConfigServiceBindingTest, WriteGoesToTheConfigurationService) {

@@ -38,8 +38,10 @@ void DeviceModelRegistrations::register_everest_device_model(EverestDeviceModel&
 }
 
 void DeviceModelRegistrations::register_config_service(ConfigServiceAccess& config_service,
-                                                       ocpp::v2::DeviceModelRegistryInterface& registry) {
-    this->config_service_binding = ConfigServiceBinding::create(config_service, registry);
+                                                       ocpp::v2::DeviceModelRegistryInterface& registry,
+                                                       const std::vector<ConfigParameterBinding>& mappings,
+                                                       bool expose_unmapped) {
+    this->config_service_binding = ConfigServiceBinding::create(config_service, registry, mappings, expose_unmapped);
     this->registration_results.push_back(
         {VARIABLE_OWNER_EVEREST_CONFIG, this->config_service_binding->registration_result()});
 }

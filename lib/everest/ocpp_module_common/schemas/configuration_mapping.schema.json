@@ -1,0 +1,114 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://everest.github.io/schemas/ocpp_module_common/configuration_mapping.schema.json",
+  "$comment": "SPDX-License-Identifier: Apache-2.0; Copyright Pionix GmbH and Contributors to EVerest",
+  "title": "OCPP configuration mappings",
+  "description": "Explicit one-to-one bindings between OCPP component/variables and EVerest ConfigService parameters. OCPP writes go through ConfigService; accepted configuration changes update the OCPP view. ConfigService owns persistence. Parameter existence, datatype compatibility and identity conflicts are checked at startup.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["mappings"],
+  "properties": {
+    "$schema": {
+      "description": "Optional schema reference for editors; runtime validation always uses the schema file supplied by the caller.",
+      "type": "string"
+    },
+    "mappings": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/mapping"
+      }
+    }
+  },
+  "definitions": {
+    "nonempty_string": {
+      "type": "string",
+      "minLength": 1
+    },
+    "ocpp_identifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 50
+    },
+    "positive_id": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 2147483647
+    },
+    "mapping": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["everest", "ocpp"],
+      "properties": {
+        "everest": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["module_id", "parameter"],
+          "properties": {
+            "module_id": {
+              "$ref": "#/definitions/nonempty_string"
+            },
+            "implementation_id": {
+              "description": "Omit for a module-level parameter.",
+              "$ref": "#/definitions/nonempty_string"
+            },
+            "parameter": {
+              "$ref": "#/definitions/nonempty_string"
+            }
+          }
+        },
+        "ocpp": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["component", "variable"],
+          "properties": {
+            "component": {
+              "$ref": "#/definitions/component"
+            },
+            "variable": {
+              "$ref": "#/definitions/variable"
+            }
+          }
+        }
+      }
+    },
+    "component": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": {
+          "$ref": "#/definitions/ocpp_identifier"
+        },
+        "instance": {
+          "$ref": "#/definitions/ocpp_identifier"
+        },
+        "evse": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id"],
+          "properties": {
+            "id": {
+              "$ref": "#/definitions/positive_id"
+            },
+            "connectorId": {
+              "$ref": "#/definitions/positive_id"
+            }
+          }
+        }
+      }
+    },
+    "variable": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": {
+          "$ref": "#/definitions/ocpp_identifier"
+        },
+        "instance": {
+          "$ref": "#/definitions/ocpp_identifier"
+        }
+      }
+    }
+  }
+}

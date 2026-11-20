@@ -40,14 +40,32 @@ cc_library(
         "//lib/everest/conversions/ocpp:ocpp_conversions",
         "//lib/everest/framework:framework",
         "//lib/everest/ocpp:libocpp",
+        "//lib/everest/yaml:everest_yaml",
         "//types:types_lib",
         "@com_github_pboettch_json-schema-validator//:json-schema-validator",
     ],
 )
 
+genrule(
+    name = "configuration_mapping_share_files",
+    srcs = [
+        "schemas/configuration_mapping_auth.yaml",
+        "schemas/configuration_mapping.schema.json",
+    ],
+    outs = [
+        "share/everest/modules/OCPPmulti/configuration_mapping_auth.yaml",
+        "share/everest/modules/OCPPmulti/configuration_mapping.schema.json",
+    ],
+    cmd = "mkdir -p $(RULEDIR)/share/everest/modules/OCPPmulti && " +
+          "cp $(location schemas/configuration_mapping_auth.yaml) $(RULEDIR)/share/everest/modules/OCPPmulti/ && " +
+          "cp $(location schemas/configuration_mapping.schema.json) $(RULEDIR)/share/everest/modules/OCPPmulti/",
+    visibility = ["//visibility:public"],
+)
+
 cc_test(
     name = "ocpp_module_common_tests",
     srcs = [
+        "tests/config_service_binding_test.cpp",
         "tests/custom_error_mapping_loader_tests.cpp",
         "tests/custom_error_mapping_validation_tests.cpp",
         "tests/custom_file_error_mapping_tests.cpp",
@@ -55,13 +73,22 @@ cc_test(
         "tests/error_placeholders_tests.cpp",
         "tests/external_limits_tests.cpp",
         "tests/transaction_handler_tests.cpp",
+        "tests/unique_directory.hpp",
     ],
-    data = glob(["tests/data/*.json"]) + ["schemas/custom_error_mapping.example.json"] + ["//errors"],
+    data = glob(["tests/data/*.json"]) + [
+        "schemas/custom_error_mapping.example.json",
+        "schemas/configuration_mapping.example.yaml",
+        "schemas/configuration_mapping_auth.yaml",
+        "schemas/configuration_mapping.schema.json",
+        "//errors",
+        "//lib/everest/ocpp:device_model_migrations",
+    ],
     linkstatic = True,
     local_defines = [
         'TEST_DATA_DIR=\\"lib/everest/ocpp_module_common/tests/data\\"',
         'CUSTOM_ERROR_MAPPING_SCHEMAS_DIR=\\"lib/everest/ocpp_module_common/schemas\\"',
         'EVEREST_ERRORS_DIR=\\"errors\\"',
+        'DEVICE_MODEL_MIGRATIONS_DIR=\\"lib/everest/ocpp/config/common/device_model_migrations\\"',
     ],
     target_compatible_with = CROSS_TEST_INCOMPATIBLE,
     deps = [

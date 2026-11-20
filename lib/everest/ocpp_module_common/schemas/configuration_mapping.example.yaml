@@ -1,0 +1,14 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright Pionix GmbH and Contributors to EVerest
+# yaml-language-server: $schema=./configuration_mapping.schema.json
+
+# The EVerest module id must match the station configuration.
+mappings:
+  - ocpp:
+      component:
+        name: TxCtrlr
+      variable:
+        name: EVConnectionTimeOut
+    everest:
+      module_id: auth
+      parameter: connection_timeout
