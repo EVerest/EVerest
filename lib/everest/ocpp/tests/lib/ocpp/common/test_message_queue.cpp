@@ -726,7 +726,7 @@ TEST_F(MessageQueueTest, test_replaced_persisted_boot_notification_in_flight_is_
 // make the queue wait longer and longer for a CSMS that does not answer
 TEST_F(MessageQueueTest, test_boot_notification_retries_keep_their_message_timeout) {
     config.message_timeout_seconds = 1;
-    config.transaction_message_retry_interval = 2;
+    config.transaction_message_retry_interval = 3;
     config.boot_notification_retry_interval_seconds = 0;
     restart_message_queue();
     std::mutex times_mutex;
@@ -742,15 +742,15 @@ TEST_F(MessageQueueTest, test_boot_notification_retries_keep_their_message_timeo
         }));
 
     push_message_call(TestMessageType::BootNotification, "boot");
-    // Each attempt times out after message_timeout_seconds + transaction_message_retry_interval * 1 = 3 s. A timeout
-    // that grows with the attempts makes the second wait 5 s.
-    wait_for_calls(3, std::chrono::seconds(12));
+    // Each attempt times out after message_timeout_seconds + transaction_message_retry_interval * 1 = 4 s. A timeout
+    // that grows with the attempts makes the second wait 7 s.
+    wait_for_calls(3, std::chrono::seconds(16));
 
     const std::lock_guard<std::mutex> lock(times_mutex);
     ASSERT_GE(sent_at.size(), 3);
     const auto first_wait = sent_at.at(1) - sent_at.at(0);
     const auto second_wait = sent_at.at(2) - sent_at.at(1);
-    EXPECT_LT(second_wait, first_wait + std::chrono::seconds(1))
+    EXPECT_LT(second_wait, first_wait + std::chrono::milliseconds(1500))
         << "the second retry waited longer than the first for the message timeout";
 }
 

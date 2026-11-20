@@ -29,8 +29,10 @@ inline std::string normalised_csms_url(const std::string& ocpp_csms_url, const s
     const bool secure = lower(ocpp_csms_url).rfind("wss://", 0) == 0;
     const auto security_profile = secure ? security::SecurityProfile::TLS_WITH_BASIC_AUTHENTICATION
                                          : security::SecurityProfile::UNSECURED_TRANSPORT_WITH_BASIC_AUTHENTICATION;
+    // parse_and_validate() requires an identity. A path segment never equals "/", so nothing is stripped without one.
+    const auto identity_to_strip = identity.empty() ? std::string("/") : identity;
     try {
-        auto uri = Uri::parse_and_validate(ocpp_csms_url, identity, security_profile);
+        auto uri = Uri::parse_and_validate(ocpp_csms_url, identity_to_strip, security_profile);
         return ev_uri(secure, lower(uri.get_hostname()), uri.get_port(), uri.get_path()).str();
     } catch (const std::invalid_argument&) {
         return ocpp_csms_url;

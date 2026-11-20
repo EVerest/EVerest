@@ -1683,6 +1683,7 @@ TEST_F(ProvisioningActiveSlotTest, GlobalBasicAuthPasswordChangeClearsConnectedS
     ASSERT_TRUE(NetworkConfigurationComponentVariables::write_profile_to_device_model(*dm, 1, profile, "test"));
     ASSERT_TRUE(NetworkConfigurationComponentVariables::write_profile_to_device_model(*dm, 2, profile, "test"));
     set_active_slot(1);
+    this->registration_status = RegistrationStatusEnum::Rejected;
     ON_CALL(connectivity_manager, is_websocket_connected()).WillByDefault(::testing::Return(true));
     ON_CALL(connectivity_manager, get_active_network_configuration_slot()).WillByDefault(::testing::Return(2));
 
@@ -1698,6 +1699,17 @@ TEST_F(ProvisioningActiveSlotTest, GlobalBasicAuthPasswordChangeClearsConnectedS
     ASSERT_TRUE(persisted.has_value());
     EXPECT_TRUE(persisted->basicAuthPassword.has_value())
         << "the per-slot password of a slot that is not connected was cleared";
+}
+
+// Once the charging station is registered, ActiveNetworkProfile names the connected slot. The connectivity manager's
+// active slot follows NetworkConfigurationPriority and can name another slot when the connected one is dropped from it.
+TEST_F(ProvisioningActiveSlotTest, RejectOcppCsmsUrlOnPersistedSlotOnceRegistered) {
+    set_active_slot(2);
+    ON_CALL(connectivity_manager, is_websocket_connected()).WillByDefault(::testing::Return(true));
+    ON_CALL(connectivity_manager, get_active_network_configuration_slot()).WillByDefault(::testing::Return(1));
+
+    auto result = set_single_variable(make_set_variable_data(2, "OcppCsmsUrl", "wss://new.example.com/ocpp"));
+    EXPECT_TRUE(is_rejected_by_active_slot(result)) << "OcppCsmsUrl on the connected slot must be rejected (B09.FR.22)";
 }
 
 // B09.FR.27 regression: when the per-slot BasicAuthPassword has a non-empty value, a global

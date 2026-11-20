@@ -54,7 +54,14 @@ TEST(RegistrationEndpointsTest, NormalisedCsmsUrlKeepsSchemeHostPortAndPathApart
 TEST(RegistrationEndpointsTest, NormalisedCsmsUrlReturnsUnusableUrlAsWritten) {
     EXPECT_EQ(normalised_csms_url("ws:csms.example.com", IDENTITY), "ws:csms.example.com");
     EXPECT_EQ(normalised_csms_url("", IDENTITY), "");
-    EXPECT_EQ(normalised_csms_url("ws://CSMS.example.com", ""), "ws://CSMS.example.com");
+}
+
+// Without an identity there is no last segment to strip, but the URL is still compared as the websocket URL
+TEST(RegistrationEndpointsTest, NormalisedCsmsUrlWithoutIdentityIgnoresHostCaseDefaultPortAndTrailingSlash) {
+    const auto url = normalised_csms_url("ws://csms.example.com/ocpp", "");
+    EXPECT_EQ(normalised_csms_url("ws://CSMS.example.com:80/ocpp/", ""), url);
+    EXPECT_EQ(normalised_csms_url("ws://csms.example.com/ocpp", IDENTITY), url);
+    EXPECT_NE(normalised_csms_url("ws://csms.example.com/ocpp/cp001", ""), url);
 }
 
 TEST(RegistrationEndpointsTest, ConnectReturnsNothingBeforeARegistration) {

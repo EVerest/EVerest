@@ -441,7 +441,7 @@ private:
 
     // states
     std::atomic<RegistrationStatusEnum> registration_status{RegistrationStatusEnum::Rejected};
-    RegistrationEndpoints registration_endpoints;
+    RegistrationEndpoints m_registration_endpoints;
     std::atomic<OcppProtocolVersion> ocpp_version{
         OcppProtocolVersion::Unknown}; // version that is currently in use, selected by CSMS in websocket handshake
     std::atomic<UploadLogStatusEnum> upload_log_status{UploadLogStatusEnum::Idle};
