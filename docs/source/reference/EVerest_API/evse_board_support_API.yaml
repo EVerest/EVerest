@@ -131,6 +131,11 @@ channels:
     messages:
       receive_unlock:
         $ref: '#/components/messages/receive_unlock'
+  send_lock_state:
+    address: 'm2e/lock_state'
+    messages:
+      send_lock_state:
+        $ref: '#/components/messages/send_lock_state'
 
 
   send_raise_error:
@@ -280,6 +285,12 @@ operations:
     action: receive
     channel:
       $ref: '#/channels/receive_unlock'
+  send_lock_state:
+    title: 'Send connector lock state'
+    action: send
+    channel:
+      $ref: '#/channels/send_lock_state'
+    description: 'Direction: Module to EVerest'
 
 
   send_raise_error:
@@ -539,7 +550,9 @@ components:
       name: receive_lock
       title: 'Receive signal to lock'
       summary: >-
-        Lock connector lock
+        Lock connector lock. EVerest does not wait for a reply. Clients with lock feedback report the
+        result with lock_state, retry internally if needed, and raise ConnectorLockFailedLock only after
+        the final retry failed.
       contentType: application/json
       payload: {}
     receive_unlock:
@@ -549,6 +562,20 @@ components:
         Unlock connector lock. (e.g. normal unlock or enforced by OCPP)
       contentType: application/json
       payload: {}
+    send_lock_state:
+      name: send_lock_state
+      title: 'Send connector lock state'
+      summary: >-
+        Physical state of the connector lock as reported by its feedback. Optional: send it only if the
+        hardware has lock feedback. If sent, send it once at startup and on every change.
+        EvseManager can be configured to wait for Locked before it authorizes a session.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/LockStatus'
+      examples:
+        - summary: ""
+          payload:
+            "lock_state": "Locked"
 
 
     send_raise_error:
@@ -761,6 +788,23 @@ components:
             - A_20
             - A_32
             - A_63_3ph_70_1ph
+    LockStatus:
+      description: State of the connector lock
+      type: object
+      additionalProperties: true
+      required:
+        - lock_state
+      properties:
+        lock_state:
+          description: >-
+            Unknown: The lock state cannot be determined
+            Unlocked: The lock is open, the plug can be removed
+            Locked: The lock is closed and confirmed by feedback, the plug cannot be removed
+          type: string
+          enum:
+            - Unknown
+            - Unlocked
+            - Locked
     PWMDutyCycle:
       description: >-
         PWM duty cycle in percent, strictly between 0 and 100. EVerest requests 100 % (X1) and 0 % (F) through

@@ -85,6 +85,7 @@ private:
     void generate_api_var_ac_pp_ampacity();
     void generate_api_var_request_stop_transaction();
     void generate_api_var_rcd_current();
+    void generate_api_var_lock_state();
 
     void generate_api_var_raise_error();
     void generate_api_var_clear_error();
