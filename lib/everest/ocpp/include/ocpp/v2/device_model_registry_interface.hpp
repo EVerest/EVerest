@@ -76,6 +76,14 @@ enum class RegistrationRejectionReason {
     /// \brief libocpp writes the variable from its own state, AuthCacheCtrlr.Storage, the AvailabilityState of an EVSE
     /// or any variable of a NetworkConfiguration slot for example, so only the component config or libocpp defines it
     ReservedVariable,
+    /// \brief The OCPP 1.6 key declared for the variable, or the variable itself, belongs to another key: a built-in
+    /// key, an entry of the OCPP 1.6 key mapping file or the key of another owner's variable. Not set by the device
+    /// model.
+    Ocpp16KeyInUse,
+    /// \brief The OCPP 1.6 key declared for the variable cannot be mapped to it: the key cannot be overridden, the
+    /// variable is connection configuration or computed by the OCPP 1.6 stack, has no Actual attribute or, for a
+    /// built-in key, another data type than the key's built-in variable. Not set by the device model.
+    Ocpp16KeyInvalid,
 };
 
 struct RejectedVariable {

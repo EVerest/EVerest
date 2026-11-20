@@ -33,6 +33,7 @@ target_sources(${MODULE_NAME}
     v16_chargepoint.cpp
     v16_connection_config_validator.cpp
     v16_conversions.cpp
+    v16_key_binder.cpp
     v16_variable_access.cpp
 )
 target_link_libraries(${MODULE_NAME}

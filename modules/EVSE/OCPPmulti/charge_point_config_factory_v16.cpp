@@ -4,6 +4,7 @@
 
 #include <everest/ocpp_module_common/device_model/device_model_conflicts.hpp>
 #include <everest/ocpp_module_common/device_model/everest_device_model.hpp>
+#include <everest/ocpp_module_common/device_model/external_owners.hpp>
 
 #include <filesystem>
 #include <fstream>
@@ -179,7 +180,8 @@ config_factory_result_t create_device_model_charge_point_configuration(
     const fs::path& ocpp_share_path, const DeviceModelInitializationContext& context,
     const fs::path& everest_device_model_database_path,
     ocpp_module_common::device_model::EverestDeviceModel* everest_device_model,
-    ocpp_module_common::device_model::ConfigServiceAccess* config_service, const std::int32_t n_evse,
+    ocpp_module_common::device_model::ConfigServiceAccess* config_service,
+    ocpp_module_common::device_model::ExternalOwners* external_owners, const std::int32_t n_evse,
     const bool fail_on_device_model_conflicts) {
     // The database is pre-seeded by initialize_device_model_* above, so the 1-arg ctor is correct here.
     auto device_model_storage = std::make_unique<ocpp::v2::DeviceModelStorageSqlite>(context.database_path);
@@ -192,9 +194,15 @@ config_factory_result_t create_device_model_charge_point_configuration(
 
     // Register only once the configuration owns the device model, so the registrations end before it is destroyed
     auto& registry = *device_model;
+    // Loading is deferred so that the key mapping, the supported feature profiles and the measurands include the
+    // startup registrations. Of the variables registered at runtime, only those of external owners take OCPP 1.6 keys.
     auto configuration = std::make_unique<ocpp::v16::ChargePointConfigurationDeviceModel>(
-        ocpp_share_path.string(), std::move(device_model), context.custom_mappings);
+        ocpp_share_path.string(), std::move(device_model), context.custom_mappings,
+        ocpp::v16::ChargePointConfigurationDeviceModel::Load::Deferred,
+        ocpp_module_common::device_model::is_external_owner);
 
+    auto key_binder = std::make_unique<ocpp_multi::V16KeyBinder>(
+        configuration->get_variable_resolver(), configuration->get_device_model(), context.custom_mappings);
     ocpp_module_common::device_model::DeviceModelRegistrations registrations;
     if (everest_device_model != nullptr) {
         registrations.register_everest_device_model(*everest_device_model, registry);
@@ -202,13 +210,17 @@ config_factory_result_t create_device_model_charge_point_configuration(
     if (config_service != nullptr) {
         registrations.register_config_service(*config_service, registry);
     }
+    if (external_owners != nullptr) {
+        registrations.register_external_owners(*external_owners, registry, key_binder.get());
+    }
     // Also removes the monitors and stored values of variables registered in OCPP 2.x mode only, such as DER
     registry.remove_monitors_and_values_of_absent_variables();
     ocpp_module_common::device_model::check_device_model_conflicts(registrations.results(),
                                                                    fail_on_device_model_conflicts);
+    configuration->load();
     configuration->check_integrity(n_evse);
 
-    return {std::move(configuration), std::move(registrations)};
+    return {std::move(configuration), std::move(key_binder), std::move(registrations)};
 }
 
 /// \brief Loads the legacy OCPP 1.6 JSON config used as the one-time device-model migration source.
@@ -256,7 +268,8 @@ config_factory_result_t
 create_charge_point_configuration(const fs::path& ocpp_share_path, const Ocpp16DeviceModelParams& config,
                                   std::int32_t n_evse, const fs::path& everest_device_model_database_path,
                                   ocpp_module_common::device_model::EverestDeviceModel* everest_device_model,
-                                  ocpp_module_common::device_model::ConfigServiceAccess* config_service) {
+                                  ocpp_module_common::device_model::ConfigServiceAccess* config_service,
+                                  ocpp_module_common::device_model::ExternalOwners* external_owners) {
     const auto context = resolve_device_model_initialization_context(ocpp_share_path, config);
 
     const bool db_initialized =
@@ -287,7 +300,7 @@ create_charge_point_configuration(const fs::path& ocpp_share_path, const Ocpp16D
     }
 
     return create_device_model_charge_point_configuration(ocpp_share_path, context, everest_device_model_database_path,
-                                                          everest_device_model, config_service, n_evse,
+                                                          everest_device_model, config_service, external_owners, n_evse,
                                                           config.FailOnDeviceModelConflicts);
 }
 

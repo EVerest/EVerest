@@ -27,6 +27,7 @@
 #include <generated/interfaces/grid_support/Interface.hpp>
 #include <generated/interfaces/iso15118_extensions/Interface.hpp>
 #include <generated/interfaces/ocpp_data_transfer/Interface.hpp>
+#include <generated/interfaces/ocpp_device_model/Interface.hpp>
 #include <generated/interfaces/reservation/Interface.hpp>
 #include <generated/interfaces/system/Interface.hpp>
 
@@ -114,6 +115,7 @@ public:
               std::vector<std::unique_ptr<charger_informationIntf>> r_charger_information,
               std::vector<std::unique_ptr<ocpp_data_transferIntf>> r_data_transfer,
               std::vector<std::unique_ptr<display_messageIntf>> r_display_message,
+              std::vector<std::unique_ptr<ocpp_device_modelIntf>> r_device_model,
               std::vector<std::unique_ptr<external_energy_limitsIntf>> r_evse_energy_sink,
               std::vector<std::unique_ptr<evse_managerIntf>> r_evse_manager,
               std::vector<std::unique_ptr<iso15118_extensionsIntf>> r_extensions_15118,
@@ -131,6 +133,7 @@ public:
         r_charger_information(std::move(r_charger_information)),
         r_data_transfer(std::move(r_data_transfer)),
         r_display_message(std::move(r_display_message)),
+        r_device_model(std::move(r_device_model)),
         r_evse_energy_sink(std::move(r_evse_energy_sink)),
         r_evse_manager(std::move(r_evse_manager)),
         r_extensions_15118(std::move(r_extensions_15118)),
@@ -150,6 +153,7 @@ public:
     const std::vector<std::unique_ptr<charger_informationIntf>> r_charger_information;
     const std::vector<std::unique_ptr<ocpp_data_transferIntf>> r_data_transfer;
     const std::vector<std::unique_ptr<display_messageIntf>> r_display_message;
+    const std::vector<std::unique_ptr<ocpp_device_modelIntf>> r_device_model;
     const std::vector<std::unique_ptr<external_energy_limitsIntf>> r_evse_energy_sink;
     const std::vector<std::unique_ptr<evse_managerIntf>> r_evse_manager;
     const std::vector<std::unique_ptr<iso15118_extensionsIntf>> r_extensions_15118;
@@ -175,8 +179,8 @@ public:
         info,
         m_config,
         {*p_auth_validator, *p_auth_provider, *p_data_transfer, *p_ocpp_generic, *p_session_cost},
-        {*r_auth, r_charger_information, r_data_transfer, r_display_message, r_evse_energy_sink, r_evse_manager,
-         r_extensions_15118, r_grid_support, r_reservation, *r_security, *r_system},
+        {*r_auth, r_charger_information, r_data_transfer, r_display_message, r_device_model, r_evse_energy_sink,
+         r_evse_manager, r_extensions_15118, r_grid_support, r_reservation, *r_security, *r_system},
         m_device_model_sources};
     // ev@1fce4c5e-0ab8-41bb-90f7-14277703d2ac:v1
 

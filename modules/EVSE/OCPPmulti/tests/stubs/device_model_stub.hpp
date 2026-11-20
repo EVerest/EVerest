@@ -24,6 +24,7 @@ public:
         // when set, a committed set_value returns this status instead of Accepted (e.g. RebootRequired)
         std::optional<ocpp::v2::SetVariableStatusEnum> forced_set_status;
         bool has_value{true};
+        ocpp::v2::DataEnum data_type{ocpp::v2::DataEnum::string};
     };
 
     void add(const ocpp::v2::Component& component, const ocpp::v2::Variable& variable, const std::string& value,
@@ -36,6 +37,11 @@ public:
                            ocpp::v2::MutabilityEnum mutability = ocpp::v2::MutabilityEnum::ReadWrite) {
         m_store[{component, variable}] = Entry{{}, mutability, {}, std::nullopt, false};
         m_components.insert(component);
+    }
+
+    void set_data_type(const ocpp::v2::Component& component, const ocpp::v2::Variable& variable,
+                       ocpp::v2::DataEnum data_type) {
+        m_store.at({component, variable}).data_type = data_type;
     }
 
     void set_forced_set_status(const ocpp::v2::Component& component, const ocpp::v2::Variable& variable,
@@ -126,10 +132,13 @@ public:
 
     std::optional<ocpp::v2::VariableMetaData> get_variable_meta_data(const ocpp::v2::Component& component_id,
                                                                      const ocpp::v2::Variable& variable_id) override {
-        if (m_store.count({component_id, variable_id}) == 0) {
+        const auto it = m_store.find({component_id, variable_id});
+        if (it == m_store.end()) {
             return std::nullopt;
         }
-        return ocpp::v2::VariableMetaData{};
+        ocpp::v2::VariableMetaData meta;
+        meta.characteristics.dataType = it->second.data_type;
+        return meta;
     }
 
     std::vector<ocpp::v2::ReportData> get_base_report_data(const ocpp::v2::ReportBaseEnum&) override {

@@ -250,6 +250,26 @@ TEST(V2Mapping, KeysWithStandardEquivalentShareTheV2Variable) {
 // Tests for get_all_key_value() with maxLimit keys.
 // These keys map to VariableCharacteristics.maxLimit rather than VariableAttribute,
 // so they are populated via a separate code path in get_all_key_value().
+class DeferredLoad : public ConfigurationBase {};
+
+TEST_F(DeferredLoad, LoadAgainDropsTheMessagesOfAProfileNoLongerSupported) {
+    ASSERT_TRUE(device_model);
+    device_model->set("Core", "SupportedFeatureProfiles", "Core,Reservation");
+    ocpp::v16::ChargePointConfigurationDeviceModel config(
+        CONFIG_DIR_V16, std::make_unique<MemoryStorageProxy>(*device_model), {},
+        ocpp::v16::ChargePointConfigurationDeviceModel::Load::Deferred);
+    config.load();
+    ASSERT_EQ(config.getSupportedFeatureProfilesSet().count(ocpp::v16::SupportedFeatureProfiles::Reservation), 1);
+    ASSERT_EQ(config.getSupportedMessageTypesSending().count(ocpp::v16::MessageType::CancelReservationResponse), 1);
+
+    device_model->set("Core", "SupportedFeatureProfiles", "Core");
+    config.load();
+
+    EXPECT_EQ(config.getSupportedFeatureProfilesSet().count(ocpp::v16::SupportedFeatureProfiles::Reservation), 0);
+    EXPECT_EQ(config.getSupportedMessageTypesSending().count(ocpp::v16::MessageType::CancelReservationResponse), 0);
+    EXPECT_EQ(config.getSupportedMessageTypesReceiving().count(ocpp::v16::MessageType::CancelReservation), 0);
+}
+
 class MaxLimitGetAll : public ConfigurationBase {};
 
 TEST_F(MaxLimitGetAll, MaxLimitKeysIncludedWhenSet) {

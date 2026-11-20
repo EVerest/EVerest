@@ -6,6 +6,7 @@
 
 #include <map>
 #include <optional>
+#include <shared_mutex>
 #include <string>
 #include <utility>
 
@@ -62,12 +63,33 @@ bool is_overridable_key(keys::valid_keys key);
 /// built-in mapping of ocpp/v16/known_keys.hpp, which is only allowed for keys stored in OCPP16LegacyCtrlr (see
 /// is_overridable_key). With an override, the key reads and writes the override target, and the built-in
 /// OCPP16LegacyCtrlr variable is no longer associated with the key. All other entries are custom keys.
+///
+/// The keys that device model owners declare for their variables at runtime form a second layer of the same two kinds,
+/// which replace_file_mappings() leaves alone. Every key maps to at most one CV and every CV back to at most one key,
+/// across both layers. Lookups and changes may happen concurrently.
 class VariableResolver {
 public:
     /// \brief Entries for known keys that are not overridable are ignored with a warning. An entry whose target is the
     /// built-in mapping of another key or the target of an earlier entry (in key order) is ignored with an error, so
     /// every CV maps back to at most one key. The custom mapping file loader drops such entries before they get here.
     explicit VariableResolver(const ocpp::v2::Ocpp16KeyMappings& custom_mappings = {});
+    VariableResolver(const VariableResolver&) = delete;
+    VariableResolver& operator=(const VariableResolver&) = delete;
+    VariableResolver(VariableResolver&&) = delete;
+    VariableResolver& operator=(VariableResolver&&) = delete;
+    ~VariableResolver() = default;
+
+    /// \brief Replaces the entries of the custom mapping file, by the rules of the constructor, and keeps the owner
+    /// keys. An entry whose key or target an owner key holds is ignored with an error.
+    void replace_file_mappings(const ocpp::v2::Ocpp16KeyMappings& custom_mappings);
+
+    /// \brief Maps \p key, a custom key or an overridable known key, to the CV of a device model owner.
+    /// \returns Why the key or the CV belongs to another key, which leaves the mapping unchanged
+    std::optional<std::string> add_owner_key(const std::string& key, const ocpp::v2::Component& component,
+                                             const ocpp::v2::Variable& variable);
+
+    /// \brief Removes the owner key \p key; an overridden known key returns to its built-in mapping
+    void remove_owner_key(const std::string& key);
 
     /// \brief Forward lookup: known keys first (built-in mapping or its override; keys with no v2 mapping and
     /// max-limit keys yield nullopt), then custom keys.
@@ -76,6 +98,9 @@ public:
     /// \brief Forward lookup of a known key: its override if present, else the built-in mapping. Unlike key_to_cv,
     /// max-limit keys yield the CV that carries their VariableCharacteristics.maxLimit.
     keys::DeviceModel_CV known_key_to_cv(keys::valid_keys key) const;
+
+    /// \brief Forward lookup of a custom key
+    std::optional<std::pair<ocpp::v2::Component, ocpp::v2::Variable>> custom_key_to_cv(const std::string& key) const;
 
     /// \brief Reverse lookup: standard reverse table first, then the custom-mapping reverse index.
     std::optional<std::string> cv_to_key(const ocpp::v2::Component& component,
@@ -92,21 +117,40 @@ public:
 
     bool is_overridden(keys::valid_keys key) const;
 
-    const std::map<keys::valid_keys, std::pair<ocpp::v2::Component, ocpp::v2::Variable>>& overrides() const {
-        return overrides_by_key;
-    }
+    /// \brief The overrides of the custom mapping file and of the owners
+    std::map<keys::valid_keys, std::pair<ocpp::v2::Component, ocpp::v2::Variable>> overrides() const;
 
-    /// \brief The custom mapping entries for keys that are not known OCPP 1.6 keys.
-    const ocpp::v2::Ocpp16KeyMappings& custom_keys() const {
-        return custom_mappings;
-    }
+    /// \brief The custom keys of the custom mapping file and of the owners
+    ocpp::v2::Ocpp16KeyMappings custom_keys() const;
 
 private:
-    std::map<keys::valid_keys, std::pair<ocpp::v2::Component, ocpp::v2::Variable>> overrides_by_key;
-    ocpp::v2::Ocpp16KeyMappings custom_mappings;
-    // ocpp/v2/comparators.hpp ordering keeps instance/evse-qualified CVs distinct
-    std::map<std::pair<ocpp::v2::Component, ocpp::v2::Variable>, keys::valid_keys> overrides_by_cv;
-    std::map<std::pair<ocpp::v2::Component, ocpp::v2::Variable>, std::string> custom_reverse;
+    struct Layer {
+        std::map<keys::valid_keys, std::pair<ocpp::v2::Component, ocpp::v2::Variable>> overrides_by_key;
+        // ocpp/v2/comparators.hpp ordering keeps instance/evse-qualified CVs distinct
+        std::map<std::pair<ocpp::v2::Component, ocpp::v2::Variable>, keys::valid_keys> overrides_by_cv;
+        ocpp::v2::Ocpp16KeyMappings custom;
+        std::map<std::pair<ocpp::v2::Component, ocpp::v2::Variable>, std::string> custom_reverse;
+
+        bool holds_key(const std::string& key) const;
+        std::optional<std::string> key_of(const std::pair<ocpp::v2::Component, ocpp::v2::Variable>& cv) const;
+        void add(const std::string& key, const std::pair<ocpp::v2::Component, ocpp::v2::Variable>& cv);
+    };
+
+    /// \brief The key that holds \p cv in the built-in table, other than \p key, or in a layer
+    std::optional<std::string> holder_of(const std::string& key,
+                                         const std::pair<ocpp::v2::Component, ocpp::v2::Variable>& cv) const;
+    Layer make_file_layer(const ocpp::v2::Ocpp16KeyMappings& custom_mappings) const;
+    keys::DeviceModel_CV known_key_to_cv_unlocked(keys::valid_keys key) const;
+    std::optional<std::string> cv_to_known_key_unlocked(const ocpp::v2::Component& component,
+                                                        const ocpp::v2::Variable& variable,
+                                                        ocpp::v2::AttributeEnum attribute) const;
+    std::optional<std::string> cv_to_key_unlocked(const ocpp::v2::Component& component,
+                                                  const ocpp::v2::Variable& variable) const;
+    bool is_overridden_unlocked(keys::valid_keys key) const;
+
+    mutable std::shared_mutex mutex;
+    Layer file;
+    Layer owner;
 };
 
 } // namespace ocpp::v16
