@@ -246,12 +246,61 @@ private:
         return false;
     }
 
+    /// \brief Holds \p message until the registration is accepted when its sender only sends it to a CSMS the charging
+    /// station is registered with, and the registration was reset since the sender checked. Requires message_mutex.
+    void hold_if_not_registered(ControlMessage<M>& message, const bool requires_registration) const {
+        if (requires_registration and not this->is_registration_status_accepted) {
+            message.stall_until_accepted = true;
+        }
+    }
+
+    /// \brief Stops sending until resume(), without the connection being lost. Requires message_mutex.
+    void pause_sending() {
+        this->pause_resume_ctr++;
+        this->resume_timer.stop();
+        this->paused = true;
+        this->resuming = false;
+    }
+
+    /// \brief Settles \p message as dropped: its database row is removed and the future of its sender gets
+    /// \p enhanced_message_opt , or an offline message
+    void drop_boot_notification(const std::shared_ptr<ControlMessage<M>>& message,
+                                const std::optional<EnhancedMessage<M>>& enhanced_message_opt) {
+        if (this->config.check_queue(message->messageType)) {
+            try {
+                this->database_handler->remove_message_queue_message(message->initial_unique_id, QueueType::Normal);
+            } catch (const std::exception& e) {
+                EVLOG_warning << "Could not delete message from message queue: " << e.what();
+            }
+        }
+        if (enhanced_message_opt.has_value()) {
+            message->promise.set_value(enhanced_message_opt.value());
+        } else {
+            EnhancedMessage<M> enhanced_message;
+            enhanced_message.offline = true;
+            message->promise.set_value(enhanced_message);
+        }
+    }
+
+    void drop_queued_boot_notifications() {
+        for (auto it = this->normal_message_queue.begin(); it != this->normal_message_queue.end();) {
+            if (is_boot_notification_message((*it)->messageType)) {
+                this->drop_boot_notification(*it, std::nullopt);
+                it = this->normal_message_queue.erase(it);
+            } else {
+                ++it;
+            }
+        }
+    }
+
     void add_to_normal_message_queue(std::shared_ptr<ControlMessage<M>> message) {
         EVLOG_debug << "Adding message to normal message queue";
         {
             const std::lock_guard<std::recursive_mutex> lk(this->message_mutex);
-            // A BootNotification message should always jump the queue
+            // A BootNotification message should always jump the queue, and it replaces one still waiting: both would
+            // register the charging station with the same CSMS
             if (message->messageType == M::BootNotification) {
+                this->drop_queued_boot_notifications();
                 this->normal_message_queue.push_front(message);
             } else {
                 this->normal_message_queue.push_back(message);
@@ -312,7 +361,36 @@ private:
         }
 
         const auto queue_type = is_transaction_message(*this->in_flight) ? QueueType::Transaction : QueueType::Normal;
-        if (is_transaction_message(*this->in_flight) or this->config.check_queue(this->in_flight->messageType)) {
+        if (is_boot_notification_message(this->in_flight->messageType)) {
+            const bool newer_boot_notification_queued =
+                std::any_of(this->normal_message_queue.begin(), this->normal_message_queue.end(),
+                            [](const auto& message) { return is_boot_notification_message(message->messageType); });
+            if (newer_boot_notification_queued) {
+                EVLOG_warning << "Message is BootNotification.req replaced by a newer one, dropping it";
+                this->drop_boot_notification(this->in_flight, enhanced_message_opt);
+            } else {
+                // Without an accepted BootNotification.req the charging station holds every queued message, so it is
+                // never dropped, not even once the message attempts for persisted messages are used up. Its attempts
+                // restart so the message timeout does not grow with every retry.
+                EVLOG_warning << "Message is BootNotification.req and will therefore be sent again";
+                this->in_flight->message_attempts = 0;
+                // Generate a new message ID for the retry
+                this->in_flight->message[MESSAGE_ID] = ocpp::create_message_id();
+                // Spec does not define how to handle retries for BootNotification.req: We use the
+                // boot_notification_retry_interval_seconds, counted from now as the message may have waited long in
+                // the queue
+                this->in_flight->timestamp =
+                    DateTime(DateTime().to_time_point() +
+                             std::chrono::seconds(this->config.boot_notification_retry_interval_seconds));
+                this->normal_message_queue.push_front(this->in_flight);
+                this->notify_queue_timer.at(
+                    [this]() {
+                        this->new_message = true;
+                        this->cv.notify_all();
+                    },
+                    this->in_flight->timestamp.to_time_point());
+            }
+        } else if (is_transaction_message(*this->in_flight) or this->config.check_queue(this->in_flight->messageType)) {
             if (this->in_flight->message_attempts < this->config.transaction_message_attempts) {
                 EVLOG_warning << "Message shall be persisted and will therefore be sent again";
                 // Generate a new message ID for the retry
@@ -371,22 +449,6 @@ private:
                     EVLOG_warning << "Could not delete message from transaction queue: " << e.what();
                 }
             }
-        } else if (is_boot_notification_message(this->in_flight->messageType)) {
-            EVLOG_warning << "Message is BootNotification.req and will therefore be sent again";
-            // Generate a new message ID for the retry
-            this->in_flight->message[MESSAGE_ID] = ocpp::create_message_id();
-            // Spec does not define how to handle retries for BootNotification.req: We use the
-            // the boot_notification_retry_interval_seconds
-            this->in_flight->timestamp =
-                DateTime(this->in_flight->timestamp.to_time_point() +
-                         std::chrono::seconds(this->config.boot_notification_retry_interval_seconds));
-            this->normal_message_queue.push_front(this->in_flight);
-            this->notify_queue_timer.at(
-                [this]() {
-                    this->new_message = true;
-                    this->cv.notify_all();
-                },
-                this->in_flight->timestamp.to_time_point());
         } else {
             EVLOG_warning << "Message is not transaction related, dropping it";
             if (enhanced_message_opt) {
@@ -566,7 +628,7 @@ public:
                     this->idle_actions.pop_front();
                     const bool paused_for_action = !this->paused;
                     if (paused_for_action) {
-                        this->pause();
+                        this->pause_sending();
                     }
                     const auto pause_resume_ctr_before = this->pause_resume_ctr;
                     lk.unlock();
@@ -773,26 +835,33 @@ public:
         }
     }
 
-    void push_call(const json& message, const bool stall_until_accepted = false) {
+    void push_call(const json& message, const bool stall_until_accepted = false,
+                   const bool requires_registration = false) {
         if (!running) {
             return;
         }
 
         auto control_message = std::make_shared<ControlMessage<M>>(message, stall_until_accepted);
-        if (is_transaction_message(*control_message)) {
-            // according to the spec the "transaction related messages" StartTransaction, StopTransaction and
-            // MeterValues have to be delivered in chronological order
+        {
+            // One lock for the decision and the insertion, so reset_registration_status() cannot run in between
+            const std::lock_guard<std::recursive_mutex> lk(this->message_mutex);
+            if (is_transaction_message(*control_message)) {
+                // according to the spec the "transaction related messages" StartTransaction, StopTransaction and
+                // MeterValues have to be delivered in chronological order
 
-            // intentionally break this message for testing...
-            // message->message[CALL_PAYLOAD]["broken"] = ocpp::create_message_id();
-            this->add_to_transaction_message_queue(control_message);
-        } else {
-            // all other messages are allowed to "jump the queue" to improve user experience
-            // TODO: decide if we only want to allow this for a subset of messages
-            if (!this->paused || this->resuming || control_message->stall_until_accepted ||
-                this->config.check_queue(control_message->messageType) ||
-                control_message->messageType == M::BootNotification) {
-                this->add_to_normal_message_queue(control_message);
+                // intentionally break this message for testing...
+                // message->message[CALL_PAYLOAD]["broken"] = ocpp::create_message_id();
+                this->hold_if_not_registered(*control_message, requires_registration);
+                this->add_to_transaction_message_queue(control_message);
+            } else {
+                // all other messages are allowed to "jump the queue" to improve user experience
+                // TODO: decide if we only want to allow this for a subset of messages
+                if (!this->paused || this->resuming || control_message->stall_until_accepted ||
+                    this->config.check_queue(control_message->messageType) ||
+                    control_message->messageType == M::BootNotification) {
+                    this->hold_if_not_registered(*control_message, requires_registration);
+                    this->add_to_normal_message_queue(control_message);
+                }
             }
         }
         this->cv.notify_all();
@@ -837,10 +906,12 @@ public:
 
     /// \brief pushes a new \p call message onto the message queue
     /// \returns a future from which the CallResult can be extracted
-    std::future<EnhancedMessage<M>> push_call_async(const json& call) {
+    std::future<EnhancedMessage<M>> push_call_async(const json& call, const bool requires_registration = false) {
         auto message = std::make_shared<ControlMessage<M>>(call);
 
-        if (!running) {
+        // One lock for the decision and the insertion, so reset_registration_status() cannot run in between
+        const std::lock_guard<std::recursive_mutex> lk(this->message_mutex);
+        if (!running or (requires_registration and not this->is_registration_status_accepted)) {
             auto enhanced_message = EnhancedMessage<M>();
             enhanced_message.offline = true;
             message->promise.set_value(enhanced_message);
@@ -992,17 +1063,22 @@ public:
         EVLOG_debug << "stop() notified message queue";
     }
 
-    /// \brief Pauses the message queue
+    /// \brief Pauses the message queue because the connection to the CSMS is lost
     void pause() {
         EVLOG_debug << "pause()";
         const std::lock_guard<std::recursive_mutex> lk(this->message_mutex);
-        this->pause_resume_ctr++;
-        this->resume_timer.stop();
-        this->paused = true;
-        this->resuming = false;
+        this->pause_sending();
         // A CALL sent on the lost connection is never answered, so settle it as a timeout
         if (this->in_flight != nullptr) {
             this->handle_timeout_or_callerror(std::nullopt);
+        }
+        // The retry interval of a BootNotification.req, including one in flight on the lost connection, is meant for a
+        // CSMS that does not answer, not for the next connection
+        for (const auto& message : this->normal_message_queue) {
+            if (is_boot_notification_message(message->messageType)) {
+                message->timestamp = DateTime();
+                this->new_message = true;
+            }
         }
         this->cv.notify_one();
         EVLOG_debug << "pause() notified message queue";
@@ -1045,6 +1121,24 @@ public:
         {
             const std::lock_guard<std::recursive_mutex> lk(this->message_mutex);
             this->is_registration_status_accepted = true;
+            this->new_message = true;
+        }
+        this->cv.notify_all();
+    }
+
+    /// \brief Returns to the state before registration: every queued message except BootNotification is held until
+    /// set_registration_status_accepted() is called, including messages queued while the registration was accepted.
+    void reset_registration_status() {
+        {
+            const std::lock_guard<std::recursive_mutex> lk(this->message_mutex);
+            this->is_registration_status_accepted = false;
+            for (auto* queue : {&this->normal_message_queue, &this->transaction_message_queue}) {
+                for (const auto& message : *queue) {
+                    if (not is_boot_notification_message(message->messageType)) {
+                        message->stall_until_accepted = true;
+                    }
+                }
+            }
             this->new_message = true;
         }
         this->cv.notify_all();

@@ -341,6 +341,7 @@ extern const ComponentVariable WaitForStopTransactionsOnResetTimeout;
 extern const ComponentVariable SwitchSecurityProfileConnectionTimeout;
 extern const ComponentVariable StopTransactionIfUnlockNotSupported;
 extern const ComponentVariable RejectRemoteStartTransactionWithoutConnectorId;
+extern const ComponentVariable BootNotificationAfterNetworkProfileSwitch;
 extern const ComponentVariable RemoteStartTransactionWithoutConnectorIdFindFirst;
 extern const ComponentVariable MeterPublicKeys;
 extern const ComponentVariable DisableSecurityEventNotifications;

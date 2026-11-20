@@ -2473,6 +2473,34 @@ std::optional<KeyValue> ChargePointConfiguration::getRejectRemoteStartTransactio
     return reject_opt;
 }
 
+std::optional<bool> ChargePointConfiguration::getBootNotificationAfterNetworkProfileSwitch() {
+    std::optional<bool> enabled = std::nullopt;
+    if (this->config["Internal"].contains("BootNotificationAfterNetworkProfileSwitch")) {
+        enabled.emplace(this->config["Internal"]["BootNotificationAfterNetworkProfileSwitch"]);
+    }
+    return enabled;
+}
+
+void ChargePointConfiguration::setBootNotificationAfterNetworkProfileSwitch(bool enabled) {
+    if (this->getBootNotificationAfterNetworkProfileSwitch() != std::nullopt) {
+        this->config["Internal"]["BootNotificationAfterNetworkProfileSwitch"] = enabled;
+        this->setInUserConfig("Internal", "BootNotificationAfterNetworkProfileSwitch", enabled);
+    }
+}
+
+std::optional<KeyValue> ChargePointConfiguration::getBootNotificationAfterNetworkProfileSwitchKeyValue() {
+    std::optional<KeyValue> enabled_opt = std::nullopt;
+    auto enabled = this->getBootNotificationAfterNetworkProfileSwitch();
+    if (enabled != std::nullopt) {
+        KeyValue kv;
+        kv.key = "BootNotificationAfterNetworkProfileSwitch";
+        kv.readonly = false;
+        kv.value.emplace(ocpp::conversions::bool_to_string(enabled.value()));
+        enabled_opt.emplace(kv);
+    }
+    return enabled_opt;
+}
+
 std::optional<bool> ChargePointConfiguration::getRemoteStartTransactionWithoutConnectorIdFindFirst() {
     std::optional<bool> find_first = std::nullopt;
     if (this->config["Internal"].contains("RemoteStartTransactionWithoutConnectorIdFindFirst")) {
@@ -3418,6 +3446,9 @@ std::optional<KeyValue> ChargePointConfiguration::get(const CiString<50>& key) {
     if (key == "RejectRemoteStartTransactionWithoutConnectorId") {
         return this->getRejectRemoteStartTransactionWithoutConnectorIdKeyValue();
     }
+    if (key == "BootNotificationAfterNetworkProfileSwitch") {
+        return this->getBootNotificationAfterNetworkProfileSwitchKeyValue();
+    }
     if (key == "RemoteStartTransactionWithoutConnectorIdFindFirst") {
         return this->getRemoteStartTransactionWithoutConnectorIdFindFirstKeyValue();
     }
@@ -4263,6 +4294,15 @@ std::optional<ConfigurationStatus> ChargePointConfiguration::set(const CiString<
         }
         if (isBool(value.get())) {
             this->setAllowChargingProfileWithoutStartSchedule(ocpp::conversions::string_to_bool(value.get()));
+        } else {
+            return ConfigurationStatus::Rejected;
+        }
+    } else if (key == "BootNotificationAfterNetworkProfileSwitch") {
+        if (!this->getBootNotificationAfterNetworkProfileSwitch().has_value()) {
+            return ConfigurationStatus::NotSupported;
+        }
+        if (isBool(value.get())) {
+            this->setBootNotificationAfterNetworkProfileSwitch(ocpp::conversions::string_to_bool(value.get()));
         } else {
             return ConfigurationStatus::Rejected;
         }

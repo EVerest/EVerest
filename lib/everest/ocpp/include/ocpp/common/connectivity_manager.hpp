@@ -197,6 +197,10 @@ public:
     /// \brief Confirms the connection is successful so the security profile requirements can be handled
     virtual void confirm_successful_connection() = 0;
 
+    /// \brief Records the active slot as the last successful connection, the B10.FR.07 fallback target, without
+    /// persisting it or applying the security profile requirements of confirm_successful_connection()
+    virtual void record_successful_connection() = 0;
+
     /// \brief Reload network connection profiles from NetworkConfiguration DM components into the in-memory cache
     virtual void reload_network_profiles() = 0;
 
@@ -306,6 +310,7 @@ public:
     void on_network_disconnected(ocpp::v2::OCPPInterfaceEnum ocpp_interface) override;
     void on_charging_station_certificate_changed() override;
     void confirm_successful_connection() override;
+    void record_successful_connection() override;
 
     /// \brief Removes all connection profiles from the cache that have a security profile lower than the currently
     /// connected security profile

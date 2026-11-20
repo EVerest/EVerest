@@ -24,6 +24,8 @@
 #include "test_temp_paths.hpp"
 
 #include "gmock/gmock.h"
+#include <algorithm>
+#include <atomic>
 #include <boost/uuid/uuid_generators.hpp>
 #include <boost/uuid/uuid_io.hpp>
 #include <condition_variable>
@@ -34,6 +36,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <thread>
 
 static const ocpp::v2::AddChargingProfileSource DEFAULT_REQUEST_TO_ADD_PROFILE_SOURCE =
     ocpp::v2::AddChargingProfileSource::SetChargingProfile;
@@ -1589,5 +1592,541 @@ TEST_F(ChargePointThrowingHandlerTestFixtureV2, ExceptionWhileHandlingACall_IsAn
 INSTANTIATE_TEST_SUITE_P(MalformedPayloads, ChargePointCsmsReplyTestFixtureV2,
                          testing::Values("{}", "12345", R"("Accepted")", R"({"status": null})",
                                          R"({"status": "test"})"));
+
+/// \brief A registered charging station whose CSMS connection moves to another network connection slot without a
+/// reboot (B10.FR.10). BootNotification.req is answered by the test, every other CALL by a responder thread.
+class ChargePointProfileSwitchTestV2 : public ChargePointConstructorTestFixtureV2,
+                                       public ::testing::WithParamInterface<OcppProtocolVersion> {
+protected:
+    struct SentCall {
+        std::string action;
+        std::string unique_id;
+        json payload;
+    };
+
+    static constexpr int SLOT_1 = 1;
+    static constexpr int SLOT_2 = 2;
+    static constexpr auto WAIT_TIMEOUT = std::chrono::seconds(5);
+    static constexpr auto SETTLE_TIME = std::chrono::milliseconds(1000);
+
+    ChargePointProfileSwitchTestV2() :
+        connectivity_manager(std::make_shared<::testing::NiceMock<ConnectivityManagerMock>>()) {
+        configure_callbacks_with_mocks();
+        ON_CALL(*connectivity_manager, is_websocket_connected()).WillByDefault(::testing::Return(false));
+        ON_CALL(*connectivity_manager, set_message_callback(::testing::_))
+            .WillByDefault(::testing::Invoke(
+                [this](const std::function<void(const std::string&)>& callback) { csms_to_charge_point = callback; }));
+        ON_CALL(*connectivity_manager, send_to_websocket(::testing::_))
+            .WillByDefault(::testing::Invoke([this](const std::string& message) { return record(message); }));
+        ON_CALL(*connectivity_manager, confirm_successful_connection()).WillByDefault(::testing::Invoke([this]() {
+            confirmations += 1;
+        }));
+        responder = std::thread([this]() { run_responder(); });
+    }
+
+    void TearDown() override {
+        if (charge_point != nullptr) {
+            charge_point->stop();
+        }
+        {
+            const std::lock_guard<std::mutex> lock(mtx);
+            stop_responder = true;
+        }
+        cv.notify_all();
+        if (responder.joinable()) {
+            responder.join();
+        }
+        charge_point.reset();
+    }
+
+    bool record(const std::string& message) {
+        const auto frame = json::parse(message, nullptr, false);
+        if (frame.is_discarded() or not frame.is_array() or frame.at(MESSAGE_TYPE_ID) != MessageTypeId::CALL) {
+            return true;
+        }
+        const std::string action = frame.at(CALL_ACTION);
+        const std::string unique_id = frame.at(MESSAGE_ID);
+        {
+            const std::lock_guard<std::mutex> lock(mtx);
+            sent.push_back({action, unique_id, frame.at(CALL_PAYLOAD)});
+            if (action != "BootNotification") {
+                json payload = json::object();
+                if (action == "Heartbeat") {
+                    payload["currentTime"] = ocpp::DateTime().to_rfc3339();
+                }
+                pending_responses.push_back(json{MessageTypeId::CALLRESULT, unique_id, payload});
+            }
+        }
+        cv.notify_all();
+        return true;
+    }
+
+    void run_responder() {
+        while (true) {
+            json response;
+            {
+                std::unique_lock<std::mutex> lock(mtx);
+                cv.wait(lock, [this]() { return stop_responder or not pending_responses.empty(); });
+                if (stop_responder) {
+                    return;
+                }
+                response = pending_responses.front();
+                pending_responses.pop_front();
+            }
+            if (csms_to_charge_point) {
+                csms_to_charge_point(response.dump());
+            }
+        }
+    }
+
+    std::vector<SentCall> sent_calls() {
+        const std::lock_guard<std::mutex> lock(mtx);
+        return sent;
+    }
+
+    std::size_t count_locked(const std::string& action) const {
+        return static_cast<std::size_t>(
+            std::count_if(sent.begin(), sent.end(), [&action](const SentCall& call) { return call.action == action; }));
+    }
+
+    std::size_t count(const std::string& action) {
+        const std::lock_guard<std::mutex> lock(mtx);
+        return count_locked(action);
+    }
+
+    /// \brief Waits until \p n CALLs with \p action were sent and returns the \p n th one.
+    std::optional<SentCall> wait_for(const std::string& action, std::size_t n) {
+        std::unique_lock<std::mutex> lock(mtx);
+        if (not cv.wait_for(lock, WAIT_TIMEOUT, [&]() { return count_locked(action) >= n; })) {
+            return std::nullopt;
+        }
+        std::size_t seen = 0;
+        for (const auto& call : sent) {
+            if (call.action == action and ++seen == n) {
+                return call;
+            }
+        }
+        return std::nullopt;
+    }
+
+    /// \brief Waits until more than \p index CALLs were sent and returns the one at \p index .
+    std::optional<SentCall> wait_for_call_at(std::size_t index) {
+        std::unique_lock<std::mutex> lock(mtx);
+        if (not cv.wait_for(lock, WAIT_TIMEOUT, [&]() { return sent.size() > index; })) {
+            return std::nullopt;
+        }
+        return sent.at(index);
+    }
+
+    /// \brief Waits until every CALL other than BootNotification.req was answered and no new CALL followed.
+    void wait_until_idle() {
+        std::size_t last_size = 0;
+        int quiet_rounds = 0;
+        const auto deadline = std::chrono::steady_clock::now() + WAIT_TIMEOUT;
+        while (quiet_rounds < 3 and std::chrono::steady_clock::now() < deadline) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            const std::lock_guard<std::mutex> lock(mtx);
+            if (pending_responses.empty() and sent.size() == last_size) {
+                quiet_rounds += 1;
+            } else {
+                quiet_rounds = 0;
+            }
+            last_size = sent.size();
+        }
+    }
+
+    void accept_boot(const std::string& unique_id) {
+        answer_boot(unique_id, RegistrationStatusEnum::Accepted, 300);
+    }
+
+    void answer_boot(const std::string& unique_id, const RegistrationStatusEnum status, const int interval) {
+        const json response = {{"currentTime", ocpp::DateTime().to_rfc3339()},
+                               {"interval", interval},
+                               {"status", conversions::registration_status_enum_to_string(status)}};
+        csms_to_charge_point(json{MessageTypeId::CALLRESULT, unique_id, response}.dump());
+    }
+
+    /// \brief Switches to another slot with a SecurityEventNotification.req queued, answers the first
+    /// BootNotification.req with \p first_answer and checks that the queued message and the confirmation of the new
+    /// slot both wait until the retried BootNotification.req is accepted.
+    void expect_held_until_accepted_after(const RegistrationStatusEnum first_answer) {
+        register_on_slot(SLOT_1);
+        const auto confirmations_before_switch = confirmations.load();
+
+        charge_point->on_websocket_disconnected(SLOT_1, profile());
+        const auto security_events_before_switch = count("SecurityEventNotification");
+        charge_point->on_security_event(CiString<50>(ocpp::security_events::SETTINGSYSTEMTIME), std::nullopt, true);
+        charge_point->on_websocket_connected(SLOT_2, profile(), GetParam());
+
+        const auto first_boot = wait_for("BootNotification", 2);
+        ASSERT_TRUE(first_boot.has_value()) << "no BootNotification.req after switching configuration slot";
+        answer_boot(first_boot->unique_id, first_answer, 1);
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        EXPECT_EQ(count("SecurityEventNotification"), security_events_before_switch)
+            << "a queued message was sent while the registration was not accepted";
+        EXPECT_EQ(confirmations.load(), confirmations_before_switch)
+            << "configuration slot " << SLOT_2 << " was confirmed before its CSMS accepted the charging station";
+
+        const auto retried_boot = wait_for("BootNotification", 3);
+        ASSERT_TRUE(retried_boot.has_value()) << "the BootNotification.req was not retried";
+        EXPECT_EQ(retried_boot->payload.at("reason"), "Unknown")
+            << "the retried BootNotification.req does not keep the reason of the re-registration";
+        accept_boot(retried_boot->unique_id);
+        EXPECT_TRUE(wait_for("SecurityEventNotification", security_events_before_switch + 1).has_value())
+            << "the queued message was not released once the registration was accepted";
+        wait_until_idle();
+        EXPECT_GT(confirmations.load(), confirmations_before_switch)
+            << "configuration slot " << SLOT_2 << " was not confirmed after its CSMS accepted the charging station";
+    }
+
+    NetworkConnectionProfile profile(const std::string& ocpp_csms_url = "ws://csms.example.com") const {
+        NetworkConnectionProfile network_connection_profile;
+        network_connection_profile.messageTimeout = 30;
+        network_connection_profile.ocppCsmsUrl = ocpp_csms_url;
+        network_connection_profile.securityProfile = 1;
+        return network_connection_profile;
+    }
+
+    void create_charge_point() {
+        charge_point = std::make_unique<ChargePoint>(evse_connector_structure, device_model, database_handler,
+                                                     evse_security, connectivity_manager, "/tmp", callbacks);
+    }
+
+    /// \brief Boots, connects on \p slot , gets accepted and records \p slot as the last confirmed network
+    /// connection slot, which the mocked connectivity manager does not persist itself.
+    void register_on_slot(const int slot) {
+        create_charge_point();
+        charge_point->start(BootReasonEnum::PowerUp, false);
+        charge_point->on_websocket_connected(slot, profile(), GetParam());
+        const auto boot = wait_for("BootNotification", 1);
+        ASSERT_TRUE(boot.has_value()) << "no BootNotification.req after start";
+        accept_boot(boot->unique_id);
+        wait_until_idle();
+        device_model->set_active_network_profile_slot(slot, "test");
+    }
+
+    void switch_to_slot(const int from, const int to) {
+        charge_point->on_websocket_disconnected(from, profile());
+        charge_point->on_websocket_connected(to, profile(), GetParam());
+    }
+
+    std::shared_ptr<::testing::NiceMock<ConnectivityManagerMock>> connectivity_manager;
+    std::unique_ptr<ChargePoint> charge_point;
+    std::function<void(const std::string&)> csms_to_charge_point;
+    std::atomic<int> confirmations{0};
+
+    std::mutex mtx;
+    std::condition_variable cv;
+    std::vector<SentCall> sent;
+    std::deque<json> pending_responses;
+    std::thread responder;
+    bool stop_responder{false};
+};
+
+// B10.FR.10: after connecting through a different NetworkConnectionProfile the charging station re-establishes its
+// registration with a BootNotification.req, even though it did not reboot.
+TEST_P(ChargePointProfileSwitchTestV2, SwitchToDifferentSlotSendsBootNotification) {
+    register_on_slot(SLOT_1);
+
+    switch_to_slot(SLOT_1, SLOT_2);
+
+    EXPECT_TRUE(wait_for("BootNotification", 2).has_value())
+        << "B10.FR.10: no BootNotification.req after switching from configuration slot " << SLOT_1 << " to " << SLOT_2;
+}
+
+// Messages queued before the switch reach the CSMS behind the new profile only once it accepted the charging station.
+TEST_P(ChargePointProfileSwitchTestV2, SwitchToDifferentSlotSendsBootNotificationFirst) {
+    register_on_slot(SLOT_1);
+
+    charge_point->on_websocket_disconnected(SLOT_1, profile());
+    const auto calls_before_switch = sent_calls().size();
+    const auto security_events_before_switch = count("SecurityEventNotification");
+    charge_point->on_security_event(CiString<50>(ocpp::security_events::SETTINGSYSTEMTIME), std::nullopt, true);
+    charge_point->on_websocket_connected(SLOT_2, profile(), GetParam());
+
+    const auto first = wait_for_call_at(calls_before_switch);
+    ASSERT_TRUE(first.has_value()) << "nothing was sent after switching configuration slot";
+    EXPECT_EQ(first->action, "BootNotification")
+        << "B10.FR.10: " << first->action
+        << " was sent to the CSMS behind the new profile before the BootNotification.req";
+
+    if (first->action == "BootNotification") {
+        accept_boot(first->unique_id);
+        EXPECT_TRUE(wait_for("SecurityEventNotification", security_events_before_switch + 1).has_value())
+            << "the queued SecurityEventNotification.req was not released after the BootNotification was accepted";
+    }
+}
+
+// The new slot only becomes the confirmed (last successful) one once the CSMS behind it accepted the charging station.
+TEST_P(ChargePointProfileSwitchTestV2, SwitchToDifferentSlotDefersConfirmUntilAccepted) {
+    register_on_slot(SLOT_1);
+    const auto confirmations_before_switch = confirmations.load();
+
+    switch_to_slot(SLOT_1, SLOT_2);
+    std::this_thread::sleep_for(SETTLE_TIME);
+
+    EXPECT_EQ(confirmations.load(), confirmations_before_switch)
+        << "configuration slot " << SLOT_2 << " was confirmed before its CSMS accepted the charging station";
+
+    const auto boot = wait_for("BootNotification", 2);
+    ASSERT_TRUE(boot.has_value()) << "B10.FR.10: no BootNotification.req after switching configuration slot";
+    accept_boot(boot->unique_id);
+    wait_until_idle();
+    EXPECT_GT(confirmations.load(), confirmations_before_switch)
+        << "configuration slot " << SLOT_2 << " was not confirmed after its CSMS accepted the charging station";
+}
+
+// A Pending answer from the CSMS behind the new profile keeps the queued messages held until it accepts.
+TEST_P(ChargePointProfileSwitchTestV2, SwitchToDifferentSlotPendingHoldsQueuedMessages) {
+    expect_held_until_accepted_after(RegistrationStatusEnum::Pending);
+}
+
+// A Rejected answer from the CSMS behind the new profile keeps the queued messages held until it accepts.
+TEST_P(ChargePointProfileSwitchTestV2, SwitchToDifferentSlotRejectedHoldsQueuedMessages) {
+    expect_held_until_accepted_after(RegistrationStatusEnum::Rejected);
+}
+
+// Part 4 section 5.3: reconnecting through the same profile does not repeat the BootNotification.req.
+// SetNetworkProfile may point the registered slot itself at another CSMS, which does not know the charging station
+// either.
+TEST_P(ChargePointProfileSwitchTestV2, SameSlotWithNewCsmsUrlSendsBootNotification) {
+    register_on_slot(SLOT_1);
+
+    charge_point->on_websocket_disconnected(SLOT_1, profile());
+    charge_point->on_websocket_connected(SLOT_1, profile("ws://other-csms.example.com"), GetParam());
+
+    const auto boot = wait_for("BootNotification", 2);
+    ASSERT_TRUE(boot.has_value()) << "B10.FR.10: no BootNotification.req after connecting to another CSMS through "
+                                     "the same configuration slot";
+    EXPECT_EQ(boot->payload.at("reason"), "Unknown");
+}
+
+// The same CSMS URL can be written with another case, without a scheme or with a trailing slash.
+TEST_P(ChargePointProfileSwitchTestV2, SameSlotWithEquivalentCsmsUrlDoesNotSendBootNotification) {
+    register_on_slot(SLOT_1);
+
+    charge_point->on_websocket_disconnected(SLOT_1, profile());
+    charge_point->on_websocket_connected(SLOT_1, profile("CSMS.example.com:80/"), GetParam());
+    std::this_thread::sleep_for(SETTLE_TIME);
+
+    EXPECT_EQ(count("BootNotification"), 1);
+}
+
+// The message queue does not send a BootNotification.req again once the CSMS answered it. When the charging station
+// cannot read the answer it is still not registered, so it asks again after the retry interval.
+TEST_P(ChargePointProfileSwitchTestV2, UnreadableBootNotificationResponseIsRetried) {
+    register_on_slot(SLOT_1);
+    switch_to_slot(SLOT_1, SLOT_2);
+    const auto first_boot = wait_for("BootNotification", 2);
+    ASSERT_TRUE(first_boot.has_value()) << "no BootNotification.req after switching configuration slot";
+    answer_boot(first_boot->unique_id, RegistrationStatusEnum::Pending, 1);
+    const auto second_boot = wait_for("BootNotification", 3);
+    ASSERT_TRUE(second_boot.has_value()) << "the BootNotification.req was not retried";
+
+    const json unreadable = {
+        {"currentTime", ocpp::DateTime().to_rfc3339()}, {"interval", 1}, {"status", "NotARegistrationStatus"}};
+    csms_to_charge_point(json{MessageTypeId::CALLRESULT, second_boot->unique_id, unreadable}.dump());
+
+    const auto third_boot = wait_for("BootNotification", 4);
+    ASSERT_TRUE(third_boot.has_value())
+        << "no BootNotification.req after a BootNotificationResponse that could not be read";
+    accept_boot(third_boot->unique_id);
+    wait_until_idle();
+}
+
+TEST_P(ChargePointProfileSwitchTestV2, ReconnectOnSameSlotDoesNotSendBootNotification) {
+    register_on_slot(SLOT_1);
+
+    switch_to_slot(SLOT_1, SLOT_1);
+    std::this_thread::sleep_for(SETTLE_TIME);
+
+    EXPECT_EQ(count("BootNotification"), 1);
+}
+
+// The BootNotification.req sent at start-up already registers the charging station on whichever slot it connects
+// through first, so connecting on a slot other than the persisted one does not add a second one.
+TEST_P(ChargePointProfileSwitchTestV2, FirstConnectionOnDifferentPersistedSlotSendsSingleBootNotification) {
+    device_model->set_active_network_profile_slot(SLOT_1, "test");
+    create_charge_point();
+    charge_point->start(BootReasonEnum::PowerUp, false);
+    charge_point->on_websocket_connected(SLOT_2, profile(), GetParam());
+
+    const auto boot = wait_for("BootNotification", 1);
+    ASSERT_TRUE(boot.has_value()) << "no BootNotification.req after start";
+    accept_boot(boot->unique_id);
+    wait_until_idle();
+
+    EXPECT_EQ(count("BootNotification"), 1);
+}
+
+// The CSMS behind the new profile answered Pending, so the charging station is not registered there. Falling back to
+// the profile whose CSMS accepted it before is again a different profile: it registers again at once instead of
+// holding queued messages until the retry interval of the other CSMS expires.
+TEST_P(ChargePointProfileSwitchTestV2, FallbackAfterPendingSendsBootNotificationAtOnce) {
+    register_on_slot(SLOT_1);
+
+    switch_to_slot(SLOT_1, SLOT_2);
+    const auto boot_on_slot_2 = wait_for("BootNotification", 2);
+    ASSERT_TRUE(boot_on_slot_2.has_value()) << "no BootNotification.req after switching configuration slot";
+    answer_boot(boot_on_slot_2->unique_id, RegistrationStatusEnum::Pending, 3600);
+
+    switch_to_slot(SLOT_2, SLOT_1);
+    const auto boot_on_slot_1 = wait_for("BootNotification", 3);
+    ASSERT_TRUE(boot_on_slot_1.has_value())
+        << "no BootNotification.req after falling back to configuration slot " << SLOT_1;
+    EXPECT_EQ(boot_on_slot_1->payload.at("reason"), "Unknown");
+    accept_boot(boot_on_slot_1->unique_id);
+}
+
+// The connection is lost before the CSMS behind the new profile answers the BootNotification.req. After falling back
+// to the profile whose CSMS accepted the charging station, the BootNotification.req goes out at once and its
+// acceptance releases the queued messages.
+TEST_P(ChargePointProfileSwitchTestV2, UnansweredBootNotificationIsResentAfterFallback) {
+    register_on_slot(SLOT_1);
+
+    charge_point->on_websocket_disconnected(SLOT_1, profile());
+    const auto security_events_before_switch = count("SecurityEventNotification");
+    charge_point->on_security_event(CiString<50>(ocpp::security_events::SETTINGSYSTEMTIME), std::nullopt, true);
+    charge_point->on_websocket_connected(SLOT_2, profile(), GetParam());
+    ASSERT_TRUE(wait_for("BootNotification", 2).has_value())
+        << "no BootNotification.req after switching configuration slot";
+
+    switch_to_slot(SLOT_2, SLOT_1);
+    const auto resent = wait_for("BootNotification", 3);
+    ASSERT_TRUE(resent.has_value()) << "the unanswered BootNotification.req was not resent after falling back";
+    EXPECT_EQ(resent->payload.at("reason"), "Unknown");
+    EXPECT_EQ(count("SecurityEventNotification"), security_events_before_switch)
+        << "a queued message was sent before the registration was accepted";
+
+    accept_boot(resent->unique_id);
+    EXPECT_TRUE(wait_for("SecurityEventNotification", security_events_before_switch + 1).has_value())
+        << "the queued message was not released once the registration was accepted";
+}
+
+// The connection is lost before the CSMS behind the new profile answers, and the charging station connects through
+// a third profile. The BootNotification.req lost with the connection and the one for the third profile are one
+// registration, so its CSMS receives a single BootNotification.req.
+TEST_P(ChargePointProfileSwitchTestV2, SwitchWithUnansweredBootNotificationSendsSingleBootNotification) {
+    constexpr int SLOT_3 = 3;
+    register_on_slot(SLOT_1);
+
+    switch_to_slot(SLOT_1, SLOT_2);
+    ASSERT_TRUE(wait_for("BootNotification", 2).has_value())
+        << "no BootNotification.req after switching configuration slot";
+
+    switch_to_slot(SLOT_2, SLOT_3);
+    const auto boot_on_slot_3 = wait_for("BootNotification", 3);
+    ASSERT_TRUE(boot_on_slot_3.has_value())
+        << "no BootNotification.req after switching to configuration slot " << SLOT_3;
+    accept_boot(boot_on_slot_3->unique_id);
+    std::this_thread::sleep_for(SETTLE_TIME);
+    EXPECT_EQ(count("BootNotification"), 3)
+        << "the CSMS behind configuration slot " << SLOT_3 << " received more than one BootNotification.req";
+}
+
+// As after Pending, a CSMS that answered Rejected does not know the charging station, so falling back to the profile
+// whose CSMS accepted it registers again at once.
+TEST_P(ChargePointProfileSwitchTestV2, FallbackAfterRejectedSendsBootNotificationAtOnce) {
+    register_on_slot(SLOT_1);
+
+    switch_to_slot(SLOT_1, SLOT_2);
+    const auto boot_on_slot_2 = wait_for("BootNotification", 2);
+    ASSERT_TRUE(boot_on_slot_2.has_value()) << "no BootNotification.req after switching configuration slot";
+    answer_boot(boot_on_slot_2->unique_id, RegistrationStatusEnum::Rejected, 3600);
+
+    switch_to_slot(SLOT_2, SLOT_1);
+    const auto boot_on_slot_1 = wait_for("BootNotification", 3);
+    ASSERT_TRUE(boot_on_slot_1.has_value())
+        << "no BootNotification.req after falling back to configuration slot " << SLOT_1;
+    EXPECT_EQ(boot_on_slot_1->payload.at("reason"), "Unknown");
+    accept_boot(boot_on_slot_1->unique_id);
+}
+
+// The BootNotification.req sent at once after falling back replaces the retry scheduled by the Pending answer of the
+// other CSMS, which therefore sends nothing when its interval expires.
+TEST_P(ChargePointProfileSwitchTestV2, FallbackAfterPendingCancelsScheduledRetry) {
+    register_on_slot(SLOT_1);
+
+    switch_to_slot(SLOT_1, SLOT_2);
+    const auto boot_on_slot_2 = wait_for("BootNotification", 2);
+    ASSERT_TRUE(boot_on_slot_2.has_value()) << "no BootNotification.req after switching configuration slot";
+    answer_boot(boot_on_slot_2->unique_id, RegistrationStatusEnum::Pending, 1);
+
+    switch_to_slot(SLOT_2, SLOT_1);
+    const auto boot_on_slot_1 = wait_for("BootNotification", 3);
+    ASSERT_TRUE(boot_on_slot_1.has_value())
+        << "no BootNotification.req after falling back to configuration slot " << SLOT_1;
+    accept_boot(boot_on_slot_1->unique_id);
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(2500));
+    EXPECT_EQ(count("BootNotification"), 3)
+        << "the retry scheduled by the Pending answer still sent a BootNotification";
+}
+
+// Reconnecting through the same profile while Pending keeps the retry interval the CSMS asked for: no
+// BootNotification.req goes out at once, and the scheduled retry still does.
+TEST_P(ChargePointProfileSwitchTestV2, ReconnectOnSameSlotWhilePendingKeepsRetryInterval) {
+    create_charge_point();
+    charge_point->start(BootReasonEnum::PowerUp, false);
+    charge_point->on_websocket_connected(SLOT_1, profile(), GetParam());
+    const auto boot = wait_for("BootNotification", 1);
+    ASSERT_TRUE(boot.has_value()) << "no BootNotification.req after start";
+    answer_boot(boot->unique_id, RegistrationStatusEnum::Pending, 2);
+
+    switch_to_slot(SLOT_1, SLOT_1);
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    EXPECT_EQ(count("BootNotification"), 1) << "a reconnect while Pending sent a BootNotification.req at once";
+
+    const auto retried = wait_for("BootNotification", 2);
+    ASSERT_TRUE(retried.has_value()) << "the BootNotification.req scheduled by the Pending answer was not sent";
+    EXPECT_EQ(retried->payload.at("reason"), "PowerUp");
+    accept_boot(retried->unique_id);
+}
+
+// A BootNotification.req retried after Pending keeps the reason it was sent with at start-up.
+TEST_P(ChargePointProfileSwitchTestV2, PendingRetryKeepsStartReason) {
+    create_charge_point();
+    charge_point->start(BootReasonEnum::RemoteReset, false);
+    charge_point->on_websocket_connected(SLOT_1, profile(), GetParam());
+    const auto boot = wait_for("BootNotification", 1);
+    ASSERT_TRUE(boot.has_value()) << "no BootNotification.req after start";
+    EXPECT_EQ(boot->payload.at("reason"), "RemoteReset");
+    answer_boot(boot->unique_id, RegistrationStatusEnum::Pending, 1);
+
+    const auto retried = wait_for("BootNotification", 2);
+    ASSERT_TRUE(retried.has_value()) << "the BootNotification.req was not retried";
+    EXPECT_EQ(retried->payload.at("reason"), "RemoteReset");
+    accept_boot(retried->unique_id);
+}
+
+// A BootNotification.req requested by TriggerMessage carries reason Triggered, but the retries that follow keep the
+// reason of the registration they belong to.
+TEST_P(ChargePointProfileSwitchTestV2, TriggeredBootNotificationDoesNotChangeRetryReason) {
+    register_on_slot(SLOT_1);
+
+    switch_to_slot(SLOT_1, SLOT_2);
+    const auto boot = wait_for("BootNotification", 2);
+    ASSERT_TRUE(boot.has_value()) << "no BootNotification.req after switching configuration slot";
+    answer_boot(boot->unique_id, RegistrationStatusEnum::Pending, 3600);
+
+    csms_to_charge_point(R"([2, "trigger", "TriggerMessage", {"requestedMessage": "BootNotification"}])");
+    const auto triggered = wait_for("BootNotification", 3);
+    ASSERT_TRUE(triggered.has_value()) << "TriggerMessage did not send a BootNotification.req";
+    EXPECT_EQ(triggered->payload.at("reason"), "Triggered");
+    answer_boot(triggered->unique_id, RegistrationStatusEnum::Pending, 1);
+
+    const auto retried = wait_for("BootNotification", 4);
+    ASSERT_TRUE(retried.has_value()) << "the BootNotification.req was not retried";
+    EXPECT_EQ(retried->payload.at("reason"), "Unknown")
+        << "the retry took the reason of the triggered BootNotification.req";
+    accept_boot(retried->unique_id);
+}
+
+INSTANTIATE_TEST_SUITE_P(OcppVersions, ChargePointProfileSwitchTestV2,
+                         ::testing::Values(OcppProtocolVersion::v201, OcppProtocolVersion::v21),
+                         [](const ::testing::TestParamInfo<OcppProtocolVersion>& info) {
+                             return info.param == OcppProtocolVersion::v201 ? std::string("OCPP201")
+                                                                            : std::string("OCPP21");
+                         });
 
 } // namespace ocpp::v2

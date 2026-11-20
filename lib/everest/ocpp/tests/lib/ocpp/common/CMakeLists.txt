@@ -5,6 +5,7 @@ target_sources(libocpp_unit_tests PRIVATE
     test_date_time.cpp
     test_json_number.cpp
     test_message_queue.cpp
+    test_registration_endpoints.cpp
     test_websocket_receive.cpp
     test_websocket_teardown.cpp
     test_websocket_uri.cpp

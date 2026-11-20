@@ -577,6 +577,17 @@ ChargePointConfigurationDeviceModel::setInternalRejectRemoteStartTransactionWith
 }
 
 ChargePointConfigurationDeviceModel::SetResult
+ChargePointConfigurationDeviceModel::setInternalBootNotificationAfterNetworkProfileSwitch(const std::string& value) {
+    if (not getBootNotificationAfterNetworkProfileSwitch().has_value()) {
+        return SetResult::UnknownVariable;
+    }
+    if (not isBool(value)) {
+        return SetResult::Rejected;
+    }
+    return set_value_check(*storage, resolver, keys::valid_keys::BootNotificationAfterNetworkProfileSwitch, value);
+}
+
+ChargePointConfigurationDeviceModel::SetResult
 ChargePointConfigurationDeviceModel::setInternalRemoteStartTransactionWithoutConnectorIdFindFirst(
     const std::string& value) {
     if (not getRemoteStartTransactionWithoutConnectorIdFindFirst().has_value()) {
@@ -2102,6 +2113,10 @@ std::optional<bool> ChargePointConfigurationDeviceModel::getRejectRemoteStartTra
     return get_optional<bool>(*storage, resolver, keys::valid_keys::RejectRemoteStartTransactionWithoutConnectorId);
 }
 
+std::optional<bool> ChargePointConfigurationDeviceModel::getBootNotificationAfterNetworkProfileSwitch() {
+    return get_optional<bool>(*storage, resolver, keys::valid_keys::BootNotificationAfterNetworkProfileSwitch);
+}
+
 std::optional<bool> ChargePointConfigurationDeviceModel::getRemoteStartTransactionWithoutConnectorIdFindFirst() {
     return get_optional<bool>(*storage, resolver, keys::valid_keys::RemoteStartTransactionWithoutConnectorIdFindFirst);
 }
@@ -2336,6 +2351,10 @@ ChargePointConfigurationDeviceModel::getRejectRemoteStartTransactionWithoutConne
     return get_key_value_optional(*storage, resolver, keys::valid_keys::RejectRemoteStartTransactionWithoutConnectorId);
 }
 
+std::optional<KeyValue> ChargePointConfigurationDeviceModel::getBootNotificationAfterNetworkProfileSwitchKeyValue() {
+    return get_key_value_optional(*storage, resolver, keys::valid_keys::BootNotificationAfterNetworkProfileSwitch);
+}
+
 std::optional<KeyValue>
 ChargePointConfigurationDeviceModel::getRemoteStartTransactionWithoutConnectorIdFindFirstKeyValue() {
     return get_key_value_optional(*storage, resolver,
@@ -2455,6 +2474,10 @@ void ChargePointConfigurationDeviceModel::setAllowChargingProfileWithoutStartSch
 
 void ChargePointConfigurationDeviceModel::setRejectRemoteStartTransactionWithoutConnectorId(bool reject) {
     setInternalRejectRemoteStartTransactionWithoutConnectorId(to_string(reject));
+}
+
+void ChargePointConfigurationDeviceModel::setBootNotificationAfterNetworkProfileSwitch(bool enabled) {
+    setInternalBootNotificationAfterNetworkProfileSwitch(to_string(enabled));
 }
 
 void ChargePointConfigurationDeviceModel::setRemoteStartTransactionWithoutConnectorIdFindFirst(bool find_first) {
@@ -3679,6 +3702,9 @@ std::optional<ConfigurationStatus> ChargePointConfigurationDeviceModel::set(cons
             break;
         case keys::valid_keys::RejectRemoteStartTransactionWithoutConnectorId:
             result = convert(setInternalRejectRemoteStartTransactionWithoutConnectorId(value_str));
+            break;
+        case keys::valid_keys::BootNotificationAfterNetworkProfileSwitch:
+            result = convert(setInternalBootNotificationAfterNetworkProfileSwitch(value_str));
             break;
         case keys::valid_keys::RemoteStartTransactionWithoutConnectorIdFindFirst:
             result = convert(setInternalRemoteStartTransactionWithoutConnectorIdFindFirst(value_str));
