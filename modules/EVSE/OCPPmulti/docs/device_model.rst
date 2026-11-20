@@ -7,14 +7,16 @@ OCPPmulti keeps one device model, in one database, for OCPP 1.6 and OCPP 2.x ali
 writes it with ``GetVariables`` and ``SetVariables``, an OCPP 1.6 CSMS with ``GetConfiguration`` and
 ``ChangeConfiguration``, and EVerest modules reach it through the ``ocpp`` interface. Five contributors fill it:
 
-- the **component configuration**, the JSON files in which the integrator defines the station;
+- the :term:`component configuration`, the JSON files in which the integrator defines the station;
 - **libocpp**, which computes the availability states;
 - the **components EVerest provides**, reported by the modules the OCPP module is connected to;
-- the **EVerest module configuration views**, backed by the configuration service;
-- **external owners**, applications that bring components with their own configuration and telemetry.
+- the EVerest :term:`module configuration views <module configuration view>`, backed by the configuration service;
+- :term:`external owners <external owner>`, applications that bring components with their own configuration and telemetry.
 
 Every variable has exactly one owner. libocpp's device model composes the model from what the owners
 bring, serves every read from memory and routes every write to the owner.
+
+The terms used on this page are defined in the :ref:`reference-ocpp-device-model-glossary`.
 
 .. mermaid::
 
@@ -49,7 +51,7 @@ One model for OCPP 1.6 and OCPP 2.x
 -----------------------------------
 
 The device model backs configuration and telemetry of both protocol versions. OCPP 2.x addresses it directly with
-``GetVariables``, ``SetVariables`` and ``GetBaseReport``. OCPP 1.6 knows only configuration keys, so OCPPmulti maps
+``GetVariables``, ``SetVariables`` and ``GetBaseReport``. OCPP 1.6 knows only :term:`configuration keys <configuration key>`, so OCPPmulti maps
 each key onto a component and variable: a built-in mapping for the standard keys, custom mappings from
 ``Ocpp16KeyMappingsPath``, and the ``OCPP16LegacyCtrlr`` component for keys without a standardized counterpart.
 ``GetConfiguration`` and ``ChangeConfiguration`` read and write the mapped variables. A custom mapping names a
@@ -60,6 +62,8 @@ is mapped and removed with the registration. Other variables that are registered
 configuration view, cannot be mapped. A variable without a mapping is invisible to an OCPP 1.6 CSMS. OCPP 1.6 has no variable monitoring, so
 telemetry such as ``EVSE`` / ``Power`` reaches a 1.6 CSMS only through ``MeterValues``. The ``ocpp`` interface
 sees every variable in both modes.
+
+.. _handwritten_ocppmulti_who-contributes:
 
 Who contributes
 ---------------
@@ -322,6 +326,8 @@ libocpp writes from its own state or EVerest reports, such as ``AvailabilityStat
 ``Identity``, a network connection profile or ``EVSE`` / ``Power``; such a variable is rejected and the rest of the
 registration is applied.
 
+.. _handwritten_ocppmulti_rules-of-composition:
+
 Rules of composition
 --------------------
 
@@ -524,6 +530,8 @@ The CSMS waits on the same call as the application, so an application that does 
 variable of an owner reaches the owner like a
 write from the CSMS.
 
+.. _handwritten_ocppmulti_what-the-database-stores:
+
 What the database stores
 ------------------------
 
@@ -556,6 +564,8 @@ Earlier versions kept the components EVerest provides in a second database, ``Ev
 (deprecated). At the first start the module takes it over: the DER ``Enabled`` values the CSMS set are imported into
 the device model database and the file is renamed to ``*.migrated``. The steps are in
 :ref:`howto-ocpp-storage-migration`.
+
+.. _handwritten_ocppmulti_monitors:
 
 Monitors
 --------

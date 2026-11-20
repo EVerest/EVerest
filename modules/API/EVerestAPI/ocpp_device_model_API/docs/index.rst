@@ -8,8 +8,9 @@
 
    This API is **experimental**: its topics and types may change without further notice.
 
-The module lets a client outside EVerest add components and variables to the OCPP 2.x device model, as an owner of
-the ``ocpp_device_model`` interface. See :ref:`howto-ocpp-device-model` for a walk-through.
+The module lets a client outside EVerest add components and variables to the OCPP 2.x :term:`device model`, as an
+:term:`owner <external owner>` of the ``ocpp_device_model`` interface. See :ref:`howto-ocpp-device-model` for a
+walk-through and the :ref:`reference-ocpp-device-model-glossary` for the terms used here.
 
 The OCPP module uses the module through its ``device_model`` requirement:
 

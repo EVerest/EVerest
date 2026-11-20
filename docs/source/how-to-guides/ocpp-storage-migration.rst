@@ -226,6 +226,8 @@ During migration, the OCPP 1.6 values are patched on top of this baseline.
 Values present in the OCPP 1.6 JSON take precedence over defaults in the
 component configuration.
 
+.. _howto-ocpp-storage-migration-custom-keys:
+
 Add mappings for custom OCPP 1.6 keys
 -------------------------------------
 
@@ -238,6 +240,9 @@ time, is installed as
 reference only: do not point ``Ocpp16KeyMappingsPath`` at it. Custom or
 vendor-specific keys that are not covered by the built-in table need an
 explicit YAML mapping file.
+
+The terms used below, such as built-in key, custom key, mapping target and
+override, are defined in the :ref:`reference-ocpp-device-model-glossary`.
 
 Example:
 
@@ -260,9 +265,9 @@ value only into a target that the component configuration at
 that an external application registers through the
 :ref:`ocpp_device_model_API <everest_modules_handwritten_ocpp_device_model_API>`:
 
-- A custom key is looked up at each request. While its target is not
+- A :term:`custom key` is looked up at each request. While its target is not
   registered, the key is unknown to the CSMS.
-- A built-in key mapped to such a variable needs it registered at startup.
+- A :term:`built-in key` mapped to such a variable needs it registered at startup.
   Otherwise the entry is ignored with an error log, and the key keeps its
   built-in mapping until the next start.
 

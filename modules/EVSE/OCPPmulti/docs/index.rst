@@ -92,10 +92,11 @@ included).
 Device model configuration via component configs
 =================================================
 
-The device model is the primary entry point for configuring the OCPP stack of this module. It is built from component
-config JSON files located in the directory referenced by ``DeviceModelConfigPath`` (a relative path is resolved
+The :term:`device model` is the primary entry point for configuring the OCPP stack of this module. It is built from
+:term:`component config` JSON files located in the directory referenced by ``DeviceModelConfigPath`` (a relative path is resolved
 against the ``OCPP201`` module's share directory, i.e. ``<prefix>/share/everest/modules/OCPP201/``, where the shipped
-component configs are installed). The directory contains two subdirectories:
+component configs are installed). The terms used for the device model are defined in the
+:ref:`reference-ocpp-device-model-glossary`. The directory contains two subdirectories:
 
 * ``standardized``: components and variables standardized by the OCPP specification. Usually untouched by
   integrators.
@@ -223,9 +224,10 @@ and ``IFace`` binds the websocket as configured.
 Who contributes to the device model
 ===================================
 
-The component configuration is one of five contributors. libocpp, the EVerest modules this module is connected to
+The :term:`component configuration` is one of five contributors. libocpp, the EVerest modules this module is connected to
 (``EVSE``, ``Connector``, ``ConnectedEV``, the DER controllers and others), the configuration service (one
-component per EVerest module whose configuration the OCPP module may read) and the external owners of the modules
+component per EVerest module whose configuration the OCPP module may read) and the
+:term:`external owners <external owner>` of the modules
 connected to the ``device_model`` requirement, such as the
 :ref:`ocpp_device_model_API <everest_modules_handwritten_ocpp_device_model_API>`, add to the device model at every
 start.

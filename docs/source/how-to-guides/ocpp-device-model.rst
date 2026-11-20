@@ -9,8 +9,8 @@ Add Components to the OCPP Device Model from an External Application
    The :ref:`ocpp_device_model_API <everest_modules_handwritten_ocpp_device_model_API>` is currently
    **experimental**: its topics and types may change without further notice.
 
-This guide shows how an application outside EVerest adds its own components and variables to the OCPP 2.x device
-model at runtime, so that the CSMS can read, monitor and configure them: a cooling unit, an auxiliary meter or the
+This guide shows how an application outside EVerest adds its own components and variables to the OCPP 2.x
+:term:`device model` at runtime, so that the CSMS can read, monitor and configure them: a cooling unit, an auxiliary meter or the
 devices behind a gateway, for example.
 
 The application talks MQTT to the :ref:`ocpp_device_model_API <everest_modules_handwritten_ocpp_device_model_API>`
@@ -25,15 +25,18 @@ documentation compares the two ways in
 :ref:`Custom configuration and telemetry <handwritten_ocppmulti_where-custom-configuration-goes>`; the
 :ref:`trade-offs <howto-ocpp-device-model-trade-offs>` below add what matters in operation.
 
+The terms this guide uses, such as owner, component config and custom key, are defined in the
+:ref:`reference-ocpp-device-model-glossary`.
+
 OCPPmulti serves OCPP 1.6 from the same device model. In 1.6 mode, a registered variable is reachable through
-GetConfiguration and ChangeConfiguration once a configuration key is mapped onto it. The owner declares the key itself
-with ``ocpp16_key`` on the variable, or the integrator maps one in the file at ``Ocpp16KeyMappingsPath``, see
+GetConfiguration and ChangeConfiguration once a :term:`configuration key` is mapped onto it. The owner declares the key itself
+with ``ocpp16_key`` on the variable, or the integrator maps one in the :term:`key mapping file` at ``Ocpp16KeyMappingsPath``, see
 :ref:`One model for OCPP 1.6 and OCPP 2.x <handwritten_ocppmulti_one-model-for-ocpp16-and-ocpp2x>`. Only the
 ``Actual`` attribute is reachable that way, and OCPP 1.6 has no monitors: a reported change is seen on the next
-read. A custom key is looked up at each request, so it is unknown to the CSMS while its owner is not registered.
+read. A :term:`custom key` is looked up at each request, so it is unknown to the CSMS while its owner is not registered.
 
-A declared key lives as long as the registration that declares it: a later registration of the owner replaces the
-keys, and a release removes them. It is either a key that OCPP 1.6 does not define, or a built-in key stored in
+A :term:`declared key` lives as long as the registration that declares it: a later registration of the owner replaces the
+keys, and a release removes them. It is either a key that OCPP 1.6 does not define, or a :term:`built-in key` stored in
 ``OCPP16LegacyCtrlr``, such as ``LightIntensity``, which the variable then holds instead, at startup and at runtime
 alike. The mapping file takes precedence: a key it names for another variable, or a variable it maps to another key,
 is refused, whether or not its entry is usable; declaring the key the file maps to the same variable changes nothing.
@@ -60,7 +63,7 @@ The rules in this guide come from libocpp's runtime registry. The details are in
 Owners
 ======
 
-Every variable of the device model has exactly one definition: either the component config or one **owner**. An owner
+Every variable of the device model has exactly one definition: either the component config or one :term:`owner`. An owner
 is a name the application chooses, one per device for example. Ownership is per variable, so the component config and
 an owner can contribute different variables to the same component.
 
@@ -77,6 +80,8 @@ variable is registered again. Its values are not stored by the OCPP service: the
 
 The diagrams in this guide show the application, the API module, the OCPP module and, where it takes part, the
 CSMS. Solid arrows are commands and publishes, dashed arrows answers.
+
+.. _howto-ocpp-device-model-configure-api-module:
 
 Configure the API module
 ========================
@@ -113,7 +118,7 @@ With ``cfg_expected_owners``, it hands them on as soon as every listed owner reg
 ``cfg_expected_owners_timeout_s``. It then logs the owners still missing. Without ``cfg_expected_owners``, the
 module collects registrations for ``cfg_registration_timeout_s``, 10 s by default.
 
-The OCPP service starts only after the module handed the registrations on, so these timeouts delay the connection to
+The :term:`OCPP service` starts only after the module handed the registrations on, so these timeouts delay the connection to
 the CSMS. Each of them is at most 100 s, below the 120 s after which EVerest aborts a command.
 
 The first start of the OCPP service removes the monitors of the variables that nobody registered. An owner that
