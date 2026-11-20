@@ -91,6 +91,8 @@ DeviceModelInitializationContext resolve_device_model_initialization_context(con
     context.component_config_path = component_config_path.value();
 
     if (!config.Ocpp16KeyMappingsPath.empty()) {
+        EVLOG_warning << "Ocpp16KeyMappingsPath is currently experimental! The OCPP 1.6 key mapping file format and "
+                         "its behavior may change without further notice";
         const auto custom_mappings_path =
             resolve_device_model_resource_path(ocpp_share_path, fs::path(config.Ocpp16KeyMappingsPath));
         if (!custom_mappings_path.has_value()) {

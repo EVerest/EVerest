@@ -195,8 +195,20 @@ During migration, the OCPP 1.6 values are patched on top of this baseline.
 Values present in the OCPP 1.6 JSON take precedence over defaults in the
 component configuration.
 
+.. _howto-ocpp-storage-migration-custom-key-mappings:
+
 Add mappings for custom OCPP 1.6 keys
 -------------------------------------
+
+.. warning::
+
+   The ``Ocpp16KeyMappingsPath`` configuration key and the mapping file are
+   currently **experimental**: the file format and its behavior, including
+   which entries are accepted, may change without further notice. They are
+   exempt from the stability guarantees and the deprecation period of the
+   EVerest public API until promoted to stable (see
+   :ref:`project-experimental-components`). The built-in mappings are not
+   experimental.
 
 Standard OCPP 1.6 keys are migrated through the built-in mapping table. The
 full list of built-in key mappings is documented in
