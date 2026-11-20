@@ -32,6 +32,13 @@
 //! the token-id itself is the invoice token. The module keeps the mapping
 //! from token-id to invoice token for the lifetime of the transaction.
 //!
+//! ## Connection to the terminal
+//!
+//! If the `ip` config is set, the module connects to the terminal under this
+//! address. Otherwise it looks up the address via mDNS from the `feig_serial`
+//! and repeats the lookup whenever connecting fails. The terminal may have
+//! received a new address in the meantime.
+//!
 //! ## Implementation details
 //!
 //! For more details checkout the
@@ -64,7 +71,7 @@ use std::sync::{mpsc::channel, mpsc::Sender, Arc, Mutex};
 use std::time::Duration;
 use std::{net::Ipv4Addr, str::FromStr};
 use zvt::constants::ErrorMessages;
-use zvt_feig_terminal::config::{Config, FeigConfig};
+use zvt_feig_terminal::config::{Config, FeigConfig, TerminalAddress};
 use zvt_feig_terminal::feig::{CardInfo, Error};
 
 const INVALID_BANK_TOKEN: &str = "PAYMENT_TERMINAL_INVALID";
@@ -691,7 +698,12 @@ fn main(module: &Module) -> Result<()> {
     let pt_config = Config {
         terminal_id: config.terminal_id,
         feig_serial: config.feig_serial,
-        ip_address: Ipv4Addr::from_str(&config.ip)?,
+        // Without a fixed ip-address we look up the terminal via mDNS.
+        address: if config.ip.is_empty() {
+            TerminalAddress::Mdns(None)
+        } else {
+            TerminalAddress::Ip(Ipv4Addr::from_str(&config.ip)?)
+        },
         feig_config: FeigConfig {
             currency: config.currency as usize,
             read_card_timeout: config.read_card_timeout as u8,
