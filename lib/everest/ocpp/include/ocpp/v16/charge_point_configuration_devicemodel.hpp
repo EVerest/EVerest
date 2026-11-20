@@ -11,6 +11,7 @@
 #include <ocpp/v16/variable_resolver.hpp>
 #include <ocpp/v2/ocpp16_key_mappings.hpp>
 
+#include <mutex>
 #include <set>
 #include <vector>
 
@@ -577,6 +578,9 @@ private:
     void appendSupportedMeasurandsKeyValue(std::vector<KeyValue>& all,
                                            const utils::OrderedUniqueStringList& valid_measurands) const;
     std::optional<ConfigurationStatus> setCustomKey(const std::string& key, const std::string& value);
+
+    /// \brief Serializes the read-modify-write of the MeterPublicKeys list, which the connectors share.
+    std::mutex m_meter_public_keys_mutex;
 };
 
 } // namespace v16
