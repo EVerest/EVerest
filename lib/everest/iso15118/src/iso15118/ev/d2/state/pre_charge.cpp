@@ -49,6 +49,10 @@ Result PreCharge::feed(Event ev) {
         return Result::stopping();
     }
 
+    if (auto stop = charger_stop_before_start(m_ctx, res->dc_evse_status.notification)) {
+        return std::move(*stop);
+    }
+
     const auto params = m_ctx.get_dc_params();
     if (params.target_voltage <= 0.0f and not nonpositive_target_warned) {
         nonpositive_target_warned = true;

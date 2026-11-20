@@ -127,6 +127,16 @@ Result ChargeParameterDiscovery::feed(Event ev) {
         return Result::stopping();
     }
 
+    auto notification = dt::EVSENotification::None;
+    if (res->dc_evse_charge_parameter.has_value()) {
+        notification = res->dc_evse_charge_parameter->dc_evse_status.notification;
+    } else if (res->ac_evse_charge_parameter.has_value()) {
+        notification = res->ac_evse_charge_parameter->ac_evse_status.notification;
+    }
+    if (auto stop = charger_stop_before_start(m_ctx, notification)) {
+        return std::move(*stop);
+    }
+
     const auto result = charge_parameter_discovery::handle_response(*res);
 
     if (auto stop = stop_before_start(m_ctx)) {
