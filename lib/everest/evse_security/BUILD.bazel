@@ -27,5 +27,6 @@ cc_library(
         "//third-party/bazel/openssl:crypto",
         "//third-party/bazel/openssl:ssl",
         "@com_github_HowardHinnant_date//:date",
+        "@rapidyaml//:rapidyaml",
     ],
 )
