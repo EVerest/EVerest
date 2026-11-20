@@ -114,8 +114,8 @@ stored records, including ``Open`` ones). Clearing cannot be undone; if a finish
 arrives later for a record that was already deleted, that finish is simply dropped.
 
 ``get_sessions`` is paginated: the caller passes an optional page size and filter
-(state, EVSE id, started-after timestamp compared against the session start at
-millisecond precision), and iterates by passing the ``continuation_token`` of a reply
+(state, EVSE id, started-after timestamp compared against the session start with
+fractional seconds truncated to milliseconds), and iterates by passing the ``continuation_token`` of a reply
 into the next call until a reply carries no token. The token is opaque and held only by
 the caller; the module keeps no iteration state. Records stored during the iteration
 appear at its end, pruned records are skipped, and a token that is invalid or refers to

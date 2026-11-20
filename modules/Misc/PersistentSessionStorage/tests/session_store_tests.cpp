@@ -1546,11 +1546,21 @@ TEST_F(SessionStoreTest, the_started_after_filter_applies_the_fraction_of_a_nano
     EXPECT_EQ(session_ids(page.sessions), std::vector<std::string>({"s2"}));
 }
 
-TEST_F(SessionStoreTest, the_started_after_filter_compares_at_millisecond_precision) {
+TEST_F(SessionStoreTest, the_started_after_filter_truncates_its_fraction_to_milliseconds) {
     ASSERT_TRUE(store->store_session_started(make_session("s1", 1, "2026-08-21T10:00:00.000Z")));
 
     SessionFilter filter{};
     filter.started_after = "2026-08-21T09:59:59.999999999Z";
+
+    const auto page = store->get_sessions(make_request(std::nullopt, std::nullopt, filter));
+    EXPECT_EQ(session_ids(page.sessions), std::vector<std::string>({"s1"}));
+}
+
+TEST_F(SessionStoreTest, the_started_after_filter_truncates_a_stored_fraction_to_milliseconds) {
+    ASSERT_TRUE(store->store_session_started(make_session("s1", 1, "2026-08-21T10:00:00.000999Z")));
+
+    SessionFilter filter{};
+    filter.started_after = "2026-08-21T10:00:00.000Z";
 
     const auto page = store->get_sessions(make_request(std::nullopt, std::nullopt, filter));
     EXPECT_TRUE(page.sessions.empty());
