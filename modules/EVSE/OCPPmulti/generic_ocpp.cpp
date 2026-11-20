@@ -1870,7 +1870,7 @@ void GenericOcpp::cb_variable_monitor(const ocpp::v2::Component& component, cons
         }
     }
     if (requested_forms.empty()) {
-        EVLOG_warning << "cb_variable_monitor: unexpected variable: " << component.name << ':' << variable.name;
+        // The variable listener reports every variable change, not only the monitored ones, so this is normal
         return;
     }
     // one echo per registered form (canonical or legacy key-only)
