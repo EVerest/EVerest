@@ -103,3 +103,13 @@ any experimental option it was given.
        :ref:`howto-ocpp-custom-error-mapping`. The file's keys, fields,
        placeholders and overlay behavior may change without further notice. The
        module logs a warning at startup when the key is set.
+   * - ``Ocpp16KeyMappingsPath`` configuration key of the
+       :ref:`OCPPmulti module <everest_modules_OCPPmulti>` and the OCPP 1.6 key
+       mapping file format
+     - 2026.10.0
+     - Maps custom OCPP 1.6 configuration keys to device model variables and
+       replaces built-in ``OCPP16LegacyCtrlr`` mappings, see
+       :ref:`howto-ocpp-storage-migration-custom-key-mappings`. The file's
+       fields and the rules for accepted entries may change without further
+       notice. The built-in mappings are not experimental. The module logs a
+       warning at startup when the key is set.

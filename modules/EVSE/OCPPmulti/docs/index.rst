@@ -156,8 +156,10 @@ served from the device model at runtime.
 In both paths, the built-in mappings from OCPP 1.6 configuration keys to device model component/variable
 combinations are documented in
 `lib/everest/ocpp/config/v16_to_v2_mapping.md <https://github.com/EVerest/everest-core/blob/main/lib/everest/ocpp/config/v16_to_v2_mapping.md>`_.
-``Ocpp16KeyMappingsPath`` can point to a YAML file with custom mappings on top; it is applied both when migrating
-the legacy JSON into the device model and when serving the device-model-backed configuration at runtime. Custom
+The experimental ``Ocpp16KeyMappingsPath`` can point to a YAML file with custom mappings on top; it is applied both
+when migrating the legacy JSON into the device model and when serving the device-model-backed configuration at
+runtime. The key and the mapping file format may change without further notice, see
+:ref:`howto-ocpp-storage-migration-custom-key-mappings`. Custom
 mappings must not target the connection configuration (the ``NetworkConfiguration`` slots, the ``OCPPCommCtrlr``
 network profile selectors, or the ``SecurityCtrlr`` connection fallbacks ``Identity`` and ``BasicAuthPassword``):
 those are managed via the standardized OCPP 1.6 keys with their reboot/reconnect semantics, and an entry with such
