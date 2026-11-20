@@ -98,12 +98,17 @@ have a flag to configure whether it uses the `default` provider or the `custom` 
 <b>Note:</b> The custom provider name has to be defined [here](https://github.com/EVerest/libevse-security/blob/4afe644cb62d0bf06fff1e2ca5d2dbc489342e0c/CMakeLists.txt#L32). Change the name from "custom_provider" to the required provider.
 
 ## Profile-enforcement addon
+Security certificates can have their key usage and extensions checked against
+YAML certificate profiles (e.g. the iso15118-2 or iso15118-20 profile sets).
 
-Security certificates have their key usage compared to the iso15118 standard. To 
-change between the iso15118-2 standard and the iso15118-20 standard the target directory 
-needs to be changed in the config. By default the security profiles are located 
-within the Security_Profiles folder in the modules root directory. However, the 
-target folder can be changed via the cert_profiles_dir line in the config.  
+Two settings control this:
+
+- `cert_profiles_dir` — directory containing the profile YAML files. Relative
+  paths are resolved against the certificate store root (consistent with the
+  other certificate directory settings).
+- `enforce_cert_profiles` — when `true`, every certificate in a verified chain
+  must match a profile from `cert_profiles_dir`; if no profile matches, chain
+  verification fails. Default: `false` (profiles are not enforced).
 
 ## Garbage Collect
 
