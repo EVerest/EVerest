@@ -208,6 +208,10 @@ void EvseManager::init() {
         EVLOG_warning << "DC mode without isolation monitoring configured, please check your national regulations.";
     }
 
+    if (config.charge_mode == "DC" and hlc_enabled) {
+        select_welding_detection_voltage_source();
+    }
+
     pnc_enabled = config.payment_enable_contract;
     central_contract_validation_allowed = config.central_contract_validation_allowed;
     contract_certificate_installation_enabled = config.contract_certificate_installation_enabled;
@@ -2839,19 +2843,31 @@ const std::vector<std::unique_ptr<powermeterIntf>>& EvseManager::r_powermeter_bi
     }
 }
 
-void EvseManager::setup_welding_detection_voltage() {
+void EvseManager::select_welding_detection_voltage_source() {
     const auto configured = welding_detection_voltage_source_from_string(config.welding_detection_voltage_source)
                                 .value_or(WeldingDetectionVoltageSource::PowermeterCarSide);
     WeldingDetectionVoltageSources connected;
     connected.powermeter_car_side = not r_powermeter_car_side.empty();
     connected.over_voltage_monitor = not r_over_voltage_monitor.empty();
     connected.isolation_monitor = not r_imd.empty();
-    const auto source = resolve_welding_detection_voltage_source(configured, connected);
-    if (source != configured) {
-        EVLOG_warning << "welding_detection_voltage_source " << to_string(configured) << " is not connected, using "
-                      << to_string(source);
+    const auto resolved = resolve_welding_detection_voltage_source(
+        configured, connected, config.welding_detection_voltage_fallback_to_power_supply);
+    if (not resolved.has_value()) {
+        // The power supply sees only its own output once the contactors are open; a station that disallows it
+        // must not run with it silently.
+        EVLOG_AND_THROW(Everest::EverestConfigError(
+            "welding_detection_voltage_source " + to_string(configured) +
+            " is not connected and welding_detection_voltage_fallback_to_power_supply is false"));
     }
+    welding_detection_source = resolved.value();
+    if (welding_detection_source != configured) {
+        EVLOG_warning << "welding_detection_voltage_source " << to_string(configured) << " is not connected, using "
+                      << to_string(welding_detection_source);
+    }
+}
 
+void EvseManager::setup_welding_detection_voltage() {
+    const auto source = welding_detection_source;
     welding_detection_voltage = std::make_unique<WeldingDetectionVoltage>(
         source,
         [this](float voltage_V) {

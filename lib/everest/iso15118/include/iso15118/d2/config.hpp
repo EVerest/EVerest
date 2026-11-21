@@ -84,6 +84,10 @@ struct SessionConfig {
     // see session::EvseSetupConfig for why EIM defaults well beyond the 55 s of [V2G2-712/713].
     uint32_t auth_timeout_eim_ms{300000};
     uint32_t auth_timeout_pnc_ms{55000};
+
+    // See session::EvseSetupConfig.
+    bool dc_stop_contactor_open_timeout_failed{false};
+    bool welding_detection_on_missing_voltage_failed{false};
 };
 
 // Retained across a paused session so a returning EV can re-join with OK_OldSessionJoined; for EIM

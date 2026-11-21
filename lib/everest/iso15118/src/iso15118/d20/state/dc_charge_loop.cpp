@@ -237,6 +237,15 @@ Result DC_ChargeLoop::feed(Event ev) {
     if (ev == Event::TIMEOUT) {
         const auto* const timeout = m_ctx.get_active_timeout();
         if (pending_stop_res.has_value() and timeout != nullptr and *timeout == d20::TimeoutType::CONTACTOR) {
+            if (m_ctx.session_config.dc_stop_contactor_open_timeout_failed) {
+                logf_error("Power path not reported off within %ums, sending PowerDeliveryRes with FAILED",
+                           DC_OPEN_CONTACTOR_TIMEOUT);
+                pending_stop_res->response_code = dt::ResponseCode::FAILED;
+                m_ctx.respond(*pending_stop_res);
+                pending_stop_res.reset();
+                m_ctx.session_stopped = true;
+                return {};
+            }
             logf_warning("Power path not reported off within %ums, sending PowerDeliveryRes anyway",
                          DC_OPEN_CONTACTOR_TIMEOUT);
             return send_pending_stop_res();

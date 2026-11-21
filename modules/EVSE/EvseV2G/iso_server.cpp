@@ -1856,7 +1856,10 @@ static enum v2g_event handle_iso_power_delivery(struct v2g_connection* conn) {
             conn->ctx->p_charger->publish_dc_open_contactor(nullptr);
             v2g_ctx_start_welding_detection(conn->ctx);
             /* Side B is disabled before the EV learns of it [IEC 61851-23:2023 Table CC.9 t103 before t104]. */
-            v2g_ctx_wait_contactor_open(conn->ctx, V2G_CONTACTOR_OPEN_TIMEOUT);
+            if (not v2g_ctx_wait_contactor_open(conn->ctx, V2G_CONTACTOR_OPEN_TIMEOUT) and
+                conn->ctx->dc_stop_contactor_open_timeout_failed) {
+                res->ResponseCode = iso2_responseCodeType_FAILED;
+            }
         }
         break;
 
@@ -2448,7 +2451,8 @@ static enum v2g_event handle_iso_welding_detection(struct v2g_connection* conn) 
     publish_iso_welding_detection_req(conn->ctx, req);
 
     /* A voltage measured after the request [IEC 61851-23:2023 CC.6.3, Table CC.9 t105 to t106]. */
-    v2g_ctx_wait_for_welding_voltage(conn->ctx);
+    const bool voltage_missing =
+        not v2g_ctx_wait_for_welding_voltage(conn->ctx) and conn->ctx->welding_detection_on_missing_voltage_failed;
 
     // TODO: Wait for CP state B, before transmitting of the response, or signal intl_emergency_shutdown in conn->ctx
     // ([V2G2-920], [V2G2-921]).
@@ -2460,7 +2464,7 @@ static enum v2g_event handle_iso_welding_detection(struct v2g_connection* conn) 
     res->DC_EVSEStatus.EVSEStatusCode = get_emergency_status_code(conn->ctx, PHASE_WELDING);
     res->DC_EVSEStatus.NotificationMaxDelay = (uint16_t)conn->ctx->evse_v2g_data.notification_max_delay;
     res->EVSEPresentVoltage = conn->ctx->evse_v2g_data.evse_present_voltage;
-    res->ResponseCode = iso2_responseCodeType_OK;
+    res->ResponseCode = voltage_missing ? iso2_responseCodeType_FAILED : iso2_responseCodeType_OK;
 
     /* Check the current response code and check if no external error has occurred */
     next_event = (v2g_event)iso_validate_response_code(&res->ResponseCode, conn);

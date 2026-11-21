@@ -98,6 +98,21 @@ TEST(WeldingDetectionVoltageSourceTest, never_falls_back_to_the_isolation_monito
               Source::PowerSupply);
 }
 
+TEST(WeldingDetectionVoltageSourceTest, refuses_the_power_supply_fallback_if_not_allowed) {
+    // welding_detection_voltage_fallback_to_power_supply: false
+    EXPECT_EQ(resolve_welding_detection_voltage_source(Source::PowermeterCarSide, {false, false, false}, false),
+              std::nullopt);
+    EXPECT_EQ(resolve_welding_detection_voltage_source(Source::IsolationMonitor, {true, true, false}, false),
+              std::nullopt);
+    // Other fallbacks and an explicit power supply stay.
+    EXPECT_EQ(resolve_welding_detection_voltage_source(Source::PowermeterCarSide, {false, true, false}, false),
+              Source::OverVoltageMonitor);
+    EXPECT_EQ(resolve_welding_detection_voltage_source(Source::PowerSupply, {false, false, false}, false),
+              Source::PowerSupply);
+    EXPECT_EQ(resolve_welding_detection_voltage_source(Source::PowermeterCarSide, {false, false, false}, true),
+              Source::PowerSupply);
+}
+
 TEST(WeldingDetectionVoltageTest, pushes_only_the_selected_source_while_active) {
     Recorder rec;
     auto welding = make(rec, Source::OverVoltageMonitor, idle_timing());

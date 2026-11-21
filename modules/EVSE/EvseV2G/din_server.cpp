@@ -866,6 +866,7 @@ enum v2g_event states::handle_din_power_delivery(struct v2g_connection* conn) {
     struct din_PowerDeliveryReqType* req = &conn->exi_in.dinEXIDocument->V2G_Message.Body.PowerDeliveryReq;
     struct din_PowerDeliveryResType* res = &conn->exi_out.dinEXIDocument->V2G_Message.Body.PowerDeliveryRes;
     enum v2g_event nextEvent = V2G_EVENT_NO_EVENT;
+    bool contactor_open_failed = false;
 
     /* At first, publish the received EV request message to the MQTT interface */
     publish_din_power_delivery_req(conn->ctx, req);
@@ -885,13 +886,14 @@ enum v2g_event states::handle_din_power_delivery(struct v2g_connection* conn) {
         conn->ctx->session.is_charging = false;
         v2g_ctx_start_welding_detection(conn->ctx);
         /* Side B is disabled before the EV learns of it [IEC 61851-23:2023 Table CC.9 t103 before t104]. */
-        v2g_ctx_wait_contactor_open(conn->ctx, V2G_CONTACTOR_OPEN_TIMEOUT_DIN);
+        contactor_open_failed = not v2g_ctx_wait_contactor_open(conn->ctx, V2G_CONTACTOR_OPEN_TIMEOUT_DIN) and
+                                conn->ctx->dc_stop_contactor_open_timeout_failed;
     } else {
         conn->ctx->p_charger->publish_v2g_setup_finished(nullptr);
     }
 
     /* Now fill the evse response message */
-    res->ResponseCode = din_responseCodeType_OK; // [V2G-DC-388]
+    res->ResponseCode = contactor_open_failed ? din_responseCodeType_FAILED : din_responseCodeType_OK; // [V2G-DC-388]
 
     res->AC_EVSEStatus_isUsed = (unsigned int)0;
     res->DC_EVSEStatus.EVSEIsolationStatus = (din_isolationLevelType)conn->ctx->evse_v2g_data.evse_isolation_status;
@@ -1149,10 +1151,11 @@ enum v2g_event states::handle_din_welding_detection(struct v2g_connection* conn)
     /* TODO: Waiting for CP-State B [V2G-DC-556]. */
 
     /* A voltage measured after the request [IEC 61851-23:2023 CC.6.3, Table CC.9 t105 to t106]. */
-    v2g_ctx_wait_for_welding_voltage(conn->ctx);
+    const bool voltage_missing =
+        not v2g_ctx_wait_for_welding_voltage(conn->ctx) and conn->ctx->welding_detection_on_missing_voltage_failed;
 
     /* Now fill the evse response message */
-    res->ResponseCode = din_responseCodeType_OK; // [V2G-DC-388]
+    res->ResponseCode = voltage_missing ? din_responseCodeType_FAILED : din_responseCodeType_OK; // [V2G-DC-388]
 
     res->DC_EVSEStatus.EVSEIsolationStatus = (din_isolationLevelType)conn->ctx->evse_v2g_data.evse_isolation_status;
     res->DC_EVSEStatus.EVSEIsolationStatus_isUsed = conn->ctx->evse_v2g_data.evse_isolation_status_is_used;

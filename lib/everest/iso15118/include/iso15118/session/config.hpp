@@ -87,6 +87,14 @@ struct EvseSetupConfig {
     // Values above the conformant d20::TIMEOUT_AC_CONTACTOR_CLOSE tolerate slow contactors at the cost of
     // conformance.
     uint32_t ac_close_contactor_timeout_ms{d20::TIMEOUT_AC_CONTACTOR_CLOSE};
+
+    // DC stop: a PowerDeliveryRes(Stop) whose contactor was not reported open within the wait carries
+    // ResponseCode FAILED instead of OK.
+    bool dc_stop_contactor_open_timeout_failed{false};
+
+    // DC welding detection: a WeldingDetectionRes for which no value of the welding detection voltage
+    // source arrived after its request carries ResponseCode FAILED instead of the last present voltage.
+    bool welding_detection_on_missing_voltage_failed{false};
 };
 
 struct SessionConfig {
@@ -151,6 +159,8 @@ struct SessionConfig {
     uint32_t auth_timeout_eim_s{300};
     uint32_t auth_timeout_pnc_s{55};
     uint32_t ac_close_contactor_timeout_ms{d20::TIMEOUT_AC_CONTACTOR_CLOSE};
+    bool dc_stop_contactor_open_timeout_failed{false};
+    bool welding_detection_on_missing_voltage_failed{false};
 };
 
 // Saturates instead of wrapping: a configured value beyond ~49 days would overflow the uint32_t

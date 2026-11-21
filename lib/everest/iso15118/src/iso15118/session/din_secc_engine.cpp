@@ -135,6 +135,8 @@ din::SessionConfig make_din_config(const session::SessionConfig& config) {
     cfg.no_energy_pause = config.no_energy_pause;
     // DIN SPEC 70121 authorization is EIM only, so only that timeout applies.
     cfg.auth_timeout_eim_ms = session::auth_timeout_to_ms(config.auth_timeout_eim_s);
+    cfg.dc_stop_contactor_open_timeout_failed = config.dc_stop_contactor_open_timeout_failed;
+    cfg.welding_detection_on_missing_voltage_failed = config.welding_detection_on_missing_voltage_failed;
 
     return cfg;
 }

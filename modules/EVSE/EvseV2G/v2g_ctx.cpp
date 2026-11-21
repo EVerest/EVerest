@@ -146,9 +146,9 @@ void v2g_ctx_finish_welding_detection(struct v2g_context* const ctx) {
     ctx->p_charger->publish_welding_detection(types::iso15118::WeldingDetectionPhase::Finished);
 }
 
-void v2g_ctx_wait_for_welding_voltage(struct v2g_context* const ctx) {
+bool v2g_ctx_wait_for_welding_voltage(struct v2g_context* const ctx) {
     if (not ctx->session.welding_detection_active) {
-        return;
+        return true;
     }
 
     const long long int wait_start = getmonotonictime();
@@ -168,21 +168,29 @@ void v2g_ctx_wait_for_welding_voltage(struct v2g_context* const ctx) {
     ctx->response_wait_ms += getmonotonictime() - wait_start;
 
     if (rv != ETIMEDOUT or updates >= V2G_WELDING_VOLTAGE_UPDATES) {
-        return;
+        return true;
     }
     // With every update outstanding the source stalled; with one in, the value is at worst one poll interval older
     // than the request.
     if (updates == 0) {
-        dlog(DLOG_LEVEL_WARNING,
-             "No value from the welding detection voltage source within %d ms of the WeldingDetectionReq, answering "
-             "with the last present voltage",
-             V2G_WELDING_VOLTAGE_TIMEOUT);
-    } else {
-        dlog(DLOG_LEVEL_INFO,
-             "Only one value from the welding detection voltage source within %d ms of the WeldingDetectionReq, "
-             "answering with it",
-             V2G_WELDING_VOLTAGE_TIMEOUT);
+        if (ctx->welding_detection_on_missing_voltage_failed) {
+            dlog(DLOG_LEVEL_ERROR,
+                 "No value from the welding detection voltage source within %d ms of the WeldingDetectionReq, "
+                 "answering with FAILED",
+                 V2G_WELDING_VOLTAGE_TIMEOUT);
+        } else {
+            dlog(DLOG_LEVEL_WARNING,
+                 "No value from the welding detection voltage source within %d ms of the WeldingDetectionReq, "
+                 "answering with the last present voltage",
+                 V2G_WELDING_VOLTAGE_TIMEOUT);
+        }
+        return false;
     }
+    dlog(DLOG_LEVEL_INFO,
+         "Only one value from the welding detection voltage source within %d ms of the WeldingDetectionReq, "
+         "answering with it",
+         V2G_WELDING_VOLTAGE_TIMEOUT);
+    return true;
 }
 
 bool v2g_ctx_wait_contactor_open(struct v2g_context* const ctx, int timeout_ms) {
@@ -202,8 +210,13 @@ bool v2g_ctx_wait_contactor_open(struct v2g_context* const ctx, int timeout_ms) 
     ctx->response_wait_ms += getmonotonictime() - wait_start;
 
     if (not open and rv == ETIMEDOUT) {
-        dlog(DLOG_LEVEL_WARNING, "Contactor not reported open within %d ms, sending the PowerDeliveryRes anyway",
-             timeout_ms);
+        if (ctx->dc_stop_contactor_open_timeout_failed) {
+            dlog(DLOG_LEVEL_ERROR, "Contactor not reported open within %d ms, sending the PowerDeliveryRes with FAILED",
+                 timeout_ms);
+        } else {
+            dlog(DLOG_LEVEL_WARNING, "Contactor not reported open within %d ms, sending the PowerDeliveryRes anyway",
+                 timeout_ms);
+        }
     }
     return open;
 }
