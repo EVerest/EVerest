@@ -53,6 +53,26 @@ config:
       never followed by further requests.
     type: boolean
     default: false
+  dc_stop_contactor_open_timeout_response:
+    description: >-
+      DC only. The PowerDeliveryRes(Stop) is held until the board support reports
+      the contactor open (DIN SPEC 70121 at most 1.4 s, ISO 15118-2 at most 3 s).
+      This selects the response if the contactor is not reported open in time.
+      ok_with_warning: ResponseCode OK and a warning in the log. failed:
+      ResponseCode FAILED, so that the EV is not told the stop succeeded while
+      side B may still be live; terminate_connection_on_failed_response applies.
+      This is a station policy and only changes what the EV is told: no error is
+      raised on the station side (a contactor that does not open is a board
+      support fault), welding detection does not take place and the session ends
+      with an error on the EV side. Only use failed with a board support that
+      reliably reports contactor_closed(false) within the wait; with a slower one
+      every DC stop ends with FAILED. Behind IsoMux, set it in both EvseV2G and
+      Evse15118D20 to cover all protocols.
+    type: string
+    enum:
+    - ok_with_warning
+    - failed
+    default: ok_with_warning
   tls_key_logging:
     description: >-
       Enable/Disable the export of TLS session keys (pre-master-secret)
