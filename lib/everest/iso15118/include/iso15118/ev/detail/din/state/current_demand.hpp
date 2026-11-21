@@ -24,11 +24,6 @@ struct RequestParams {
 
 message_din::CurrentDemandRequest create_request(const RequestParams& params);
 
-// [V2G-DC-637]: status codes without explicit requirements are informational; EVSE_IsolationMonitoringActive
-// and EVSE_Malfunction stay set in real SECCs. [V2G-DC-650]: EVSE_Shutdown / EVSE_EmergencyShutdown and
-// EVSENotification StopCharging stop charging.
-bool charger_requests_stop(const message_din::CurrentDemandResponse& res);
-
 } // namespace current_demand
 
 } // namespace iso15118::ev::din::state

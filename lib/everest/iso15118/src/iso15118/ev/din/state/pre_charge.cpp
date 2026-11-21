@@ -71,7 +71,7 @@ Result PreCharge::feed(Event ev) {
         return Result::stopping();
     }
 
-    if (auto stop = stop_before_start(m_ctx)) {
+    if (auto stop = stop_before_start(m_ctx, "PreCharge", res->dc_evse_status)) {
         return std::move(*stop);
     }
 

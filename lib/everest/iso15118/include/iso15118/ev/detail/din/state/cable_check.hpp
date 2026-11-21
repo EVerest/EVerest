@@ -12,18 +12,6 @@ namespace cable_check {
 
 message_din::CableCheckRequest create_request(const dt::DcEvStatus& dc_ev_status);
 
-struct Result {
-    // EVSEProcessing is Finished; otherwise the isolation test poll repeats.
-    bool finished{false};
-    // EVSE_Shutdown or EVSE_EmergencyShutdown reported, in any EVSEProcessing state.
-    // [V2G-DC-893/894]: once EVSEProcessing is Finished the EVCC disregards
-    // EVSEIsolationStatus entirely and every EVSEStatusCode except EVSE_Shutdown and
-    // EVSE_EmergencyShutdown before sending PreChargeReq.
-    bool evse_shutdown{false};
-};
-
-Result handle_response(const message_din::CableCheckResponse& res);
-
 } // namespace cable_check
 
 } // namespace iso15118::ev::din::state

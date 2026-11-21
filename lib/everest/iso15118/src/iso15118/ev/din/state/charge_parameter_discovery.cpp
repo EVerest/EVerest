@@ -24,19 +24,6 @@ iso15118::session::feedback::DcMaximumLimits extract_limits(const dt::DcEvseChar
     return limits;
 }
 
-bool evse_requests_stop(const dt::DcEvseStatus& status) {
-    if (status.evse_notification == dt::EvseNotification::StopCharging) {
-        return true;
-    }
-    switch (status.evse_status_code) {
-    case dt::DcEvseStatusCode::EVSE_Shutdown:
-    case dt::DcEvseStatusCode::EVSE_EmergencyShutdown:
-        return true;
-    default:
-        return false;
-    }
-}
-
 } // namespace
 
 message_din::ChargeParameterDiscoveryRequest create_request(dt::EnergyTransferMode requested_energy_transfer_type,

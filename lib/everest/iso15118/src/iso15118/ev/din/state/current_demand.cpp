@@ -26,14 +26,6 @@ message_din::CurrentDemandRequest create_request(const RequestParams& params) {
     return req;
 }
 
-bool charger_requests_stop(const message_din::CurrentDemandResponse& res) {
-    if (res.dc_evse_status.evse_notification == dt::EvseNotification::StopCharging) {
-        return true;
-    }
-    const auto status = res.dc_evse_status.evse_status_code;
-    return status == dt::DcEvseStatusCode::EVSE_Shutdown or status == dt::DcEvseStatusCode::EVSE_EmergencyShutdown;
-}
-
 } // namespace current_demand
 
 namespace {
@@ -109,7 +101,7 @@ Result CurrentDemand::feed(Event ev) {
     m_ctx.feedback.dc_evse_present_values(static_cast<float>(res->evse_present_voltage),
                                           static_cast<float>(res->evse_present_current));
 
-    if (current_demand::charger_requests_stop(*res)) {
+    if (evse_requests_stop(res->dc_evse_status)) {
         m_ctx.feedback.stop_from_charger();
         // A charger stop terminates the session, even over an EV pause; it never pauses it.
         return to_power_delivery(m_ctx, PowerDelivery::Stop{session::StopReason::EvseTerminate});

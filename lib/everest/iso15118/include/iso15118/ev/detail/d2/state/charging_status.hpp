@@ -23,8 +23,9 @@ struct Result {
 
 Result handle_response(const message_2::ChargingStatusResponse& res);
 
-// SECC target power from the reported EVSE max current and the AC nominal voltage captured during
-// ChargeParameterDiscovery (P = U * I, 230 V default). Empty when the current is absent.
+// Per-phase SECC target power from the reported EVSE max current and the AC nominal voltage captured
+// during ChargeParameterDiscovery (P = U * I, 230 V default), set on L1, L2 and L3. Empty when the
+// current is absent.
 iso15118::d20::AcTargetPower compute_ac_target_power(const std::optional<dt::PhysicalValue>& evse_max_current,
                                                      const std::optional<dt::PhysicalValue>& nominal_voltage);
 
