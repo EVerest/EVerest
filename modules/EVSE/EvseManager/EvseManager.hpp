@@ -150,6 +150,8 @@ struct Conf {
     std::string switch_3ph1ph_cp_state;
     int soft_over_current_timeout_ms;
     int soft_over_current_stale_data_warning_ms;
+    int soft_over_current_max_retries;
+    int soft_over_current_retry_timeout_s;
     bool lock_connector_in_state_b;
     bool unlock_when_deauthorized;
     int keep_cable_locked_lock_delay_ms;
