@@ -54,6 +54,14 @@ const auto by_cable_check = entered_by([](DinStateHelper& helper) {
     return std::move(result.new_state);
 });
 
+void finish_session_stop(PrimedState<State>& primed) {
+    message_din::SessionStopResponse session_stop{};
+    session_stop.header = header();
+    session_stop.response_code = dt::ResponseCode::OK;
+    primed.handle_response(session_stop);
+    primed.feed(ev::din::Event::V2GTP_MESSAGE);
+}
+
 } // namespace
 
 SCENARIO("DIN 70121 EV PreCharge's target voltage at zero current goes out on the CableCheck transition") {
@@ -147,6 +155,54 @@ SCENARIO("DIN 70121 EV PreCharge diverts to SessionStop without publishing dc_po
     REQUIRE(primed.fsm.get_current_state_id() == StateID::SessionStop);
     REQUIRE(power_on == false);
     REQUIRE(primed.take_requests().get<message_din::SessionStopRequest>().has_value());
+}
+
+SCENARIO("DIN 70121 EV PreCharge diverts to SessionStop on an EVSE stop") {
+    bool power_on = false;
+    ev::feedback::Callbacks callbacks{};
+    callbacks.dc_power_on = [&power_on]() { power_on = true; };
+    PrimedState<State> primed{callbacks, seed_params};
+
+    auto res = ok_response(header());
+    SECTION("StopCharging notification") {
+        res.dc_evse_status.evse_notification = dt::EvseNotification::StopCharging;
+    }
+    SECTION("EVSE_Shutdown") {
+        res.dc_evse_status.evse_status_code = dt::DcEvseStatusCode::EVSE_Shutdown;
+    }
+    SECTION("EVSE_EmergencyShutdown") {
+        res.dc_evse_status.evse_status_code = dt::DcEvseStatusCode::EVSE_EmergencyShutdown;
+    }
+    primed.ctx.set_pause_charging_requested(true);
+    primed.handle_response(res);
+    primed.feed(ev::din::Event::V2GTP_MESSAGE);
+
+    REQUIRE(primed.fsm.get_current_state_id() == StateID::SessionStop);
+    REQUIRE(power_on == false);
+    const auto requests = primed.take_requests();
+    REQUIRE(requests.get<message_din::SessionStopRequest>().has_value());
+    REQUIRE(requests.get<message_din::PreChargeRequest>().has_value() == false);
+
+    finish_session_stop(primed);
+
+    REQUIRE(primed.ctx.is_session_stopped() == true);
+    REQUIRE(primed.ctx.is_session_paused() == false);
+}
+
+SCENARIO("DIN 70121 EV PreCharge pauses on a latched pause request") {
+    const ev::feedback::Callbacks callbacks{};
+    PrimedState<State> primed{callbacks, seed_params};
+
+    primed.ctx.set_pause_charging_requested(true);
+    primed.handle_response(ok_response(header()));
+    primed.feed(ev::din::Event::V2GTP_MESSAGE);
+
+    REQUIRE(primed.fsm.get_current_state_id() == StateID::SessionStop);
+    REQUIRE(primed.take_requests().get<message_din::SessionStopRequest>().has_value());
+
+    finish_session_stop(primed);
+
+    REQUIRE(primed.ctx.is_session_paused() == true);
 }
 
 SCENARIO("DIN 70121 EV PreCharge rejects malformed responses") {
