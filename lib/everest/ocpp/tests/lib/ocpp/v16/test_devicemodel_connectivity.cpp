@@ -16,7 +16,9 @@
 ///     + nullopt rejections (':' in identity, URL scheme vs security profile),
 ///   * check_integrity() - ChargePointId accepted via the SecurityCtrlr/Identity fallback,
 ///   * set_active_network_profile_slot(slot) - persistence + getter redirection,
-///   * a ConnectivityManager smoke test built over the adapter, and
+///   * a ConnectivityManager smoke test built over the adapter,
+///   * setMeterPublicKey() - per-connector keys stored in OCPP16LegacyCtrlr/MeterPublicKeys and reported as
+///     MeterPublicKey<N>, and
 ///   * the ocpp16 component-config patcher pinning NetworkConfiguration[slot].OcppInterface to "Any".
 
 #include <chrono>
@@ -785,6 +787,124 @@ TEST_F(DeviceModelConnectivityTest, ReadProfileSynthesisForMissingComponentYield
     std::optional<ocpp::v2::NetworkConnectionProfile> result;
     EXPECT_NO_THROW(result = config->read_network_connection_profile(7));
     EXPECT_FALSE(result.has_value());
+}
+
+// ---------------------------------------------------------------------------
+// setMeterPublicKey() / MeterPublicKey<N>
+// ---------------------------------------------------------------------------
+
+const std::string METER_PUBLIC_KEY_1 =
+    "3059301306072A8648CE3D020106082A8648CE3D030107034200043AEEB45C392357820A58FDFB0857BD77ADA31585C61C430531DFA53B440A"
+    "FBFD95AC1E594F1CAAFBD3ACA3A0A3F3A8F2B9E9A53C6C2B8E8E7F0C8E3A5B6D7C8D";
+const std::string METER_PUBLIC_KEY_2 =
+    "3059301306072A8648CE3D020106082A8648CE3D030107034200047C1D0E2F3A4B5C6D7E8F9A0B1C2D3E4F5A6B7C8D9E0F1A2B3C4D5E6F7A8B"
+    "9C0D1E2F3A4B5C6D7E8F9A0B1C2D3E4F5A6B7C8D9E0F1A2B3C4D5E6F7A8B9C0D1E2F";
+
+class DeviceModelMeterPublicKeyTest : public DeviceModelConnectivityTest {
+protected:
+    void SetUp() override {
+        const auto cv = keys::convert_v2(keys::valid_keys::NumberOfConnectors);
+        ASSERT_TRUE(cv.has_value());
+        ASSERT_EQ(dm->set_value(cv->first, cv->second, AttributeEnum::Actual, "2", "test", true),
+                  SetVariableStatusEnum::Accepted);
+    }
+
+    std::optional<std::string> stored_meter_public_keys() {
+        const auto cv = keys::convert_v2(keys::valid_keys::MeterPublicKeys);
+        std::string value;
+        if (!cv.has_value() ||
+            dm->get_variable(cv->first, cv->second, AttributeEnum::Actual, value, false,
+                             ocpp::v2::UnsetValue::NotSupported) != ocpp::v2::GetVariableStatusEnum::Accepted) {
+            return std::nullopt;
+        }
+        return value;
+    }
+
+    std::map<std::string, KeyValue> reported_meter_public_keys() {
+        std::map<std::string, KeyValue> result;
+        for (const auto& kv : config->get_all_key_value()) {
+            if (kv.key.get().rfind("MeterPublicKey", 0) == 0) {
+                result.emplace(kv.key.get(), kv);
+            }
+        }
+        return result;
+    }
+};
+
+TEST_F(DeviceModelMeterPublicKeyTest, NoKeysReportedBeforeAnyIsSet) {
+    EXPECT_FALSE(config->get("MeterPublicKey1").has_value());
+    EXPECT_FALSE(config->getAllMeterPublicKeyKeyValues().has_value());
+    EXPECT_TRUE(reported_meter_public_keys().empty());
+}
+
+TEST_F(DeviceModelMeterPublicKeyTest, KeysAreReportedPerConnector) {
+    EXPECT_TRUE(config->setMeterPublicKey(1, METER_PUBLIC_KEY_1));
+    EXPECT_TRUE(config->setMeterPublicKey(2, METER_PUBLIC_KEY_2));
+
+    EXPECT_EQ(stored_meter_public_keys(), METER_PUBLIC_KEY_1 + "," + METER_PUBLIC_KEY_2);
+
+    const auto key_1 = config->get("MeterPublicKey1");
+    ASSERT_TRUE(key_1.has_value());
+    EXPECT_EQ(key_1->value, METER_PUBLIC_KEY_1.c_str());
+    EXPECT_TRUE(key_1->readonly);
+
+    const auto key_2 = config->get("MeterPublicKey2");
+    ASSERT_TRUE(key_2.has_value());
+    EXPECT_EQ(key_2->value, METER_PUBLIC_KEY_2.c_str());
+    EXPECT_TRUE(key_2->readonly);
+
+    const auto reported = reported_meter_public_keys();
+    ASSERT_EQ(reported.size(), 2);
+    EXPECT_EQ(reported.at("MeterPublicKey1").value, METER_PUBLIC_KEY_1.c_str());
+    EXPECT_TRUE(reported.at("MeterPublicKey1").readonly);
+    EXPECT_EQ(reported.at("MeterPublicKey2").value, METER_PUBLIC_KEY_2.c_str());
+    EXPECT_TRUE(reported.at("MeterPublicKey2").readonly);
+
+    const auto all = config->getAllMeterPublicKeyKeyValues();
+    ASSERT_TRUE(all.has_value());
+    EXPECT_EQ(all->size(), 2);
+}
+
+TEST_F(DeviceModelMeterPublicKeyTest, ConnectorWithoutKeyIsNotReported) {
+    EXPECT_TRUE(config->setMeterPublicKey(2, METER_PUBLIC_KEY_2));
+
+    EXPECT_FALSE(config->get("MeterPublicKey1").has_value());
+    const auto key_2 = config->get("MeterPublicKey2");
+    ASSERT_TRUE(key_2.has_value());
+    EXPECT_EQ(key_2->value, METER_PUBLIC_KEY_2.c_str());
+
+    const auto reported = reported_meter_public_keys();
+    ASSERT_EQ(reported.size(), 1);
+    EXPECT_EQ(reported.count("MeterPublicKey2"), 1);
+
+    EXPECT_TRUE(config->setMeterPublicKey(1, METER_PUBLIC_KEY_1));
+    EXPECT_EQ(stored_meter_public_keys(), METER_PUBLIC_KEY_1 + "," + METER_PUBLIC_KEY_2);
+}
+
+TEST_F(DeviceModelMeterPublicKeyTest, KeyOfOneConnectorIsReplaced) {
+    EXPECT_TRUE(config->setMeterPublicKey(1, METER_PUBLIC_KEY_1));
+    EXPECT_TRUE(config->setMeterPublicKey(2, METER_PUBLIC_KEY_1));
+    EXPECT_TRUE(config->setMeterPublicKey(2, METER_PUBLIC_KEY_2));
+
+    EXPECT_EQ(stored_meter_public_keys(), METER_PUBLIC_KEY_1 + "," + METER_PUBLIC_KEY_2);
+}
+
+TEST_F(DeviceModelMeterPublicKeyTest, KeyOfMaximumConfigurationValueLengthIsReported) {
+    const std::string longest_key(500, 'A');
+    EXPECT_TRUE(config->setMeterPublicKey(1, longest_key));
+
+    const auto key_1 = config->get("MeterPublicKey1");
+    ASSERT_TRUE(key_1.has_value());
+    EXPECT_EQ(key_1->value, longest_key.c_str());
+}
+
+TEST_F(DeviceModelMeterPublicKeyTest, InvalidInputIsRejected) {
+    EXPECT_FALSE(config->setMeterPublicKey(0, METER_PUBLIC_KEY_1));
+    EXPECT_FALSE(config->setMeterPublicKey(3, METER_PUBLIC_KEY_1));
+    EXPECT_FALSE(config->setMeterPublicKey(1, "KEY,WITH,COMMAS"));
+    EXPECT_FALSE(config->setMeterPublicKey(1, std::string(501, 'A')));
+
+    EXPECT_TRUE(reported_meter_public_keys().empty());
 }
 
 // ---------------------------------------------------------------------------
