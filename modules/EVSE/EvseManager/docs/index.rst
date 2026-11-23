@@ -131,7 +131,7 @@ ISO 15118-20; without the report it sends the response after that and logs a war
 
 The ISO module reports the phase with ``welding_detection``: ``Started`` at PowerDelivery(Stop),
 ``Finished`` at SessionStop or session teardown. In between, EvseManager reports the voltage of the
-source selected by ``welding_detection_voltage_source`` instead of the power supply measurement:
+source selected by ``ev_side_voltage_source`` instead of the power supply measurement:
 
 * ``powermeter_car_side`` (default): ``voltage_V.DC`` of the car side power meter.
 * ``over_voltage_monitor``: ``voltage_measurement_V`` of the over voltage monitor.
