@@ -11,6 +11,7 @@
 
 #include <generated/types/authorization.hpp>
 #include <generated/types/charger_information.hpp>
+#include <generated/types/energy.hpp>
 #include <generated/types/evse_board_support.hpp>
 #include <generated/types/evse_manager.hpp>
 #include <generated/types/iso15118.hpp>
@@ -95,6 +96,7 @@ struct GenericChargePointCallbacks {
     virtual void cb_default_price(const types::session_cost::DefaultPrice& messages) = 0;
     /// \brief Carries the full set of currently-active DER controls, emitted after every accepted transition.
     virtual void cb_der_active_directives(const std::vector<ocpp::v21::SetDERControlRequest>& active_controls) = 0;
+    virtual void cb_enforced_limits(std::int32_t evse_id, const types::energy::EnforcedLimits& limits) = 0;
     virtual void cb_ev_info(std::int32_t evse_id, const types::evse_manager::EVInfo& ev_info) = 0;
     virtual void cb_fault_cleared_handler(std::int32_t evse_id, const Everest::error::Error& error) = 0;
     virtual void cb_fault_handler(std::int32_t evse_id, const Everest::error::Error& error) = 0;
@@ -276,6 +278,8 @@ struct GenericChargePointInterface {
     on_change_availability(const ocpp::v2::ChangeAvailabilityRequest& request) = 0;
     virtual void on_enabled(std::int32_t evse_id, std::int32_t connector_id) = 0;
     virtual void on_ev_charging_needs(const ocpp::v2::NotifyEVChargingNeedsRequest& request) = 0;
+    /// \brief Report the limits offered to the EV, the source of the Current.Offered and Power.Offered measurands
+    virtual void on_enforced_limits(std::int32_t evse_id, const types::energy::EnforcedLimits& limits) = 0;
     virtual void on_event(const EventInfo& event) = 0;
 
     virtual void on_event_authorised(std::int32_t evse_id, std::int32_t connector_id,

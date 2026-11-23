@@ -385,6 +385,13 @@ Variables received include **session_event** (drives the state machine and trans
 **powermeter_public_key_ocmf**, **ev_info**, **hw_capabilities**, **supported_energy_transfer_modes**,
 **waiting_for_external_ready** and **ready**.
 
+**enforced_limits** provides the ``Current.Offered`` and ``Power.Offered`` measurands in all OCPP versions; they are
+sent when the configured measurands of the meter values include them. A current limit without a power limit, the usual
+case for AC charging, is reported as ``Power.Offered`` by multiplying it with the permitted phase count and the supply
+voltage: the ``SupplyVoltage`` configuration key in OCPP 1.6, the ``SupplyVoltage`` variable in OCPP 2.x (230 V if
+unset). The supply voltage is read when the limits change, so a changed supply voltage applies with the next changed
+limit. OCPP 1.6 reports whole amperes and watts, rounded down.
+
 Requires: extensions_15118 (0-128)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 

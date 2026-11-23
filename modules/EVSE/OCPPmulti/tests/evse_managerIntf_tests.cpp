@@ -494,6 +494,33 @@ TEST_F(GenericOcppRequiresTester, subscribeEvInfo) {
     EXPECT_EQ(ocpp->evse_soc_map().handle()->at(2), ev_info.soc);
 }
 
+TEST_F(GenericOcppRequiresTester, subscribeEnforcedLimits) {
+    // subscribe_enforced_limits() calls cb_enforced_limits()
+
+    types::energy::EnforcedLimits limits;
+    limits.uuid = "evse";
+    limits.valid_for = 10;
+    limits.limits_root_side.ac_max_current_A = {16.0F, "source"};
+
+    EXPECT_CALL(chargepoint, on_enforced_limits(1, limits)).Times(1);
+    EXPECT_CALL(chargepoint, on_enforced_limits(2, limits)).Times(1);
+
+    interfaces->publish(0, "enforced_limits", limits);
+    interfaces->publish(1, "enforced_limits", limits);
+}
+
+TEST_F(GenericOcppNotStartedTester, enforcedLimitsBeforeStartAreDropped) {
+    types::energy::EnforcedLimits limits;
+    limits.uuid = "evse";
+    limits.valid_for = 10;
+    limits.limits_root_side.ac_max_current_A = {16.0F, "source"};
+
+    EXPECT_CALL(chargepoint, on_enforced_limits(_, _)).Times(0);
+
+    interfaces->publish(0, "enforced_limits", limits);
+    start();
+}
+
 TEST_F(GenericOcppRequiresTester, subscribeHwCapabilities) {
     // subscribe_hw_capabilities() calls cb_hw_capabilities()
 

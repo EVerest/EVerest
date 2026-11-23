@@ -18,6 +18,12 @@ namespace ocpp {
 namespace v2 {
 
 namespace {
+MeterValue to_pricing_trigger_meter_value(const MeterValue& meter_value) {
+    const MeterValue filtered = utils::get_meter_value_with_measurands_applied(
+        meter_value, {MeasurandEnum::Energy_Active_Import_Register, MeasurandEnum::Power_Active_Import});
+    return utils::set_meter_value_reading_context(filtered, ReadingContextEnum::Other);
+}
+
 // Convert an energy value into Wh
 float get_normalized_energy_value(SampledValue sampled_value) {
     float value = sampled_value.value;
@@ -599,14 +605,11 @@ void Evse::send_meter_value_on_pricing_trigger(const MeterValue& meter_value) {
             const std::optional<float> active_import_register_meter_value_wh = get_active_import_register_meter_value();
             if (active_import_register_meter_value_wh.has_value() and
                 static_cast<double>(active_import_register_meter_value_wh.value()) >= trigger_energy_kwh * 1000) {
-                const MeterValue active_import_meter_value = utils::get_meter_value_with_measurands_applied(
-                    meter_value, {MeasurandEnum::Energy_Active_Import_Register, MeasurandEnum::Power_Active_Import});
-                if (active_import_meter_value.sampledValue.empty()) {
+                const MeterValue to_send = to_pricing_trigger_meter_value(meter_value);
+                if (to_send.sampledValue.empty()) {
                     EVLOG_error
                         << "No current active import register metervalue found. Can not send trigger metervalue.";
                 } else {
-                    const MeterValue to_send =
-                        utils::set_meter_value_reading_context(active_import_meter_value, ReadingContextEnum::Other);
                     this->send_metervalue_function({to_send});
                     this->trigger_metervalue_on_energy_kwh.reset();
                     meter_value_sent = true;
@@ -648,8 +651,7 @@ void Evse::send_meter_value_on_pricing_trigger(const MeterValue& meter_value) {
             // Power threshold is crossed, send metervalues.
             if (!meter_value_sent) {
                 // Only send metervalue if it is not sent yet, otherwise only the last triggered metervalue is set.
-                const MeterValue mv = utils::set_meter_value_reading_context(meter_value, ReadingContextEnum::Other);
-                this->send_metervalue_function({mv});
+                this->send_metervalue_function({to_pricing_trigger_meter_value(meter_value)});
             }
 
             // Also when metervalue is sent, we want to set the last triggered metervalue.
@@ -659,8 +661,7 @@ void Evse::send_meter_value_on_pricing_trigger(const MeterValue& meter_value) {
         // Send metervalue anyway since we have no previous metervalue stored and don't know if we should send any
         if (!meter_value_sent) {
             // Only send metervalue if it is not sent yet, otherwise only the last triggered metervalue is set.
-            const MeterValue mv = utils::set_meter_value_reading_context(meter_value, ReadingContextEnum::Other);
-            this->send_metervalue_function({mv});
+            this->send_metervalue_function({to_pricing_trigger_meter_value(meter_value)});
         }
         this->last_triggered_metervalue_power_kw = active_power_meter_value.value() / 1000;
     }

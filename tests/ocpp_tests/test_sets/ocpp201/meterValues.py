@@ -9,7 +9,7 @@ import logging
 from everest.testing.core_utils.controller.test_controller_interface import TestController
 
 from validations import *
-from everest.testing.ocpp_utils.charge_point_utils import wait_for_and_validate, TestUtility
+from everest.testing.ocpp_utils.charge_point_utils import wait_for_and_validate, wait_for_payload, TestUtility
 from everest.testing.ocpp_utils.fixtures import *
 
 from everest_test_utils import * # Needs to be before the datatypes below since it overrides the v201 Action enum with the v16 one
@@ -102,6 +102,19 @@ async def test_J01_19(
     )
     assert set_variable_result.attribute_status == SetVariableStatusEnumType.accepted
 
+    # Sample the limits offered to the EV during the transaction
+    r: call_result201.SetVariables = (
+        await charge_point_v201.set_config_variables_req(
+            "SampledDataCtrlr",
+            "TxUpdatedMeasurands",
+            "Energy.Active.Import.Register,Current.Offered,Power.Offered",
+        )
+    )
+    set_variable_result: SetVariableResultType = SetVariableResultType(
+        **r.set_variable_result[0]
+    )
+    assert set_variable_result.attribute_status == SetVariableStatusEnumType.accepted
+
     # Configure AlignedDataInterval
     r: call_result201.SetVariables = (
         await charge_point_v201.set_config_variables_req(
@@ -164,12 +177,14 @@ async def test_J01_19(
     )
 
     for _ in range(3):
-        assert await wait_for_and_validate(
+        updated = await wait_for_payload(
             test_utility,
             charge_point_v201,
             "TransactionEvent",
-            {"eventType": "Updated"},
+            {"eventType": "Updated", "triggerReason": "MeterValuePeriodic"},
         )
+        assert validate_offered_limits(
+            updated["meter_value"][0]["sampled_value"])
 
     # swipe id tag to de-authorize
     test_controller.swipe(id_tokenJ01.id_token)
