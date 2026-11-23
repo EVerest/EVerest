@@ -51,10 +51,8 @@ After execution `result.xml` and `report.html` are written to the `tests/` direc
 
 ### Running individual tests directly
 
-`core_tests/configuration_mapping_tests.py` exercises Auth and EvseManager runtime configuration through
-ConfigService and the mapped OCPP variables in both OCPPmulti protocol modes. It checks immediate acceptance,
-bidirectional value updates, clearing the master-pass group and independent EVSE settings. Run it against a prefix
-containing the rebuilt modules and installed mapping resources:
+To test Auth and per-EVSE Plug & Charge mappings in both OCPPmulti modes, rebuild and install the modules and
+mapping resources, then run:
 
 ```bash
 ./tests/run-tests.sh core -k runtime_configuration_mappings

@@ -69,15 +69,10 @@ file, i.e. the module representing the EVSE with evse id 1 must listed first, EV
 Runtime configuration
 =====================
 
-``connection_timeout`` and ``master_pass_group_id`` can be changed through ConfigService without a restart.
-The module applies accepted changes to its authorization handler. An empty master-pass group disables that group.
-The configured master-pass group is also applied at startup. Timeout changes affect subsequent waits and timer
-starts; waits and timers already in progress keep their existing deadlines.
-
-With OCPPmulti explicit mappings, ConfigService is the persistent owner and accepted changes update the mapped
-OCPP variables. OCPPmulti requires mappings for these standard variables and does not call Auth's setter commands.
-Legacy Auth setter commands remain available for other integrations; those commands
-change runtime state only and do not persist configuration or emit ConfigService updates.
+``connection_timeout`` and ``master_pass_group_id`` support ConfigService changes without a restart. An empty
+master-pass group disables it; timeout changes leave active deadlines unchanged. OCPPmulti controls these settings
+through explicit ConfigService mappings. Legacy setter commands change runtime state only, without persistence
+or ConfigService notifications.
 
 Selection Algorithm
 ===================

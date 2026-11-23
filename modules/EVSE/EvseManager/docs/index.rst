@@ -92,14 +92,10 @@ Plug & Charge runtime configuration
 ===================================
 
 ``payment_enable_contract``, ``central_contract_validation_allowed`` and
-``contract_certificate_installation_enabled`` support ConfigService runtime changes without a restart.
-Accepted changes update the manager's effective flags and are used by subsequent authorization and HLC setup
-decisions. They do not renegotiate an ISO 15118 exchange already in progress. Each manager owns its own settings;
-changing one EVSE does not change another.
-
-OCPPmulti EVSE-scoped mappings expose these settings through ConfigService; OCPPmulti does not propagate settings
-through legacy commands. The ``set_plug_and_charge_configuration`` command remains available to other
-integrations, but changes runtime flags only; it does not persist configuration or emit ConfigService updates.
+``contract_certificate_installation_enabled`` support per-EVSE ConfigService changes without a restart. Changes
+affect subsequent decisions, not an ISO 15118 exchange in progress. OCPPmulti uses EVSE-scoped mappings for these
+settings. The legacy ``set_plug_and_charge_configuration`` command changes runtime flags only, without persistence
+or ConfigService notifications.
 
 DC Configuration
 ----------------

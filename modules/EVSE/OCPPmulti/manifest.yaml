@@ -111,15 +111,13 @@ config:
     default: everest_device_model_storage.db
   ConfigurationMappingsPath:
     description: >-
-      OCPP 1.6 and 2.x. YAML file mapping EVerest configuration parameters to device model component/variables.
-      Relative paths are resolved from the module share directory. An empty path disables explicit mappings.
-      Mapped values are owned by ConfigService, not by the device model database.
+      YAML mappings from ConfigService parameters to OCPP 1.6/2.x device model variables.
+      Relative paths use the module share directory; empty disables mappings. ConfigService owns mapped values.
     type: string
     default: ''
   ExposeUnmappedConfiguration:
     description: >-
-      Whether configuration parameters without an explicit mapping are exposed as module-named device model views.
-      Mapped parameters are never exposed a second time.
+      Expose unmapped configuration parameters under module-named device model components.
     type: boolean
     default: true
   FailOnDeviceModelConflicts:

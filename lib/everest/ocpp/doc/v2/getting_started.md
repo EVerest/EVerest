@@ -2,23 +2,11 @@
 
 ## EVSE-scoped ISO 15118 configuration
 
-`ChargePoint::validate_token` and `ChargePoint::on_get_15118_ev_certificate_request` have overloads accepting an
-optional EVSE id. Supply the originating EVSE for contract authorization and certificate requests. The original
-overloads remain available for non-certificate authorization, but certificate-bearing authorization without a positive
-EVSE id fails. Certificate installation without an EVSE-specific enabled setting also fails.
-
-With an EVSE id, central contract validation and contract certificate installation read the corresponding
-`ISO15118Ctrlr` component with `component.evse.id` set. There is no station-wide fallback. Missing variables,
-unset attributes, unreadable values and nonpositive EVSE ids yield no effective setting. No settings are copied
-between EVSEs. OCPPmulti removes the three unscoped Plug & Charge variables from its composed model and registers
-their scoped replacements from ConfigService; standalone library users must provision their scoped variables.
-
-SECC certificate renewal remains station-wide. Its warning about disabled V2G certificate installation considers
-whether any configured EVSE has Plug & Charge enabled, using the same scoped-only lookup.
-
-The OCPP 1.6 Plug & Charge data-transfer API accepts optional effective enable and central-validation settings.
-OCPPmulti supplies them from the originating EVSE's device-model bindings; standalone callers omitting them retain
-the legacy configuration behavior. Unscoped OCPP 1.6 keys cannot address the scoped bindings and are not broadcast.
+Pass the originating EVSE id to `ChargePoint::validate_token` for certificate-based authorization and to
+`ChargePoint::on_get_15118_ev_certificate_request` for certificate installation. Provision that EVSE's
+`ISO15118Ctrlr` settings with `component.evse.id`; there is no station-wide fallback. Certificate-based
+authorization requires a positive EVSE id, and installation requires an enabled EVSE-specific setting.
+SECC certificate renewal remains station-wide.
 
 ## Integrate this library with your Charging Station Implementation for OCPP2.0.1
 
