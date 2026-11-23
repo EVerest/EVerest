@@ -12,8 +12,10 @@
 #include <everest/ocpp_module_common/conversions.hpp>
 #include <everest/ocpp_module_common/v16/conversions.hpp>
 #include <everest/ocpp_module_common/v16/error_mapping.hpp>
+#include <ocpp/common/constants.hpp>
 
 #include <algorithm>
+#include <cmath>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -34,6 +36,8 @@ constexpr const auto CONNECTION_TIMEOUT_VARIABLE = "EVConnectionTimeOut";
 constexpr const auto ISO15118_PNC_ENABLED_CONFIG_KEY = "ISO15118PnCEnabled";
 constexpr const auto ISO15118_PNC_ENABLED_COMPONENT = "ISO15118Ctrlr";
 constexpr const auto ISO15118_PNC_ENABLED_VARIABLE = "PnCEnabled";
+
+constexpr const auto SUPPLY_VOLTAGE_CONFIG_KEY = "SupplyVoltage";
 
 constexpr const auto SWITCHING_PHASES_REASON = "SwitchingPhases";
 constexpr const auto REPORT_SUSPENDED_EVSE_REASON_CHANGE_CONFIG_KEY = "ReportSuspendedEVSEReasonChange";
@@ -602,6 +606,8 @@ void ChargePointV16::init(init_args_t& args) {
 
     configure_data_model(config);
 
+    // the charge point created below starts without offered limits
+    m_offered_limits.clear();
     // clang-format off
     m_charge_point = std::make_unique<ocpp::v16::ChargePoint>(
         *m_charge_point_configuration,
@@ -760,6 +766,26 @@ void ChargePointV16::on_der_alarm(const ocpp::v21::NotifyDERAlarmRequest& reques
 
 void ChargePointV16::on_der_republish_active_directives() {
     // DER / grid_support is OCPP 2.x only
+}
+
+void ChargePointV16::on_enforced_limits(std::int32_t evse_id, const types::energy::EnforcedLimits& limits) {
+    check_configured("on_enforced_limits");
+    const auto supply_voltage_V = [this]() {
+        const auto configured = get<std::int32_t>(*m_charge_point, SUPPLY_VOLTAGE_CONFIG_KEY);
+        return configured ? static_cast<float>(configured.value()) : ocpp::LOW_VOLTAGE;
+    };
+    const auto floor_to_int = [](float value) { return static_cast<std::int32_t>(std::floor(value)); };
+
+    const auto offered = m_offered_limits.update(evse_id, limits.limits_root_side, supply_voltage_V);
+    if (not offered) {
+        return;
+    }
+    if (offered->max_power_W) {
+        m_charge_point->on_max_power_offered(evse_id, floor_to_int(offered->max_power_W.value()));
+    }
+    if (offered->max_current_A) {
+        m_charge_point->on_max_current_offered(evse_id, floor_to_int(offered->max_current_A.value()));
+    }
 }
 
 void ChargePointV16::on_event(const EventInfo& event) {

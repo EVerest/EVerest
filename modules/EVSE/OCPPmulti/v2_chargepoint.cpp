@@ -11,6 +11,8 @@
 #include <everest/ocpp_module_common/conversions.hpp>
 #include <everest/ocpp_module_common/device_model/composed_device_model_storage.hpp>
 #include <everest/ocpp_module_common/error_handling.hpp>
+#include <ocpp/common/constants.hpp>
+#include <ocpp/v2/ctrlr_component_variables.hpp>
 #include <ocpp/v2/device_model_helpers.hpp>
 
 namespace {
@@ -236,6 +238,22 @@ std::optional<T> get_device_model_value(ocpp::v2::ChargePointInterface& charge_p
         }
     }
     return res;
+}
+
+void append_offered_limits(ocpp::v2::MeterValue& meter_value, const ocpp_multi::OfferedLimits& offered) {
+    const auto append = [&meter_value](ocpp::v2::MeasurandEnum measurand, const std::string& unit,
+                                       const std::optional<float>& value) {
+        if (not value) {
+            return;
+        }
+        auto sampled_value =
+            module::conversions::to_ocpp_sampled_value(ocpp::v2::ReadingContextEnum::Sample_Periodic, measurand, unit,
+                                                       std::nullopt, ocpp::v2::LocationEnum::Outlet);
+        sampled_value.value = value.value();
+        meter_value.sampledValue.push_back(sampled_value);
+    };
+    append(ocpp::v2::MeasurandEnum::Current_Offered, "A", offered.max_current_A);
+    append(ocpp::v2::MeasurandEnum::Power_Offered, "W", offered.max_power_W);
 }
 
 } // namespace
@@ -479,6 +497,7 @@ void ChargePointV2::init(init_args_t& args) {
     const auto ocpp_share_path = args.share_path / "OCPP201";
     const auto sql_init_path = ocpp_share_path / SQL_CORE_MIGRATIONS;
 
+    m_offered_limits.clear();
     // clang-format off
     m_charge_point =
         std::make_unique<ocpp::v2::ChargePoint>(
@@ -591,6 +610,19 @@ void ChargePointV2::on_ev_charging_needs(const ocpp::v2::NotifyEVChargingNeedsRe
     check_configured("on_ev_charging_needs");
     m_charge_point->on_ev_charging_needs(request);
 }
+
+void ChargePointV2::on_enforced_limits(std::int32_t evse_id, const types::energy::EnforcedLimits& limits) {
+    check_configured("on_enforced_limits");
+    const auto supply_voltage_V = [this]() {
+        const auto& supply_voltage = ocpp::v2::ControllerComponentVariables::SupplyVoltage;
+        const auto configured =
+            get_device_model_value<std::int32_t>(*m_charge_point, supply_voltage.component,
+                                                 supply_voltage.variable.value(), ocpp::v2::AttributeEnum::Actual);
+        return configured ? static_cast<float>(configured.value()) : ocpp::LOW_VOLTAGE;
+    };
+    m_offered_limits.update(evse_id, limits.limits_root_side, supply_voltage_V);
+}
+
 void ChargePointV2::on_event(const EventInfo& event) {
     check_configured("on_event");
     if (!event.error) {
@@ -964,6 +996,7 @@ void ChargePointV2::on_meter_value(std::int32_t evse_id, std::optional<float> so
         sampled_soc_value.value = soc.value();
         meter_value.sampledValue.push_back(sampled_soc_value);
     }
+    append_offered_limits(meter_value, m_offered_limits.get(evse_id));
     m_charge_point->on_meter_value(evse_id, meter_value);
 }
 

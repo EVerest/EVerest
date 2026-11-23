@@ -158,6 +158,31 @@ def validate_measurands(meter_values, measurands):
     return True
 
 
+def validate_offered_limits(sampled_values, whole_numbers=False):
+    """Current.Offered and Power.Offered are each sampled once, at the outlet and with a positive value.
+    Takes the sampled values of an OCPP 1.6 or an OCPP 2.x meter value. OCPP 1.6 reports whole numbers."""
+    for measurand, unit in (("Current.Offered", "A"), ("Power.Offered", "W")):
+        samples = [
+            sample for sample in sampled_values if sample.get("measurand") == measurand
+        ]
+        if len(samples) != 1:
+            logging.error(f"Expected one {measurand} sample, got {samples}")
+            return False
+        sample = samples[0]
+        sample_unit = sample.get("unit") or sample.get(
+            "unit_of_measure", {}).get("unit")
+        value = float(sample["value"])
+        if (
+            sample_unit != unit
+            or sample.get("location") != "Outlet"
+            or value <= 0
+            or (whole_numbers and not value.is_integer())
+        ):
+            logging.error(f"Unexpected {measurand} sample: {sample}")
+            return False
+    return True
+
+
 def dont_validate_meter_values(x, y, z):
     return True
 

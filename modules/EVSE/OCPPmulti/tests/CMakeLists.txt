@@ -51,6 +51,7 @@ target_sources(${TEST_TARGET_NAME}
     v16_error_dispatch_tests.cpp
     v16_mrec_freeze_tests.cpp
     v16_variable_access_tests.cpp
+    offered_limits_tests.cpp
     v2_chargepoint_tests.cpp
     v2_mrec_freeze_tests.cpp
 
@@ -60,6 +61,7 @@ target_sources(${TEST_TARGET_NAME}
 
     ../generic_ocpp.cpp
     ../grid_support/grid_support_state.cpp
+    ../offered_limits.cpp
     ../v16_chargepoint.cpp
     ../v16_connection_config_validator.cpp
     ../v16_conversions.cpp

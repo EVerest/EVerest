@@ -765,6 +765,7 @@ void GenericOcpp::init_evse_subscribe() {
         evse->subscribe_powermeter_public_key_ocmf(
             [this, evse_id](const auto& power_meter) { cb_powermeter_public_key_ocmf(evse_id, power_meter); });
         evse->subscribe_ev_info([this, evse_id](const auto& ev_info) { cb_ev_info(evse_id, ev_info); });
+        evse->subscribe_enforced_limits([this, evse_id](const auto& limits) { cb_enforced_limits(evse_id, limits); });
         auto fault_handler = [this, evse_id](const auto& error) { cb_fault_handler(evse_id, error); };
         auto fault_cleared_handler = [this, evse_id](const auto& error) { cb_fault_cleared_handler(evse_id, error); };
         // A permanent fault from the evse requirement indicates that the evse should move to faulted state
@@ -1227,6 +1228,14 @@ void GenericOcpp::cb_error_handler(const Everest::error::Error& error) {
             mv_charge_point.on_event(event_data);
         }
     }
+}
+
+void GenericOcpp::cb_enforced_limits(std::int32_t evse_id, const types::energy::EnforcedLimits& limits) {
+    // not queued while starting: the limits are republished periodically
+    if (not mv_started.load()) {
+        return;
+    }
+    mv_charge_point.on_enforced_limits(evse_id, limits);
 }
 
 void GenericOcpp::cb_ev_info(std::int32_t evse_id, const types::evse_manager::EVInfo& ev_info) {

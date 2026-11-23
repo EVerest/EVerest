@@ -377,6 +377,7 @@ protected:
     ocpp::v2::DataTransferResponse cb_data_transfer(const ocpp::v2::DataTransferRequest& request) override;
     void cb_default_price(const types::session_cost::DefaultPrice& messages) override;
     void cb_der_active_directives(const std::vector<ocpp::v21::SetDERControlRequest>& active_controls) override;
+    void cb_enforced_limits(std::int32_t evse_id, const types::energy::EnforcedLimits& limits) override;
     void cb_ev_info(std::int32_t evse_id, const types::evse_manager::EVInfo& ev_info) override;
     void cb_fault_cleared_handler(std::int32_t evse_id, const Everest::error::Error& error) override;
     void cb_fault_handler(std::int32_t evse_id, const Everest::error::Error& error) override;

@@ -170,6 +170,11 @@ void GenericChargePoint::on_ev_charging_needs(const ocpp::v2::NotifyEVChargingNe
     m_active_ptr->on_ev_charging_needs(request);
 }
 
+void GenericChargePoint::on_enforced_limits(std::int32_t evse_id, const types::energy::EnforcedLimits& limits) {
+    check_configured("on_enforced_limits");
+    m_active_ptr->on_enforced_limits(evse_id, limits);
+}
+
 void GenericChargePoint::on_event(const EventInfo& event) {
     check_configured("on_event");
     m_active_ptr->on_event(event);

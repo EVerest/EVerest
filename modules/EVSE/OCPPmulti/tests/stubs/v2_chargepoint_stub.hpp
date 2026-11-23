@@ -142,6 +142,8 @@ struct GenericChargePointCallbacksMock : public ocpp_multi::GenericChargePointCa
     MOCK_METHOD(void, cb_default_price, (const types::session_cost::DefaultPrice& messages), (override));
     MOCK_METHOD(void, cb_der_active_directives, (const std::vector<ocpp::v21::SetDERControlRequest>& active_controls),
                 (override));
+    MOCK_METHOD(void, cb_enforced_limits, (std::int32_t evse_id, const types::energy::EnforcedLimits& limits),
+                (override));
     MOCK_METHOD(void, cb_ev_info, (std::int32_t evse_id, const types::evse_manager::EVInfo& ev_info), (override));
     MOCK_METHOD(void, cb_fault_cleared_handler, (std::int32_t evse_id, const Everest::error::Error& error), (override));
     MOCK_METHOD(void, cb_fault_handler, (std::int32_t evse_id, const Everest::error::Error& error), (override));

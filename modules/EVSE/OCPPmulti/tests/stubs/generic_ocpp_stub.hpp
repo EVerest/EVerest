@@ -29,6 +29,7 @@ struct GenericOcppTester : public ocpp_multi::GenericOcpp {
     using ocpp_multi::GenericOcpp::cb_connector_effective_operative_status;
     using ocpp_multi::GenericOcpp::cb_data_transfer;
     using ocpp_multi::GenericOcpp::cb_default_price;
+    using ocpp_multi::GenericOcpp::cb_enforced_limits;
     using ocpp_multi::GenericOcpp::cb_ev_info;
     using ocpp_multi::GenericOcpp::cb_fault_cleared_handler;
     using ocpp_multi::GenericOcpp::cb_fault_handler;
