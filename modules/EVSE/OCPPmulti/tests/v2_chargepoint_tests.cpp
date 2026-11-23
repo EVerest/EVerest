@@ -40,6 +40,16 @@ types::powermeter::Powermeter meter_value_wh(float energy_wh_import) {
     return meter;
 }
 
+std::optional<ocpp::v2::SampledValue> sampled_value_of(const ocpp::v2::MeterValue& meter_value,
+                                                       ocpp::v2::MeasurandEnum measurand) {
+    for (const auto& sampled_value : meter_value.sampledValue) {
+        if (sampled_value.measurand == measurand) {
+            return sampled_value;
+        }
+    }
+    return std::nullopt;
+}
+
 types::authorization::ProvidedIdToken provided_id_token(const std::string& token,
                                                         const std::optional<std::string>& parent_token = std::nullopt,
                                                         const std::optional<std::int32_t>& request_id = std::nullopt) {
@@ -434,6 +444,64 @@ TEST_F(ChargePointV2Test, variableListenerMasksWriteOnlyValues) {
 
     ASSERT_TRUE(reported_value.has_value());
     EXPECT_EQ(reported_value.value(), "");
+}
+
+TEST_F(ChargePointV2Test, meterValueWithoutEnforcedLimitsHasNoOfferedMeasurands) {
+    ocpp::v2::MeterValue reported;
+    EXPECT_CALL(*m_libocpp, on_meter_value(EVSE_ID, _)).WillOnce(SaveArg<1>(&reported));
+
+    m_chargepoint.on_meter_value(EVSE_ID, std::nullopt, meter_value_wh(100.0F));
+
+    EXPECT_FALSE(sampled_value_of(reported, ocpp::v2::MeasurandEnum::Current_Offered).has_value());
+    EXPECT_FALSE(sampled_value_of(reported, ocpp::v2::MeasurandEnum::Power_Offered).has_value());
+}
+
+TEST_F(ChargePointV2Test, meterValueCarriesOfferedLimitsOfItsEvse) {
+    ocpp::v2::GetVariableResult supply_voltage;
+    supply_voltage.attributeStatus = ocpp::v2::GetVariableStatusEnum::Accepted;
+    supply_voltage.attributeValue = "240";
+    ON_CALL(*m_libocpp, get_variables(_))
+        .WillByDefault(Return(std::vector<ocpp::v2::GetVariableResult>{supply_voltage}));
+
+    types::energy::EnforcedLimits limits;
+    limits.limits_root_side.ac_max_current_A = {16.5F, "source"};
+    limits.limits_root_side.ac_max_phase_count = {3, "source"};
+    m_chargepoint.on_enforced_limits(EVSE_ID, limits);
+
+    ocpp::v2::MeterValue reported;
+    ocpp::v2::MeterValue reported_other_evse;
+    EXPECT_CALL(*m_libocpp, on_meter_value(EVSE_ID, _)).WillOnce(SaveArg<1>(&reported));
+    EXPECT_CALL(*m_libocpp, on_meter_value(EVSE_ID + 1, _)).WillOnce(SaveArg<1>(&reported_other_evse));
+
+    m_chargepoint.on_meter_value(EVSE_ID, std::nullopt, meter_value_wh(100.0F));
+    m_chargepoint.on_meter_value(EVSE_ID + 1, std::nullopt, meter_value_wh(100.0F));
+
+    const auto current = sampled_value_of(reported, ocpp::v2::MeasurandEnum::Current_Offered);
+    const auto power = sampled_value_of(reported, ocpp::v2::MeasurandEnum::Power_Offered);
+    ASSERT_TRUE(current.has_value());
+    ASSERT_TRUE(power.has_value());
+    EXPECT_FLOAT_EQ(current->value, 16.5F);
+    EXPECT_EQ(current->unitOfMeasure.value().unit, "A");
+    EXPECT_EQ(current->location, ocpp::v2::LocationEnum::Outlet);
+    EXPECT_FLOAT_EQ(power->value, 11880.0F);
+    EXPECT_EQ(power->unitOfMeasure.value().unit, "W");
+
+    EXPECT_FALSE(sampled_value_of(reported_other_evse, ocpp::v2::MeasurandEnum::Current_Offered).has_value());
+}
+
+TEST_F(ChargePointV2Test, offeredPowerFallsBackToLowVoltage) {
+    types::energy::EnforcedLimits limits;
+    limits.limits_root_side.ac_max_current_A = {10.0F, "source"};
+    limits.limits_root_side.ac_max_phase_count = {1, "source"};
+    m_chargepoint.on_enforced_limits(EVSE_ID, limits);
+
+    ocpp::v2::MeterValue reported;
+    EXPECT_CALL(*m_libocpp, on_meter_value(EVSE_ID, _)).WillOnce(SaveArg<1>(&reported));
+    m_chargepoint.on_meter_value(EVSE_ID, std::nullopt, meter_value_wh(100.0F));
+
+    const auto power = sampled_value_of(reported, ocpp::v2::MeasurandEnum::Power_Offered);
+    ASSERT_TRUE(power.has_value());
+    EXPECT_FLOAT_EQ(power->value, 2300.0F);
 }
 
 // key-only (empty component) get request is passed through unchanged; rejection comes from libocpp

@@ -5,6 +5,7 @@
 
 #include "generic_chargepoint_interface.hpp"
 #include "ocpp/v2/ocpp_types.hpp"
+#include "offered_limits.hpp"
 #include "v16_variable_access.hpp"
 
 #include <everest/conversions/ocpp/evse_security_ocpp.hpp>
@@ -33,6 +34,7 @@ private:
     // written from command threads (register_variable_listener), read from libocpp callback thread
     everest::lib::util::monitor<listener_t> m_variable_listener;
     ConnectorStructureV16 m_connector_mapping;
+    OfferedLimitsCache m_offered_limits;
 
     struct evse_connector_t {
         std::int32_t evse_id;      // EVerest EVSE id
@@ -162,6 +164,7 @@ public:
     on_change_availability(const ocpp::v2::ChangeAvailabilityRequest& request) override;
     void on_enabled(std::int32_t evse_id, std::int32_t connector_id) override;
     void on_ev_charging_needs(const ocpp::v2::NotifyEVChargingNeedsRequest& request) override;
+    void on_enforced_limits(std::int32_t evse_id, const types::energy::EnforcedLimits& limits) override;
     void on_event(const EventInfo& event) override;
 
     void on_event_authorised(std::int32_t evse_id, std::int32_t connector_id,
