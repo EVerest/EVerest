@@ -392,6 +392,54 @@ SCENARIO("ISO 15118-2 SECC config mapping") {
         }
     }
 
+    GIVEN("A three-phase AC charger reporting per-phase limits") {
+        session::EvseSetupConfig setup{};
+        setup.evse_id = "DE*PNX*E12345*1";
+        // ISO 15118-20 semantics: with _L2/_L3 set, charge_power is the limit of L1.
+        setup.ac_limits.charge_power.max = m20dt::from_float(7360.0f); // 32 A at 230 V on L1
+        setup.ac_limits.charge_power_L2 =
+            d20::Limit<m20dt::RationalNumber>{.max = m20dt::from_float(7360.0f), .min = m20dt::from_float(0.0f)};
+        setup.ac_limits.charge_power_L3 =
+            d20::Limit<m20dt::RationalNumber>{.max = m20dt::from_float(7360.0f), .min = m20dt::from_float(0.0f)};
+        setup.pre20_energy_transfer_modes = {shared_datatypes::EnergyTransferMode::AC_single_phase_core,
+                                             shared_datatypes::EnergyTransferMode::AC_three_phase_core};
+        const auto cfg = make_d2_config(session::SessionConfig(setup), false);
+
+        THEN("The capability current is the per-phase limit, not a third of it") {
+            REQUIRE(cfg.ac_capability_max_current == 32.0f);
+        }
+    }
+
+    GIVEN("A three-phase AC charger reporting asymmetric per-phase limits") {
+        session::EvseSetupConfig setup{};
+        setup.evse_id = "DE*PNX*E12345*1";
+        setup.ac_limits.charge_power.max = m20dt::from_float(7360.0f); // 32 A on L1
+        setup.ac_limits.charge_power_L2 =
+            d20::Limit<m20dt::RationalNumber>{.max = m20dt::from_float(4600.0f), .min = m20dt::from_float(0.0f)};
+        setup.ac_limits.charge_power_L3 =
+            d20::Limit<m20dt::RationalNumber>{.max = m20dt::from_float(7360.0f), .min = m20dt::from_float(0.0f)};
+        setup.pre20_energy_transfer_modes = {shared_datatypes::EnergyTransferMode::AC_three_phase_core};
+        const auto cfg = make_d2_config(session::SessionConfig(setup), false);
+
+        THEN("ISO 15118-2 has one current for all phases, so it offers the weakest one") {
+            REQUIRE(cfg.ac_capability_max_current == 20.0f);
+        }
+    }
+
+    GIVEN("A single-phase AC charger reporting per-phase limits") {
+        session::EvseSetupConfig setup{};
+        setup.evse_id = "DE*PNX*E12345*1";
+        setup.ac_limits.charge_power.max = m20dt::from_float(7360.0f); // 32 A on L1
+        setup.ac_limits.charge_power_L2 =
+            d20::Limit<m20dt::RationalNumber>{.max = m20dt::from_float(0.0f), .min = m20dt::from_float(0.0f)};
+        setup.pre20_energy_transfer_modes = {shared_datatypes::EnergyTransferMode::AC_single_phase_core};
+        const auto cfg = make_d2_config(session::SessionConfig(setup), false);
+
+        THEN("Only L1 counts") {
+            REQUIRE(cfg.ac_capability_max_current == 32.0f);
+        }
+    }
+
     GIVEN("A module that only ever reported the live AC current limit") {
         session::EvseSetupConfig setup{};
         setup.evse_id = "DE*PNX*E12345*1";
