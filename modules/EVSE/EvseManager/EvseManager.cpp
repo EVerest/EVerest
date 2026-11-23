@@ -2840,7 +2840,7 @@ const std::vector<std::unique_ptr<powermeterIntf>>& EvseManager::r_powermeter_bi
 }
 
 void EvseManager::setup_welding_detection_voltage() {
-    const auto configured = welding_detection_voltage_source_from_string(config.welding_detection_voltage_source)
+    const auto configured = welding_detection_voltage_source_from_string(config.ev_side_voltage_source)
                                 .value_or(WeldingDetectionVoltageSource::PowermeterCarSide);
     WeldingDetectionVoltageSources connected;
     connected.powermeter_car_side = not r_powermeter_car_side.empty();
@@ -2848,7 +2848,7 @@ void EvseManager::setup_welding_detection_voltage() {
     connected.isolation_monitor = not r_imd.empty();
     const auto source = resolve_welding_detection_voltage_source(configured, connected);
     if (source != configured) {
-        EVLOG_warning << "welding_detection_voltage_source " << to_string(configured) << " is not connected, using "
+        EVLOG_warning << "ev_side_voltage_source " << to_string(configured) << " is not connected, using "
                       << to_string(source);
     }
 

@@ -248,7 +248,7 @@ config:
       Set to 0 unless you really know what you are doing.
     type: integer
     default: 0
-  welding_detection_voltage_source:
+  ev_side_voltage_source:
     description: >-
       Voltage measurement reported to the EV as EVSE present voltage during DC welding detection, from
       PowerDelivery(Stop) until SessionStop. It has to be the side B voltage at the vehicle connector with the

@@ -127,7 +127,7 @@ struct Conf {
     bool cable_check_wait_below_60V_before_finish;
     bool hack_skoda_enyaq;
     int hack_present_current_offset;
-    std::string welding_detection_voltage_source;
+    std::string ev_side_voltage_source;
     bool hack_pause_imd_during_precharge;
     bool hack_allow_bpt_with_iso2;
     bool hack_simplified_mode_limit_10A;
@@ -500,7 +500,7 @@ private:
     // Voltage plausibility monitor
     std::unique_ptr<VoltagePlausibilityMonitor> voltage_plausibility_monitor;
 
-    // Side B voltage reported during DC welding detection, see welding_detection_voltage_source
+    // Side B voltage reported during DC welding detection, see ev_side_voltage_source
     std::unique_ptr<WeldingDetectionVoltage> welding_detection_voltage;
     std::atomic<float> present_current_A{0};
     void setup_welding_detection_voltage();
