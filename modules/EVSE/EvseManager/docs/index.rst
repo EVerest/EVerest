@@ -140,7 +140,9 @@ source selected by ``welding_detection_voltage_source`` instead of the power sup
 
 If the selected source is not connected, the next connected one in the order ``powermeter_car_side``,
 ``over_voltage_monitor``, ``power_supply`` is used and a warning is printed at start up. The isolation
-monitor is only used when configured. The power supply is always available.
+monitor is only used when configured. The power supply is always available. With
+``welding_detection_voltage_fallback_to_power_supply: false``, a configuration that would fall back to
+the power supply is a configuration error at start up instead.
 
 The over voltage monitor and the isolation monitor are normally stopped when the power path opens.
 If one of them is the source, that stop is deferred until the welding detection phase ends, and
@@ -155,7 +157,8 @@ measured after the request: the EV opens its contactors only after the PowerDeli
 them between two requests (CC.6.3, Table CC.9 t105 to t106). Two samples because the first one after
 the request can still have been taken just before it, a polled meter delivers a sample up to one poll
 interval after taking it. With one sample at the deadline the response carries it (logged as info),
-with none it carries the last present voltage (warning). Every publication of the source must be a new
+with none it carries the last present voltage (warning), or ResponseCode FAILED if the ISO module has
+``welding_detection_on_missing_voltage: failed``. Every publication of the source must be a new
 measurement, so a driver that polls a meter must not republish an unchanged sample (LemDCBM400600
 does not). The source should publish at 5 Hz or more (CC.6.3: at most 200 ms from measurement to
 communication); EvseManager warns once per session if it updates less often than every second. A

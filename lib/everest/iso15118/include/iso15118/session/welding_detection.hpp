@@ -58,6 +58,12 @@ public:
         return updates;
     }
 
+    // The phase runs and no marked value arrived since the last request: a response now would carry a
+    // present voltage that was not measured after it.
+    bool voltage_missing() const {
+        return running and updates == 0;
+    }
+
 private:
     bool running{false};
     uint8_t updates{0};

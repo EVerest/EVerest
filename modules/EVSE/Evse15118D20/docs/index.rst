@@ -446,7 +446,11 @@ EV leaves state C as soon as it has the response, so this withdraws the power
 permissive first (IEC 61851-23-3 Table CC.111, t103 before t105). An MCS board
 support treats a C exit under a standing permissive as an emergency shutdown
 (CC.4.3). The ISO 15118-2 and DIN 70121 engines hold their PowerDeliveryRes the same
-way, for at most 3 s and 1.4 s. An emergency shutdown reported meanwhile answers the
+way, for at most 3 s and 1.4 s. With ``dc_stop_contactor_open_timeout_response: failed``
+a response still held at the deadline carries ResponseCode FAILED instead and ends the
+session, in DIN 70121, ISO 15118-2 and the ISO 15118-20 DC charge loop. That skips welding
+detection and raises no error on the station side, and with a board support that reports
+the contactor open later than the wait every DC stop ends with FAILED. An emergency shutdown reported meanwhile answers the
 held response FAILED at once.
 
 Welding detection
@@ -463,8 +467,9 @@ response reports the voltage source EvseManager selected for welding detection, 
 after the request (IEC 61851-23:2023 CC.6.3, CC.7.6.17, Table CC.9 t105 to t106): the
 first value after the request can still be a measurement taken just before it, the
 second was taken after it. With one value at the deadline the response carries it
-(info), with none the last present voltage (warning). A request parked when the session
-ends gets no answer.
+(info), with none the last present voltage (warning), or, with
+``welding_detection_on_missing_voltage: failed``, ResponseCode FAILED, which ends the
+session. A request parked when the session ends gets no answer.
 
 In scheduled control mode, a ``PowerDeliveryReq`` with ``Start`` whose EV power
 profile asks for more charge or discharge power than the selected schedule offers

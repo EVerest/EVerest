@@ -269,6 +269,15 @@ config:
       - isolation_monitor
       - power_supply
     default: powermeter_car_side
+  welding_detection_voltage_fallback_to_power_supply:
+    description: >-
+      If true and welding_detection_voltage_source falls back as described there, the power supply is the last
+      fallback. If false, EvseManager refuses to start with a configuration error instead of falling back to the
+      power supply, which sees only its own output once the contactors are open. An explicitly configured
+      power_supply is not affected; it is not a side B measurement, and its values count as fresh samples for
+      the ISO 15118 module's welding_detection_on_missing_voltage.
+    type: boolean
+    default: true
   hack_pause_imd_during_precharge:
     description: >-
       Disable IMD at the end of CableCheck and re-enable when current is flowing in CurrentDemand.

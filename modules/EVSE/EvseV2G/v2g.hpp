@@ -279,6 +279,10 @@ struct v2g_context {
     std::atomic_bool is_connection_terminated; /* Is set to true if the connection is terminated (CP State A/F, shutdown
                                       immediately without response message) */
     std::atomic<bool> terminate_connection_on_failed_response;
+    /* DC PowerDeliveryRes(Stop) is FAILED instead of OK if the contactor is not reported open in time */
+    std::atomic<bool> dc_stop_contactor_open_timeout_failed;
+    /* WeldingDetectionRes is FAILED instead of OK if no welding detection voltage arrived after the request */
+    std::atomic<bool> welding_detection_on_missing_voltage_failed;
     std::atomic<bool> contactor_is_closed; /* Actual contactor state */
     long long int response_wait_ms;        /* Time the current request handler waited for another module, not counted as
                                               response processing time */

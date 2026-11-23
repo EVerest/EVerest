@@ -101,6 +101,41 @@ config:
     minimum: 100
     maximum: 10000
     default: 1400
+  dc_stop_contactor_open_timeout_response:
+    description: >-
+      DC only. The PowerDeliveryRes(Stop) is held until contactor_closed(false) reports the power
+      path off (ISO 15118-20 and DIN SPEC 70121 at most 1.4 s, ISO 15118-2 at most 3 s). This selects
+      the response if that does not happen in time. ok_with_warning: ResponseCode OK and a warning in
+      the log. failed: ResponseCode FAILED, which ends the session, so that the EV is not told the stop
+      succeeded while side B may still be live. This is a station policy and only changes what the EV is
+      told: no error is raised on the station side (a contactor that does not open is a board support
+      fault), welding detection does not take place and the session ends with an error on the EV side.
+      Only use failed with a board support that reliably reports contactor_closed(false) within the
+      wait; with a slower one every DC stop ends with FAILED. Covers the ISO 15118-20 DC charge loop,
+      not a stop handled in the PowerDelivery state, which does not wait. Behind IsoMux, set it in both
+      EvseV2G and Evse15118D20 to cover all protocols.
+    type: string
+    enum:
+    - ok_with_warning
+    - failed
+    default: ok_with_warning
+  welding_detection_on_missing_voltage:
+    description: >-
+      DC only. Every WeldingDetectionRes waits up to 1.4 s for values of the welding detection voltage
+      source that EvseManager reports after the request. This selects the response if no value arrived
+      at all. last_value: ResponseCode OK with the last present voltage, which can be an old sample or
+      the power supply output from before welding detection, and a warning in the log. failed:
+      ResponseCode FAILED, which ends the session, so that a stalled source is not reported as a valid
+      voltage. With one value at the deadline the response is still OK with that value, which can have
+      been taken up to one poll interval of the source before the request. FAILED skips the rest of
+      welding detection and raises no error on the station side. To also keep EvseManager from falling
+      back to the power supply as source, set its welding_detection_voltage_fallback_to_power_supply to
+      false. Behind IsoMux, set it in both EvseV2G and Evse15118D20 to cover all protocols.
+    type: string
+    enum:
+    - last_value
+    - failed
+    default: last_value
   enable_ssl_logging:
     description: Verbosely log the ssl/tls connection
     type: boolean

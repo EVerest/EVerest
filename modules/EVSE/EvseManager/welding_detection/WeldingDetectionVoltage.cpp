@@ -73,6 +73,16 @@ resolve_welding_detection_voltage_source(WeldingDetectionVoltageSource configure
     return WeldingDetectionVoltageSource::PowerSupply;
 }
 
+std::optional<WeldingDetectionVoltageSource>
+resolve_welding_detection_voltage_source(WeldingDetectionVoltageSource configured,
+                                         const WeldingDetectionVoltageSources& connected, bool power_supply_fallback) {
+    const auto source = resolve_welding_detection_voltage_source(configured, connected);
+    if (not power_supply_fallback and source == WeldingDetectionVoltageSource::PowerSupply and source != configured) {
+        return std::nullopt;
+    }
+    return source;
+}
+
 WeldingDetectionVoltage::WeldingDetectionVoltage(WeldingDetectionVoltageSource source, PushCallback push,
                                                  StopSourceCallback stop_source, WarningCallback warning,
                                                  Timing timing) :

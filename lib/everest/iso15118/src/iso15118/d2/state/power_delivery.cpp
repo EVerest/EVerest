@@ -369,6 +369,13 @@ Result DcPowerDeliveryStop::on_event(Event ev) {
     if (ev == Event::TIMEOUT) {
         const auto* timeout = m_ctx.get_active_timeout();
         if (timeout and *timeout == d20::TimeoutType::CONTACTOR) {
+            if (m_ctx.session_config.dc_stop_contactor_open_timeout_failed) {
+                logf_error("Contactor not reported open within %d ms, sending PowerDeliveryRes with FAILED",
+                           d20::TIMEOUT_CONTACTOR_OPEN_ISO2);
+                pending_res.response_code = dt::ResponseCode::FAILED;
+                m_ctx.session_stopped = true;
+                return send_pending_res();
+            }
             logf_warning("Contactor not reported open within %d ms, sending PowerDeliveryRes anyway",
                          d20::TIMEOUT_CONTACTOR_OPEN_ISO2);
             return send_pending_res();

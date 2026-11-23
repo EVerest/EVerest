@@ -45,6 +45,10 @@ struct SessionConfig {
     // option. EvseV2G never bounded this loop at all, so a DIN session there could sit in Ongoing until
     // the EV gave up.
     uint32_t auth_timeout_eim_ms{300000};
+
+    // See session::EvseSetupConfig.
+    bool dc_stop_contactor_open_timeout_failed{false};
+    bool welding_detection_on_missing_voltage_failed{false};
 };
 
 } // namespace iso15118::din

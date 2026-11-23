@@ -250,6 +250,137 @@ TEST_F(IsoServerPowerDeliveryTest, charging_profile_entries_after_schedule_end_a
     EXPECT_EQ(response().ResponseCode, iso2_responseCodeType_OK);
 }
 
+// DC PowerDelivery(Stop) with the real contactor wait of v2g_ctx.cpp.
+class IsoServerDcPowerDeliveryStopTest : public IsoServerPowerDeliveryTest {
+protected:
+    pthread_condattr_t cond_attr{};
+
+    void SetUp() override {
+        IsoServerPowerDeliveryTest::SetUp();
+        // The wait uses a CLOCK_MONOTONIC deadline, as v2g_ctx_create() sets the condition variable up.
+        pthread_condattr_init(&cond_attr);
+        pthread_condattr_setclock(&cond_attr, CLOCK_MONOTONIC);
+        pthread_cond_init(&ctx->mqtt_cond, &cond_attr);
+
+        ctx->is_dc_charger = true;
+        ctx->last_v2g_msg = V2G_CURRENT_DEMAND_MSG;
+        ctx->state = static_cast<int>(iso_dc_state_id::WAIT_FOR_CURRENTDEMAND_POWERDELIVERY);
+        ctx->session.sa_schedule_tuple_id = offered_sa_schedule_tuple_id;
+        auto& req = exi_in->V2G_Message.Body.PowerDeliveryReq;
+        req.ChargeProgress = iso2_chargeProgressType_Stop;
+        req.SAScheduleTupleID = offered_sa_schedule_tuple_id;
+    }
+
+    void TearDown() override {
+        pthread_cond_destroy(&ctx->mqtt_cond);
+        pthread_condattr_destroy(&cond_attr);
+    }
+};
+
+TEST_F(IsoServerDcPowerDeliveryStopTest, contactor_open_answers_ok) {
+    ctx->contactor_is_closed = false;
+    ctx->dc_stop_contactor_open_timeout_failed = true;
+
+    EXPECT_EQ(iso_handle_request(conn.get()), V2G_EVENT_NO_EVENT);
+
+    EXPECT_EQ(response().ResponseCode, iso2_responseCodeType_OK);
+    EXPECT_EQ(ctx->state, static_cast<int>(iso_dc_state_id::WAIT_FOR_WELDINGDETECTION_SESSIONSTOP));
+}
+
+TEST_F(IsoServerDcPowerDeliveryStopTest, contactor_not_open_answers_ok_by_default) {
+    // dc_stop_contactor_open_timeout_response: ok_with_warning
+    ctx->contactor_is_closed = true;
+    ctx->dc_stop_contactor_open_timeout_failed = false;
+
+    EXPECT_EQ(iso_handle_request(conn.get()), V2G_EVENT_NO_EVENT);
+
+    EXPECT_EQ(response().ResponseCode, iso2_responseCodeType_OK);
+    EXPECT_EQ(module::stub::get_logs(dloglevel_t::DLOG_LEVEL_WARNING).size(), 1);
+}
+
+TEST_F(IsoServerDcPowerDeliveryStopTest, contactor_not_open_answers_failed_if_configured) {
+    // dc_stop_contactor_open_timeout_response: failed
+    ctx->contactor_is_closed = true;
+    ctx->dc_stop_contactor_open_timeout_failed = true;
+
+    iso_handle_request(conn.get());
+
+    EXPECT_EQ(response().ResponseCode, iso2_responseCodeType_FAILED);
+    // An error, not the default's warning.
+    EXPECT_EQ(module::stub::get_logs(dloglevel_t::DLOG_LEVEL_WARNING).size(), 0);
+}
+
+// DC WeldingDetection with the real welding voltage wait of v2g_ctx.cpp, no value arriving.
+class IsoServerWeldingDetectionTest : public testing::Test {
+protected:
+    std::unique_ptr<v2g_connection> conn;
+    std::unique_ptr<v2g_context> ctx;
+    std::unique_ptr<iso2_exiDocument> exi_in;
+    std::unique_ptr<iso2_exiDocument> exi_out;
+    pthread_condattr_t cond_attr{};
+
+    module::stub::QuietModuleAdapterStub adapter;
+    module::stub::ISO15118_chargerImplStub charger;
+
+    IsoServerWeldingDetectionTest() : charger(adapter) {
+    }
+
+    void SetUp() override {
+        conn = std::make_unique<v2g_connection>();
+        ctx = std::make_unique<v2g_context>();
+        exi_in = std::make_unique<iso2_exiDocument>();
+        exi_out = std::make_unique<iso2_exiDocument>();
+
+        module::stub::clear_logs();
+        conn->ctx = ctx.get();
+        conn->ctx->p_charger = &charger;
+        conn->exi_in.iso2EXIDocument = exi_in.get();
+        conn->exi_out.iso2EXIDocument = exi_out.get();
+        // The wait uses a CLOCK_MONOTONIC deadline, as v2g_ctx_create() sets the condition variable up.
+        pthread_condattr_init(&cond_attr);
+        pthread_condattr_setclock(&cond_attr, CLOCK_MONOTONIC);
+        pthread_cond_init(&ctx->mqtt_cond, &cond_attr);
+
+        ctx->is_dc_charger = true;
+        ctx->session.welding_detection_active = true;
+        ctx->last_v2g_msg = V2G_POWER_DELIVERY_MSG;
+        ctx->state = static_cast<int>(iso_dc_state_id::WAIT_FOR_WELDINGDETECTION_SESSIONSTOP);
+
+        init_iso2_exiDocument(exi_in.get());
+        exi_in->V2G_Message.Body.WeldingDetectionReq_isUsed = 1u;
+        init_iso2_WeldingDetectionReqType(&exi_in->V2G_Message.Body.WeldingDetectionReq);
+    }
+
+    void TearDown() override {
+        pthread_cond_destroy(&ctx->mqtt_cond);
+        pthread_condattr_destroy(&cond_attr);
+    }
+
+    const iso2_WeldingDetectionResType& response() const {
+        return exi_out->V2G_Message.Body.WeldingDetectionRes;
+    }
+};
+
+TEST_F(IsoServerWeldingDetectionTest, no_voltage_answers_ok_by_default) {
+    // welding_detection_on_missing_voltage: last_value
+    ctx->welding_detection_on_missing_voltage_failed = false;
+
+    EXPECT_EQ(iso_handle_request(conn.get()), V2G_EVENT_NO_EVENT);
+
+    EXPECT_EQ(exi_out->V2G_Message.Body.WeldingDetectionRes_isUsed, 1u);
+    EXPECT_EQ(response().ResponseCode, iso2_responseCodeType_OK);
+}
+
+TEST_F(IsoServerWeldingDetectionTest, no_voltage_answers_failed_if_configured) {
+    // welding_detection_on_missing_voltage: failed
+    ctx->welding_detection_on_missing_voltage_failed = true;
+
+    iso_handle_request(conn.get());
+
+    EXPECT_EQ(exi_out->V2G_Message.Body.WeldingDetectionRes_isUsed, 1u);
+    EXPECT_EQ(response().ResponseCode, iso2_responseCodeType_FAILED);
+}
+
 constexpr char test_emaid[] = "DEPNXC00000001";
 
 std::vector<std::uint8_t> self_signed_contract_certificate_der(const char* common_name) {

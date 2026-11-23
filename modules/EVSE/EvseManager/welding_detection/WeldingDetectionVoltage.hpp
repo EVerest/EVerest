@@ -35,6 +35,12 @@ struct WeldingDetectionVoltageSources {
 WeldingDetectionVoltageSource resolve_welding_detection_voltage_source(WeldingDetectionVoltageSource configured,
                                                                        const WeldingDetectionVoltageSources& connected);
 
+/// \brief As above, but nullopt instead of a fallback to the power supply if \p power_supply_fallback is false. A
+/// configured power supply is always returned.
+std::optional<WeldingDetectionVoltageSource>
+resolve_welding_detection_voltage_source(WeldingDetectionVoltageSource configured,
+                                         const WeldingDetectionVoltageSources& connected, bool power_supply_fallback);
+
 /// \brief Reports the side B voltage of one selected source as EVSE present voltage during DC welding detection
 /// (IEC 61851-23:2023 CC.7.6.17), from welding_detection Started until any end of the phase.
 ///

@@ -37,6 +37,10 @@ void WeldingDetection::enter() {
 void WeldingDetection::process_request([[maybe_unused]] const message_din::WeldingDetectionRequest& req) {
     auto res = handle_request(req, m_ctx.evse().present_voltage, m_ctx.get_session_id(), m_ctx.error_status_code(),
                               m_ctx.evse().charger_stop_requested);
+    if (m_ctx.welding_detection.voltage_missing() and
+        m_ctx.session_config.welding_detection_on_missing_voltage_failed) {
+        res.response_code = dt::ResponseCode::FAILED;
+    }
     apply_isolation_status(m_ctx, res.dc_evse_status);
     m_ctx.respond(res);
 
@@ -75,7 +79,12 @@ void WeldingDetection::answer_pending_req() {
 // With every update outstanding the source stalled; with one in, the value is at worst one poll interval
 // older than the request.
 void WeldingDetection::log_welding_voltage_timeout() const {
-    if (m_ctx.welding_detection.updates_since_request() == 0) {
+    if (m_ctx.welding_detection.updates_since_request() == 0 and
+        m_ctx.session_config.welding_detection_on_missing_voltage_failed) {
+        logf_error("No value from the welding detection voltage source within %d ms of the WeldingDetectionReq, "
+                   "the response is FAILED unless one arrives before it is sent",
+                   d20::TIMEOUT_WELDING_VOLTAGE);
+    } else if (m_ctx.welding_detection.updates_since_request() == 0) {
         logf_warning("No value from the welding detection voltage source within %d ms of the WeldingDetectionReq, "
                      "answering with the last present voltage",
                      d20::TIMEOUT_WELDING_VOLTAGE);
