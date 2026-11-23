@@ -84,7 +84,8 @@ Module::Module(const std::string& module_id, const std::string& prefix, const Ev
     module_id_(module_id) {
     // before any thread is created, capabilities are per thread
     if (const auto error = Everest::raise_ambient_capabilities()) {
-        EVLOG_warning << "Child processes of this module will not inherit its Linux capabilities: " << *error;
+        Everest::Logging::ffi_log(Everest::Logging::warning, __LINE__, __FILE__,
+                                  "Child processes of this module will not inherit its Linux capabilities: " + *error);
     }
 
     const auto mqtt_abstraction =
