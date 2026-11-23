@@ -75,15 +75,17 @@ The `module`, `interface` and `types` commands have the following options in
 common:
 
 - ``--work-dir``:
-  work directory which also contains the manifest definitions (default: ``.``)
+  work directory which also contains the manifest definitions (default: ``.``).
+  It must exist.
 
 - ``--everest-dir``:
   root directory of EVerest core or any directory containing interface
-  and module definitions (default: ``.``)
+  and module definitions (default: ``.``).  Several may be given, and each
+  one must exist.
 
 - ``--schemas-dir``:
   schemas directory of the EVerest framework, containing the schema
-  definitions (default: ``../everest-framework/schemas``)
+  definitions (default: ``./lib/everest/framework/schemas``)
 
 - ``--clang-format-file``:
   if C++ output should be formatted, set this to the path of the
@@ -223,6 +225,44 @@ subcommands:
     ev-cli module update Example --only module.hpp
 
    would update only the module header file ``Example.hpp``.
+
+***********************
+Selecting a target
+***********************
+
+The generating commands accept ``--backend``.  ``cpp`` is the default and
+produces the C++ headers EVerest compiles against.  ``ir-dump`` writes out
+``ev-cli``'s intermediate representation of the definitions as JSON instead,
+which is useful when working out what the generator made of a definition:
+
+.. code-block:: bash
+
+    ev-cli types generate-headers --backend ir-dump --output-dir /tmp/ir
+
+***************************
+Checking the schema dialect
+***************************
+
+EVerest's definitions are JSON Schema, but cross-type references are written
+``/units#/Power``, which only ``ev-cli`` and the framework know how to resolve,
+and most references carry sibling keywords that draft-07 ignores but JSON
+Schema 2020-12 -- and therefore OpenAPI 3.1 -- would apply.  ``ev-cli`` accepts
+all of this and can report it:
+
+.. code-block:: bash
+
+    ev-cli conformance-report
+    ev-cli conformance-report --verbose         # every site, with a suggestion
+
+Each entry says how the same thing would be written conformantly.  Two
+categories deserve attention rather than only a count: a sibling ``type`` that
+contradicts the type it references, and ``additionalProperties: false`` beside
+a reference to an object.  Both have no effect today and would change meaning
+if the definitions were read with OpenAPI semantics.
+
+The conformant spelling is already accepted -- ``#/types/Power`` within a file
+and ``units.yaml#/types/Power`` across files -- so definitions can be migrated
+one file at a time without anything downstream noticing.
 
 ----
 
