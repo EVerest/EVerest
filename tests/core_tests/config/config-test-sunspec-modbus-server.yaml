@@ -1,0 +1,18 @@
+active_modules:
+  sunspec_modbus_server:
+    module: SunSpecModbusServer
+    config_module:
+      listen_address: 127.0.0.1
+      port: 15502
+      manufacturer: Example Inc
+      model: Test EVSE
+      serial_number: SN-TEST
+      ac_type: three_phase
+      max_power_W: 22000
+      max_current_A: 32
+    connections:
+      evse_manager:
+        - module_id: probe
+          implementation_id: evse_manager
+  probe:
+    module: ProbeModule
