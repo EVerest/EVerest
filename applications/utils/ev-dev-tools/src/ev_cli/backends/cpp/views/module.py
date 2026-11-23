@@ -1,0 +1,178 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright Pionix GmbH and Contributors to EVerest
+"""The views a module's loader and skeleton sources are rendered from."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from functools import cached_property
+
+from ....ir.modules import ConfigEntry, ModuleDef, Mutability, ProvidesDef, RequiresDef
+from ....ir.types import JsonType, Primitive
+from .. import naming
+from ..cpp_type import Flavour, to_cpp_type
+
+
+@dataclass
+class ProvidedView:
+    """One implementation a module provides, ready to render."""
+
+    provided: ProvidesDef
+
+    @property
+    def id(self) -> str:
+        return self.provided.id
+
+    @property
+    def class_name(self) -> str:
+        return f'{self.provided.interface}Impl'
+
+    @property
+    def base_class(self) -> str:
+        return f'{self.provided.interface}ImplBase'
+
+    @property
+    def base_class_header(self) -> str:
+        return f'generated/interfaces/{self.provided.interface}/Implementation.hpp'
+
+    @property
+    def class_header(self) -> str:
+        """The implementation's own header, relative to the module directory."""
+        return f'{self.provided.id}/{self.class_name}.hpp'
+
+    @property
+    def cpp_file(self) -> str:
+        return f'{self.provided.id}/{self.class_name}.cpp'
+
+    @cached_property
+    def config(self) -> tuple[ConfigEntry, ...]:
+        return select_static_config(self.provided.config)
+
+    @cached_property
+    def rwconfig(self) -> tuple[ConfigEntry, ...]:
+        return select_read_write_config(self.provided.config)
+
+
+@dataclass
+class RequiredView:
+    """One requirement a module declares, ready to render."""
+
+    required: RequiresDef
+
+    @property
+    def id(self) -> str:
+        return self.required.id
+
+    @property
+    def class_name(self) -> str:
+        return f'{self.required.interface}Intf'
+
+    @property
+    def exports_header(self) -> str:
+        return f'generated/interfaces/{self.required.interface}/Interface.hpp'
+
+    @property
+    def is_vector(self) -> bool:
+        return self.required.is_vector
+
+
+def config_type(entry: ConfigEntry) -> str:
+    """The C++ type of a configuration value, wherever it is declared."""
+    return to_cpp_type(Primitive(entry.type), Flavour.PAYLOAD)
+
+
+def is_string_config(entry: ConfigEntry) -> bool:
+    """Whether a configuration value reaches its change handler without conversion."""
+    return entry.type is JsonType.STRING
+
+
+def select_static_config(entries) -> tuple[ConfigEntry, ...]:
+    """Configuration that gets no change handler: ``ReadOnly`` and ``WriteOnly`` entries.
+
+    Splitting a module's configuration in two is a presentation decision; the
+    IR records each entry's mutability and nothing more, so it happens here.
+    """
+    return tuple(e for e in entries if e.mutability is not Mutability.READ_WRITE)
+
+
+def select_read_write_config(entries) -> tuple[ConfigEntry, ...]:
+    """Configuration that can be changed at runtime, each entry with its own handler."""
+    return tuple(e for e in entries if e.mutability is Mutability.READ_WRITE)
+
+
+@dataclass
+class ModuleView:
+    """One ``modules/<path>/manifest.yaml``, ready to render."""
+
+    module: ModuleDef
+    blocks: dict = field(default_factory=dict)
+    license_header: str = ''
+
+    @property
+    def name(self) -> str:
+        return self.module.name
+
+    @property
+    def class_name(self) -> str:
+        return self.module.name
+
+    @property
+    def guard(self) -> str:
+        return naming.module_header_guard(self.module.name)
+
+    @property
+    def ld_ev_guard(self) -> str:
+        return 'LD_EV_HPP'
+
+    @property
+    def ld_ev_header(self) -> str:
+        return 'ld-ev.hpp'
+
+    @property
+    def module_header(self) -> str:
+        return f'{self.module.name}.hpp'
+
+    @property
+    def description(self) -> str:
+        return self.module.description
+
+    @property
+    def enable_external_mqtt(self) -> bool:
+        return self.module.enable_external_mqtt
+
+    @property
+    def enable_telemetry(self) -> bool:
+        return self.module.enable_telemetry
+
+    @property
+    def enable_global_errors(self) -> bool:
+        return self.module.enable_global_errors
+
+    @cached_property
+    def provides(self) -> list[ProvidedView]:
+        return [ProvidedView(p) for p in self.module.provides]
+
+    @cached_property
+    def requires(self) -> list[RequiredView]:
+        return [RequiredView(r) for r in self.module.requires]
+
+    @cached_property
+    def config(self) -> tuple[ConfigEntry, ...]:
+        return select_static_config(self.module.config)
+
+    @cached_property
+    def rwconfig(self) -> tuple[ConfigEntry, ...]:
+        return select_read_write_config(self.module.config)
+
+    @property
+    def has_impl_rwconfig(self) -> bool:
+        return any(p.rwconfig for p in self.provides)
+
+    @property
+    def declare_config_client_for_module(self) -> bool:
+        """Whether the module's own read-write parameters declare the runtime config client.
+
+        The generated loader declares it at most once, before whichever set of
+        read-write parameters comes first.
+        """
+        return bool(self.rwconfig) and not self.has_impl_rwconfig
