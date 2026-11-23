@@ -11,7 +11,7 @@ This library is built and tested as part of the build process of EVerest.
 Note: you need an modbus tcp client for this example
 
 ```bash
-cd build/modules/HardwareDrivers/PowerSupplies/Huawei_V100R023C10/fusion_charger_lib/modbus-server
+cd build/lib/everest/modbus
 ./examples/dummy_basic_server
 ```
 
