@@ -202,7 +202,6 @@ message_2::ChargeParameterDiscoveryResponse build_response(const message_2::Char
         return res;
     }
 
-    // The parameter phase is always Finished (limits are known up front, EvseV2G parity).
     res.evse_processing = dt::EVSEProcessing::Finished;
 
     std::optional<uint32_t> departure_time;
@@ -235,6 +234,12 @@ message_2::ChargeParameterDiscoveryResponse build_response(const message_2::Char
         departure_time = req.dc_ev_charge_parameter->departure_time;
         fill_dc(res, config);
         apply_no_energy_pause(res, config);
+        // IEC 61851-23:2023 Table CC.8 t2 - t3. SAScheduleList is omitted while Ongoing.
+        if (not config.dc_ev_side_voltage_safe) {
+            res.evse_processing = dt::EVSEProcessing::Ongoing;
+            res.response_code = dt::ResponseCode::OK;
+            return res;
+        }
     } else {
         if (not req.ac_ev_charge_parameter.has_value()) {
             res.response_code = dt::ResponseCode::FAILED_WrongChargeParameter;
@@ -324,6 +329,10 @@ Result process_charge_parameter_discovery(Context& m_ctx, const message_2::Charg
 
     // Only after they validated OK, so a rejected limit is never pushed to the power supply.
     forward_ev_limits(req, is_dc, m_ctx.feedback);
+
+    if (res.evse_processing == dt::EVSEProcessing::Ongoing) {
+        return m_ctx.create_state<ChargeParameterDiscovery>();
+    }
 
     if (res.sa_schedule_list.has_value() and not res.sa_schedule_list->empty()) {
         m_ctx.set_sa_schedules(res.sa_schedule_list.value(), res.sa_schedule_list->front().sa_schedule_tuple_id);

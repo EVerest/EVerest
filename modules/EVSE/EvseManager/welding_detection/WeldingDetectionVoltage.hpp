@@ -8,32 +8,12 @@
 #include <optional>
 #include <string>
 
+#include "ev_side_voltage/EvSideVoltageSource.hpp"
+
 #include <everest/timer.hpp>
 #include <everest/util/async/monitor.hpp>
 
 namespace module {
-
-enum class WeldingDetectionVoltageSource {
-    PowermeterCarSide,
-    OverVoltageMonitor,
-    IsolationMonitor,
-    PowerSupply,
-};
-
-std::optional<WeldingDetectionVoltageSource> welding_detection_voltage_source_from_string(const std::string& s);
-std::string to_string(WeldingDetectionVoltageSource source);
-
-struct WeldingDetectionVoltageSources {
-    bool powermeter_car_side{false};
-    bool over_voltage_monitor{false};
-    bool isolation_monitor{false};
-};
-
-/// \brief The configured source if connected, else the next connected one after it in the order of
-/// WeldingDetectionVoltageSource, skipping the isolation monitor, which only an explicit choice selects. The power
-/// supply is always available.
-WeldingDetectionVoltageSource resolve_welding_detection_voltage_source(WeldingDetectionVoltageSource configured,
-                                                                       const WeldingDetectionVoltageSources& connected);
 
 /// \brief Reports the side B voltage of one selected source as EVSE present voltage during DC welding detection
 /// (IEC 61851-23:2023 CC.7.6.17), from welding_detection Started until any end of the phase.
@@ -63,16 +43,16 @@ public:
         std::chrono::milliseconds deferred_stop_timeout{2000};
     };
 
-    WeldingDetectionVoltage(WeldingDetectionVoltageSource source, PushCallback push, StopSourceCallback stop_source,
+    WeldingDetectionVoltage(EvSideVoltageSource source, PushCallback push, StopSourceCallback stop_source,
                             WarningCallback warning, Timing timing);
-    WeldingDetectionVoltage(WeldingDetectionVoltageSource source, PushCallback push, StopSourceCallback stop_source,
+    WeldingDetectionVoltage(EvSideVoltageSource source, PushCallback push, StopSourceCallback stop_source,
                             WarningCallback warning);
     ~WeldingDetectionVoltage();
 
     WeldingDetectionVoltage(const WeldingDetectionVoltage&) = delete;
     WeldingDetectionVoltage& operator=(const WeldingDetectionVoltage&) = delete;
 
-    WeldingDetectionVoltageSource source() const;
+    EvSideVoltageSource source() const;
 
     /// \brief welding_detection Started.
     void start();
@@ -90,7 +70,7 @@ public:
     bool holds_source() const;
 
     /// \brief Every voltage sample of every source.
-    void update(WeldingDetectionVoltageSource source, float voltage_V);
+    void update(EvSideVoltageSource source, float voltage_V);
 
 private:
     using Clock = std::chrono::steady_clock;
@@ -108,7 +88,7 @@ private:
     void arm_timer(const State& state);
     void on_timer();
 
-    const WeldingDetectionVoltageSource m_source;
+    const EvSideVoltageSource m_source;
     const PushCallback m_push;
     const StopSourceCallback m_stop_source;
     const WarningCallback m_warning;

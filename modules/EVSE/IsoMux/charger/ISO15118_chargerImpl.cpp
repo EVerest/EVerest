@@ -806,6 +806,11 @@ void ISO15118_chargerImpl::handle_update_isolation_status(types::iso15118::Isola
     }
 }
 
+void ISO15118_chargerImpl::handle_update_dc_ev_side_voltage_safe(bool& safe) {
+    mod->r_iso20->call_update_dc_ev_side_voltage_safe(safe);
+    mod->r_iso2->call_update_dc_ev_side_voltage_safe(safe);
+}
+
 void ISO15118_chargerImpl::handle_update_dc_present_values(
     types::iso15118::DcEvsePresentVoltageCurrent& present_voltage_current) {
     mod->r_iso20->call_update_dc_present_values(present_voltage_current);

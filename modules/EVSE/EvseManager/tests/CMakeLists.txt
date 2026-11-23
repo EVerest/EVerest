@@ -20,6 +20,7 @@ target_sources(${TEST_TARGET_NAME} PRIVATE
     EnergyTransferModesTest.cpp
     EventQueueTest.cpp
     ErrorHandlingTest.cpp
+    EvSideVoltageCheckTest.cpp
     DcSetpointTest.cpp
     IECStateMachineTest.cpp
     PpAmpacityForwarderTest.cpp
@@ -40,6 +41,8 @@ target_sources(${TEST_TARGET_NAME} PRIVATE
     ../dc_setpoint.cpp
     ../powermeter_limits.cpp
     ../cable_check/PowerSupplyMeasurementWaiter.cpp
+    ../ev_side_voltage/EvSideVoltageCheck.cpp
+    ../ev_side_voltage/EvSideVoltageSource.cpp
     ../over_voltage/OverVoltageMonitor.cpp
     ../voltage_plausibility/VoltagePlausibilityMonitor.cpp
     ../welding_detection/WeldingDetectionVoltage.cpp

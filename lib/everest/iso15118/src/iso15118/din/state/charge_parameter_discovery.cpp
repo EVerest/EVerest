@@ -147,9 +147,10 @@ void ChargeParameterDiscovery::enter() {
 
 Result ChargeParameterDiscovery::on_request(const message_din::Variant& received) {
     if (const auto req = received.get_if<message_din::ChargeParameterDiscoveryRequest>()) {
-        // EIM/SIL: the DC parameters are available immediately, so EVSEProcessing finishes at once.
-        const auto res = handle_request(*req, m_ctx.session_config, true, m_ctx.get_session_id(),
-                                        m_ctx.evse().charger_stop_requested, m_ctx.error_status_code());
+        // IEC 61851-23:2023 Table CC.8 t2 - t3: Ongoing until the EV side voltage is below 60 V.
+        const auto res =
+            handle_request(*req, m_ctx.session_config, m_ctx.session_config.dc_ev_side_voltage_safe,
+                           m_ctx.get_session_id(), m_ctx.evse().charger_stop_requested, m_ctx.error_status_code());
         m_ctx.respond(res);
 
         if (res.response_code >= dt::ResponseCode::FAILED) {

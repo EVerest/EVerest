@@ -21,5 +21,9 @@ errors:
     description: An Isolation Monitoring Device tripped due to low resistance to the chassis during active charging.
   - name: MREC11CableCheckFault
     description: Cable check failed. Isolation monitor self test failed before charging.
+  - name: ReverseVoltage
+    description: >-
+      The EV applied a reverse DC voltage below -60 V to the output before the cable check
+      (IEC 61851-23:2023 Table CC.8 from t3).
   - name: VoltagePlausibilityFault
     description: Voltage plausibility check failed. Standard deviation between voltage measurements from different sources exceeded threshold for configured duration.

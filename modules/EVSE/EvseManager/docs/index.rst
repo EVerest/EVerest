@@ -111,16 +111,66 @@ Software over-voltage supervision is always active during DC charging. The confi
 must exceed the negotiated limit before EvseManager raises ``MREC5OverVoltage``.
 Set it to ``0`` to trigger immediately once the threshold is crossed.
 
+EV side voltage
+~~~~~~~~~~~~~~~
+
+IEC 61851-23:2023 refers to the voltage at the vehicle connector as the present voltage at side B. While
+the EVSE output contactors are open, a power supply measuring at its own output, behind the contactors,
+does not see it. The same holds for any meter or monitor wired between the power supply and the
+contactors. Two functions need this voltage with the contactors open, the 60 V check before the cable
+check and the welding detection voltage, and both take it from the source selected by
+``ev_side_voltage_source``:
+
+* ``powermeter_car_side`` (default): ``voltage_V.DC`` of the car side power meter.
+* ``over_voltage_monitor``: ``voltage_measurement_V`` of the over voltage monitor.
+* ``isolation_monitor``: ``voltage_V`` of the isolation monitor.
+* ``power_supply``: the power supply measurement.
+
+Choose the source that is physically connected on the EV side of the EVSE output contactors. If the
+selected source is not connected, the next connected one in the order ``powermeter_car_side``,
+``over_voltage_monitor``, ``power_supply`` is used and a warning is printed at start up. The isolation
+monitor is only used when configured. The power supply is always available.
+
+60 V check before the cable check
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+A mated EV may put a voltage on the DC pins (ISO 17409:2020, 6.5.2). For DIN SPEC 70121 and
+ISO 15118-2, IEC 61851-23:2023 Table CC.8 asks the EVSE to
+
+* answer ``ChargeParameterDiscoveryRes`` with ``EVSEProcessing`` ``Ongoing`` while the absolute voltage
+  is 60 V or more and to report ``Finished`` only once it is below (t2 to t3), without an error shutdown
+  of its own (t0 to t3): an EV that keeps the voltage runs into its own timeout,
+* trigger an error shutdown if the voltage is below -60 V for 400 consecutive ms after that (from t3).
+
+EvseManager evaluates every sample of the source while the output contactors are open and reports each
+change to the ISO module with ``update_dc_ev_side_voltage_safe``. The result is therefore known before
+the EV sends its ``ChargeParameterDiscoveryReq`` and a session with less than 60 V at the connector is
+not delayed: the first response reports ``Finished``. A sample is used for 3 s; a source that published
+before and then went silent counts as not below 60 V, so the selected source has to publish all the
+time, at least once per second, not only while charging. A source that never published cannot be used
+and the check passes. ISO 15118-20 is not covered by IEC 61851-23:2023 and is not held.
+
+The reverse voltage is judged from the samples: all of them below -60 V, the first and the last at
+least 400 ms apart, between the first ``ChargeParameterDiscoveryReq`` answered with ``Finished`` and
+the closing of the output contactors. It raises ``evse_manager/ReverseVoltage``, which is cleared on
+unplug.
+
+At the start of the cable check EvseManager waits up to 10 s for the power supply output to be below
+60 V before it lets the output contactors close, and then verifies that the EV side voltage still is.
+Both normally hold already and take no time.
+
+The isolation monitor is disabled until the cable check runs (Table CC.8 t0), so with
+``isolation_monitor`` selected the check uses the power supply measurement, as it does with
+``power_supply``. That measurement shows the power supply output and not the connector, so a voltage
+applied by the EV goes unnoticed.
+
 Welding detection voltage
 ~~~~~~~~~~~~~~~~~~~~~~~~~
 
 During welding detection the EV checks its contactors against the voltage the EVSE reports in
 ``WeldingDetectionRes``. That has to be the side B voltage at the vehicle connector, measured with the
-EVSE contactors open, within 10 V (IEC 61851-23:2023 CC.6.3, test CC.7.6.17). A power supply measuring
-at its own output, behind the contactors, does not see it. The same holds for any meter or monitor
-wired between the power supply and the contactors: choose the source that is physically connected on
-the EV side of the EVSE output contactors, otherwise the EV is told the power supply output instead of
-the voltage at its connector.
+EVSE contactors open, within 10 V (IEC 61851-23:2023 CC.6.3, test CC.7.6.17), otherwise the EV is told
+the power supply output instead of the voltage at its connector.
 
 On the DC stop request the ISO module publishes ``dc_open_contactor``: EvseManager switches the DC
 power supply off and withdraws the power permissive, and the board support reports the open contactor
@@ -131,16 +181,7 @@ ISO 15118-20; without the report it sends the response after that and logs a war
 
 The ISO module reports the phase with ``welding_detection``: ``Started`` at PowerDelivery(Stop),
 ``Finished`` at SessionStop or session teardown. In between, EvseManager reports the voltage of the
-source selected by ``welding_detection_voltage_source`` instead of the power supply measurement:
-
-* ``powermeter_car_side`` (default): ``voltage_V.DC`` of the car side power meter.
-* ``over_voltage_monitor``: ``voltage_measurement_V`` of the over voltage monitor.
-* ``isolation_monitor``: ``voltage_V`` of the isolation monitor.
-* ``power_supply``: the power supply measurement, as outside welding detection.
-
-If the selected source is not connected, the next connected one in the order ``powermeter_car_side``,
-``over_voltage_monitor``, ``power_supply`` is used and a warning is printed at start up. The isolation
-monitor is only used when configured. The power supply is always available.
+source selected by ``ev_side_voltage_source`` instead of the power supply measurement.
 
 The over voltage monitor and the isolation monitor are normally stopped when the power path opens.
 If one of them is the source, that stop is deferred until the welding detection phase ends, and
@@ -655,6 +696,8 @@ Errors raised by the EvseManager itself.
    * - ``evse_manager/MREC22ResistanceFault``
      - yes
    * - ``evse_manager/MREC11CableCheckFault``
+     - yes
+   * - ``evse_manager/ReverseVoltage``
      - yes
    * - ``evse_manager/VoltagePlausibilityFault``
      - yes

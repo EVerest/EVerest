@@ -396,6 +396,10 @@ TimePoint const& Session::poll() {
         if (const auto* stop = std::get_if<d20::StopCharging>(&event.value())) {
             pending_stop_charging = static_cast<bool>(*stop);
         }
+        // The handshake engine drops it, and the protocol engine is created from config afterwards.
+        if (const auto* voltage = std::get_if<d20::EvSideVoltageSafe>(&event.value())) {
+            config.dc_ev_side_voltage_safe = voltage->safe;
+        }
         visit_engine([&event](auto& e) { e.on_control_event(event.value()); });
     }
 

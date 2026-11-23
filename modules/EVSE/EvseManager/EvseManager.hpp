@@ -53,6 +53,7 @@
 #include "VarContainer.hpp"
 #include "bsp_capabilities_store.hpp"
 #include "cable_check/PowerSupplyMeasurementWaiter.hpp"
+#include "ev_side_voltage/EvSideVoltageCheck.hpp"
 #include "over_voltage/OverVoltageMonitor.hpp"
 #include "pp_ampacity_forwarder.hpp"
 #include "scoped_lock_timeout.hpp"
@@ -127,7 +128,7 @@ struct Conf {
     bool cable_check_wait_below_60V_before_finish;
     bool hack_skoda_enyaq;
     int hack_present_current_offset;
-    std::string welding_detection_voltage_source;
+    std::string ev_side_voltage_source;
     bool hack_pause_imd_during_precharge;
     bool hack_allow_bpt_with_iso2;
     bool hack_simplified_mode_limit_10A;
@@ -500,13 +501,25 @@ private:
     // Voltage plausibility monitor
     std::unique_ptr<VoltagePlausibilityMonitor> voltage_plausibility_monitor;
 
-    // Side B voltage reported during DC welding detection, see welding_detection_voltage_source
+    void setup_ev_side_voltage();
+
+    // Side B voltage reported during DC welding detection, see ev_side_voltage_source
     std::unique_ptr<WeldingDetectionVoltage> welding_detection_voltage;
     std::atomic<float> present_current_A{0};
-    void setup_welding_detection_voltage();
+
+    // 60 V check before the cable check, see ev_side_voltage_source. No source: not a DC HLC charger.
+    std::optional<EvSideVoltageSource> ev_side_voltage_check_source;
+    everest::lib::util::monitor<EvSideVoltageCheck> ev_side_voltage_check;
+    everest::lib::util::monitor<bool> ev_side_voltage_safe_reported{true};
+    std::atomic_bool ev_side_reverse_voltage_armed{false};
+    void update_ev_side_voltage_check(EvSideVoltageSource source, double voltage_V);
+    void report_ev_side_voltage_safe();
+    void arm_ev_side_reverse_voltage();
+    /// \brief Waits until the EV side voltage is below 60 V. Returns why it is not, std::nullopt if it is.
+    std::optional<std::string> wait_ev_side_voltage_safe();
     void end_welding_detection_phase();
-    bool welding_detection_holds(WeldingDetectionVoltageSource source) const;
-    bool is_welding_detection_source(WeldingDetectionVoltageSource source) const;
+    bool welding_detection_holds(EvSideVoltageSource source) const;
+    bool is_welding_detection_source(EvSideVoltageSource source) const;
 
     void setup_AC_mode(bool ac_hlc_enabled = true);
     void setup_fake_DC_mode();

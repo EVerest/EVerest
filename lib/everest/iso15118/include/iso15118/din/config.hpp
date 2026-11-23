@@ -40,6 +40,8 @@ struct SessionConfig {
     // IEC 61851-23:2023 CC.3.5.3: the ChargeParameterDiscoveryRes signals StopCharging and, unless the
     // EV is allowed to ignore it, the SECC stops before the cable check.
     d20::NoEnergyPauseMode no_energy_pause{d20::NoEnergyPauseMode::None};
+    // IEC 61851-23:2023 Table CC.8 t2 - t3: ChargeParameterDiscoveryRes stays Ongoing while false.
+    bool dc_ev_side_voltage_safe{true};
 
     // In MILLISECONDS; 0 waits indefinitely. Only the EIM value applies -- DIN knows no other payment
     // option. EvseV2G never bounded this loop at all, so a DIN session there could sit in Ongoing until

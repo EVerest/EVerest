@@ -2385,6 +2385,14 @@ void ISO15118_chargerImpl::handle_update_isolation_status(types::iso15118::Isola
     }
 }
 
+void ISO15118_chargerImpl::handle_update_dc_ev_side_voltage_safe(bool& safe) {
+    std::scoped_lock lock(GEL);
+    setup_config.dc_ev_side_voltage_safe = safe;
+    if (controller) {
+        controller->update_dc_ev_side_voltage_safe(safe);
+    }
+}
+
 void ISO15118_chargerImpl::handle_update_dc_present_values(
     types::iso15118::DcEvsePresentVoltageCurrent& present_voltage_current) {
 

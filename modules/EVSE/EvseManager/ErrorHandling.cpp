@@ -396,6 +396,21 @@ void ErrorHandling::clear_cable_check_fault() {
     }
 }
 
+void ErrorHandling::raise_reverse_voltage_fault(const std::string& description) {
+    // Error shutdown according to IEC 61851-23:2023 Table CC.8 from t3 --> Severity::Medium
+    Everest::error::Error error_object = p_evse->error_factory->create_error(
+        "evse_manager/ReverseVoltage", "", description, Everest::error::Severity::Medium);
+    p_evse->raise_error(error_object);
+    process_error();
+}
+
+void ErrorHandling::clear_reverse_voltage_fault() {
+    if (p_evse->error_state_monitor->is_error_active("evse_manager/ReverseVoltage", "")) {
+        p_evse->clear_error("evse_manager/ReverseVoltage");
+        process_error();
+    }
+}
+
 void ErrorHandling::raise_voltage_plausibility_fault(const std::string& description) {
     // raise externally
     // High severity as this indicates a serious measurement inconsistency
