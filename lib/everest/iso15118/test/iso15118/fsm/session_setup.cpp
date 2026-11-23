@@ -52,11 +52,13 @@ SCENARIO("ISO15118-20 session setup state transitions") {
 
     const bool skip_app_protocol_negotiation{false};
     bool ev_information_called{false};
+    int out_of_sequence_requests{0};
 
     std::optional<d20::PauseContext> pause_ctx{std::nullopt};
 
     session::feedback::Callbacks callbacks{};
     callbacks.ev_information = [&ev_information_called](const d20::EVInformation&) { ev_information_called = true; };
+    callbacks.request_out_of_sequence = [&out_of_sequence_requests] { ++out_of_sequence_requests; };
 
     auto state_helper = FsmStateHelper(session::SessionConfig(evse_setup), pause_ctx, callbacks);
     auto ctx = state_helper.get_context();
@@ -275,6 +277,7 @@ SCENARIO("ISO15118-20 session setup state transitions") {
 
             const auto& res = response_message.value();
             REQUIRE(res.response_code == dt::ResponseCode::FAILED_SequenceError);
+            REQUIRE(out_of_sequence_requests == 1);
             REQUIRE(res.service == message_20::to_underlying_value(dt::ServiceCategory::DC));
             REQUIRE(res.service_parameter_list.size() == 1);
         }

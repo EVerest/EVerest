@@ -94,6 +94,7 @@ void set_certificate_installation_placeholders(message_20::CertificateInstallati
 
 // Todo(sl): Not happy at all. Need refactoring. Only ctx.respond and Session is needed. Not the whole Context.
 void send_sequence_error(const message_20::Type req_type, d20::Context& ctx) {
+    ctx.feedback.request_out_of_sequence();
 
     if (req_type == message_20::Type::SessionSetupReq) {
         const auto res = handle_sequence_error<message_20::SessionSetupResponse>(ctx.session);

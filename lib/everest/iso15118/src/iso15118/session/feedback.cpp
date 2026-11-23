@@ -45,6 +45,10 @@ void Feedback::v2g_message(const V2gMessageType& v2g_message, const io::StreamIn
     call_if_available(callbacks.v2g_message, v2g_message, exi_frame);
 }
 
+void Feedback::request_out_of_sequence() const {
+    call_if_available(callbacks.request_out_of_sequence);
+}
+
 void Feedback::ev_app_protocols(const message_20::SupportedAppProtocolRequest& req) const {
     call_if_available(callbacks.ev_app_protocols, req);
 }

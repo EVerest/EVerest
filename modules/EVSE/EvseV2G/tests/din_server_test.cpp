@@ -7,6 +7,7 @@
 
 #include "ISO15118_chargerImplStub.hpp"
 #include "cbv2g/din/din_msgDefDatatypes.h"
+#include "hlc_session_failed_reason.hpp"
 #include "utest_log.hpp"
 #include "v2g.hpp"
 
@@ -302,6 +303,53 @@ TEST_F(DinServerTest, handle_din_contract_authentication_check_evse_processing_o
 }
 
 // if not otherwise specified, the following testcases are happy paths
+
+TEST_F(DinServerTest, session_stop_from_contract_authentication_keeps_the_phase_the_ev_left) {
+    // An EV whose V2G_EVCC_Ongoing_Timer expired ends the session with SessionStopReq
+    ctx->evse_v2g_data.session_id = 0;
+    ctx->is_dc_charger = true;
+    ctx->last_v2g_msg = V2G_AUTHORIZATION_MSG;
+    ctx->last_in_sequence_v2g_msg = V2G_AUTHORIZATION_MSG;
+    ctx->state = WAIT_FOR_AUTHORIZATION;
+
+    init_din_exiDocument(exi_in.get());
+    exi_in->V2G_Message.Body.SessionStopReq_isUsed = 1u;
+
+    EXPECT_EQ(din_handle_request(conn.get()), V2G_EVENT_SEND_AND_TERMINATE);
+
+    EXPECT_EQ(exi_out->V2G_Message.Body.SessionStopRes_isUsed, 1u);
+    EXPECT_EQ(exi_out->V2G_Message.Body.SessionStopRes.ResponseCode, din_responseCodeType_OK);
+    EXPECT_EQ(conn->d_link_action, dLinkAction::D_LINK_ACTION_TERMINATE);
+    EXPECT_EQ(ctx->last_v2g_msg, V2G_SESSION_STOP_MSG);
+    EXPECT_EQ(conn->v2g_msg_before_session_stop, V2G_AUTHORIZATION_MSG);
+}
+
+// An EV that gives up while authorizing may run its regular stop sequence, starting with PowerDeliveryReq.
+TEST_F(DinServerTest, session_stop_after_out_of_sequence_power_delivery_keeps_the_authorization_phase) {
+    ctx->evse_v2g_data.session_id = 0;
+    ctx->is_dc_charger = true;
+    ctx->last_v2g_msg = V2G_AUTHORIZATION_MSG;
+    ctx->last_in_sequence_v2g_msg = V2G_AUTHORIZATION_MSG;
+    ctx->state = WAIT_FOR_AUTHORIZATION;
+
+    init_din_exiDocument(exi_in.get());
+    exi_in->V2G_Message.Body.PowerDeliveryReq_isUsed = 1u;
+    din_handle_request(conn.get());
+
+    EXPECT_EQ(exi_out->V2G_Message.Body.PowerDeliveryRes.ResponseCode, din_responseCodeType_FAILED_SequenceError);
+    EXPECT_EQ(ctx->last_v2g_msg, V2G_POWER_DELIVERY_MSG);
+    EXPECT_EQ(v2g_msg_at_disconnect(*ctx), V2G_AUTHORIZATION_MSG);
+
+    init_din_BodyType(&exi_in->V2G_Message.Body);
+    exi_in->V2G_Message.Body.SessionStopReq_isUsed = 1u;
+
+    EXPECT_EQ(din_handle_request(conn.get()), V2G_EVENT_SEND_AND_TERMINATE);
+
+    EXPECT_EQ(conn->v2g_msg_before_session_stop, V2G_AUTHORIZATION_MSG);
+    EXPECT_EQ(
+        hlc_session_failed_reason_at_disconnect(v2g_msg_at_disconnect(*ctx), conn->v2g_msg_before_session_stop, false),
+        types::evse_manager::HlcSessionFailedReasonEnum::AuthorizationFailed);
+}
 
 TEST_F(DinServerTest, din_validate_response_code_TERMINATE_CONNECTION) {
 
