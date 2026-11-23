@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <memory>
+#include <optional>
 #include <utility>
 
 #include <iso15118/d2/state/session_setup.hpp>
@@ -38,6 +39,28 @@ uint8_t ac_capability_phase_count(const d2::SessionConfig& out) {
                                       m2dt::EnergyTransferMode::AC_three_phase_core)
                ? 3
                : 1;
+}
+
+// With charge_power_L2/_L3 set the d20 limits are per phase and charge_power is the L1 limit; without
+// them charge_power is the total. ISO 15118-2 has one current for all phases, so the weakest one counts.
+std::optional<float> ac_capability_current(const d20::AcTransferLimits& limits, const d2::SessionConfig& config) {
+    const auto l1 = m20dt::from_RationalNumber(limits.charge_power.max);
+    if (l1 <= 0.0f or config.ac_nominal_voltage <= 0.0f) {
+        return std::nullopt;
+    }
+    const auto phase_count = ac_capability_phase_count(config);
+    if (not limits.charge_power_L2.has_value() and not limits.charge_power_L3.has_value()) {
+        return l1 / (config.ac_nominal_voltage * phase_count);
+    }
+    auto per_phase = l1;
+    if (phase_count == 3) {
+        for (const auto* phase : {&limits.charge_power_L2, &limits.charge_power_L3}) {
+            if (phase->has_value()) {
+                per_phase = std::min(per_phase, m20dt::from_RationalNumber((*phase)->max));
+            }
+        }
+    }
+    return per_phase / config.ac_nominal_voltage;
 }
 } // namespace
 
@@ -109,9 +132,8 @@ d2::SessionConfig make_d2_config(const session::SessionConfig& config, bool tls_
     // AC nominal voltage is not in the d20 limits; it comes from set_charging_parameters and otherwise
     // stays at the 230 V default. Where the module reported no capability the live limit -- already a
     // per-phase current -- doubles as one, and with neither reported both stay 0.
-    const auto ac_power = m20dt::from_RationalNumber(config.ac_limits.charge_power.max);
-    if (ac_power > 0.0f and out.ac_nominal_voltage > 0.0f) {
-        out.ac_capability_max_current = ac_power / (out.ac_nominal_voltage * ac_capability_phase_count(out));
+    if (const auto capability = ac_capability_current(config.ac_limits, out)) {
+        out.ac_capability_max_current = *capability;
     } else if (config.iso2_ac_max_current.has_value()) {
         out.ac_capability_max_current = config.iso2_ac_max_current.value();
     }
@@ -289,10 +311,8 @@ void D2SeccEngine::on_control_event(const d20::ControlEvent& event) {
 
     // Re-derives the advertised capability current; the live per-phase limit is owned by UpdateAcMaxCurrent.
     if (const auto* ac_limits = std::get_if<d20::AcTransferLimits>(&event)) {
-        const auto ac_power = m20dt::from_RationalNumber(ac_limits->charge_power.max);
-        if (ac_power > 0.0f and ctx.session_config.ac_nominal_voltage > 0.0f) {
-            ctx.session_config.ac_capability_max_current =
-                ac_power / (ctx.session_config.ac_nominal_voltage * ac_capability_phase_count(ctx.session_config));
+        if (const auto capability = ac_capability_current(*ac_limits, ctx.session_config)) {
+            ctx.session_config.ac_capability_max_current = *capability;
         }
         return;
     }
