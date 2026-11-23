@@ -359,12 +359,8 @@ fn test_impl(attr: &TestAttr, item_fn: ItemFn) -> Result<proc_macro2::TokenStrea
             let config = prefix.join(format!("etc/everest/{}", #config_basename));
 
             // Each test gets a unique MQTT prefix so tests can run in parallel
-            // without topic collisions.
-            let __mqtt_prefix = format!(
-                "everest_test_{:?}_{:?}/",
-                std::process::id(),
-                std::thread::current().id(),
-            );
+            // without topic collisions, also with the tests of other binaries.
+            let __mqtt_prefix = ::everestrs::manager::unique_mqtt_prefix();
 
             // Start the manager, telling it not to spawn the module under test.
             // Blocks until the manager signals readiness via --status-fifo.
