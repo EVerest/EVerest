@@ -106,7 +106,18 @@ types:
   HlcSessionFailedReasonEnum:
     description: |
       Reason for a higher-level-communication (HLC) session failure event.
-        Published via HlcSessionFailed whenever HLC session encounters a failure.
+        Published via HlcSessionFailed when an HLC session ends in a way that counts as a failure.
+        The reason names the phase in which the session ended, derived from the last
+        messages exchanged. It does not tell why the session ended there.
+        A connection that closes without SessionStop is always reported. A session the EV
+        ends with SessionStop is reported only if it does so during protocol negotiation,
+        authorization, cable check or pre-charge. A SessionStop during service or charge
+        parameter negotiation is not reported, even if the EV gave up there, because it
+        cannot be told apart from a regular end. A SessionStop after PowerDelivery, during
+        charging or after welding detection is the regular end. Who caused the end is not
+        considered: a session the EVSE itself ended, through a stop request or a fault
+        shutdown, can be reported as well. Its cause is available from the session's stop
+        reason and the errors the EVSE raised.
         - ProtocolNegotiationFailed: No common communication protocol or version could be
           negotiated. Applies to protocols with a version handshake phase.
         - AuthorizationFailed: The authorization phase did not succeed and the EV terminated
@@ -461,8 +472,8 @@ types:
         $ref: /evse_manager#/ReservationDetails
   HlcSessionFailedEvent:
     description: >-
-      Published whenever an HLC session failure occurs.
-      Published immediately when the failure is detected, independently of the EvseManager
+      Published when an HLC session ends in a way that counts as a failure, see
+      HlcSessionFailedReasonEnum. Published when the connection closes, independently of the EvseManager
       state machine transitions. Can fire multiple times per EVerest session (e.g. on each
       retry attempt). Use the uuid field to correlate with session_event.
     type: object
