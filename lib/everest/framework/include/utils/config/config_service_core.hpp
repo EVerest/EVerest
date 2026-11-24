@@ -213,6 +213,14 @@ private:
 
     void reload_from_storage();
 
+    /// \brief Writes the parameters of the active slot whose stored value followed a manifest default that has
+    /// changed (or vanished) since, records the origin of parameters stored without one and adds parameters the
+    /// manifest newly defines with a default: \p stored holds
+    /// the configurations as read from the database, \p validated the same configurations after validation against
+    /// the current manifests.
+    void persist_manifest_default_changes(const everest::config::ModuleConfigurations& stored,
+                                          const everest::config::ModuleConfigurations& validated);
+
     /// \brief Validate an update against the parameter's datatype and its manifest schema before anything is
     /// persisted, so a value that the manifest forbids, or that would fail to parse on the next boot, never
     /// reaches the database.

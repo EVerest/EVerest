@@ -121,7 +121,7 @@ setup_test_directory(
 setup_test_directory(
     config_service_test
     CONFIG config_service_config.yaml
-    MODULES TESTCSTarget TESTValidManifest
+    MODULES TESTCSTarget TESTCSNoDefault TESTValidManifest
     INTERFACE_FILES test_interface
 )
 

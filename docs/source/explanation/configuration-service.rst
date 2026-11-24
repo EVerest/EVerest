@@ -304,6 +304,42 @@ makes the Configuration API unavailable, and the modules are down as well. On
 restart the manager reinitializes the ConfigServiceCore, loads the boot slot and
 starts the modules.
 
+*************************
+Manifest Default Changes
+*************************
+
+Every stored parameter value records its origin: ``default`` if it was taken
+from the default in the module manifest, ``user`` if it was given explicitly,
+in the config file or via the Configuration API, even when it equals the
+default. Whenever a slot is loaded as the active configuration, at boot or on a
+module restart, values of origin ``default`` follow the current manifests:
+
+- If the manifest default changed (in value or datatype), the new default
+  replaces the stored value.
+- If the manifest no longer defines a default, the stored value is kept and its
+  origin becomes ``user``. A stored integer is widened to a decimal if the
+  manifest changed the datatype accordingly. If the datatype changed in any
+  other way, the slot fails validation and is not loaded, just as for a value
+  of origin ``user`` with the wrong datatype.
+- If the manifest defines a new parameter with a default, the parameter is
+  added to the slot with origin ``default``.
+
+Each such change is written to the database for the loaded slot only and is
+logged as a warning. Other slots are migrated when they are loaded. Values of
+origin ``user`` are never changed this way.
+
+Values stored by a release that did not record the origin have none in the
+database. Their origin is settled, and written to the database, the first time
+their slot is loaded as the active configuration:
+
+- A value that equals the manifest default gets the origin ``default``.
+- A value that the manifest rejects, because of its datatype or its allowed
+  values, is replaced by the manifest default, gets the origin ``default`` and
+  is logged as a warning. Such a value cannot be told apart from a former
+  default, so a value that was set explicitly is replaced as well.
+- Any other value gets the origin ``user``, also if the manifest defines no
+  default.
+
 **********
 Deployment
 **********

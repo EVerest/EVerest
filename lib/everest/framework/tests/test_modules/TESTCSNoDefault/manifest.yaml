@@ -1,0 +1,13 @@
+description: "Module for ConfigService tests - provides a decimal config param without default"
+metadata:
+  license: "https://opensource.org/licenses/Apache-2.0"
+  authors: ["EVerest"]
+config:
+  decimal_param:
+    description: "A Decimal config parameter without default"
+    type: number
+    mutability: ReadWrite
+provides:
+  main:
+    description: "main implementation"
+    interface: "test_interface"
