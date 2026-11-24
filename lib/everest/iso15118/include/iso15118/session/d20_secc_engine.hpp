@@ -45,8 +45,9 @@ public:
     bool is_stopping() const {
         return ctx.session_stopped or ctx.session_paused;
     }
-    // [V2G20-2009], [V2G20-2010], [V2G20-2192], [V2G20-2012], [V2G20-2013], AMD1 [V2G20-3208]: the
-    // V2G_SECC_Sequence_Timeout of Tables 216 and 217 applies while a ChargeLoopReq is the next request.
+    // [V2G20-2010], [V2G20-2012], [V2G20-2013], AMD1 [V2G20-3208] and [V2G20-3209] (which replace [V2G20-2009] and
+    // [V2G20-2192]): the V2G_SECC_Sequence_Timeout of Tables 216 and 217 applies while a ChargeLoopReq is the next
+    // request.
     bool expects_charge_loop_request() const {
         switch (fsm.get_current_state_id()) {
         case d20::StateID::AC_ChargeLoop:

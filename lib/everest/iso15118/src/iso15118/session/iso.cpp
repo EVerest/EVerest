@@ -400,6 +400,10 @@ TimePoint const& Session::poll() {
     }
 
     for (const auto timeout : timeouts.check()) {
+        if (timeout == d20::TimeoutType::SEQUENCE and packet.is_complete()) {
+            // [V2G20-444]: the request is already read, so it ends the wait even when this poll runs late.
+            continue;
+        }
         visit_engine([timeout](auto& e) { e.on_timeout(timeout); });
         timeouts.reset_timeout(timeout);
         if (session_over() and not clean_session_end and not error_termination) {
