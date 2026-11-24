@@ -1417,6 +1417,48 @@ async def test_iso15118_pnc_only_ev_authorization_failed(
     await wait_for_hlc_session_failed_with_reason(hlc_session_failed_mock, "AuthorizationFailed")
     test_controller.plug_out()
 
+def hlc_stack_params(*extra_strategies):
+    """The DC SIL setups of the SECC stacks that report hlc_session_failed: EvseV2G with ISO 15118-2."""
+    setups = [
+        ("evsev2g_iso2", "config-sil-dc.yaml", DcConfigAdjustmentStrategy()),
+    ]
+    return [
+        pytest.param(
+            name,
+            marks=[
+                pytest.mark.everest_core_config(config),
+                pytest.mark.everest_config_adaptions(strategy, *extra_strategies),
+            ],
+            id=name,
+        )
+        for name, config, strategy in setups
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.xdist_group(name="ISO15118")
+@pytest.mark.probe_module(
+    connections={"evse_manager": [Requirement("evse_manager", "evse")]}
+)
+@pytest.mark.parametrize("hlc_stack", hlc_stack_params())
+async def test_iso15118_dc_session_stopped_by_ev_reports_no_hlc_session_failure(
+    hlc_stack, test_controller: TestController, everest_core: EverestCore
+):
+    """Test that a charging session the EV ends regularly publishes no hlc_session_failed."""
+    _, session_event_mock, powermeter_mock, hlc_session_failed_mock = await setup_session_mocks(
+        test_controller, everest_core
+    )
+
+    await run_basic_session(
+        test_controller, session_event_mock, powermeter_mock, "plug_in_dc_iso", finish_with_plug_out=False
+    )
+    test_controller.plug_out_iso()
+    await wait_for_session_events(session_event_mock, SESSION_END_EVENTS)
+    await asyncio.sleep(2)
+
+    assert not hlc_session_failed_mock.called, hlc_session_failed_mock.call_args_list
+
+
 @pytest.mark.asyncio
 @pytest.mark.probe_module(
     connections={"evse_manager": [Requirement("evse_manager", "evse")]}

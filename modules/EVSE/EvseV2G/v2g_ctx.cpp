@@ -116,6 +116,8 @@ void v2g_ctx_init_charging_state(struct v2g_context* const ctx, bool is_connecti
     ctx->error_shutdown_reported = false;
     ctx->is_connection_terminated = is_connection_terminated;
     ctx->last_v2g_msg = V2G_UNKNOWN_MSG;
+    ctx->last_in_sequence_v2g_msg = V2G_UNKNOWN_MSG;
+    ctx->current_v2g_msg_out_of_sequence = false;
     ctx->current_v2g_msg = V2G_UNKNOWN_MSG;
     ctx->state = 0; // WAIT_FOR_SESSIONSETUP
     ctx->selected_protocol = V2G_UNKNOWN_PROTOCOL;

@@ -10,6 +10,7 @@
 
 #include "ISO15118_chargerImplStub.hpp"
 #include "evse_securityIntfStub.hpp"
+#include "hlc_session_failed_reason.hpp"
 #include "iso15118_extensionsImplStub.hpp"
 #include "utest_log.hpp"
 #include "v2g.hpp"
@@ -452,6 +453,108 @@ TEST_F(IsoServerPaymentTest, authorization_without_public_key) {
     send_signed_authorization();
 
     EXPECT_EQ(authorization_response(), iso2_responseCodeType_FAILED_SignatureError);
+}
+
+class IsoServerSessionStopTest : public testing::Test {
+protected:
+    std::unique_ptr<v2g_connection> conn;
+    std::unique_ptr<v2g_context> ctx;
+    std::unique_ptr<iso2_exiDocument> exi_in;
+    std::unique_ptr<iso2_exiDocument> exi_out;
+
+    module::stub::QuietModuleAdapterStub adapter;
+    module::stub::ISO15118_chargerImplStub charger;
+
+    IsoServerSessionStopTest() : charger(adapter) {
+    }
+
+    void SetUp() override {
+        conn = std::make_unique<v2g_connection>();
+        ctx = std::make_unique<v2g_context>();
+        exi_in = std::make_unique<iso2_exiDocument>();
+        exi_out = std::make_unique<iso2_exiDocument>();
+
+        module::stub::clear_logs();
+        conn->ctx = ctx.get();
+        conn->ctx->p_charger = &charger;
+        conn->exi_in.iso2EXIDocument = exi_in.get();
+        conn->exi_out.iso2EXIDocument = exi_out.get();
+
+        v2g_ctx_init_charging_values(ctx.get());
+
+        // The EV is in the authorization loop: AuthorizationReq was answered with EVSEProcessing Ongoing
+        ctx->is_dc_charger = false;
+        ctx->last_v2g_msg = V2G_AUTHORIZATION_MSG;
+        ctx->last_in_sequence_v2g_msg = V2G_AUTHORIZATION_MSG;
+        ctx->state = static_cast<int>(iso_ac_state_id::WAIT_FOR_AUTHORIZATION);
+
+        init_iso2_exiDocument(exi_in.get());
+        exi_in->V2G_Message.Body.SessionStopReq_isUsed = 1u;
+        init_iso2_SessionStopReqType(&exi_in->V2G_Message.Body.SessionStopReq);
+    }
+
+    const iso2_SessionStopResType& response() const {
+        return exi_out->V2G_Message.Body.SessionStopRes;
+    }
+};
+
+TEST_F(IsoServerSessionStopTest, terminate_from_authorization_keeps_the_phase_the_ev_left) {
+    // An EV whose V2G_EVCC_Ongoing_Timer expired ends the session with SessionStopReq(Terminate)
+    exi_in->V2G_Message.Body.SessionStopReq.ChargingSession = iso2_chargingSessionType_Terminate;
+
+    EXPECT_EQ(iso_handle_request(conn.get()), V2G_EVENT_SEND_AND_TERMINATE);
+
+    EXPECT_EQ(exi_out->V2G_Message.Body.SessionStopRes_isUsed, 1u);
+    EXPECT_EQ(response().ResponseCode, iso2_responseCodeType_OK);
+    EXPECT_EQ(conn->d_link_action, dLinkAction::D_LINK_ACTION_TERMINATE);
+    EXPECT_EQ(ctx->last_v2g_msg, V2G_SESSION_STOP_MSG);
+    EXPECT_EQ(conn->v2g_msg_before_session_stop, V2G_AUTHORIZATION_MSG);
+}
+
+TEST_F(IsoServerSessionStopTest, pause_from_authorization_is_rejected_but_keeps_the_phase) {
+    exi_in->V2G_Message.Body.SessionStopReq.ChargingSession = iso2_chargingSessionType_Pause;
+
+    EXPECT_EQ(iso_handle_request(conn.get()), V2G_EVENT_SEND_AND_TERMINATE);
+
+    EXPECT_EQ(response().ResponseCode, iso2_responseCodeType_FAILED);
+    EXPECT_EQ(conn->d_link_action, dLinkAction::D_LINK_ACTION_TERMINATE);
+    EXPECT_EQ(ctx->last_v2g_msg, V2G_SESSION_STOP_MSG);
+    EXPECT_EQ(conn->v2g_msg_before_session_stop, V2G_AUTHORIZATION_MSG);
+}
+
+// An EV that gives up while authorizing may start its stop sequence with PowerDeliveryReq. The SequenceError
+// response closes the connection [V2G2-539].
+TEST_F(IsoServerSessionStopTest, out_of_sequence_power_delivery_from_authorization_keeps_the_phase) {
+    *exi_in = {};
+    init_iso2_exiDocument(exi_in.get());
+    exi_in->V2G_Message.Body.PowerDeliveryReq_isUsed = 1u;
+    init_iso2_PowerDeliveryReqType(&exi_in->V2G_Message.Body.PowerDeliveryReq);
+    exi_in->V2G_Message.Body.PowerDeliveryReq.ChargeProgress = iso2_chargeProgressType_Stop;
+
+    EXPECT_EQ(iso_handle_request(conn.get()), V2G_EVENT_SEND_AND_TERMINATE);
+
+    EXPECT_EQ(exi_out->V2G_Message.Body.PowerDeliveryRes.ResponseCode, iso2_responseCodeType_FAILED_SequenceError);
+    EXPECT_EQ(ctx->current_v2g_msg, V2G_POWER_DELIVERY_MSG);
+    EXPECT_EQ(hlc_session_failed_reason_at_disconnect(v2g_msg_at_disconnect(*ctx), V2G_UNKNOWN_MSG, false),
+              types::evse_manager::HlcSessionFailedReasonEnum::AuthorizationFailed);
+}
+
+// The charge loop admits no SessionStopReq [V2G2-538]. It is classified as a SessionStop all the same.
+TEST_F(IsoServerSessionStopTest, out_of_sequence_session_stop_in_the_charge_loop_is_classified_as_a_session_stop) {
+    ctx->is_dc_charger = true;
+    ctx->last_v2g_msg = V2G_CURRENT_DEMAND_MSG;
+    ctx->last_in_sequence_v2g_msg = V2G_CURRENT_DEMAND_MSG;
+    ctx->state = static_cast<int>(iso_dc_state_id::WAIT_FOR_CURRENTDEMAND);
+    exi_in->V2G_Message.Body.SessionStopReq.ChargingSession = iso2_chargingSessionType_Terminate;
+
+    EXPECT_EQ(iso_handle_request(conn.get()), V2G_EVENT_SEND_AND_TERMINATE);
+
+    EXPECT_EQ(response().ResponseCode, iso2_responseCodeType_FAILED_SequenceError);
+    EXPECT_EQ(v2g_msg_at_disconnect(*ctx), V2G_SESSION_STOP_MSG);
+    EXPECT_EQ(conn->v2g_msg_before_session_stop, V2G_CURRENT_DEMAND_MSG);
+    EXPECT_EQ(
+        hlc_session_failed_reason_at_disconnect(v2g_msg_at_disconnect(*ctx), conn->v2g_msg_before_session_stop, false),
+        std::nullopt);
 }
 
 } // namespace

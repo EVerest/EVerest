@@ -20,6 +20,7 @@
 
 #include "connection.hpp"
 #include "din_server.hpp"
+#include "hlc_session_failed_reason.hpp"
 #include "iso_server.hpp"
 #include "log.hpp"
 #include "tools.hpp"
@@ -235,6 +236,7 @@ static enum v2g_event v2g_handle_apphandshake(struct v2g_connection* conn) {
 
     dlog(DLOG_LEVEL_INFO, "Handling SupportedAppProtocolReq");
     conn->ctx->current_v2g_msg = V2G_SUPPORTED_APP_PROTOCOL_MSG;
+    conn->ctx->last_in_sequence_v2g_msg = V2G_SUPPORTED_APP_PROTOCOL_MSG;
 
     if (decode_appHand_exiDocument(&conn->stream, &conn->handshake_req) != 0) {
         dlog(DLOG_LEVEL_ERROR, "decode_appHandExiDocument() failed");
@@ -364,6 +366,7 @@ int v2g_handle_connection(struct v2g_connection* conn) {
 
     enum v2g_protocol selected_protocol = V2G_UNKNOWN_PROTOCOL;
     v2g_ctx_init_charging_state(conn->ctx, false);
+    conn->v2g_msg_before_session_stop = V2G_UNKNOWN_MSG;
     conn->buffer = static_cast<uint8_t*>(malloc(DEFAULT_BUFFER_SIZE));
     if (!conn->buffer)
         return -1;
@@ -619,7 +622,7 @@ error_out:
         free(conn->buffer);
     }
 
-    conn->last_v2g_msg_at_disconnect = conn->ctx->current_v2g_msg;
+    conn->last_v2g_msg_at_disconnect = v2g_msg_at_disconnect(*conn->ctx);
     v2g_ctx_init_charging_state(conn->ctx, true);
 
     return rv ? -1 : 0;

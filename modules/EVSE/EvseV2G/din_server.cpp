@@ -114,6 +114,10 @@ v2g_event din_validate_response_code(din_responseCodeType* const din_response_co
      */
     response_code_tmp = din_validate_state(conn->ctx->state, conn->ctx->current_v2g_msg);
     *din_response_code = (response_code_tmp >= din_responseCodeType_FAILED) ? response_code_tmp : *din_response_code;
+    conn->ctx->current_v2g_msg_out_of_sequence = (response_code_tmp >= din_responseCodeType_FAILED);
+    if (not conn->ctx->current_v2g_msg_out_of_sequence) {
+        conn->ctx->last_in_sequence_v2g_msg = conn->ctx->current_v2g_msg;
+    }
 
     /* [V2G-DC-391]: check whether the session id matches the expected one of the active session */
     *din_response_code = ((conn->ctx->current_v2g_msg != V2G_SESSION_SETUP_MSG) &&
@@ -992,6 +996,8 @@ enum v2g_event states::handle_din_welding_detection(struct v2g_connection* conn)
 static enum v2g_event handle_din_session_stop(struct v2g_connection* conn) {
     struct din_SessionStopResType* res = &conn->exi_out.dinEXIDocument->V2G_Message.Body.SessionStopRes;
 
+    conn->v2g_msg_before_session_stop = conn->ctx->last_in_sequence_v2g_msg;
+
     /* Now fill the EVSE response message */
     res->ResponseCode = din_responseCodeType_OK; // [V2G-DC-388]
 
@@ -1017,6 +1023,7 @@ enum v2g_event din_handle_request(v2g_connection* conn) {
 
     /* extract session id */
     conn->ctx->ev_v2g_data.received_session_id = v2g_session_id_from_exi(false, exi_in);
+    conn->ctx->current_v2g_msg_out_of_sequence = false;
 
     /* init V2G structure (document, header, body) */
     init_din_exiDocument(exi_out);

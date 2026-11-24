@@ -109,6 +109,10 @@ static v2g_event iso_validate_response_code(iso2_responseCodeType* const v2g_res
         iso_validate_state(conn->ctx->state, conn->ctx->current_v2g_msg, conn->ctx->is_dc_charger); // [V2G2-538]
 
     *v2g_response_code = (response_code_tmp >= iso2_responseCodeType_FAILED) ? response_code_tmp : *v2g_response_code;
+    conn->ctx->current_v2g_msg_out_of_sequence = (response_code_tmp >= iso2_responseCodeType_FAILED);
+    if (not conn->ctx->current_v2g_msg_out_of_sequence) {
+        conn->ctx->last_in_sequence_v2g_msg = conn->ctx->current_v2g_msg;
+    }
 
     /* [V2G2-539] SequenceError always terminates the connection regardless of configuration.
      * For other FAILED codes, termination depends on the terminate_connection_on_failed_response setting. */
@@ -2224,6 +2228,7 @@ static enum v2g_event handle_iso_session_stop(struct v2g_connection* conn) {
     struct iso2_SessionStopReqType* req = &conn->exi_in.iso2EXIDocument->V2G_Message.Body.SessionStopReq;
     struct iso2_SessionStopResType* res = &conn->exi_out.iso2EXIDocument->V2G_Message.Body.SessionStopRes;
 
+    conn->v2g_msg_before_session_stop = conn->ctx->last_in_sequence_v2g_msg;
     res->ResponseCode = iso2_responseCodeType_OK;
 
     /* Check the current response code and check if no external error has occurred */
@@ -2280,6 +2285,7 @@ enum v2g_event iso_handle_request(v2g_connection* conn) {
 
     /* extract session id */
     conn->ctx->ev_v2g_data.received_session_id = v2g_session_id_from_exi(true, exi_in);
+    conn->ctx->current_v2g_msg_out_of_sequence = false;
 
     /* init V2G structure (document, header, body) */
     init_iso2_exiDocument(exi_out);
