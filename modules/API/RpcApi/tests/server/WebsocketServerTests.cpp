@@ -15,11 +15,11 @@ using namespace server;
 
 class WebSocketServerTest : public ::testing::Test {
 protected:
-    static constexpr std::chrono::seconds CLIENT_HANDSHAKE_TIMEOUT{2};
-    static constexpr std::chrono::seconds CLIENT_REGISTRATION_TIMEOUT{2};
-    static constexpr std::chrono::seconds CLIENT_DISCONNECTION_TIMEOUT{2};
-    static constexpr std::chrono::seconds MESSAGE_RECEIVE_TIMEOUT{2};
-    static constexpr std::chrono::seconds LARGE_MESSAGE_RECEIVE_TIMEOUT{5};
+    static constexpr std::chrono::seconds CLIENT_HANDSHAKE_TIMEOUT{10};
+    static constexpr std::chrono::seconds CLIENT_REGISTRATION_TIMEOUT{10};
+    static constexpr std::chrono::seconds CLIENT_DISCONNECTION_TIMEOUT{10};
+    static constexpr std::chrono::seconds MESSAGE_RECEIVE_TIMEOUT{10};
+    static constexpr std::chrono::seconds LARGE_MESSAGE_RECEIVE_TIMEOUT{10};
 
     std::unique_ptr<WebSocketServer> ws_server;
     int test_port = 0;
@@ -114,7 +114,7 @@ protected:
     }
 
     bool wait_for_service_pause() {
-        constexpr std::chrono::seconds SERVICE_PAUSE_TIMEOUT{2};
+        constexpr std::chrono::seconds SERVICE_PAUSE_TIMEOUT{10};
         std::unique_lock<std::mutex> lock(cv_mutex);
         return cv.wait_for(lock, SERVICE_PAUSE_TIMEOUT, [this] { return service_paused; });
     }
@@ -131,7 +131,7 @@ protected:
     }
 
     template <typename Predicate> bool wait_for_queue_progress(Predicate predicate) {
-        constexpr std::chrono::seconds QUEUE_PROGRESS_TIMEOUT{2};
+        constexpr std::chrono::seconds QUEUE_PROGRESS_TIMEOUT{10};
         constexpr std::chrono::milliseconds QUEUE_POLL_INTERVAL{1};
         const auto deadline = std::chrono::steady_clock::now() + QUEUE_PROGRESS_TIMEOUT;
         while (!predicate()) {

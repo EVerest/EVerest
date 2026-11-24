@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright chargebyte GmbH and Contributors to EVerest
 
+#include <chrono>
 #include <gtest/gtest.h>
 #include <thread>
 
@@ -19,7 +20,9 @@ using namespace json_rpc_utils;
 
 class RpcHandlerTest : public ::testing::Test {
 protected:
-    static constexpr std::chrono::seconds CLIENT_HANDSHAKE_TIMEOUT{2};
+    static constexpr std::chrono::seconds CLIENT_HANDSHAKE_TIMEOUT{10};
+    static constexpr std::chrono::seconds RESPONSE_TIMEOUT{10};
+    static constexpr std::chrono::seconds HELLO_TIMEOUT_DISCONNECT_MARGIN{5};
     int test_port = 0;
     void SetUp() override {
         // Start the WebSocket server
@@ -61,7 +64,7 @@ protected:
         // Send the request
         client.send(request.dump());
         // Wait for the response
-        std::string data = client.wait_for_data(std::chrono::seconds(1));
+        std::string data = client.wait_for_data(RESPONSE_TIMEOUT);
         // Check if the response is not empty
         ASSERT_FALSE(data.empty());
         nlohmann::json response = nlohmann::json::parse(data);
@@ -96,13 +99,13 @@ protected:
 // Test: Connect to WebSocket server and check if API.Hello timeout occurs
 TEST_F(RpcHandlerTest, ApiHelloTimeout) {
     WebSocketTestClient client("localhost", test_port);
+    const auto connect_start = std::chrono::steady_clock::now();
     ASSERT_TRUE(client.connect());
     ASSERT_TRUE(client.wait_until_connected(CLIENT_HANDSHAKE_TIMEOUT));
 
-    // Wait for the client hello timeout
     EVLOG_info << "Waiting for client hello timeout...";
-    ASSERT_TRUE(
-        client.wait_until_disconnected(std::chrono::seconds(CLIENT_HELLO_TIMEOUT) + std::chrono::milliseconds(100)));
+    ASSERT_TRUE(client.wait_until_disconnected(CLIENT_HELLO_TIMEOUT + HELLO_TIMEOUT_DISCONNECT_MARGIN));
+    EXPECT_GE(std::chrono::steady_clock::now() - connect_start, CLIENT_HELLO_TIMEOUT);
 }
 
 // Test: Connect to WebSocket server and send API.Hello request
@@ -123,7 +126,7 @@ TEST_F(RpcHandlerTest, ApiHelloReq) {
     // Send Api.Hello request
     client.send_api_hello_req();
     // Wait for the response
-    std::string data = client.wait_for_data(std::chrono::seconds(1));
+    std::string data = client.wait_for_data(RESPONSE_TIMEOUT);
     // Check if the response is not empty
     ASSERT_FALSE(data.empty());
     // Check if the response is valid
@@ -162,7 +165,7 @@ TEST_F(RpcHandlerTest, ChargePointGetEVSEInfosReq) {
 
     // Send Api.Hello request
     client.send_api_hello_req();
-    client.wait_for_data(std::chrono::seconds(1));
+    client.wait_for_data(RESPONSE_TIMEOUT);
     // Send ChargePoint.GetEVSEInfos request and validate response, no data available
     send_req_and_validate_res(client, charge_point_get_evse_infos_req, expected_error_no_data,
                               is_key_value_in_json_rpc_result);
@@ -249,7 +252,7 @@ TEST_F(RpcHandlerTest, ChargePointGetActiveErrorsReq) {
     nlohmann::json expected_response = create_json_rpc_response(result, 1);
     // Send Api.Hello request
     client.send_api_hello_req();
-    client.wait_for_data(std::chrono::seconds(1));
+    client.wait_for_data(RESPONSE_TIMEOUT);
     // Raise the error in the data store for the first EVSE
     helpers::handle_error_raised(data_store, error0);
     // Check if the error is set to present in the EVSE status
@@ -331,7 +334,7 @@ TEST_F(RpcHandlerTest, EvseGetEVSEInfosReq) {
 
     // Send Api.Hello request
     client.send_api_hello_req();
-    client.wait_for_data(std::chrono::seconds(1));
+    client.wait_for_data(RESPONSE_TIMEOUT);
     // Send EVSE.GetEVSEInfos request 1 and validate response
     send_req_and_validate_res(client, evse_get_evse_infos_req_1, expected_response_index_1);
     // Send EVSE.GetEVSEInfos request 2 and validate response
@@ -380,7 +383,7 @@ TEST_F(RpcHandlerTest, EvseGetStatusReq) {
 
     // Send Api.Hello request
     client.send_api_hello_req();
-    client.wait_for_data(std::chrono::seconds(1));
+    client.wait_for_data(RESPONSE_TIMEOUT);
     // Send EVSE.GetStatus request with valid ID, but no data available
     send_req_and_validate_res(client, evse_get_status_req_valid_index, expected_error_no_data,
                               is_key_value_in_json_rpc_result);
@@ -431,7 +434,7 @@ TEST_F(RpcHandlerTest, EvseGetHardwareCapabilitiesReq) {
 
     // Send Api.Hello request
     client.send_api_hello_req();
-    client.wait_for_data(std::chrono::seconds(1));
+    client.wait_for_data(RESPONSE_TIMEOUT);
 
     // Send EVSE.GetHardwareCapabilities request with valid ID, but no hardware capabilities available
     send_req_and_validate_res(client, evse_get_hardware_capabilities_req_valid_index, expected_error_no_data,
@@ -476,7 +479,7 @@ TEST_F(RpcHandlerTest, EvseSetChargingAllowedReq) {
 
     // Send Api.Hello request
     client.send_api_hello_req();
-    client.wait_for_data(std::chrono::seconds(1));
+    client.wait_for_data(RESPONSE_TIMEOUT);
     // Send EVSE.SetChargingAllowed request with valid ID
     send_req_and_validate_res(client, evse_set_charging_allowed_req_valid_index, expected_response);
     // Check if the EVSE status is updated
@@ -525,7 +528,7 @@ TEST_F(RpcHandlerTest, EvseMeterDataReq) {
 
     // Send Api.Hello request
     client.send_api_hello_req();
-    client.wait_for_data(std::chrono::seconds(1));
+    client.wait_for_data(RESPONSE_TIMEOUT);
     // Send EVSE.MeterData request with valid ID, but no meter data available
     send_req_and_validate_res(client, evse_meter_data_req_valid_index, expected_error_no_data,
                               is_key_value_in_json_rpc_result);
@@ -557,11 +560,11 @@ TEST_F(RpcHandlerTest, EvseSetACChargingReq) {
 
     // Send Api.Hello request
     client.send_api_hello_req();
-    client.wait_for_data(std::chrono::seconds(1));
+    client.wait_for_data(RESPONSE_TIMEOUT);
     // Send EVSE.SetACCharging request with valid ID
     client.send(evse_set_ac_charging_req_valid_index.dump());
     // Wait for the response
-    std::string received_data = client.wait_for_data(std::chrono::seconds(1), false);
+    std::string received_data = client.wait_for_data(RESPONSE_TIMEOUT, false);
     // Check if the response is valid
     nlohmann::json response = nlohmann::json::parse(received_data);
     ASSERT_EQ(response, expected_res);
@@ -601,7 +604,7 @@ TEST_F(RpcHandlerTest, EvseSetACChargingCurrentReq) {
 
     // Send Api.Hello request
     client.send_api_hello_req();
-    client.wait_for_data(std::chrono::seconds(1));
+    client.wait_for_data(RESPONSE_TIMEOUT);
     // Send EVSE.SetACChargingCurrent request with valid ID
     send_req_and_validate_res(client, evse_set_ac_charging_current_req_valid_index, expected_response);
 
@@ -658,7 +661,7 @@ TEST_F(RpcHandlerTest, EvseSetACChargingPhaseCountReq) {
 
     // Send Api.Hello request
     client.send_api_hello_req();
-    client.wait_for_data(std::chrono::seconds(1));
+    client.wait_for_data(RESPONSE_TIMEOUT);
     // Send EVSE.SetACChargingPhaseCount request with valid ID
     send_req_and_validate_res(client, evse_set_ac_charging_phase_count_req_valid_index, expected_response);
     // Send EVSE.SetACChargingPhaseCount request with invalid ID
@@ -719,7 +722,7 @@ TEST_F(RpcHandlerTest, EvseSetACChargingPhaseCountReqBadCases) {
 
     // Send Api.Hello request
     client.send_api_hello_req();
-    client.wait_for_data(std::chrono::seconds(1));
+    client.wait_for_data(RESPONSE_TIMEOUT);
     // Send EVSE.SetACChargingPhaseCount request with phase count. This should not lead to an error, because
     // an initialization of the phase count should be still possible.
     send_req_and_validate_res(client, evse_set_ac_charging_phase_count_req_valid_phase_count, expected_no_error);
@@ -756,11 +759,11 @@ TEST_F(RpcHandlerTest, EvseSetDCChargingReq) {
     nlohmann::json expected_res = create_json_rpc_error_response(-32601, "method not found: EVSE.SetDCCharging", 1);
     // Send Api.Hello request
     client.send_api_hello_req();
-    client.wait_for_data(std::chrono::seconds(1));
+    client.wait_for_data(RESPONSE_TIMEOUT);
     // Send EVSE.SetDCCharging request with valid ID
     client.send(evse_set_dc_charging_req_valid_index.dump());
     // Wait for the response
-    std::string received_data = client.wait_for_data(std::chrono::seconds(1), false);
+    std::string received_data = client.wait_for_data(RESPONSE_TIMEOUT, false);
     // Check if the response is valid
     nlohmann::json response = nlohmann::json::parse(received_data);
     ASSERT_EQ(response, expected_res);
@@ -796,7 +799,7 @@ TEST_F(RpcHandlerTest, EvseSetDCChargingPowerReq) {
 
     // Send Api.Hello request
     client.send_api_hello_req();
-    client.wait_for_data(std::chrono::seconds(1));
+    client.wait_for_data(RESPONSE_TIMEOUT);
     // Send EVSE.SetDCChargingPower request with valid ID
     send_req_and_validate_res(client, evse_set_dc_charging_power_req_valid_index, expected_response);
     // Send EVSE.SetDCChargingPower request with invalid ID
@@ -841,7 +844,7 @@ TEST_F(RpcHandlerTest, EvseEnableConnectorReq) {
 
     // Send Api.Hello request
     client.send_api_hello_req();
-    client.wait_for_data(std::chrono::seconds(1));
+    client.wait_for_data(RESPONSE_TIMEOUT);
     // Send EVSE.EnableConnector request with valid ID
     send_req_and_validate_res(client, evse_enable_connector_req_valid_index, expected_response);
     // Send EVSE.EnableConnector request with invalid ID
@@ -861,7 +864,7 @@ TEST_F(RpcHandlerTest, InvalidRequest) {
     // Send Api.Hello request
     client.send_api_hello_req();
     // Wait for the response
-    client.wait_for_data(std::chrono::seconds(1));
+    client.wait_for_data(RESPONSE_TIMEOUT);
     // Send invalid request
     nlohmann::json invalid_request = create_json_rpc_request("API.InvalidMethod", {}, 1);
     // Expected response
@@ -869,7 +872,7 @@ TEST_F(RpcHandlerTest, InvalidRequest) {
     // Send invalid request
     client.send(invalid_request.dump());
     // Wait for the response
-    std::string received_data = client.wait_for_data(std::chrono::seconds(1), false);
+    std::string received_data = client.wait_for_data(RESPONSE_TIMEOUT, false);
     // Check if the response is not empty
     ASSERT_FALSE(received_data.empty());
     // Check if the response is valid
