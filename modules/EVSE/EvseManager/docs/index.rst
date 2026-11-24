@@ -127,14 +127,12 @@ Once the lock reports ``Locked``, the session continues as if the authorization
 had just arrived. If the lock does not report ``Locked`` within the timeout, the
 EvseManager raises ``evse_manager/ConnectorLockConfirmationTimeout``. Like every
 blocking error (see `Error Handling`_), it makes the EvseManager Inoperative,
-which ends a running session with an error shutdown. If a session was
-authorized and waiting for the lock, the EvseManager also:
-
-* drops the authorization and publishes a ``Deauthorized`` session event, so
-  no transaction is started and the token is released,
-* tells the ISO stack that authorization failed (``AuthorizationStatus``
-  ``Timeout`` with a valid certificate, so neither the token nor the contract
-  certificate is blamed).
+which ends a running session with an error shutdown. A session waiting in
+``WaitingForAuthentication`` moves to ``Finished``, which also terminates the
+data link and with it an ISO 15118 session waiting for authorization. If a
+session was authorized and waiting for the lock, the EvseManager also drops the
+authorization and publishes a ``Deauthorized`` session event, so no transaction
+is started and the token is released.
 
 The error clears on unplug. Outside a session, for example a captive cable
 locked without an EV plugged in, it also clears when the lock reports

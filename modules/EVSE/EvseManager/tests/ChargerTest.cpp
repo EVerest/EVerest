@@ -1897,7 +1897,6 @@ struct ChargerConnectorLockTest : public ChargerDlinkErrorTest {
     using LockState = types::connector_lock::LockState;
 
     int hlc_plug_in_timeouts{0};
-    int hlc_connector_lock_timeouts{0};
     int deauthorized_events{0};
 
     void SetUp() override {
@@ -1905,7 +1904,6 @@ struct ChargerConnectorLockTest : public ChargerDlinkErrorTest {
         connector_lock_confirmation_timeouts_raised = 0;
         connector_lock_confirmation_timeouts_cleared = 0;
         charger->signal_hlc_plug_in_timeout.connect([this]() { ++hlc_plug_in_timeouts; });
-        charger->signal_hlc_connector_lock_timeout.connect([this]() { ++hlc_connector_lock_timeouts; });
         charger->signal_simple_event.connect([this](types::evse_manager::SessionEventEnum e) {
             if (e == types::evse_manager::SessionEventEnum::Deauthorized) {
                 ++deauthorized_events;
@@ -2050,7 +2048,6 @@ TEST_F(ChargerConnectorLockTest, TimeoutEndsTheAuthorizationOnce) {
     authorize();
 
     EXPECT_EQ(connector_lock_confirmation_timeouts_raised, 1);
-    EXPECT_EQ(hlc_connector_lock_timeouts, 1);
     EXPECT_EQ(hlc_plug_in_timeouts, 0);
     EXPECT_EQ(deauthorized_events, 1);
     EXPECT_FALSE(charger->get_shared_context().flag_authorized);
@@ -2078,7 +2075,6 @@ TEST_F(ChargerConnectorLockTest, LockCommandTimesOutWithoutAuthorization) {
 
     EXPECT_EQ(connector_lock_confirmation_timeouts_raised, 1);
     EXPECT_EQ(deauthorized_events, 0);
-    EXPECT_EQ(hlc_connector_lock_timeouts, 0);
 }
 
 TEST_F(ChargerConnectorLockTest, SecondSessionTimesOutWithoutAuthorization) {
@@ -2154,7 +2150,6 @@ TEST_F(ChargerConnectorLockTest, TimeoutOutsideWaitingForAuthenticationEndsTheAu
     EXPECT_EQ(connector_lock_confirmation_timeouts_raised, 1);
     EXPECT_EQ(deauthorized_events, 1);
     EXPECT_FALSE(ctx.flag_authorized);
-    EXPECT_EQ(hlc_connector_lock_timeouts, 0);
 }
 
 TEST_F(ChargerConnectorLockTest, TimeoutBeforePlugInKeepsTheAuthorization) {

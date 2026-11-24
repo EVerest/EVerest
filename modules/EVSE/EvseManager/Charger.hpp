@@ -198,7 +198,6 @@ public:
     sigslot::signal<> signal_hlc_resume_charging;
     sigslot::signal<types::iso15118::EvseError> signal_hlc_error;
     sigslot::signal<> signal_hlc_plug_in_timeout;
-    sigslot::signal<> signal_hlc_connector_lock_timeout;
 
     sigslot::signal<> signal_hlc_no_energy_available;
 

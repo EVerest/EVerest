@@ -2055,14 +2055,11 @@ void Charger::handle_connector_lock_confirmation() {
         return;
     }
     // Dropping the authorization lets the lock open again (if it only locks when authorized). The session itself
-    // ends through the raised error, so stop_session() is not called here.
+    // ends through the raised error, which also terminates the data link of an ISO 15118 session, so stop_session()
+    // is not called here.
     signal_simple_event(types::evse_manager::SessionEventEnum::Deauthorized);
     shared_context.flag_authorized = false;
     shared_context.authorized_pnc = false;
-    // Only WaitingForAuthentication can have an ISO stack waiting in its authorization loop.
-    if (shared_context.current_state == EvseState::WaitingForAuthentication) {
-        signal_hlc_connector_lock_timeout();
-    }
 }
 
 bool Charger::get_authorized_pnc_ready_for_hlc() {

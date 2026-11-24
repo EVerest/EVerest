@@ -533,11 +533,6 @@ void EvseManager::ready() {
             r_hlc[0]->call_authorization_response(types::authorization::AuthorizationStatus::Unknown,
                                                   types::authorization::CertificateStatus::NoCertificateAvailable);
         });
-        // The token and a PnC contract were fine; only the lock was not confirmed.
-        charger->signal_hlc_connector_lock_timeout.connect([this] {
-            r_hlc[0]->call_authorization_response(types::authorization::AuthorizationStatus::Timeout,
-                                                  types::authorization::CertificateStatus::Accepted);
-        });
 
         // Charger needs to inform ISO stack about emergency stop
         charger->signal_hlc_error.connect([this](types::iso15118::EvseError error) {
