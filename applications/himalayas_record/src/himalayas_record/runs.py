@@ -1,7 +1,6 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 # Copyright Pionix GmbH and Contributors to EVerest
-"""Pick workflow runs, build outcomes and build targets from `gh api` JSON."""
 
 import argparse
 import json
@@ -71,7 +70,7 @@ def _platform_toolchain(value: str) -> tuple[str, str]:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(description="Pick workflow runs, build outcomes and build targets from `gh api` JSON.")
     commands = parser.add_subparsers(dest="command", required=True)
     pick = commands.add_parser("pick-run", help="print the id of the newest run of a SHA and event")
     pick.add_argument("--sha", required=True)

@@ -1,7 +1,6 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 # Copyright Pionix GmbH and Contributors to EVerest
-"""Convert a JUnit XML report into the test entries of a CTRF record."""
 
 import hashlib
 import math
