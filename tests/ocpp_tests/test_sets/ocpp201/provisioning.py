@@ -354,7 +354,7 @@ async def test_B08_FR_17(
     """
     B08.FR.17
     Charging Station receives a GetReportRequest with more ComponentVariableType elements than allowed by ItemsPerMessageGetReport
-    The Charging Station MAY respond with a CALLERROR(OccurenceConstraintViolation)
+    The Charging Station MAY respond with a CALLERROR(OccurenceConstraintViolation), spelt OccurrenceConstraintViolation in OCPP-J
 
     Setup set ItemsPerMessageGetReport to 2
     """
@@ -405,7 +405,7 @@ async def test_B08_FR_17(
         ],
     )
     assert await wait_for_callerror_and_validate(
-        test_utility, charge_point_v201, "OccurenceConstraintViolation"
+        test_utility, charge_point_v201, "OccurrenceConstraintViolation"
     )
 
 
@@ -1177,7 +1177,7 @@ async def test_B06_09_16(
     assert get_variables_result.attribute_status == GetVariableStatusEnumType.rejected
 
     # Charging Station receives a GetVariablesRequest with more GetVariableData elements than allowed by ItemsPerMessageGetVariables
-    # The Charging Station MAY respond with a CALLERROR(OccurenceConstraintViolation)
+    # The Charging Station MAY respond with a CALLERROR(OccurenceConstraintViolation), spelt OccurrenceConstraintViolation in OCPP-J
 
     # get the value of ItemsPerMessage
     r: call_result201.GetVariables = await charge_point_v201.get_variables_req(
@@ -1229,7 +1229,7 @@ async def test_B06_09_16(
         ]
     )
     assert await wait_for_callerror_and_validate(
-        test_utility, charge_point_v201, "OccurenceConstraintViolation"
+        test_utility, charge_point_v201, "OccurrenceConstraintViolation"
     )
 
 

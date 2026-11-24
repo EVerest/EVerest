@@ -87,13 +87,16 @@ connection attempt until the request times out, so the charge point never reache
 With the default ``false`` no request is sent and the connection is established directly (``IFace`` handling
 included).
 
+.. _handwritten_ocppmulti_device-model-component-configs:
+
 Device model configuration via component configs
 =================================================
 
-The device model is the primary entry point for configuring the OCPP stack of this module. It is built from component
-config JSON files located in the directory referenced by ``DeviceModelConfigPath`` (a relative path is resolved
+The :term:`device model` is the primary entry point for configuring the OCPP stack of this module. It is built from
+:term:`component config` JSON files located in the directory referenced by ``DeviceModelConfigPath`` (a relative path is resolved
 against the ``OCPP201`` module's share directory, i.e. ``<prefix>/share/everest/modules/OCPP201/``, where the shipped
-component configs are installed). The directory contains two subdirectories:
+component configs are installed). The terms used for the device model are defined in the
+:ref:`reference-ocpp-device-model-glossary`. The directory contains two subdirectories:
 
 * ``standardized``: components and variables standardized by the OCPP specification. Usually untouched by
   integrators.
@@ -223,9 +226,33 @@ and ``IFace`` binds the websocket as configured.
 Who contributes to the device model
 ===================================
 
-The component configuration is one of four contributors. libocpp, the EVerest modules this module is connected to
-(``EVSE``, ``Connector``, ``ConnectedEV``, the DER controllers and others) and the configuration service (one
-component per EVerest module whose configuration the OCPP module may read) add to the device model at every start.
+The :term:`component configuration` is one of five contributors, which all add to the device model at every start:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 25 45 30
+
+   * - Contributor
+     - What it adds
+     - When
+   * - :term:`component configuration`
+     - The components and variables the integrator defines in the JSON files, with their characteristics, attributes
+       and monitors
+     - Read at every start
+   * - libocpp
+     - The availability states of the station, its EVSEs and connectors
+     - Computed at runtime
+   * - EVerest modules this module is connected to
+     - The components EVerest provides: ``EVSE``, ``Connector``, ``ConnectedEV``, the DER controllers and others
+     - Reported at startup and whenever a value changes
+   * - Configuration service
+     - One component per EVerest module whose configuration the OCPP module may read
+     - Added at every start
+   * - :term:`External owners <external owner>`
+     - The components and variables that the modules connected to the ``device_model`` requirement register, such as
+       the :ref:`ocpp_device_model_API <everest_modules_handwritten_ocpp_device_model_API>`
+     - Registered at startup and at runtime, for as long as the owner holds them
+
 All of it is part of the device model on both protocol paths and reachable through the ``ocpp`` interface; an OCPP
 1.6 CSMS reaches only the keys that have a device model mapping. In OCPP 1.6 mode, ``monitor_variables`` on the
 ``ocpp`` interface does not report the values the module reports at runtime, such as ``Power``: the 1.6 path reports

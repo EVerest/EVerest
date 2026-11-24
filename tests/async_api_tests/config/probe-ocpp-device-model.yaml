@@ -1,0 +1,14 @@
+active_modules:
+  device_model_api:
+    module: ocpp_device_model_API
+    config_module:
+      cfg_communication_check_to_s: 0
+      cfg_request_reply_to_s: 1
+      cfg_expected_owners: "meter_1, meter_2"
+      cfg_expected_owners_timeout_s: 2
+  probe:
+    module: ProbeModule
+    connections:
+      device_model:
+        - module_id: device_model_api
+          implementation_id: main

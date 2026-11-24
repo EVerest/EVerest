@@ -17,7 +17,9 @@
 #include <ocpp/v2/functional_blocks/diagnostics.hpp>
 #include <ocpp/v2/functional_blocks/functional_block_context.hpp>
 #include <ocpp/v2/messages/Authorize.hpp>
+#include <ocpp/v2/messages/GetMonitoringReport.hpp>
 #include <ocpp/v2/messages/NotifyEvent.hpp>
+#include <ocpp/v2/messages/SetVariableMonitoring.hpp>
 
 using namespace ocpp::v2;
 using ::testing::_;
@@ -106,5 +108,62 @@ TEST_P(DiagnosticsSeverityReportedTest, NotifyEventReportsSeverity) {
 }
 
 INSTANTIATE_TEST_SUITE_P(Ocpp21, DiagnosticsSeverityReportedTest, ::testing::Values(ocpp::OcppProtocolVersion::v21));
+
+using DiagnosticsItemsPerMessageTest = DiagnosticsTest;
+
+void set_limit(DeviceModel& device_model, const RequiredComponentVariable& limit, const std::string& value) {
+    ASSERT_EQ(
+        device_model.set_value(limit.component, limit.variable.value(), AttributeEnum::Actual, value, "test", true),
+        SetVariableStatusEnum::Accepted);
+}
+
+template <typename Request>
+ocpp::EnhancedMessage<MessageType> make_message(const Request& request, const MessageType type) {
+    ocpp::Call<Request> call(request);
+    ocpp::EnhancedMessage<MessageType> enhanced_message;
+    enhanced_message.messageType = type;
+    enhanced_message.message = call;
+    enhanced_message.call_message = enhanced_message.message;
+    enhanced_message.message_size = enhanced_message.message.dump().size();
+    return enhanced_message;
+}
+
+// N04.FR.09, with the error code of OCPP-J
+TEST_P(DiagnosticsItemsPerMessageTest, SetVariableMonitoringOverItemsPerMessageIsAnsweredWithCallError) {
+    set_limit(*dm_helper.get_device_model(), ControllerComponentVariables::ItemsPerMessageSetVariableMonitoring, "1");
+    SetMonitoringData data;
+    data.value = 1;
+    data.type = MonitorEnum::Delta;
+    data.severity = 5;
+    data.component = ControllerComponentVariables::OrganizationName.component;
+    data.variable = ControllerComponentVariables::OrganizationName.variable.value();
+    SetVariableMonitoringRequest request;
+    request.setMonitoringData = {data, data};
+    EXPECT_CALL(mock_dispatcher, dispatch_call_result(_)).Times(0);
+    EXPECT_CALL(mock_dispatcher, dispatch_call_error(_)).WillOnce([](const json& call_error) {
+        EXPECT_EQ(call_error.at(2), "OccurrenceConstraintViolation");
+    });
+
+    diagnostics.handle_message(make_message(request, MessageType::SetVariableMonitoring));
+}
+
+// N02.FR.07, answered like B08.FR.17 with the error code of OCPP-J
+TEST_P(DiagnosticsItemsPerMessageTest, GetMonitoringReportOverItemsPerMessageIsAnsweredWithCallError) {
+    set_limit(*dm_helper.get_device_model(), ControllerComponentVariables::ItemsPerMessageGetReport, "1");
+    ComponentVariable component_variable;
+    component_variable.component = ControllerComponentVariables::OrganizationName.component;
+    component_variable.variable = ControllerComponentVariables::OrganizationName.variable;
+    GetMonitoringReportRequest request;
+    request.requestId = 1;
+    request.componentVariable = std::vector<ComponentVariable>{component_variable, component_variable};
+    EXPECT_CALL(mock_dispatcher, dispatch_call_result(_)).Times(0);
+    EXPECT_CALL(mock_dispatcher, dispatch_call_error(_)).WillOnce([](const json& call_error) {
+        EXPECT_EQ(call_error.at(2), "OccurrenceConstraintViolation");
+    });
+
+    diagnostics.handle_message(make_message(request, MessageType::GetMonitoringReport));
+}
+
+INSTANTIATE_TEST_SUITE_P(Ocpp201, DiagnosticsItemsPerMessageTest, ::testing::Values(ocpp::OcppProtocolVersion::v201));
 
 } // namespace

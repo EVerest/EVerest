@@ -87,6 +87,13 @@ any experimental option it was given.
        PersistentSessionStorage module (``get_sessions``, ``get_session``,
        ``clear_sessions``). Channels, operations and message payloads may change
        without further notice.
+   * - :ref:`ocpp_device_model_API module <everest_modules_ocpp_device_model_API>`
+       and its ``ocpp_device_model_API`` AsyncAPI specification
+     - 2027.04.0
+     - Lets an application outside EVerest add components and variables to
+       the OCPP device model, see :ref:`howto-ocpp-device-model`. Channels,
+       operations, message payloads and configuration parameters may change
+       without further notice. The module logs a warning at startup.
    * - ``entrypoint_API`` AsyncAPI specification (``everest_api/discover``,
        ``everest_api/query-modules/{api_type}``, ``everest_api/ready_beacon``),
        implemented by every EVerestAPI module

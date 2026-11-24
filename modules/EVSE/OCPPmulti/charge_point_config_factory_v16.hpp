@@ -16,6 +16,8 @@
 #include <ocpp/v2/device_model_storage_interface.hpp>
 #include <ocpp/v2/ocpp16_key_mappings.hpp>
 
+#include "v16_key_binder.hpp"
+
 namespace ocpp_module_common::device_model {
 class EverestDeviceModel;
 } // namespace ocpp_module_common::device_model
@@ -48,6 +50,9 @@ struct Ocpp16DeviceModelParams {
 /// \brief The device-model-backed configuration plus its registrations with the device model.
 struct config_factory_result_t {
     std::unique_ptr<ocpp::v16::ChargePointConfigurationDeviceModel> configuration;
+    /// \brief Maps the OCPP 1.6 keys of the external owners into the key mapping of \p configuration, for
+    /// \p registrations
+    std::unique_ptr<ocpp_multi::V16KeyBinder> key_binder;
     /// \brief The registrations with the device model of \p configuration. End them before \p configuration is
     /// destroyed; as the last member they end first when this result is destroyed.
     ocpp_module_common::device_model::DeviceModelRegistrations registrations;
@@ -75,6 +80,7 @@ config_factory_result_t
 create_charge_point_configuration(const std::filesystem::path& ocpp_share_path, const Ocpp16DeviceModelParams& config,
                                   std::int32_t n_evse, const std::filesystem::path& everest_device_model_database_path,
                                   ocpp_module_common::device_model::EverestDeviceModel* everest_device_model = nullptr,
-                                  ocpp_module_common::device_model::ConfigServiceAccess* config_service = nullptr);
+                                  ocpp_module_common::device_model::ConfigServiceAccess* config_service = nullptr,
+                                  ocpp_module_common::device_model::ExternalOwners* external_owners = nullptr);
 
 } // namespace module::config_factory_v16

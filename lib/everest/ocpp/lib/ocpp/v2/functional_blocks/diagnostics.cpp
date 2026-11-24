@@ -303,7 +303,7 @@ void Diagnostics::handle_set_variable_monitoring_req(const EnhancedMessage<Messa
 
     // N04.FR.09
     if (msg.setMonitoringData.size() > max_items_per_message) {
-        const auto call_error = CallError(call.uniqueId, "OccurenceConstraintViolation", "", json({}));
+        const auto call_error = CallError(call.uniqueId, "OccurrenceConstraintViolation", "", json({}));
         this->context.message_dispatcher.dispatch_call_error(call_error);
         return;
     }
@@ -334,7 +334,7 @@ void Diagnostics::handle_get_monitoring_report_req(Call<GetMonitoringReportReque
 
     // N02.FR.07
     if (component_variables.size() > max_variable_components_per_message) {
-        const auto call_error = CallError(call.uniqueId, "OccurenceConstraintViolation", "", json({}));
+        const auto call_error = CallError(call.uniqueId, "OccurrenceConstraintViolation", "", json({}));
         this->context.message_dispatcher.dispatch_call_error(call_error);
         return;
     }

@@ -11,8 +11,10 @@
 #include <ocpp/v16/variable_resolver.hpp>
 #include <ocpp/v2/ocpp16_key_mappings.hpp>
 
+#include <functional>
 #include <mutex>
 #include <set>
+#include <string>
 #include <vector>
 
 namespace ocpp {
@@ -29,11 +31,23 @@ class ChargePointConfigurationDeviceModel : private ChargePointConfigurationBase
                                             public ChargePointConfigurationConnectivity {
 public:
     using SetResult = v2::SetVariableStatusEnum;
+    /// \brief Whether the variables that \p owner registers at runtime can be given an OCPP 1.6 key
+    using RuntimeTargetOwner = std::function<bool(const std::string& owner)>;
 
 protected:
     std::unique_ptr<v2::DeviceModelVariablesInterface> storage;
     VariableResolver resolver;
 
+private:
+    ocpp::v2::Ocpp16KeyMappings custom_key_mappings;
+    RuntimeTargetOwner runtime_target_owner;
+
+    bool is_mapping_target_owner(const std::string& owner) const;
+    /// \brief Whether the variable is in the device model and its owner allows an OCPP 1.6 key on it
+    bool is_mapping_target(const v2::Component& component, const v2::Variable& variable) const;
+    ocpp::v2::Ocpp16KeyMappings usable_key_mappings() const;
+
+protected:
     SetResult setInternalAllowChargingProfileWithoutStartSchedule(const std::string& value);
     SetResult setInternalCentralSystemURI(const std::string& value);
     SetResult setInternalCompositeScheduleDefaultLimitAmps(const std::string& value);
@@ -109,11 +123,26 @@ protected:
     std::string calculateSupportedMeasurands();
 
 public:
+    /// \brief When the key mapping, the supported feature profiles and the measurands are read from the device model
+    enum class Load {
+        OnConstruction,
+        Deferred, ///< by load(), so that values registered with the device model in between are included
+    };
+
+    /// \param custom_key_mappings The entries apply to targets that the component configuration defines and, with
+    /// \p runtime_target_owner, to targets of the owners it accepts. Such an owner may register the target of a custom
+    /// key after load(); the target of a built-in key it must register before.
     explicit ChargePointConfigurationDeviceModel(
         const std::string_view& ocpp_main_path,
         std::unique_ptr<v2::DeviceModelVariablesInterface> device_model_interface,
-        ocpp::v2::Ocpp16KeyMappings custom_key_mappings = {});
+        ocpp::v2::Ocpp16KeyMappings custom_key_mappings = {}, Load load_mode = Load::OnConstruction,
+        RuntimeTargetOwner runtime_target_owner = {});
     virtual ~ChargePointConfigurationDeviceModel() = default;
+
+    /// \brief Applies the usable entries of the key mapping and reads the supported feature profiles and measurands
+    /// from the device model, replacing those read before. Call it before any other member when constructed with
+    /// Load::Deferred.
+    void load();
 
     /// \brief The device model backing this configuration.
     v2::DeviceModelVariablesInterface& get_device_model() {
@@ -123,6 +152,11 @@ public:
     /// \brief The key mapping in effect, without the entries whose target cannot hold the key's value (see
     /// v2::usable_key_mappings).
     const VariableResolver& get_variable_resolver() const {
+        return resolver;
+    }
+
+    /// \brief The key mapping, to add and remove the keys of device model owners. load() keeps them.
+    VariableResolver& get_variable_resolver() {
         return resolver;
     }
 

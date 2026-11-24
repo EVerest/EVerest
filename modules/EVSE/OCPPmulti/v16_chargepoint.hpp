@@ -6,6 +6,7 @@
 #include "generic_chargepoint_interface.hpp"
 #include "ocpp/v2/ocpp_types.hpp"
 #include "offered_limits.hpp"
+#include "v16_key_binder.hpp"
 #include "v16_variable_access.hpp"
 
 #include <everest/conversions/ocpp/evse_security_ocpp.hpp>
@@ -13,9 +14,12 @@
 #include <everest/util/async/monitor.hpp>
 #include <ocpp/v16/charge_point_configuration_devicemodel.hpp>
 #include <ocpp/v16/variable_resolver.hpp>
+#include <ocpp/v2/comparators.hpp>
 
 #include <functional>
 #include <optional>
+#include <set>
+#include <utility>
 
 namespace ocpp_multi {
 
@@ -24,6 +28,8 @@ private:
     std::shared_ptr<EvseSecurity> m_evse_security;
     // declared before m_variable_access, which holds a reference to the configuration's resolver
     std::unique_ptr<ocpp::v16::ChargePointConfigurationDeviceModel> m_charge_point_configuration;
+    // used by m_device_model_registrations, maps into the resolver of m_charge_point_configuration
+    std::unique_ptr<V16KeyBinder> m_key_binder;
     // With the device model of m_charge_point_configuration: end_device_model_registrations() ends them before that
     // device model is replaced or destroyed
     ocpp_module_common::device_model::DeviceModelRegistrations m_device_model_registrations;
@@ -33,6 +39,8 @@ private:
 
     // written from command threads (register_variable_listener), read from libocpp callback thread
     everest::lib::util::monitor<listener_t> m_variable_listener;
+    // the variables passed to register_variable_listener, whose OCPP 1.6 key may be mapped only later
+    everest::lib::util::monitor<std::set<std::pair<ocpp::v2::Component, ocpp::v2::Variable>>> m_monitored_variables;
     ConnectorStructureV16 m_connector_mapping;
     OfferedLimitsCache m_offered_limits;
 
@@ -74,7 +82,8 @@ private:
     void configure_callbacks();
     void configure_data_model(const config_info_t& config,
                               ocpp_module_common::device_model::EverestDeviceModel* everest_device_model,
-                              ocpp_module_common::device_model::ConfigServiceAccess* config_service);
+                              ocpp_module_common::device_model::ConfigServiceAccess* config_service,
+                              ocpp_module_common::device_model::ExternalOwners* external_owners);
     std::optional<evse_connector_t> evse_from_ocpp_connector(std::int32_t ocpp_connector_id) const;
 
     void cb_boot_notification_response(const ocpp::v16::BootNotificationResponse& boot_notification_response);
