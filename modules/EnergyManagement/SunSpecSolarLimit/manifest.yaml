@@ -1,0 +1,56 @@
+description: >-
+  Limits charging power to the production of a SunSpec PV inverter, read over
+  Modbus TCP, minus a reserve for household load. The limit is sent to an
+  EnergyNode as an external total power limit. The inverter must implement
+  SunSpec Model 701 or Model 101, 102, or 103.
+config:
+  inverter_host:
+    description: Hostname or IPv4 address of the SunSpec inverter
+    type: string
+  inverter_port:
+    description: Modbus TCP port of the inverter
+    type: integer
+    minimum: 1
+    maximum: 65535
+    default: 502
+  unit_id:
+    description: Modbus unit ID of the inverter
+    type: integer
+    minimum: 0
+    maximum: 255
+    default: 1
+  poll_interval_ms:
+    description: Interval between production readings
+    type: integer
+    minimum: 100
+    default: 2000
+  reserve_W:
+    description: >-
+      Power kept back for household load. The charging limit is the PV
+      production minus this reserve, and never below 0 W.
+    type: number
+    minimum: 0
+    default: 0
+  fallback_power_W:
+    description: >-
+      Charging limit applied before the first valid reading and when no valid
+      reading arrived for stale_timeout_s. The default of 0 W stops charging;
+      a value above the site's charging capacity lets charging continue from
+      the grid.
+    type: number
+    minimum: 0
+    default: 0
+  stale_timeout_s:
+    description: Time without a valid reading after which fallback_power_W applies
+    type: integer
+    minimum: 1
+    default: 30
+requires:
+  energy_node:
+    interface: external_energy_limits
+    min_connections: 1
+    max_connections: 1
+metadata:
+  license: https://opensource.org/licenses/Apache-2.0
+  authors:
+    - Kudrat Kaur

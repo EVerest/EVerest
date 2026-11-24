@@ -1,0 +1,16 @@
+active_modules:
+  sunspec_solar_limit:
+    module: SunSpecSolarLimit
+    config_module:
+      inverter_host: 127.0.0.1
+      inverter_port: 15503
+      poll_interval_ms: 200
+      reserve_W: 1000
+      fallback_power_W: 500
+      stale_timeout_s: 2
+    connections:
+      energy_node:
+        - module_id: probe
+          implementation_id: energy_node
+  probe:
+    module: ProbeModule
