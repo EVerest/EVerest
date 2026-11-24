@@ -2,6 +2,13 @@ name: Feature Request
 description: Thanks for taking the time to fill out this feature request!
 
 body:
+  - type: markdown
+    attributes:
+      value: |
+        Maintainers triage feature requests and move them from `Backlog` to `Ready` once they have been
+        discussed and can be picked up. Please do not open a pull request for this feature before the issue
+        is `Ready`. See the [contribution documentation](https://everest.github.io/nightly/project/contributing.html).
+
   - type: textarea
     id: description
     attributes:
@@ -62,6 +69,25 @@ body:
     attributes:
       label: Alternatives considered
       description: Have you considered alternative solutions or workarounds? If so, describe them here.
+
+  - type: dropdown
+    id: implementation
+    attributes:
+      label: Implementation
+      description: Do you plan to implement this feature yourself?
+      options:
+        - 'No'
+        - 'Yes, once the issue is Ready'
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: pull-request-after-ready
+    attributes:
+      label: Pull requests
+      options:
+        - label: I understand that a pull request for this feature should only be opened once this issue is `Ready`.
+          required: true
 
   - type: textarea
     id: other
