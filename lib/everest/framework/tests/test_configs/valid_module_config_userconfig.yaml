@@ -2,4 +2,4 @@ active_modules:
   valid_module:
     module: TESTValidManifest
     config_module:
-      valid_config_entry: "hi"
+      valid_config_entry: "hi-${module_id}"
