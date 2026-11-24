@@ -31,6 +31,9 @@ using json_validator = nlohmann::json_schema::json_validator;
 struct ParsedConfigMap {
     std::vector<ConfigurationParameter> parsed_config_parameters;
     std::set<std::string> unknown_config_entries;
+    /// Entries of unknown origin whose value the manifest rejects and that fell back to the manifest default,
+    /// mapped to the reason of the rejection
+    std::map<std::string, std::string> replaced_config_entries;
 };
 
 constexpr std::string_view path_modules = "modules/";
@@ -184,6 +187,7 @@ ParsedConfigMap parse_config_map(const json& config_map_schema,
     }
 
     std::set<std::string> unknown_config_entries;
+    std::map<std::string, std::string> replaced_config_entries;
     const everest::config::Keys& config_map_schema_keys = Config::keys(config_map_schema);
 
     std::set_difference(config_map_keys.begin(), config_map_keys.end(), config_map_schema_keys.begin(),
@@ -201,69 +205,92 @@ ParsedConfigMap parse_config_map(const json& config_map_schema,
             throw ConfigParseException(ConfigParseException::MISSING_ENTRY, config_entry_name);
         }
 
-        json config_entry_value;
-        if (config_parameter_map.find(config_entry_name) != config_parameter_map.end()) {
-            const auto& expected_datatype = config_parameter_map.at(config_entry_name).characteristics.datatype;
-            const auto& actual_datatype = string_to_datatype(config_entry.at("type"));
-            if (expected_datatype != actual_datatype) {
-                // allow discrepancy when expected datatype is Integer but the actual datatype is Decimal which can
-                // present as Integer in the json representation
-                if (not(expected_datatype == Datatype::Integer and actual_datatype == Datatype::Decimal)) {
-                    throw ConfigParseException(
-                        ConfigParseException::SCHEMA, config_entry_name,
-                        "Expected and actualy datatypes disagree: " + datatype_to_string(expected_datatype) + " vs " +
-                            datatype_to_string(actual_datatype));
+        const auto datatype = string_to_datatype(config_entry.at("type"));
+        const bool has_default = config_entry.contains("default");
+        const auto validate_against_manifest = [&config_entry, &config_entry_name](json value) {
+            json_validator validator(loader, format_checker);
+            validator.set_root_schema(config_entry);
+            try {
+                const auto patch = validator.validate(value);
+                if (!patch.is_null()) {
+                    // extend config entry with default values
+                    value = value.patch(patch);
                 }
+            } catch (const std::exception& err) {
+                throw ConfigParseException(ConfigParseException::SCHEMA, config_entry_name, err.what());
             }
-            config_parameter_map[config_entry_name].characteristics.datatype = actual_datatype;
-
-            config_entry_value = config_parameter_map[config_entry_name].value; // implicit conversion to json
-
-            if (!config_parameter_map[config_entry_name].validate_type()) {
+            return value;
+        };
+        const auto to_config_entry = [&config_entry, &config_entry_name, datatype](const json& value) -> ConfigEntry {
+            switch (datatype) {
+            case Datatype::String:
+                return value.get<std::string>();
+            case Datatype::Decimal:
+                return value.get<double>();
+            case Datatype::Integer:
+                return value.get<int>();
+            case Datatype::Boolean:
+                return value.get<bool>();
+            }
+            throw ConfigParseException(ConfigParseException::SCHEMA, config_entry_name,
+                                       "Unsupported datatype in config: " + config_entry.at("type").get<std::string>());
+        };
+        const auto validated_stored_value = [&](ConfigurationParameter stored_param) {
+            const auto stored_datatype = stored_param.characteristics.datatype;
+            // an Integer may be stored for a Decimal, which can present as Integer in the json representation
+            if (stored_datatype != datatype and
+                not(stored_datatype == Datatype::Integer and datatype == Datatype::Decimal)) {
+                throw ConfigParseException(
+                    ConfigParseException::SCHEMA, config_entry_name,
+                    "Expected and actualy datatypes disagree: " + datatype_to_string(stored_datatype) + " vs " +
+                        datatype_to_string(datatype));
+            }
+            stored_param.characteristics.datatype = datatype;
+            if (!stored_param.validate_type()) {
                 throw ConfigParseException(ConfigParseException::SCHEMA, config_entry_name,
                                            "Invalid type for configuration entry");
             }
-        } else if (config_entry.contains("default")) {
-            config_entry_value = config_entry.at("default"); // use default value defined in manifest
-        }
-        json_validator validator(loader, format_checker);
-        validator.set_root_schema(config_entry);
-        try {
-            auto patch = validator.validate(config_entry_value);
-            if (!patch.is_null()) {
-                // extend config entry with default values
-                config_entry_value = config_entry_value.patch(patch);
-            }
-        } catch (const std::exception& err) {
-            throw ConfigParseException(ConfigParseException::SCHEMA, config_entry_name, err.what());
-        }
+            return to_config_entry(validate_against_manifest(stored_param.value)); // implicit conversion to json
+        };
+        const auto manifest_default = [&]() {
+            // a missing default is rejected by the schema validation
+            return to_config_entry(validate_against_manifest(has_default ? config_entry.at("default") : json()));
+        };
 
         ConfigurationParameter config_param;
         config_param.name = config_entry_name;
-        config_param.characteristics.datatype = string_to_datatype(config_entry.at("type"));
+        config_param.characteristics.datatype = datatype;
         config_param.characteristics.mutability = string_to_mutability(config_entry.at("mutability"));
         // TODO: add unit
-        switch (config_param.characteristics.datatype) {
-        case Datatype::String:
-            config_param.value = config_entry_value.get<std::string>();
-            break;
-        case Datatype::Decimal:
-            config_param.value = config_entry_value.get<double>();
-            break;
-        case Datatype::Integer:
-            config_param.value = config_entry_value.get<int>();
-            break;
-        case Datatype::Boolean:
-            config_param.value = config_entry_value.get<bool>();
-            break;
-        default:
-            throw ConfigParseException(ConfigParseException::SCHEMA, config_entry_name,
-                                       "Unsupported datatype in config: " + config_entry.at("type").get<std::string>());
+
+        const auto stored = config_parameter_map.find(config_entry_name);
+        const auto stored_source =
+            stored != config_parameter_map.end() ? stored->second.source : ConfigurationSource::Default;
+        if (stored_source == ConfigurationSource::Default and (has_default or stored == config_parameter_map.end())) {
+            // a value that originated from a manifest default follows that default, even if its datatype changed
+            config_param.value = manifest_default();
+            config_param.source = ConfigurationSource::Default;
+        } else if (stored_source == ConfigurationSource::Unknown and has_default) {
+            // the origin is settled here: a value the manifest rejects cannot be told apart from a former default
+            // and falls back to the manifest default
+            const auto default_value = manifest_default();
+            try {
+                config_param.value = validated_stored_value(stored->second);
+                config_param.source =
+                    config_param.value == default_value ? ConfigurationSource::Default : ConfigurationSource::User;
+            } catch (const ConfigParseException& err) {
+                replaced_config_entries[config_entry_name] = err.what;
+                config_param.value = default_value;
+                config_param.source = ConfigurationSource::Default;
+            }
+        } else {
+            config_param.value = validated_stored_value(stored->second);
+            config_param.source = ConfigurationSource::User;
         }
         patched_config_parameters.push_back(config_param);
     }
 
-    return {patched_config_parameters, unknown_config_entries};
+    return {patched_config_parameters, unknown_config_entries, replaced_config_entries};
 }
 
 auto get_provides_for_probe_module(std::string_view probe_module_id, const ModuleConfigurations& module_configs,
@@ -702,6 +729,12 @@ void ManagerConfig::load_and_validate_manifest(ModuleConfig& module_config) {
                         unknown_entry, printable_identifier(module_id, impl_id), module_name);
                 }
             }
+            for (const auto& [replaced_entry, reason] : parsed_config_map.replaced_config_entries) {
+                EVLOG_warning << fmt::format("Stored value of config entry '{}' of {} is not valid for the manifest "
+                                             "of module '{}' and is replaced with the manifest default. Reason:\n{}",
+                                             replaced_entry, printable_identifier(module_id, impl_id), module_name,
+                                             reason);
+            }
             module_config.configuration_parameters[impl_id] = parsed_config_map.parsed_config_parameters;
         } catch (const ConfigParseException& err) {
             if (err.err_t == ConfigParseException::MISSING_ENTRY) {
@@ -733,6 +766,12 @@ void ManagerConfig::load_and_validate_manifest(ModuleConfig& module_config) {
                         "Unknown config entry '{}' of module '{}' ignored, please fix your config file!", unknown_entry,
                         module_config.module_name);
                 }
+            }
+            for (const auto& [replaced_entry, reason] : parsed_config_map.replaced_config_entries) {
+                EVLOG_warning << fmt::format("Stored value of config entry '{}' of module '{}' is not valid for the "
+                                             "manifest of module '{}' and is replaced with the manifest default. "
+                                             "Reason:\n{}",
+                                             replaced_entry, module_id, module_config.module_name, reason);
             }
             module_config.configuration_parameters["!module"] = parsed_config_map.parsed_config_parameters;
         } catch (const ConfigParseException& err) {

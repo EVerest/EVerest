@@ -146,6 +146,9 @@ struct VisitConfigEntry {
 
 std::string config_entry_to_string(const everest::config::ConfigEntry& entry);
 
+/// \brief Lossless string representation of \p entry as it is persisted in the configuration database
+std::string config_entry_to_storage_string(const ConfigEntry& entry);
+
 enum class Mutability {
     ReadOnly,
     ReadWrite,
@@ -158,6 +161,13 @@ enum class Datatype {
     Decimal,
     Integer,
     Boolean
+};
+
+/// \brief Origin of a configuration parameter's value
+enum class ConfigurationSource {
+    Default, ///< Taken from the default in the module's manifest
+    User,    ///< Given explicitly, e.g. in the config file or via an API
+    Unknown  ///< Stored without a recorded origin; settled as Default or User when validated against the manifest
 };
 
 struct Settings {
@@ -204,12 +214,14 @@ struct ConfigurationParameter {
     std::string name;
     ConfigEntry value;
     ConfigurationParameterCharacteristics characteristics;
+    ConfigurationSource source = ConfigurationSource::User;
 
     bool validate_type() const;
 };
 
 inline bool operator==(const ConfigurationParameter& lhs, const ConfigurationParameter& rhs) {
-    return lhs.name == rhs.name && lhs.value == rhs.value && lhs.characteristics == rhs.characteristics;
+    return lhs.name == rhs.name && lhs.value == rhs.value && lhs.characteristics == rhs.characteristics &&
+           lhs.source == rhs.source;
 }
 
 /// \brief Access control information to an individual module config
@@ -302,6 +314,9 @@ std::string datatype_to_string(const Datatype datatype);
 
 Mutability string_to_mutability(const std::string& str);
 std::string mutability_to_string(const Mutability mutability);
+
+ConfigurationSource string_to_configuration_source(const std::string& str);
+std::string configuration_source_to_string(const ConfigurationSource source);
 
 ModuleTierMappings parse_mapping(const nlohmann::json& mapping_json);
 

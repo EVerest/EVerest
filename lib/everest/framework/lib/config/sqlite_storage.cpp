@@ -22,6 +22,14 @@ const std::string& default_module_implementation_id() {
     return DEFAULT_MODULE_IMPLEMENTATION_ID;
 }
 
+/// Rows written before the SOURCE column was populated hold NULL
+ConfigurationSource configuration_source_from_column(const std::optional<std::string>& column) {
+    if (not column.has_value()) {
+        return ConfigurationSource::Unknown;
+    }
+    return string_to_configuration_source(column.value());
+}
+
 } // namespace
 
 /// \brief Helper for accessing the column indices of the CONFIGURATION table
@@ -34,6 +42,7 @@ enum class ConfigurationColumnIndex {
     COL_DATATYPE_ID,
     COL_UNIT,
     COL_MODULE_IMPLEMENTATION_ID,
+    COL_SOURCE,
 };
 
 /// \brief Helper for accessing the column indices of the CONFIGURATION table of a specific MODULE_ID
@@ -44,6 +53,7 @@ enum class ConfigurationColumnModuleIdIndex {
     COL_MUTABILITY_ID,
     COL_DATATYPE_ID,
     COL_UNIT,
+    COL_SOURCE,
 };
 
 namespace {
@@ -226,7 +236,7 @@ GetModuleConfigurationResponse SqliteStorage::get_module_config(const std::strin
     try {
 
         const std::string sql =
-            "SELECT PARAMETER_NAME, VALUE, MODULE_IMPLEMENTATION_ID, MUTABILITY_ID, DATATYPE_ID, UNIT "
+            "SELECT PARAMETER_NAME, VALUE, MODULE_IMPLEMENTATION_ID, MUTABILITY_ID, DATATYPE_ID, UNIT, SOURCE "
             "FROM CONFIGURATION WHERE CONFIG_ID = @config_id AND MODULE_ID = @module_id";
         auto stmt = m_db->new_statement(sql);
 
@@ -259,6 +269,8 @@ GetModuleConfigurationResponse SqliteStorage::get_module_config(const std::strin
             characteristics.unit = stmt->column_text_nullable(to_int(ConfigurationColumnModuleIdIndex::COL_UNIT));
             configuration_parameter.characteristics = characteristics;
             configuration_parameter.value = parse_config_value(characteristics.datatype, value_str);
+            configuration_parameter.source = configuration_source_from_column(
+                stmt->column_text_nullable(to_int(ConfigurationColumnModuleIdIndex::COL_SOURCE)));
 
             module_config.configuration_parameters[implementation_id].push_back(configuration_parameter);
         }
@@ -278,7 +290,7 @@ SqliteStorage::get_configuration_parameter(const ConfigurationParameterIdentifie
     GetConfigurationParameterResponse response;
 
     try {
-        const std::string sql = "SELECT VALUE, MUTABILITY_ID, DATATYPE_ID, UNIT FROM "
+        const std::string sql = "SELECT VALUE, MUTABILITY_ID, DATATYPE_ID, UNIT, SOURCE FROM "
                                 "CONFIGURATION WHERE CONFIG_ID = @config_id AND MODULE_ID = "
                                 "@module_id AND PARAMETER_NAME = @config_param_name AND MODULE_IMPLEMENTATION_ID = "
                                 "@module_implementation_id";
@@ -315,6 +327,7 @@ SqliteStorage::get_configuration_parameter(const ConfigurationParameterIdentifie
             characteristics.unit = stmt->column_text_nullable(3);
             configuration_parameter.characteristics = characteristics;
             configuration_parameter.value = parse_config_value(characteristics.datatype, value_str);
+            configuration_parameter.source = configuration_source_from_column(stmt->column_text_nullable(4));
             response.configuration_parameter = configuration_parameter;
 
             return response;
@@ -332,7 +345,7 @@ SqliteStorage::get_configuration_parameter(const ConfigurationParameterIdentifie
 GetSetResponseStatus
 SqliteStorage::write_configuration_parameter(const ConfigurationParameterIdentifier& identifier,
                                              const ConfigurationParameterCharacteristics characteristics,
-                                             const std::string& value) {
+                                             const std::string& value, ConfigurationSource source) {
     try {
         auto check = m_db->new_statement("SELECT 1 FROM MODULE WHERE CONFIG_ID = ? AND ID = ?");
         check->bind_int(1, m_config_id);
@@ -343,8 +356,8 @@ SqliteStorage::write_configuration_parameter(const ConfigurationParameterIdentif
 
         const std::string insert_query = "INSERT OR REPLACE INTO CONFIGURATION (CONFIG_ID, MODULE_ID, PARAMETER_NAME, "
                                          "VALUE, "
-                                         "MUTABILITY_ID, DATATYPE_ID, UNIT, MODULE_IMPLEMENTATION_ID) VALUES "
-                                         "(?, ?, ?, ?, ?, ?, ?, ?);";
+                                         "MUTABILITY_ID, DATATYPE_ID, UNIT, MODULE_IMPLEMENTATION_ID, SOURCE) VALUES "
+                                         "(?, ?, ?, ?, ?, ?, ?, ?, ?);";
 
         const std::string module_implementation_id =
             identifier.module_implementation_id.value_or(default_module_implementation_id());
@@ -363,6 +376,12 @@ SqliteStorage::write_configuration_parameter(const ConfigurationParameterIdentif
             stmt->bind_null(to_int(ConfigurationColumnIndex::COL_UNIT));
         }
         stmt->bind_text(to_int(ConfigurationColumnIndex::COL_MODULE_IMPLEMENTATION_ID), module_implementation_id);
+        if (source == ConfigurationSource::Unknown) {
+            stmt->bind_null(to_int(ConfigurationColumnIndex::COL_SOURCE));
+        } else {
+            stmt->bind_text(to_int(ConfigurationColumnIndex::COL_SOURCE), configuration_source_to_string(source),
+                            SQLiteString::Transient);
+        }
 
         if (stmt->step() != SQLITE_DONE) {
             return GetSetResponseStatus::Failed;
@@ -380,13 +399,14 @@ GetSetResponseStatus SqliteStorage::update_configuration_parameter(const Configu
                                                                    const std::string& value) {
 
     try {
-        const std::string update_query = "UPDATE CONFIGURATION SET VALUE = @value "
+        const std::string update_query = "UPDATE CONFIGURATION SET VALUE = @value, SOURCE = @source "
                                          "WHERE CONFIG_ID = @config_id AND MODULE_ID = @module_id AND "
                                          "PARAMETER_NAME = @parameter_name AND "
                                          "MODULE_IMPLEMENTATION_ID = @module_implementation_id;";
 
         auto stmt = m_db->new_statement(update_query);
         stmt->bind_text("@value", value);
+        stmt->bind_text("@source", configuration_source_to_string(ConfigurationSource::User), SQLiteString::Transient);
         stmt->bind_int("@config_id", m_config_id);
         stmt->bind_text("@module_id", identifier.module_id);
         stmt->bind_text("@parameter_name", identifier.configuration_parameter_name);
@@ -469,15 +489,9 @@ GenericResponseStatus SqliteStorage::write_module_config_items(const ModuleConfi
                 identifier.module_implementation_id = impl_id;
                 identifier.configuration_parameter_name = param.name;
 
-                std::string value;
-                if (std::holds_alternative<std::string>(param.value)) {
-                    value = std::get<std::string>(param.value);
-                } else {
-                    const nlohmann::json temp = param.value;
-                    value = temp.dump();
-                }
-                if (write_configuration_parameter(identifier, param.characteristics, value) !=
-                    GetSetResponseStatus::OK) {
+                if (write_configuration_parameter(identifier, param.characteristics,
+                                                  config_entry_to_storage_string(param.value),
+                                                  param.source) != GetSetResponseStatus::OK) {
                     EVLOG_error << "Failed to write configuration parameter for module: " << module_id
                                 << ", param: " << identifier.configuration_parameter_name;
                     return GenericResponseStatus::Failed;

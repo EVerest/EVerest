@@ -43,8 +43,8 @@ TEST_CASE("UserConfigStorage::write_configuration_parameter", "[userconfig_stora
     id.configuration_parameter_name = "some_param";
 
     SECTION("Module-level write ends up in config_module and is persisted to disk") {
-        REQUIRE(storage.write_configuration_parameter(id, string_characteristics, "some_value") ==
-                GetSetResponseStatus::OK);
+        REQUIRE(storage.write_configuration_parameter(id, string_characteristics, "some_value",
+                                                      ConfigurationSource::User) == GetSetResponseStatus::OK);
 
         const auto& user_config = storage.get_user_config();
         REQUIRE(user_config.at("active_modules").at("some_module").at("config_module").at("some_param") ==
@@ -57,8 +57,8 @@ TEST_CASE("UserConfigStorage::write_configuration_parameter", "[userconfig_stora
 
     SECTION("Explicit '!module' implementation id also ends up in config_module") {
         id.module_implementation_id = "!module";
-        REQUIRE(storage.write_configuration_parameter(id, string_characteristics, "some_value") ==
-                GetSetResponseStatus::OK);
+        REQUIRE(storage.write_configuration_parameter(id, string_characteristics, "some_value",
+                                                      ConfigurationSource::User) == GetSetResponseStatus::OK);
 
         const auto& user_config = storage.get_user_config();
         CHECK(user_config.at("active_modules").at("some_module").at("config_module").at("some_param") == "some_value");
@@ -67,8 +67,8 @@ TEST_CASE("UserConfigStorage::write_configuration_parameter", "[userconfig_stora
 
     SECTION("Implementation-level write ends up in config_implementation") {
         id.module_implementation_id = "main";
-        REQUIRE(storage.write_configuration_parameter(id, string_characteristics, "some_value") ==
-                GetSetResponseStatus::OK);
+        REQUIRE(storage.write_configuration_parameter(id, string_characteristics, "some_value",
+                                                      ConfigurationSource::User) == GetSetResponseStatus::OK);
 
         const auto& user_config = storage.get_user_config();
         CHECK(user_config.at("active_modules")
@@ -85,19 +85,23 @@ TEST_CASE("UserConfigStorage::write_configuration_parameter", "[userconfig_stora
 
         characteristics.datatype = Datatype::String;
         id.configuration_parameter_name = "string_param";
-        REQUIRE(storage.write_configuration_parameter(id, characteristics, "value") == GetSetResponseStatus::OK);
+        REQUIRE(storage.write_configuration_parameter(id, characteristics, "value", ConfigurationSource::User) ==
+                GetSetResponseStatus::OK);
 
         characteristics.datatype = Datatype::Integer;
         id.configuration_parameter_name = "integer_param";
-        REQUIRE(storage.write_configuration_parameter(id, characteristics, "42") == GetSetResponseStatus::OK);
+        REQUIRE(storage.write_configuration_parameter(id, characteristics, "42", ConfigurationSource::User) ==
+                GetSetResponseStatus::OK);
 
         characteristics.datatype = Datatype::Decimal;
         id.configuration_parameter_name = "decimal_param";
-        REQUIRE(storage.write_configuration_parameter(id, characteristics, "42.23") == GetSetResponseStatus::OK);
+        REQUIRE(storage.write_configuration_parameter(id, characteristics, "42.23", ConfigurationSource::User) ==
+                GetSetResponseStatus::OK);
 
         characteristics.datatype = Datatype::Boolean;
         id.configuration_parameter_name = "boolean_param";
-        REQUIRE(storage.write_configuration_parameter(id, characteristics, "true") == GetSetResponseStatus::OK);
+        REQUIRE(storage.write_configuration_parameter(id, characteristics, "true", ConfigurationSource::User) ==
+                GetSetResponseStatus::OK);
 
         const auto& config_module =
             storage.get_user_config().at("active_modules").at("some_module").at("config_module");
@@ -112,10 +116,10 @@ TEST_CASE("UserConfigStorage::write_configuration_parameter", "[userconfig_stora
     }
 
     SECTION("Writing the same parameter again overwrites the value") {
-        REQUIRE(storage.write_configuration_parameter(id, string_characteristics, "first_value") ==
-                GetSetResponseStatus::OK);
-        REQUIRE(storage.write_configuration_parameter(id, string_characteristics, "second_value") ==
-                GetSetResponseStatus::OK);
+        REQUIRE(storage.write_configuration_parameter(id, string_characteristics, "first_value",
+                                                      ConfigurationSource::User) == GetSetResponseStatus::OK);
+        REQUIRE(storage.write_configuration_parameter(id, string_characteristics, "second_value",
+                                                      ConfigurationSource::User) == GetSetResponseStatus::OK);
 
         CHECK(storage.get_user_config().at("active_modules").at("some_module").at("config_module").at("some_param") ==
               "second_value");
@@ -129,8 +133,8 @@ TEST_CASE("UserConfigStorage::write_configuration_parameter", "[userconfig_stora
         Everest::save_yaml(seed, user_config_path);
 
         UserConfigStorage seeded_storage(user_config_path);
-        REQUIRE(seeded_storage.write_configuration_parameter(id, string_characteristics, "some_value") ==
-                GetSetResponseStatus::OK);
+        REQUIRE(seeded_storage.write_configuration_parameter(id, string_characteristics, "some_value",
+                                                             ConfigurationSource::User) == GetSetResponseStatus::OK);
 
         const nlohmann::json on_disk = Everest::load_yaml(user_config_path);
         CHECK(on_disk.at("active_modules").at("other_module").at("config_module").at("other_param") == 1);

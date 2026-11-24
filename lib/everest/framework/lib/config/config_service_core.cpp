@@ -3,6 +3,7 @@
 
 #include <utils/config/config_service_core.hpp>
 
+#include <algorithm>
 #include <optional>
 
 #include <date/tz.h>
@@ -103,7 +104,8 @@ find_parameter_or_explain(const ec::ConfigurationParameterIdentifier& id, ec::Mo
 bool persist_parameter_change(ec::SqliteStorage& storage, const ec::ConfigurationParameterIdentifier& identifier,
                               const ec::ConfigurationParameterCharacteristics& characteristics,
                               const std::string& value) {
-    const auto write_status = storage.write_configuration_parameter(identifier, characteristics, value);
+    const auto write_status =
+        storage.write_configuration_parameter(identifier, characteristics, value, ec::ConfigurationSource::User);
     if (write_status != ec::GetSetResponseStatus::OK) {
         EVLOG_error << "ConfigServiceCore: Couldn't persist the configuration parameter change to storage; "
                        "the change will not apply on restart.";
@@ -233,6 +235,7 @@ void ConfigServiceCore::reload_from_storage() {
     try {
         // Validate against manifests, interfaces and requirements; enriches configs with manifest metadata.
         auto validated = Everest::validate_preloaded_module_configs(m_parse_settings, resp.module_configs);
+        persist_manifest_default_changes(resp.module_configs, validated.module_configs);
         m_module_configs = std::move(validated.module_configs);
         m_manifests.update(validated.manifests);
         std::atomic_store(&m_active_configs_ptr, std::make_shared<const ec::ModuleConfigurations>(m_module_configs));
@@ -240,6 +243,89 @@ void ConfigServiceCore::reload_from_storage() {
         EVLOG_error << "Configuration loaded from database for slot " << m_active_slot_id
                     << " failed validation: " << e.what() << " -> Keeping the previous in-memory configuration.";
     }
+}
+
+void ConfigServiceCore::persist_manifest_default_changes(const ec::ModuleConfigurations& stored,
+                                                         const ec::ModuleConfigurations& validated) {
+    const std::vector<ec::ConfigurationParameter> no_stored_params;
+    // One transaction for all writes: the first load of a slot stored without origins rewrites every parameter
+    auto transaction = m_db->begin_transaction();
+    for (const auto& [module_id, validated_module] : validated) {
+        const auto stored_module = stored.find(module_id);
+        if (stored_module == stored.end()) {
+            continue;
+        }
+        for (const auto& [impl_id, validated_params] : validated_module.configuration_parameters) {
+            const auto stored_params_it = stored_module->second.configuration_parameters.find(impl_id);
+            const auto& stored_params = stored_params_it != stored_module->second.configuration_parameters.end()
+                                            ? stored_params_it->second
+                                            : no_stored_params;
+            for (const auto& validated_param : validated_params) {
+                const auto stored_param =
+                    std::find_if(stored_params.begin(), stored_params.end(),
+                                 [&validated_param](const auto& param) { return param.name == validated_param.name; });
+                const auto new_value = ec::config_entry_to_storage_string(validated_param.value);
+
+                if (stored_param == stored_params.end()) {
+                    // A parameter without default that is missing in the slot fails validation before reaching here
+                    if (validated_param.source != ec::ConfigurationSource::Default) {
+                        continue;
+                    }
+                    EVLOG_warning << fmt::format("Config slot {}: manifest added {}:{}:{}, storing its default value "
+                                                 "'{}'",
+                                                 m_active_slot_id, module_id, impl_id, validated_param.name, new_value);
+                } else if (stored_param->source == ec::ConfigurationSource::User) {
+                    continue;
+                } else if (stored_param->source == ec::ConfigurationSource::Default) {
+                    const auto old_datatype = stored_param->characteristics.datatype;
+                    const auto new_datatype = validated_param.characteristics.datatype;
+                    const bool type_changed = old_datatype != new_datatype;
+                    const bool value_changed = stored_param->value != validated_param.value;
+                    if (not type_changed and not value_changed and stored_param->source == validated_param.source) {
+                        continue;
+                    }
+
+                    const auto old_value = ec::config_entry_to_storage_string(stored_param->value);
+                    if (validated_param.source == ec::ConfigurationSource::User) {
+                        std::string type_note;
+                        if (type_changed) {
+                            type_note = fmt::format(" (datatype changed from {} to {}, stored as '{}')",
+                                                    ec::datatype_to_string(old_datatype),
+                                                    ec::datatype_to_string(new_datatype), new_value);
+                        }
+                        EVLOG_warning << fmt::format("Config slot {}: manifest no longer defines a default for "
+                                                     "{}:{}:{}, keeping the stored value '{}' as user value{}",
+                                                     m_active_slot_id, module_id, impl_id, validated_param.name,
+                                                     old_value, type_note);
+                    } else if (type_changed) {
+                        EVLOG_warning << fmt::format(
+                            "Config slot {}: manifest changed the datatype of {}:{}:{} from {} to {}, replacing the "
+                            "stored default value '{}' with the new default '{}'",
+                            m_active_slot_id, module_id, impl_id, validated_param.name,
+                            ec::datatype_to_string(old_datatype), ec::datatype_to_string(new_datatype), old_value,
+                            new_value);
+                    } else {
+                        EVLOG_warning << fmt::format("Config slot {}: manifest default of {}:{}:{} changed, updating "
+                                                     "the stored default value from '{}' to '{}'",
+                                                     m_active_slot_id, module_id, impl_id, validated_param.name,
+                                                     old_value, new_value);
+                    }
+                }
+                // A parameter of unknown origin is always written, with the origin the validation settled on; a
+                // value it replaced is logged there
+
+                const ec::ConfigurationParameterIdentifier identifier{module_id, validated_param.name, impl_id};
+                if (m_active_storage->write_configuration_parameter(identifier, validated_param.characteristics,
+                                                                    new_value, validated_param.source) !=
+                    ec::GetSetResponseStatus::OK) {
+                    EVLOG_error << fmt::format("Config slot {}: failed to persist the manifest default change of "
+                                               "{}:{}:{}; it is applied again on the next load",
+                                               m_active_slot_id, module_id, impl_id, validated_param.name);
+                }
+            }
+        }
+    }
+    transaction->commit();
 }
 
 std::optional<std::string> ConfigServiceCore::validate_update(const ec::ModuleConfigurations& configurations,
@@ -555,7 +641,8 @@ void ConfigServiceCore::apply_active_slot_updates(const std::vector<ConfigParame
             auto mirror_status = ec::GetSetResponseStatus::Failed;
             try {
                 mirror_status = m_persistence_mirror->write_configuration_parameter(
-                    update.identifier, in_memory_parameter->characteristics, update.value);
+                    update.identifier, in_memory_parameter->characteristics, update.value,
+                    ec::ConfigurationSource::User);
             } catch (const std::exception& e) {
                 EVLOG_error << "ConfigServiceCore: Persisting the configuration parameter change to the "
                                "user-config failed: "
@@ -585,6 +672,7 @@ void ConfigServiceCore::apply_active_slot_updates(const std::vector<ConfigParame
         if (modules_down) {
             in_memory_parameter->value =
                 ec::parse_config_value(in_memory_parameter->characteristics.datatype, update.value);
+            in_memory_parameter->source = ec::ConfigurationSource::User;
         }
 
         // Now test if the module applies the update at runtime
@@ -610,6 +698,7 @@ void ConfigServiceCore::apply_active_slot_updates(const std::vector<ConfigParame
                     const auto parsed_value =
                         ec::parse_config_value(in_memory_parameter->characteristics.datatype, update.value);
                     in_memory_parameter->value = parsed_value;
+                    in_memory_parameter->source = ec::ConfigurationSource::User;
                     break;
                 }
                 case SetParameterResponse::ModuleReplied_RequiresRestart:
@@ -659,8 +748,8 @@ void ConfigServiceCore::apply_inactive_slot_updates(int slot_id, const std::vect
             continue;
         }
 
-        const auto write_status =
-            storage->write_configuration_parameter(update.identifier, parameter->characteristics, update.value);
+        const auto write_status = storage->write_configuration_parameter(update.identifier, parameter->characteristics,
+                                                                         update.value, ec::ConfigurationSource::User);
         if (write_status == ec::GetSetResponseStatus::OK) {
             per_result.status = SetConfigParameterResultEnum::WillApplyOnRestart;
             event.updates.push_back(
