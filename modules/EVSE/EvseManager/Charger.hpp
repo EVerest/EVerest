@@ -32,7 +32,6 @@
 #include <generated/interfaces/ISO15118_charger/Interface.hpp>
 #include <generated/interfaces/powermeter/Interface.hpp>
 #include <generated/types/authorization.hpp>
-#include <generated/types/connector_lock.hpp>
 #include <generated/types/evse_manager.hpp>
 #include <generated/types/units_signed.hpp>
 #include <memory>
@@ -47,6 +46,7 @@
 #include "EventQueue.hpp"
 #include "IECStateMachine.hpp"
 #include "PersistentStore.hpp"
+#include "connector_lock_confirmation.hpp"
 #include "scoped_lock_timeout.hpp"
 #include "utils.hpp"
 
@@ -156,9 +156,9 @@ public:
     bool get_authorized_pnc();
     bool get_authorized_eim();
 
-    void set_connector_lock_state(types::connector_lock::LockState state);
-    // False while an authorization has to wait for the connector lock to report Locked
-    bool connector_lock_ready();
+    ConnectorLockConfirmation& get_connector_lock_confirmation() {
+        return connector_lock_confirmation;
+    }
 
     // this indicates the charger is done with all of its t_step_XX routines and HLC can now also start charging
     bool get_authorized_eim_ready_for_hlc();
@@ -305,11 +305,7 @@ private:
     take_signed_meter_data(std::optional<types::units_signed::SignedMeterValue>& data);
 
     bool stop_charging_on_fatal_error_internal();
-    bool connector_lock_ready_internal() const;
-    // Polled while authorized in WaitingForAuthentication: true once the lock is confirmed (or no wait is configured),
-    // false while waiting. Ends the authorization when the wait times out.
-    bool connector_lock_allows_charging();
-    void end_authorization_on_connector_lock_timeout();
+    void handle_connector_lock_confirmation();
     std::string stop_reason_flags(bool fatal_error = false);
     float get_max_current_internal();
     float get_max_current_signalled_to_ev_internal();
@@ -421,8 +417,6 @@ private:
         std::atomic_bool flag_ev_plugged_in{false};
         // set to true if auth is from PnC, otherwise to false (EIM)
         bool authorized_pnc;
-        // Latest lock_state reported by the connector lock, kept across sessions.
-        types::connector_lock::LockState connector_lock_state{types::connector_lock::LockState::Unknown};
         bool matching_started;
         std::atomic_bool slac_matched{false};
         // D-LINK_READY(link established) was indicated since the session or the last error sequence started, and HLC
@@ -504,9 +498,9 @@ private:
         // Timeout in seconds that defines for how long the EVSE allows the ISO charge loop (AC: ChargingStatus, DC:
         // CurrentDemand)
         int hlc_charge_loop_without_energy_timeout_s{300};
-        // AC only: wait for the connector lock to report Locked before an authorization is used (0 = disabled)
-        int connector_lock_confirmation_timeout_ms{0};
     } config_context;
+
+    ConnectorLockConfirmation connector_lock_confirmation;
 
     // Used by different threads, but requires no complete state machine locking
     std::atomic<float> soft_over_current_tolerance_percent{10.};
@@ -572,7 +566,6 @@ private:
         bool ac_x1_fallback_nominal_timeout_running{false};
         std::chrono::time_point<std::chrono::steady_clock> ac_x1_fallback_nominal_timeout_started;
         bool auth_received_printed{false};
-        std::optional<std::chrono::time_point<std::chrono::steady_clock>> connector_lock_wait_started;
 
         bool hlc_charge_loop_no_energy_timeout_running{false};
         std::chrono::time_point<std::chrono::steady_clock> iso_charge_loop_no_energy_timeout_started;

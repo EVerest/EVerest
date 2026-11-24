@@ -30,8 +30,6 @@ enum class MutexDescription {
     Charger_get_authorized_eim,
     Charger_get_authorized_pnc_ready_for_hlc,
     Charger_get_authorized_eim_ready_for_hlc,
-    Charger_set_connector_lock_state,
-    Charger_connector_lock_ready,
     Charger_authorize,
     Charger_deauthorize,
     Charger_disable,
@@ -133,10 +131,6 @@ static std::string to_string(MutexDescription d) {
         return "Charger.cpp: get_authorized_pnc_ready_for_hlc";
     case MutexDescription::Charger_get_authorized_eim_ready_for_hlc:
         return "Charger.cpp: get_authorized_eim_ready_for_hlc";
-    case MutexDescription::Charger_set_connector_lock_state:
-        return "Charger.cpp: set_connector_lock_state";
-    case MutexDescription::Charger_connector_lock_ready:
-        return "Charger.cpp: connector_lock_ready";
     case MutexDescription::Charger_authorize:
         return "Charger.cpp: authorize";
     case MutexDescription::Charger_deauthorize:

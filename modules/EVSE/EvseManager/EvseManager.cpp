@@ -417,8 +417,14 @@ void EvseManager::ready() {
 
     // Wired before allow_updates(): the capabilities callback may enable captive mode, which can lock at once.
     if (r_connector_lock.size() > 0) {
-        bsp->signal_lock.connect([this]() { r_connector_lock[0]->call_lock(); });
-        bsp->signal_unlock.connect([this]() { r_connector_lock[0]->call_unlock(); });
+        bsp->signal_lock.connect([this]() {
+            charger->get_connector_lock_confirmation().lock_commanded();
+            r_connector_lock[0]->call_lock();
+        });
+        bsp->signal_unlock.connect([this]() {
+            charger->get_connector_lock_confirmation().unlock_commanded();
+            r_connector_lock[0]->call_unlock();
+        });
     }
 
     // Now incoming hardware capabilities can be processed
@@ -1147,7 +1153,7 @@ void EvseManager::ready() {
             const bool authorized_eim =
                 (config.dbg_hlc_auth_after_tstep and charger->get_authorized_eim_ready_for_hlc()) or
                 (not config.dbg_hlc_auth_after_tstep and charger->get_authorized_eim());
-            if (authorized_eim and charger->connector_lock_ready()) {
+            if (authorized_eim and charger->get_connector_lock_confirmation().confirmed()) {
                 hlc_waiting_for_auth_eim = false;
                 hlc_waiting_for_auth_pnc = false;
                 r_hlc[0]->call_authorization_response(types::authorization::AuthorizationStatus::Accepted,
@@ -1363,7 +1369,7 @@ void EvseManager::ready() {
     connector_lock_state.connect([this](types::connector_lock::LockState state) {
         session_log.evse(false,
                          fmt::format("Connector lock state: {}", types::connector_lock::lock_state_to_string(state)));
-        charger->set_connector_lock_state(state);
+        charger->get_connector_lock_confirmation().lock_state_reported(state);
     });
 
     if (r_powermeter_billing().size() > 0) {
@@ -2193,7 +2199,7 @@ void EvseManager::log_v2g_message(types::iso15118::V2gMessages const& v2g_messag
 }
 
 void EvseManager::charger_was_authorized() {
-    if (not charger->connector_lock_ready()) {
+    if (not charger->get_connector_lock_confirmation().confirmed()) {
         return;
     }
 

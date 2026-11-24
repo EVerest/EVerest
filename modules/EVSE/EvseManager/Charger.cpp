@@ -165,6 +165,8 @@ void Charger::run_state_machine() {
     constexpr int max_mainloop_runs = 10;
     int mainloop_runs = 0;
 
+    handle_connector_lock_confirmation();
+
     // run over state machine loop until current_state does not change anymore
     do {
         mainloop_runs++;
@@ -299,7 +301,6 @@ void Charger::run_state_machine() {
                 internal_context.no_energy_warning_printed = false;
                 internal_context.ac_x1_fallback_nominal_timeout_running = false;
                 internal_context.auth_received_printed = false;
-                internal_context.connector_lock_wait_started.reset();
 
                 bsp->allow_power_on(false, types::evse_board_support::Reason::PowerOff);
 
@@ -428,7 +429,7 @@ void Charger::run_state_machine() {
                     session_log.evse(false, "EIM Authorization received");
                 }
 
-                if (not connector_lock_allows_charging()) {
+                if (not connector_lock_confirmation.confirmed_or_start_wait()) {
                     break;
                 }
 
@@ -564,7 +565,7 @@ void Charger::run_state_machine() {
                 // Contract / Plug and Charge
             } else if (shared_context.flag_authorized and shared_context.authorized_pnc) {
 
-                if (not connector_lock_allows_charging()) {
+                if (not connector_lock_confirmation.confirmed_or_start_wait()) {
                     break;
                 }
 
@@ -1996,8 +1997,8 @@ void Charger::setup(const SetupConfig& config) {
     config_context.sleep_before_enabling_pwm_hlc_mode_ms = config.sleep_before_enabling_pwm_hlc_mode_ms;
     config_context.session_id_type = config.session_id_type;
     config_context.hlc_charge_loop_without_energy_timeout_s = config.hlc_charge_loop_without_energy_timeout_s;
-    config_context.connector_lock_confirmation_timeout_ms =
-        config.charge_mode == ChargeMode::AC ? config.connector_lock_confirmation_timeout_ms : 0;
+    connector_lock_confirmation.set_timeout(std::chrono::milliseconds(
+        config.charge_mode == ChargeMode::AC ? config.connector_lock_confirmation_timeout_ms : 0));
 
     if (config_context.charge_mode == ChargeMode::DC) {
         shared_context.hlc_charging_active = true;
@@ -2024,52 +2025,36 @@ bool Charger::get_authorized_eim() {
     return (shared_context.flag_authorized and not shared_context.authorized_pnc);
 }
 
-void Charger::set_connector_lock_state(types::connector_lock::LockState state) {
-    Everest::scoped_lock_timeout lock(state_machine_mutex, Everest::MutexDescription::Charger_set_connector_lock_state);
-    shared_context.connector_lock_state = state;
-}
-
-bool Charger::connector_lock_ready() {
-    Everest::scoped_lock_timeout lock(state_machine_mutex, Everest::MutexDescription::Charger_connector_lock_ready);
-    return connector_lock_ready_internal();
-}
-
-bool Charger::connector_lock_ready_internal() const {
-    return config_context.connector_lock_confirmation_timeout_ms == 0 or
-           shared_context.connector_lock_state == types::connector_lock::LockState::Locked;
-}
-
-bool Charger::connector_lock_allows_charging() {
-    auto& wait_started = internal_context.connector_lock_wait_started;
-    if (connector_lock_ready_internal()) {
-        if (wait_started.has_value()) {
-            wait_started.reset();
-            session_log.evse(false, "Connector lock confirmed");
+void Charger::handle_connector_lock_confirmation() {
+    switch (connector_lock_confirmation.poll()) {
+    case ConnectorLockConfirmation::Event::None:
+        return;
+    case ConnectorLockConfirmation::Event::ConfirmedAfterTimeout:
+        // Within a session the error clears on unplug; outside one, e.g. a captive cable locked without an EV
+        // plugged in, nothing else would clear it.
+        if (not shared_context.session_active) {
+            error_handling->clear_connector_lock_confirmation_timeout_error();
         }
-        return true;
+        return;
+    case ConnectorLockConfirmation::Event::TimedOut:
+        break;
     }
 
-    const auto now = std::chrono::steady_clock::now();
-    if (not wait_started.has_value()) {
-        wait_started = now;
-        session_log.evse(false, "Waiting for connector lock confirmation");
-    }
-    if (now - *wait_started >= std::chrono::milliseconds(config_context.connector_lock_confirmation_timeout_ms)) {
-        wait_started.reset();
-        end_authorization_on_connector_lock_timeout();
-    }
-    return false;
-}
-
-void Charger::end_authorization_on_connector_lock_timeout() {
     session_log.evse(false, "Connector lock not confirmed within timeout");
+    error_handling->raise_connector_lock_confirmation_timeout_error(
+        fmt::format("Connector lock not confirmed within {} ms", connector_lock_confirmation.timeout().count()));
+
+    const bool authorization_held_for_lock = shared_context.current_state == EvseState::WaitingForAuthentication and
+                                             shared_context.flag_authorized and
+                                             not shared_context.flag_transaction_active;
+    if (not authorization_held_for_lock) {
+        return;
+    }
     // Dropping the authorization lets the lock open again (if it only locks when authorized). The session itself
     // ends through the raised error, so stop_session() is not called here.
     signal_simple_event(types::evse_manager::SessionEventEnum::Deauthorized);
     shared_context.flag_authorized = false;
     shared_context.authorized_pnc = false;
-    error_handling->raise_connector_lock_confirmation_timeout_error(fmt::format(
-        "Connector lock not confirmed within {} ms", config_context.connector_lock_confirmation_timeout_ms));
     signal_hlc_connector_lock_timeout();
 }
 

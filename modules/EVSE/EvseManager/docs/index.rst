@@ -97,18 +97,25 @@ variable (``Unknown``, ``Unlocked`` or ``Locked``). It can retry a failing
 lock itself and then raises ``connector_lock/ConnectorLockFailedLock`` only
 after its final retry.
 
-By default the EvseManager does not wait for this feedback. Set
-``connector_lock_confirmation_timeout_ms`` to a value above ``0`` to make an
-authorization wait until the connector lock reports ``Locked``. This requires a
+By default the EvseManager does not check this feedback. Set
+``connector_lock_confirmation_timeout_ms`` to a value above ``0`` to require
+the connector lock to report ``Locked`` within that time after each ``lock``
+command, and to make an authorization wait for it. This requires a
 ``connector_lock`` connection; without one the EvseManager logs a warning and
-does not wait. The wait only applies to AC charging.
+does not check the lock. It only applies to AC charging.
 
-When the lock is requested depends on the locking rules: by default in CP state
+When the lock is commanded depends on the locking rules: by default in CP state
 B right after plug-in, with ``unlock_when_deauthorized`` once the session is
-authorized. In the default case the lock is usually confirmed before the
-authorization arrives, so there is no wait at all.
+authorized, and in captive cable mode once an inserted cable is seated (see
+``keep_cable_locked_lock_delay_ms``). The timeout runs from that command,
+whether or not a session is authorized. In the default case the lock is usually
+confirmed before the authorization arrives, so there is no wait at all. An
+``unlock`` command ends the check. An authorized session that has to wait while
+no timeout is running, for example because the lock reported ``Locked`` and
+later dropped back to ``Unlocked`` or ``Unknown``, starts the timeout at that
+point. A session therefore never waits longer than the timeout.
 
-While the EvseManager waits for the lock:
+While an authorized session waits for the lock:
 
 * It stays in ``WaitingForAuthentication`` and starts no transaction.
 * Basic charging: PWM stays off, so the EV cannot request power.
@@ -117,26 +124,28 @@ While the EvseManager waits for the lock:
   ``AuthorizationRes``. In AC HLC the 5 % or X1 signalling stays unchanged.
 
 Once the lock reports ``Locked``, the session continues as if the authorization
-had just arrived. If it does not within the timeout, the EvseManager:
+had just arrived. If the lock does not report ``Locked`` within the timeout, the
+EvseManager raises ``evse_manager/ConnectorLockConfirmationTimeout``. Like every
+blocking error (see `Error Handling`_), it makes the EvseManager Inoperative,
+which ends a running session with an error shutdown. If a session was
+authorized and waiting for the lock, the EvseManager also:
 
 * drops the authorization and publishes a ``Deauthorized`` session event, so
   no transaction is started and the token is released,
 * tells the ISO stack that authorization failed (``AuthorizationStatus``
   ``Timeout`` with a valid certificate, so neither the token nor the contract
-  certificate is blamed),
-* raises ``evse_manager/ConnectorLockConfirmationTimeout``. Like every
-  blocking error (see `Error Handling`_), it makes the EvseManager Inoperative,
-  which ends the session with an error shutdown. It clears on unplug.
+  certificate is blamed).
 
-A ``Locked`` report or a new authorization after the timeout does not resume
-the session.
+The error clears on unplug. Outside a session, for example a captive cable
+locked without an EV plugged in, it also clears when the lock reports
+``Locked`` later. A ``Locked`` report or a new authorization after the timeout
+does not resume the session.
 
 The EvseManager keeps the last reported lock state across sessions. A lock that
 stays ``Locked`` between sessions, as in captive cable mode, therefore needs no
 new report for the next session to start without waiting.
 
-The session log shows when the EvseManager starts waiting for the lock, every
-reported lock state, and whether the lock was confirmed or timed out.
+The session log shows every reported lock state and a timeout.
 
 DC Configuration
 ----------------
