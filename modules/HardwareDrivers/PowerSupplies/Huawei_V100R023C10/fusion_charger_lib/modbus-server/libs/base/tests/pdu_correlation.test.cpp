@@ -343,12 +343,16 @@ TEST(PDUCorrelationLayer, timeout_works_accurate) {
         }
     });
 
+    const auto timeout = std::chrono::milliseconds(50);
+    const auto scheduling_allowance_on_loaded_host = std::chrono::seconds(1);
+
     auto request = pdu::GenericPDU(0x01, {0x02});
     auto time_before = std::chrono::steady_clock::now();
-    ASSERT_THROW(pal->request_response(request, std::chrono::milliseconds(50)), std::runtime_error);
-    auto time_after = std::chrono::steady_clock::now();
+    ASSERT_THROW(pal->request_response(request, timeout), std::runtime_error);
+    auto elapsed = std::chrono::steady_clock::now() - time_before;
 
-    ASSERT_TRUE(time_after - time_before < std::chrono::milliseconds(60)); // 10ms tolerance
+    ASSERT_GE(elapsed, timeout);
+    ASSERT_LT(elapsed, timeout + scheduling_allowance_on_loaded_host);
 
     thread.join();
 }

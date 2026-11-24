@@ -123,6 +123,8 @@ protected:
 
     logs::LogIntf log;
 
+    virtual void wait_for_new_packet(std::unique_lock<std::mutex>& lock, std::chrono::milliseconds timeout);
+
 public:
     /**
      * @brief Create a new sender with T_0 and multiple \f$T_i\f$ (with

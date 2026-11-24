@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
-#include <algorithm>
+#include <cstring>
 
 #include <gtest/gtest.h>
 
@@ -58,34 +58,87 @@ TEST(DummyEthernetInterface, callback_works) {
     EXPECT_EQ(recv.serialize(), dummy_frame.serialize());
 }
 
-TEST(Sender, single_frame_goes_through_all_delays) {
-    std::vector<std::chrono::milliseconds> received_times;
-    std::vector<std::uint16_t> received_st_nums;
-    std::vector<std::uint16_t> received_sq_nums;
+struct SentFrame {
+    std::uint32_t st_num;
+    std::uint32_t sq_num;
 
-    auto intf = std::make_shared<DummyEthernetInterface>(
-        [&](const std::uint8_t* data, size_t size) {
-            received_times.push_back(std::chrono::duration_cast<std::chrono::milliseconds>(
-                std::chrono::system_clock::now().time_since_epoch()));
+    bool operator==(const SentFrame& other) const {
+        return st_num == other.st_num && sq_num == other.sq_num;
+    }
+};
 
-            auto frame = goose::frame::GooseFrame(goose_ethernet::EthernetFrame(data, size));
+class FrameRecorder {
+    std::mutex mutex;
+    std::vector<SentFrame> frames;
 
-            received_sq_nums.push_back(frame.pdu.sq_num);
-            received_st_nums.push_back(frame.pdu.st_num);
-        },
-        []() -> std::vector<std::uint8_t> { return {}; });
+public:
+    void record(const std::uint8_t* data, size_t size) {
+        auto frame = goose::frame::GooseFrame(goose_ethernet::EthernetFrame(data, size));
+        std::lock_guard<std::mutex> lock(mutex);
+        frames.push_back({frame.pdu.st_num, frame.pdu.sq_num});
+    }
 
-    goose::sender::Sender sender(
-        std::chrono::milliseconds(10),
-        {std::chrono::milliseconds(1), std::chrono::milliseconds(2), std::chrono::milliseconds(4)}, intf);
+    std::vector<SentFrame> sent() {
+        std::lock_guard<std::mutex> lock(mutex);
+        return frames;
+    }
+};
 
-    sender.start();
+class SteppedSender : public goose::sender::Sender {
+    std::vector<std::chrono::milliseconds> requested_waits;
+    size_t elapsed_waits = 0;
+    bool waiting = false;
 
-    // Nothing should have been sent yet
-    ASSERT_EQ(received_times.size(), 0);
-    std::this_thread::sleep_for(std::chrono::milliseconds(5));
-    ASSERT_EQ(received_times.size(), 0);
+protected:
+    void wait_for_new_packet(std::unique_lock<std::mutex>& lock, std::chrono::milliseconds timeout) override {
+        requested_waits.push_back(timeout);
+        auto woken = [this] { return stop_flag || has_new_package || elapsed_waits >= requested_waits.size(); };
+        if (woken()) {
+            return;
+        }
+        waiting = true;
+        current_packet_cv.notify_all();
+        current_packet_cv.wait(lock, woken);
+        waiting = false;
+    }
 
+public:
+    using goose::sender::Sender::Sender;
+
+    ~SteppedSender() {
+        SteppedSender::stop();
+    }
+
+    bool await_blocked_wait(size_t count) {
+        const auto generous_bound_for_loaded_hosts = std::chrono::seconds(5);
+        std::unique_lock<std::mutex> lock(current_packet_mutex);
+        return current_packet_cv.wait_for(lock, generous_bound_for_loaded_hosts,
+                                          [this, count] { return waiting && requested_waits.size() >= count; });
+    }
+
+    std::vector<std::chrono::milliseconds> requested_waits_so_far() {
+        std::lock_guard<std::mutex> lock(current_packet_mutex);
+        return requested_waits;
+    }
+
+    void elapse_wait() {
+        {
+            std::lock_guard<std::mutex> lock(current_packet_mutex);
+            elapsed_waits = requested_waits.size();
+        }
+        current_packet_cv.notify_all();
+    }
+
+    void stop() override {
+        {
+            std::lock_guard<std::mutex> lock(current_packet_mutex);
+            stop_flag = true;
+        }
+        goose::sender::Sender::stop();
+    }
+};
+
+static goose::frame::GooseFrame make_frame() {
     goose::frame::GooseFrame frame;
     frame.appid[0] = 0x01;
     frame.appid[1] = 0x02;
@@ -96,154 +149,86 @@ TEST(Sender, single_frame_goes_through_all_delays) {
     // Random data, should be overwritten by sender
     frame.pdu.sq_num = 0xdead;
     frame.pdu.st_num = 0xbeef;
+    return frame;
+}
 
-    sender.send(new goose::sender::SendPacketNormal(frame));
+using std::chrono::milliseconds;
 
-    std::this_thread::sleep_for(std::chrono::milliseconds(20));
-    // this should be about one cycle of all Ts, at least 4 packets should have
-    // been sent by now though no more than 5
+TEST(Sender, single_frame_goes_through_all_delays) {
+    auto recorder = std::make_shared<FrameRecorder>();
+    auto intf = std::make_shared<DummyEthernetInterface>(
+        [recorder](const std::uint8_t* data, size_t size) { recorder->record(data, size); },
+        []() -> std::vector<std::uint8_t> { return {}; });
 
-    ASSERT_GE(received_times.size(), 4);
-    ASSERT_LE(received_times.size(), 5);
+    SteppedSender sender(milliseconds(10), {milliseconds(1), milliseconds(2), milliseconds(4)}, intf);
 
-    // first delay should be about 1ms (+-1ms due to linux not
-    // being real-time)s
-    ASSERT_LE((received_times[1] - received_times[0]).count(), 2);
+    sender.start();
 
-    // second delay should be about 2ms (+-1ms)
-    ASSERT_NEAR((received_times[2] - received_times[1]).count(), 2, 1);
+    sender.send(new goose::sender::SendPacketNormal(make_frame()));
 
-    // third delay should be about 4ms (+-2ms)
-    ASSERT_NEAR((received_times[3] - received_times[2]).count(), 4, 2);
+    const std::vector<milliseconds> expected_waits{milliseconds(1), milliseconds(2), milliseconds(4), milliseconds(10),
+                                                   milliseconds(10)};
+    std::vector<SentFrame> expected_frames;
+    for (size_t i = 0; i < expected_waits.size(); i++) {
+        ASSERT_TRUE(sender.await_blocked_wait(i + 1));
+        expected_frames.push_back({1, static_cast<std::uint32_t>(i)});
 
-    // fourth delay should be about 10ms (+-4ms) (if a fourth packet was sent)
-    if (received_times.size() >= 5) {
-        ASSERT_NEAR((received_times[4] - received_times[3]).count(), 10, 4);
+        ASSERT_EQ(recorder->sent(), expected_frames);
+        ASSERT_EQ(sender.requested_waits_so_far(),
+                  std::vector<milliseconds>(expected_waits.begin(), expected_waits.begin() + i + 1));
+
+        sender.elapse_wait();
     }
-
-    // all st nums should be 1
-    for (auto st_num : received_st_nums) {
-        ASSERT_EQ(st_num, 1);
-    }
-
-    sender.stop();
 }
 
 TEST(Sender, multiple_frames_go_through_all_delays) {
-    std::vector<std::chrono::milliseconds> received_times;
-    std::vector<std::uint16_t> received_st_nums;
-    std::vector<std::uint16_t> received_sq_nums;
-
+    auto recorder = std::make_shared<FrameRecorder>();
     auto intf = std::make_shared<DummyEthernetInterface>(
-        [&](const std::uint8_t* data, size_t size) {
-            received_times.push_back(std::chrono::duration_cast<std::chrono::milliseconds>(
-                std::chrono::system_clock::now().time_since_epoch()));
-
-            auto frame = goose::frame::GooseFrame(goose_ethernet::EthernetFrame(data, size));
-
-            received_sq_nums.push_back(frame.pdu.sq_num);
-            received_st_nums.push_back(frame.pdu.st_num);
-        },
+        [recorder](const std::uint8_t* data, size_t size) { recorder->record(data, size); },
         []() -> std::vector<std::uint8_t> { return {}; });
 
-    auto t0 = std::chrono::milliseconds(10);
-    auto ts = std::vector<std::chrono::milliseconds>{std::chrono::milliseconds(1), std::chrono::milliseconds(2),
-                                                     std::chrono::milliseconds(4)};
+    auto t0 = milliseconds(10);
+    auto ts = std::vector<milliseconds>{milliseconds(1), milliseconds(2), milliseconds(4)};
 
-    goose::sender::Sender sender(t0, ts, intf);
+    SteppedSender sender(t0, ts, intf);
 
     sender.start();
 
-    // Nothing should have been sent yet
-    ASSERT_EQ(received_times.size(), 0);
-    std::this_thread::sleep_for(std::chrono::milliseconds(5));
-    ASSERT_EQ(received_times.size(), 0);
+    const std::vector<milliseconds> waits_per_frame{ts[0], ts[1], ts[2], t0, t0};
+    std::vector<milliseconds> expected_waits;
+    std::vector<SentFrame> expected_frames;
 
-    goose::frame::GooseFrame frame;
-    frame.appid[0] = 0x01;
-    frame.appid[1] = 0x02;
-    strcpy(frame.pdu.go_cb_ref, "goose_cb_ref");
-    strcpy(frame.pdu.dat_set, "dataset");
-    strcpy(frame.pdu.go_id, "goose_id");
-    frame.pdu.timestamp = goose::frame::GooseTimestamp::now();
-    // Random data, should be overwritten by sender
-    frame.pdu.sq_num = 0xdead;
-    frame.pdu.st_num = 0xbeef;
+    for (std::uint32_t st_num = 1; st_num <= 5; st_num++) {
+        sender.send(new goose::sender::SendPacketNormal(make_frame()));
 
-    // send multiple frames
-    for (int i = 0; i < 5; i++) {
-        sender.send(new goose::sender::SendPacketNormal(frame));
+        for (std::uint32_t sq_num = 0; sq_num < waits_per_frame.size(); sq_num++) {
+            expected_waits.push_back(waits_per_frame[sq_num]);
+            expected_frames.push_back({st_num, sq_num});
+            ASSERT_TRUE(sender.await_blocked_wait(expected_waits.size()));
 
-        std::this_thread::sleep_for(std::chrono::milliseconds(20));
-    }
+            ASSERT_EQ(recorder->sent(), expected_frames);
+            ASSERT_EQ(sender.requested_waits_so_far(), expected_waits);
 
-    sender.stop();
-
-    auto snapshot_times = received_times;
-    auto snapshot_st_nums = received_st_nums;
-    auto snapshot_sq_nums = received_sq_nums;
-
-    // sometimes the snapshot_{times,st_nums,sq_nums} are not equal size; thus
-    // truncate the longest
-    auto min_size = std::min({snapshot_times.size(), snapshot_st_nums.size(), snapshot_sq_nums.size()});
-    snapshot_times.resize(min_size);
-    snapshot_st_nums.resize(min_size);
-    snapshot_sq_nums.resize(min_size);
-
-    // Assert the predicate that the frames delay increases 3 times, then stays
-    // about the same and then st num increases and the frame delay resets and
-    // increases again, while the sq num increases by 1 each time and resets upon
-    // st num increase
-    std::chrono::milliseconds last_delay = std::chrono::milliseconds(0);
-    std::uint16_t last_st_num = 1; // note that the first st num is 1
-    std::uint16_t last_sq_num = 0;
-    size_t i_s_since_last_st_num_change = 0;
-    size_t st_increase_count = 0;
-
-    for (size_t i = 1; i < snapshot_times.size(); i++) {
-        auto delay = snapshot_times[i] - snapshot_times[i - 1];
-
-        // st num should only be equal or increase by 1
-        ASSERT_GE(snapshot_st_nums[i], last_st_num);
-        ASSERT_LE(snapshot_st_nums[i], last_st_num + 1);
-
-        if (snapshot_st_nums[i] != last_st_num) {
-            st_increase_count++;
-
-            // if st num increased, sq num should be 0
-            ASSERT_EQ(snapshot_sq_nums[i], 0);
-
-            // delay here is unknown because a message was sent which can be at a
-            // random point in time. Though it should not be greater than 20ms
-            ASSERT_LE(delay.count(), 20);
-        } else {
-            // sq num must always get bigger (not in st num change but thats handled
-            // above)
-            ASSERT_EQ(snapshot_sq_nums[i], last_sq_num + 1);
-
-            // for the first few frames the delay should be near the set delays (ts)
-            // (+- 3ms)
-            if (i_s_since_last_st_num_change <= 4) {
-                // if i_s_since_last_st_num_change is 0 then the last_delay is weird
-                // because a message was sent there
-
-                if (i_s_since_last_st_num_change != 0) {
-                    // The delay should be near set delays (ts) (+- 3ms)
-                    ASSERT_NEAR(delay.count(), ts[i_s_since_last_st_num_change - 1].count(), 3);
-                }
-            } else {
-                // delay should be about t0 (+- 5ms)
-                ASSERT_NEAR(delay.count(), t0.count(), 5);
+            if (sq_num + 1 < waits_per_frame.size()) {
+                sender.elapse_wait();
             }
         }
-
-        last_st_num = snapshot_st_nums[i];
-        last_sq_num = snapshot_sq_nums[i];
-        last_delay = delay;
     }
+}
 
-    ASSERT_EQ(st_increase_count,
-              4); // this should be 4 because we send 5 frames, the first
-                  // one with st num 1, which is not counted (see the initial
-                  // "last_st_num = 1" above)
+TEST(Sender, frame_sent_before_start_goes_through_all_delays) {
+    auto recorder = std::make_shared<FrameRecorder>();
+    auto intf = std::make_shared<DummyEthernetInterface>(
+        [recorder](const std::uint8_t* data, size_t size) { recorder->record(data, size); },
+        []() -> std::vector<std::uint8_t> { return {}; });
+
+    SteppedSender sender(milliseconds(10), {milliseconds(1), milliseconds(2), milliseconds(4)}, intf);
+
+    sender.send(new goose::sender::SendPacketNormal(make_frame()));
+    sender.start();
+
+    ASSERT_TRUE(sender.await_blocked_wait(1));
+
+    ASSERT_EQ(recorder->sent(), (std::vector<SentFrame>{{1, 0}}));
+    ASSERT_EQ(sender.requested_waits_so_far(), std::vector<milliseconds>{milliseconds(1)});
 }
