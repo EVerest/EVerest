@@ -5,40 +5,13 @@
 #include <everest/logging.hpp>
 #include <gtest/gtest.h>
 #include <set>
-#include <sys/socket.h>
 #include <thread>
 
+#include "../helpers/WebSocketServerTestAccess.hpp"
 #include "../helpers/WebSocketTestClient.hpp"
 #include "../server/WebsocketServer.hpp"
 
 using namespace server;
-
-namespace server {
-class WebSocketServerTestAccess {
-public:
-    static constexpr std::size_t message_limit() {
-        return WebSocketServer::MAX_PENDING_MESSAGES_PER_CLIENT;
-    }
-    static constexpr std::size_t payload_limit() {
-        return WebSocketServer::MAX_PENDING_PAYLOAD_BYTES_PER_CLIENT;
-    }
-    static bool set_send_buffer_size(WebSocketServer& server, const TransportInterface::ClientId& id, int bytes) {
-        std::lock_guard<std::mutex> lock(server.m_clients_mutex);
-        return setsockopt(lws_get_socket_fd(server.m_clients.at(id).wsi), SOL_SOCKET, SO_SNDBUF, &bytes,
-                          sizeof(bytes)) == 0;
-    }
-    static bool queue_empty(WebSocketServer& server, const TransportInterface::ClientId& id) {
-        std::lock_guard<std::mutex> lock(server.m_clients_mutex);
-        const auto it = server.m_clients.find(id);
-        return it != server.m_clients.end() && it->second.outgoing_messages.empty() &&
-               it->second.pending_payload_bytes == 0;
-    }
-    static std::size_t queued_message_count(WebSocketServer& server, const TransportInterface::ClientId& id) {
-        std::lock_guard<std::mutex> lock(server.m_clients_mutex);
-        return server.m_clients.at(id).outgoing_messages.size();
-    }
-};
-} // namespace server
 
 class WebSocketServerTest : public ::testing::Test {
 protected:
@@ -49,10 +22,10 @@ protected:
     static constexpr std::chrono::seconds LARGE_MESSAGE_RECEIVE_TIMEOUT{5};
 
     std::unique_ptr<WebSocketServer> ws_server;
-    int test_port = 8080;
+    int test_port = 0;
 
     void SetUp() override {
-        ws_server = std::make_unique<WebSocketServer>(false, test_port, "lo");
+        ws_server = std::make_unique<WebSocketServer>(false, 0, "lo");
         lws_set_log_level(LLL_ERR | LLL_WARN, NULL);
 
         ws_server->on_client_connected = [this](const TransportInterface::ClientId& client_id,
@@ -94,7 +67,31 @@ protected:
             }
         };
 
-        ws_server->start_server();
+        ASSERT_TRUE(ws_server->start_server());
+        test_port = WebSocketServerTestAccess::listen_port(*ws_server);
+        ASSERT_GT(test_port, 0);
+    }
+
+    ::testing::AssertionResult connect_client(WebSocketTestClient& client, TransportInterface::ClientId& client_id) {
+        const auto count = get_connected_clients().size() + 1;
+        if (!client.connect()) {
+            return ::testing::AssertionFailure() << "client could not start connecting";
+        }
+        if (!client.wait_until_connected(CLIENT_HANDSHAKE_TIMEOUT)) {
+            return ::testing::AssertionFailure()
+                   << "client handshake did not finish within " << CLIENT_HANDSHAKE_TIMEOUT.count() << " s";
+        }
+        if (!wait_for_client_count(count, CLIENT_REGISTRATION_TIMEOUT)) {
+            return ::testing::AssertionFailure()
+                   << "server did not register the client within " << CLIENT_REGISTRATION_TIMEOUT.count() << " s";
+        }
+        client_id = get_connected_clients().back();
+        return ::testing::AssertionSuccess();
+    }
+
+    bool wait_for_received_data(const TransportInterface::ClientId& client_id, std::chrono::seconds timeout) {
+        std::unique_lock<std::mutex> lock(cv_mutex);
+        return cv.wait_for(lock, timeout, [&] { return received_data.count(client_id) != 0; });
     }
 
     std::vector<TransportInterface::ClientId> get_connected_clients() {
@@ -166,7 +163,7 @@ TEST_F(WebSocketServerTest, WebSocketServerStarts) {
 TEST_F(WebSocketServerTest, ClientCanConnect) {
     WebSocketTestClient client("localhost", test_port);
     ASSERT_TRUE(client.connect());
-    ASSERT_TRUE(client.wait_until_connected(std::chrono::milliseconds(100)));
+    ASSERT_TRUE(client.wait_until_connected(CLIENT_HANDSHAKE_TIMEOUT));
 }
 
 // Test: Connect several WebSocket clients to server
@@ -179,11 +176,10 @@ TEST_F(WebSocketServerTest, MultipleClientsCanConnect) {
     ASSERT_TRUE(client2.connect());
     ASSERT_TRUE(client3.connect());
 
-    std::this_thread::sleep_for(std::chrono::milliseconds(10));
-
-    ASSERT_TRUE(client1.is_connected());
-    ASSERT_TRUE(client2.is_connected());
-    ASSERT_TRUE(client3.is_connected());
+    ASSERT_TRUE(client1.wait_until_connected(CLIENT_HANDSHAKE_TIMEOUT));
+    ASSERT_TRUE(client2.wait_until_connected(CLIENT_HANDSHAKE_TIMEOUT));
+    ASSERT_TRUE(client3.wait_until_connected(CLIENT_HANDSHAKE_TIMEOUT));
+    ASSERT_TRUE(wait_for_client_count(3, CLIENT_REGISTRATION_TIMEOUT));
 
     ASSERT_TRUE(ws_server->connections_count() == 3);
 }
@@ -191,30 +187,26 @@ TEST_F(WebSocketServerTest, MultipleClientsCanConnect) {
 // Test: Client can send data to server
 TEST_F(WebSocketServerTest, ClientCanSendAndReceiveData) {
     WebSocketTestClient client("localhost", test_port);
-    ASSERT_TRUE(client.connect());
-    ASSERT_TRUE(client.wait_until_connected(std::chrono::milliseconds(100)));
+    TransportInterface::ClientId id;
+    ASSERT_TRUE(connect_client(client, id));
 
     client.send("Hello World!");
-    std::this_thread::sleep_for(std::chrono::milliseconds(10));
-
-    std::unique_lock<std::mutex> lock(cv_mutex);
-    cv.wait_for(lock, std::chrono::seconds(1), [&] { return !received_data.empty(); });
-    lock.unlock();
+    ASSERT_TRUE(wait_for_received_data(id, MESSAGE_RECEIVE_TIMEOUT));
 
     ASSERT_EQ(ws_server->connections_count(), 1);
-    ASSERT_EQ(received_data[(get_connected_clients()[0])], "Hello World!");
+    std::lock_guard<std::mutex> lock(cv_mutex);
+    ASSERT_EQ(received_data[id], "Hello World!");
 }
 
 // Test: Server can send data to client
 TEST_F(WebSocketServerTest, ServerCanSendDataToClient) {
     WebSocketTestClient client("localhost", test_port);
-    ASSERT_TRUE(client.connect());
-    ASSERT_TRUE(client.wait_until_connected(std::chrono::milliseconds(100)));
+    TransportInterface::ClientId id;
+    ASSERT_TRUE(connect_client(client, id));
 
     std::string message = "Hello from server!";
-    ws_server->send_data(get_connected_clients()[0], std::vector<uint8_t>(message.begin(), message.end()));
-    std::this_thread::sleep_for(std::chrono::milliseconds(10));
-    std::string received_data = client.wait_for_data(std::chrono::seconds(1), false);
+    ws_server->send_data(id, std::vector<uint8_t>(message.begin(), message.end()));
+    std::string received_data = client.wait_for_data(MESSAGE_RECEIVE_TIMEOUT, false);
 
     ASSERT_FALSE(received_data.empty());
     ASSERT_EQ(received_data, "Hello from server!");
@@ -222,12 +214,11 @@ TEST_F(WebSocketServerTest, ServerCanSendDataToClient) {
 
 TEST_F(WebSocketServerTest, ConcurrentSendersDeliverEveryQueuedMessage) {
     WebSocketTestClient client("localhost", test_port);
-    ASSERT_TRUE(client.connect());
-    ASSERT_TRUE(client.wait_until_connected(std::chrono::milliseconds(100)));
+    TransportInterface::ClientId client_id;
+    ASSERT_TRUE(connect_client(client, client_id));
 
     constexpr int sender_count = 4;
     constexpr int messages_per_sender = 25;
-    const auto client_id = get_connected_clients().front();
     std::vector<std::thread> senders;
     for (int sender = 0; sender < sender_count; ++sender) {
         senders.emplace_back([&, sender] {
@@ -253,19 +244,21 @@ TEST_F(WebSocketServerTest, ConcurrentSendersDeliverEveryQueuedMessage) {
 // Test: Server kills client connection
 TEST_F(WebSocketServerTest, ServerCanKillClientConnection) {
     WebSocketTestClient client("localhost", test_port);
-    ASSERT_TRUE(client.connect());
-    ASSERT_TRUE(client.wait_until_connected(std::chrono::milliseconds(100)));
+    TransportInterface::ClientId id;
+    ASSERT_TRUE(connect_client(client, id));
 
     client.send("Hello World!");
-    std::this_thread::sleep_for(std::chrono::milliseconds(10));
-
-    client.wait_for_data(std::chrono::seconds(1));
+    ASSERT_TRUE(wait_for_received_data(id, MESSAGE_RECEIVE_TIMEOUT));
 
     ASSERT_EQ(ws_server->connections_count(), 1);
-    ASSERT_EQ(received_data[get_connected_clients()[0]], "Hello World!");
+    {
+        std::lock_guard<std::mutex> lock(cv_mutex);
+        ASSERT_EQ(received_data[id], "Hello World!");
+    }
 
-    ws_server->kill_client_connection(get_connected_clients()[0], "Test kill");
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    ws_server->kill_client_connection(id, "Test kill");
+    ASSERT_TRUE(wait_for_client_count(0, CLIENT_DISCONNECTION_TIMEOUT));
+    ASSERT_TRUE(client.wait_until_disconnected(CLIENT_DISCONNECTION_TIMEOUT));
 
     ASSERT_EQ(ws_server->connections_count(), 0);
     ASSERT_FALSE(client.is_connected());
@@ -445,6 +438,7 @@ TEST_F(WebSocketServerTest, ShutdownClearsQueuedMessagesAndPendingCloses) {
     EXPECT_EQ(ws_server->connections_count(), 0);
     EXPECT_TRUE(wait_for_client_count(0, CLIENT_DISCONNECTION_TIMEOUT));
     ASSERT_TRUE(ws_server->start_server());
+    test_port = WebSocketServerTestAccess::listen_port(*ws_server);
     WebSocketTestClient replacement("localhost", test_port);
     ASSERT_TRUE(replacement.connect());
     ASSERT_TRUE(wait_for_client_count(1, CLIENT_REGISTRATION_TIMEOUT));

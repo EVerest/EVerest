@@ -8,6 +8,7 @@
 #include "../helpers/ErrorHandler.hpp"
 #include "../helpers/JsonRpcUtils.hpp"
 #include "../helpers/RequestHandlerDummy.hpp"
+#include "../helpers/WebSocketServerTestAccess.hpp"
 #include "../helpers/WebSocketTestClient.hpp"
 #include "../rpc/RpcHandler.hpp"
 #include "../server/WebsocketServer.hpp"
@@ -18,19 +19,22 @@ using namespace json_rpc_utils;
 
 class RpcHandlerTest : public ::testing::Test {
 protected:
-    int test_port = 8080;
+    static constexpr std::chrono::seconds CLIENT_HANDSHAKE_TIMEOUT{2};
+    int test_port = 0;
     void SetUp() override {
         // Start the WebSocket server
-        m_websocket_server = std::make_unique<server::WebSocketServer>(false, test_port, "lo");
+        auto websocket_server = std::make_shared<server::WebSocketServer>(false, 0, "lo");
         lws_set_log_level(LLL_ERR | LLL_WARN, NULL);
 
         // Create RpcHandler instance. Move the transport interfaces and request handler to the RpcHandler
         std::vector<std::shared_ptr<server::TransportInterface>> transport_interfaces;
         request_handler = std::make_unique<RequestHandlerDummy>(data_store);
-        transport_interfaces.push_back(std::shared_ptr<server::TransportInterface>(std::move(m_websocket_server)));
+        transport_interfaces.push_back(websocket_server);
         m_rpc_handler =
             std::make_unique<RpcHandler>(std::move(transport_interfaces), data_store, std::move(request_handler));
         m_rpc_handler->start_server();
+        test_port = server::WebSocketServerTestAccess::listen_port(*websocket_server);
+        ASSERT_GT(test_port, 0);
         initialize_data_store();
     }
 
@@ -77,7 +81,6 @@ protected:
         }
     }
 
-    std::unique_ptr<server::WebSocketServer> m_websocket_server;
     std::unique_ptr<rpc::RpcHandler> m_rpc_handler;
 
     // Condition variable to wait for response
@@ -94,21 +97,19 @@ protected:
 TEST_F(RpcHandlerTest, ApiHelloTimeout) {
     WebSocketTestClient client("localhost", test_port);
     ASSERT_TRUE(client.connect());
-    ASSERT_TRUE(client.wait_until_connected(std::chrono::milliseconds(100)));
+    ASSERT_TRUE(client.wait_until_connected(CLIENT_HANDSHAKE_TIMEOUT));
 
     // Wait for the client hello timeout
     EVLOG_info << "Waiting for client hello timeout...";
-    std::this_thread::sleep_for(std::chrono::seconds(CLIENT_HELLO_TIMEOUT) + std::chrono::milliseconds(100));
-
-    // Check if the client is still connected
-    ASSERT_FALSE(client.is_connected());
+    ASSERT_TRUE(
+        client.wait_until_disconnected(std::chrono::seconds(CLIENT_HELLO_TIMEOUT) + std::chrono::milliseconds(100)));
 }
 
 // Test: Connect to WebSocket server and send API.Hello request
 TEST_F(RpcHandlerTest, ApiHelloReq) {
     WebSocketTestClient client("localhost", test_port);
     ASSERT_TRUE(client.connect());
-    ASSERT_TRUE(client.wait_until_connected(std::chrono::milliseconds(100)));
+    ASSERT_TRUE(client.wait_until_connected(CLIENT_HANDSHAKE_TIMEOUT));
 
     // Set up the expected response
     RPCDataTypes::HelloResObj result;
@@ -129,14 +130,14 @@ TEST_F(RpcHandlerTest, ApiHelloReq) {
     nlohmann::json response = nlohmann::json::parse(data);
     ASSERT_EQ(response, expected_response);
     // Check if the client is still connected
-    ASSERT_TRUE(client.wait_until_connected(std::chrono::milliseconds(100)));
+    ASSERT_TRUE(client.wait_until_connected(CLIENT_HANDSHAKE_TIMEOUT));
 }
 
 // Test: Connect to WebSocket server and send EVSEInfo request
 TEST_F(RpcHandlerTest, ChargePointGetEVSEInfosReq) {
     WebSocketTestClient client("localhost", test_port);
     ASSERT_TRUE(client.connect());
-    ASSERT_TRUE(client.wait_until_connected(std::chrono::milliseconds(100)));
+    ASSERT_TRUE(client.wait_until_connected(CLIENT_HANDSHAKE_TIMEOUT));
 
     // Set up the data store with test data
     RPCDataTypes::ChargePointGetEVSEInfosResObj result; // Expected response
@@ -182,7 +183,7 @@ TEST_F(RpcHandlerTest, ChargePointGetEVSEInfosReq) {
 TEST_F(RpcHandlerTest, ChargePointGetActiveErrorsReq) {
     WebSocketTestClient client("localhost", test_port);
     ASSERT_TRUE(client.connect());
-    ASSERT_TRUE(client.wait_until_connected(std::chrono::milliseconds(100)));
+    ASSERT_TRUE(client.wait_until_connected(CLIENT_HANDSHAKE_TIMEOUT));
 
     // Set up the data store with test data
     RPCDataTypes::EVSEInfoObj evse_info;
@@ -284,7 +285,7 @@ TEST_F(RpcHandlerTest, ChargePointGetActiveErrorsReq) {
 TEST_F(RpcHandlerTest, EvseGetEVSEInfosReq) {
     WebSocketTestClient client("localhost", test_port);
     ASSERT_TRUE(client.connect());
-    ASSERT_TRUE(client.wait_until_connected(std::chrono::milliseconds(100)));
+    ASSERT_TRUE(client.wait_until_connected(CLIENT_HANDSHAKE_TIMEOUT));
 
     // Set up requests
     nlohmann::json evse_get_evse_infos_req_1 = create_json_rpc_request("EVSE.GetInfo", {{"evse_index", 1}}, 1);
@@ -344,7 +345,7 @@ TEST_F(RpcHandlerTest, EvseGetEVSEInfosReq) {
 TEST_F(RpcHandlerTest, EvseGetStatusReq) {
     WebSocketTestClient client("localhost", test_port);
     ASSERT_TRUE(client.connect());
-    ASSERT_TRUE(client.wait_until_connected(std::chrono::milliseconds(100)));
+    ASSERT_TRUE(client.wait_until_connected(CLIENT_HANDSHAKE_TIMEOUT));
     // Set up the requests
     nlohmann::json evse_get_status_req_valid_index = create_json_rpc_request("EVSE.GetStatus", {{"evse_index", 1}}, 1);
     nlohmann::json evse_get_status_req_invalid_index =
@@ -396,7 +397,7 @@ TEST_F(RpcHandlerTest, EvseGetStatusReq) {
 TEST_F(RpcHandlerTest, EvseGetHardwareCapabilitiesReq) {
     WebSocketTestClient client("localhost", test_port);
     ASSERT_TRUE(client.connect());
-    ASSERT_TRUE(client.wait_until_connected(std::chrono::milliseconds(100)));
+    ASSERT_TRUE(client.wait_until_connected(CLIENT_HANDSHAKE_TIMEOUT));
 
     // Set up requests
     nlohmann::json evse_get_hardware_capabilities_req_valid_index =
@@ -448,7 +449,7 @@ TEST_F(RpcHandlerTest, EvseGetHardwareCapabilitiesReq) {
 TEST_F(RpcHandlerTest, EvseSetChargingAllowedReq) {
     WebSocketTestClient client("localhost", test_port);
     ASSERT_TRUE(client.connect());
-    ASSERT_TRUE(client.wait_until_connected(std::chrono::milliseconds(100)));
+    ASSERT_TRUE(client.wait_until_connected(CLIENT_HANDSHAKE_TIMEOUT));
 
     // Set up requests
     nlohmann::json evse_set_charging_allowed_req_valid_index =
@@ -496,7 +497,7 @@ TEST_F(RpcHandlerTest, EvseSetChargingAllowedReq) {
 TEST_F(RpcHandlerTest, EvseMeterDataReq) {
     WebSocketTestClient client("localhost", test_port);
     ASSERT_TRUE(client.connect());
-    ASSERT_TRUE(client.wait_until_connected(std::chrono::milliseconds(100)));
+    ASSERT_TRUE(client.wait_until_connected(CLIENT_HANDSHAKE_TIMEOUT));
 
     // Set up requests
     nlohmann::json evse_meter_data_req_valid_index =
@@ -544,7 +545,7 @@ TEST_F(RpcHandlerTest, EvseMeterDataReq) {
 TEST_F(RpcHandlerTest, EvseSetACChargingReq) {
     WebSocketTestClient client("localhost", test_port);
     ASSERT_TRUE(client.connect());
-    ASSERT_TRUE(client.wait_until_connected(std::chrono::milliseconds(100)));
+    ASSERT_TRUE(client.wait_until_connected(CLIENT_HANDSHAKE_TIMEOUT));
 
     // Set up requests
     nlohmann::json evse_set_ac_charging_req_valid_index = create_json_rpc_request(
@@ -570,7 +571,7 @@ TEST_F(RpcHandlerTest, EvseSetACChargingReq) {
 TEST_F(RpcHandlerTest, EvseSetACChargingCurrentReq) {
     WebSocketTestClient client("localhost", test_port);
     ASSERT_TRUE(client.connect());
-    ASSERT_TRUE(client.wait_until_connected(std::chrono::milliseconds(100)));
+    ASSERT_TRUE(client.wait_until_connected(CLIENT_HANDSHAKE_TIMEOUT));
 
     // Set up requests
     nlohmann::json evse_set_ac_charging_current_req_valid_index =
@@ -617,7 +618,7 @@ TEST_F(RpcHandlerTest, EvseSetACChargingCurrentReq) {
 TEST_F(RpcHandlerTest, EvseSetACChargingPhaseCountReq) {
     WebSocketTestClient client("localhost", test_port);
     ASSERT_TRUE(client.connect());
-    ASSERT_TRUE(client.wait_until_connected(std::chrono::milliseconds(100)));
+    ASSERT_TRUE(client.wait_until_connected(CLIENT_HANDSHAKE_TIMEOUT));
 
     // Set up requests
     nlohmann::json evse_set_ac_charging_phase_count_req_valid_index =
@@ -670,7 +671,7 @@ TEST_F(RpcHandlerTest, EvseSetACChargingPhaseCountReq) {
 TEST_F(RpcHandlerTest, EvseSetACChargingPhaseCountReqBadCases) {
     WebSocketTestClient client("localhost", test_port);
     ASSERT_TRUE(client.connect());
-    ASSERT_TRUE(client.wait_until_connected(std::chrono::milliseconds(100)));
+    ASSERT_TRUE(client.wait_until_connected(CLIENT_HANDSHAKE_TIMEOUT));
 
     // Set up requests
     nlohmann::json evse_set_ac_charging_phase_count_req_valid_phase_count =
@@ -745,7 +746,7 @@ TEST_F(RpcHandlerTest, EvseSetACChargingPhaseCountReqBadCases) {
 TEST_F(RpcHandlerTest, EvseSetDCChargingReq) {
     WebSocketTestClient client("localhost", test_port);
     ASSERT_TRUE(client.connect());
-    ASSERT_TRUE(client.wait_until_connected(std::chrono::milliseconds(100)));
+    ASSERT_TRUE(client.wait_until_connected(CLIENT_HANDSHAKE_TIMEOUT));
 
     // Set up requests
     nlohmann::json evse_set_dc_charging_req_valid_index = create_json_rpc_request(
@@ -769,7 +770,7 @@ TEST_F(RpcHandlerTest, EvseSetDCChargingReq) {
 TEST_F(RpcHandlerTest, EvseSetDCChargingPowerReq) {
     WebSocketTestClient client("localhost", test_port);
     ASSERT_TRUE(client.connect());
-    ASSERT_TRUE(client.wait_until_connected(std::chrono::milliseconds(100)));
+    ASSERT_TRUE(client.wait_until_connected(CLIENT_HANDSHAKE_TIMEOUT));
 
     // Set up requests
     nlohmann::json evse_set_dc_charging_power_req_valid_index =
@@ -807,7 +808,7 @@ TEST_F(RpcHandlerTest, EvseSetDCChargingPowerReq) {
 TEST_F(RpcHandlerTest, EvseEnableConnectorReq) {
     WebSocketTestClient client("localhost", test_port);
     ASSERT_TRUE(client.connect());
-    ASSERT_TRUE(client.wait_until_connected(std::chrono::milliseconds(100)));
+    ASSERT_TRUE(client.wait_until_connected(CLIENT_HANDSHAKE_TIMEOUT));
 
     // Set up requests
     nlohmann::json evse_enable_connector_req_valid_index = create_json_rpc_request(
@@ -855,7 +856,7 @@ TEST_F(RpcHandlerTest, EvseEnableConnectorReq) {
 TEST_F(RpcHandlerTest, InvalidRequest) {
     WebSocketTestClient client("localhost", test_port);
     ASSERT_TRUE(client.connect());
-    ASSERT_TRUE(client.wait_until_connected(std::chrono::milliseconds(100)));
+    ASSERT_TRUE(client.wait_until_connected(CLIENT_HANDSHAKE_TIMEOUT));
 
     // Send Api.Hello request
     client.send_api_hello_req();
