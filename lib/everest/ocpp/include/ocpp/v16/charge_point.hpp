@@ -199,7 +199,8 @@ public:
 
     /// \brief Authorizes the provided \p id_token against the central system, LocalAuthorizationList or
     /// AuthorizationCache depending on the values of the ConfigurationKeys LocalPreAuthorize, LocalAuthorizeOffline,
-    /// LocalAuthListEnabled and AuthorizationCacheEnabled
+    /// LocalAuthListEnabled and AuthorizationCacheEnabled. If AuthEnabled is false, every \p id_token is accepted
+    /// without validation.
     /// \returns the EnhancedIdTagInfo that contains the result of the authorization and an optional tarriff message
     EnhancedIdTagInfo authorize_id_token(CiString<20> id_token);
 
@@ -207,7 +208,8 @@ public:
 
     /// \brief Uses data_transfer mechanism to authorize given \p emaid , \p certificate and
     /// \p iso15118_certificate_hash_data locally or by requesting authorzation at CSMS. This function can be called
-    /// when the authorization mechanism Plug&Charge is specified as part of the ISO15118 PaymentDetailsRequest
+    /// when the authorization mechanism Plug&Charge is specified as part of the ISO15118 PaymentDetailsRequest.
+    /// If AuthEnabled is false, every \p emaid is accepted without validation.
     /// \param emaid
     /// \param certificate contract certificate that the EVCC provides
     /// \param iso15118_certificate_hash_data

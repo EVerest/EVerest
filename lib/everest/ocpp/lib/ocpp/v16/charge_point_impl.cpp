@@ -553,6 +553,10 @@ void ChargePointImpl::try_resume_transactions(const std::set<std::string>& resum
             this->transaction_handler->get_negative_random_transaction_id(), transaction_entry.connector,
             transaction_entry.session_id, CiString<20>(transaction_entry.id_tag_start), transaction_entry.meter_start,
             transaction_entry.reservation_id, ocpp::DateTime(transaction_entry.time_start), nullptr);
+        // whether the id tag was validated is not persisted, so the current AuthEnabled decides
+        if (not this->configuration.getAuthEnabled()) {
+            transaction->set_id_tag_unvalidated();
+        }
         ocpp::DateTime timestamp;
         int meter_stop = 0;
         if (transaction_entry.time_end.has_value() and transaction_entry.meter_stop.has_value()) {
@@ -2527,14 +2531,17 @@ void ChargePointImpl::handleStartTransactionResponse(const EnhancedMessage<v16::
                           << " in the database: " << e.what();
         }
 
-        try {
-            this->database_handler->insert_or_update_authorization_cache_entry(idTag,
-                                                                               start_transaction_response.idTagInfo);
-        } catch (const QueryExecutionException& e) {
-            EVLOG_warning << "Could not insert or update authorization cache entry: " << e.what();
+        if (not transaction->is_id_tag_unvalidated()) {
+            try {
+                this->database_handler->insert_or_update_authorization_cache_entry(
+                    idTag, start_transaction_response.idTagInfo);
+            } catch (const QueryExecutionException& e) {
+                EVLOG_warning << "Could not insert or update authorization cache entry: " << e.what();
+            }
         }
 
-        if (start_transaction_response.idTagInfo.status != AuthorizationStatus::Accepted) {
+        if (start_transaction_response.idTagInfo.status != AuthorizationStatus::Accepted and
+            not transaction->is_id_tag_unvalidated()) {
             this->pause_charging_callback(connector);
             if (this->configuration.getStopTransactionOnInvalidId()) {
                 this->stop_transaction_callback(connector, Reason::DeAuthorized);
@@ -2562,7 +2569,8 @@ void ChargePointImpl::handleStopTransactionResponse(const EnhancedMessage<v16::M
         const std::int32_t connector = transaction->get_connector();
 
         // the idTagInfo is about the idTag that stopped the transaction
-        if (stop_transaction_response.idTagInfo.has_value() and original_call.msg.idTag.has_value()) {
+        if (stop_transaction_response.idTagInfo.has_value() and original_call.msg.idTag.has_value() and
+            not transaction->is_id_tag_unvalidated()) {
             try {
                 this->database_handler->insert_or_update_authorization_cache_entry(
                     original_call.msg.idTag.value(), stop_transaction_response.idTagInfo.value());
@@ -3665,6 +3673,11 @@ void ChargePointImpl::status_notification(const std::int32_t connector, const Ch
 EnhancedIdTagInfo ChargePointImpl::authorize_id_token(CiString<20> id_token, const bool authorize_only_locally) {
     EnhancedIdTagInfo enhanced_id_tag_info;
 
+    if (not this->configuration.getAuthEnabled()) {
+        enhanced_id_tag_info.id_tag_info.status = AuthorizationStatus::Accepted;
+        return enhanced_id_tag_info;
+    }
+
     // only do authorize req when authorization locally not enabled or fails
     // proritize auth list over auth cache for same idTags
 
@@ -3872,6 +3885,11 @@ ocpp::v2::AuthorizeResponse ChargePointImpl::data_transfer_pnc_authorize(
 
     if (!this->is_pnc_enabled()) {
         EVLOG_warning << "Received request to send DataTransfer(Authorize.req) while PnC is disabled";
+        return authorize_response;
+    }
+
+    if (not this->configuration.getAuthEnabled()) {
+        authorize_response.idTokenInfo.status = ocpp::v2::AuthorizationStatusEnum::Accepted;
         return authorize_response;
     }
 
@@ -4606,6 +4624,9 @@ void ChargePointImpl::on_transaction_started(const std::int32_t& connector, cons
     const std::shared_ptr<Transaction> transaction = std::make_shared<Transaction>(
         this->transaction_handler->get_negative_random_transaction_id(), connector, session_id, CiString<20>(id_token),
         meter_start, reservation_id, timestamp, std::move(meter_values_sample_timer));
+    if (not this->configuration.getAuthEnabled()) {
+        transaction->set_id_tag_unvalidated();
+    }
     std::optional<MeterValue> meter_value = std::nullopt;
     if (signed_meter_value) {
         meter_value = get_signed_meter_value(signed_meter_value.value(), ReadingContext::Transaction_Begin, timestamp);

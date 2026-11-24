@@ -25,6 +25,7 @@ namespace fs = std::filesystem;
 namespace {
 
 // OCPP 2.0.1 specific configuration variable names
+constexpr const auto AUTH_CTRLR_ENABLED_VAR_NAME = "Enabled";
 constexpr const auto CENTRAL_CONTRACT_VALIDATION_ALLOWED_VAR_NAME = "CentralContractValidationAllowed";
 constexpr const auto CONTRACT_CERTIFICATE_INSTALLATION_ENABLED_VAR_NAME = "ContractCertificateInstallationEnabled";
 constexpr const auto EV_CONNECTION_TIMEOUT_VAR_NAME = "EVConnectionTimeOut";
@@ -35,6 +36,11 @@ constexpr const auto TX_STOP_POINT_VAR_NAME = "TxStopPoint";
 
 constexpr std::int32_t LOWEST_SETPOINT_PRIORITY = 1000;
 constexpr std::int32_t HIGHEST_SETPOINT_PRIORITY = 0;
+
+// like libocpp, an empty AuthCtrlr.Enabled counts as enabled
+bool auth_enabled_from_value(const std::string& value) {
+    return value.empty() or ocpp::conversions::string_to_bool(value);
+}
 
 std::optional<ocpp::v2::IdToken> get_authorised_id_token(const types::evse_manager::SessionEvent& session_event) {
     using namespace module::conversions;
@@ -240,6 +246,7 @@ bool GenericOcpp::handle_stop() {
         std::lock_guard lock(m_chargepoint_state_mutex);
         charging_schedules_timer_stop();
         mv_charge_point.stop();
+        mv_ocpp_stopped = true;
         result = true;
     } else {
         EVLOG_warning << "ChargePoint not initialized, cannot handle stop command";
@@ -253,9 +260,17 @@ bool GenericOcpp::handle_restart() {
 
     bool result{false};
     if (mv_started.load()) {
-        std::lock_guard lock(m_chargepoint_state_mutex);
-        charging_schedules_timer_start();
-        result = mv_charge_point.restart();
+        {
+            std::lock_guard lock(m_chargepoint_state_mutex);
+            charging_schedules_timer_start();
+            result = mv_charge_point.restart();
+            if (result) {
+                mv_ocpp_stopped = false;
+            }
+        }
+        if (result) {
+            m_no_authorization_authorizer.retry();
+        }
     } else {
         EVLOG_warning << "ChargePoint not initialized, cannot handle restart command";
     }
@@ -832,6 +847,10 @@ bool GenericOcpp::enqueue_if_not_started(std::int32_t evse_id, const Event& even
 }
 
 void GenericOcpp::ready_module_configuration() {
+    // like libocpp, a missing or empty value counts as enabled
+    m_no_authorization_authorizer.set_auth_enabled(
+        read_actual_bool({ocpp::v2::ControllerComponents::AuthCtrlr}, {AUTH_CTRLR_ENABLED_VAR_NAME}).value_or(true));
+
     const auto ev_connection_timeout = mv_charge_point.get_ev_connection_timeout();
     if (ev_connection_timeout) {
         mv_requires.auth.call_set_connection_timeout(ev_connection_timeout.value());
@@ -1493,6 +1512,14 @@ void GenericOcpp::cb_ready(std::int32_t evse_id, bool ready) {
     }
 }
 
+void GenericOcpp::publish_no_authorization_token(std::int32_t evse_id) {
+    if (mv_ocpp_stopped or mv_shutting_down) {
+        return;
+    }
+    mv_provides.auth_provider.publish_provided_token(ocpp_module_common::make_no_authorization_token(
+        evse_id, ocpp_2_selected() ? "" : ocpp_module_common::NO_AUTHORIZATION_ID_TAG_V16));
+}
+
 void GenericOcpp::cb_provide_token(const IdToken& id_token) {
     using namespace module::conversions;
 
@@ -1652,6 +1679,7 @@ void GenericOcpp::cb_service_renegotiation_supported(std::int32_t extensions_id,
 }
 
 void GenericOcpp::cb_session_event(std::int32_t evse_id, types::evse_manager::SessionEvent session_event) {
+    m_no_authorization_authorizer.on_session_event(evse_id, session_event);
     if (session_event.event == types::evse_manager::SessionEventEnum::SessionResumed) {
         // collect resumed session ids so that start() can inform the charge point that these
         // transactions shall not be stopped; the event itself is still queued/processed since
@@ -1925,7 +1953,13 @@ void GenericOcpp::cb_variable_set(const ocpp::v2::SetVariableData& set_variable_
             }
         }
     } else if (component == ControllerComponents::AuthCtrlr) {
-        if (name == MASTER_PASS_GROUP_ID_VAR_NAME) {
+        if (name == AUTH_CTRLR_ENABLED_VAR_NAME) {
+            if (set_variable_data.attributeType.value_or(ocpp::v2::AttributeEnum::Actual) ==
+                ocpp::v2::AttributeEnum::Actual) {
+                m_no_authorization_authorizer.set_auth_enabled(
+                    auth_enabled_from_value(set_variable_data.attributeValue.get()));
+            }
+        } else if (name == MASTER_PASS_GROUP_ID_VAR_NAME) {
             mv_requires.auth.call_set_master_pass_group_id(set_variable_data.attributeValue.get());
         }
     } else if (component == ControllerComponents::ISO15118Ctrlr) {
@@ -2222,15 +2256,23 @@ std::optional<bool> GenericOcpp::read_persisted_der_enabled(std::int32_t evse_id
          {ocpp::v2::DERComponentVariables::get_ac_component_variable(evse_id, ocpp::v2::DERComponentVariables::Enabled),
           ocpp::v2::DERComponentVariables::get_dc_component_variable(evse_id,
                                                                      ocpp::v2::DERComponentVariables::Enabled)}) {
-        ocpp::v2::GetVariableData data;
-        data.component = component_variable.component;
-        data.variable = component_variable.variable.value();
-        data.attributeType = ocpp::v2::AttributeEnum::Actual;
-        const auto results = mv_charge_point.get_variables({data});
-        if (not results.empty() and results.front().attributeStatus == ocpp::v2::GetVariableStatusEnum::Accepted and
-            results.front().attributeValue.has_value() and not results.front().attributeValue->get().empty()) {
-            return ocpp::conversions::string_to_bool(results.front().attributeValue.value().get());
+        if (const auto enabled = read_actual_bool(component_variable.component, component_variable.variable.value())) {
+            return enabled;
         }
+    }
+    return std::nullopt;
+}
+
+std::optional<bool> GenericOcpp::read_actual_bool(const ocpp::v2::Component& component,
+                                                  const ocpp::v2::Variable& variable) {
+    ocpp::v2::GetVariableData data;
+    data.component = component;
+    data.variable = variable;
+    data.attributeType = ocpp::v2::AttributeEnum::Actual;
+    const auto results = mv_charge_point.get_variables({data});
+    if (not results.empty() and results.front().attributeStatus == ocpp::v2::GetVariableStatusEnum::Accepted and
+        results.front().attributeValue.has_value() and not results.front().attributeValue->get().empty()) {
+        return ocpp::conversions::string_to_bool(results.front().attributeValue.value().get());
     }
     return std::nullopt;
 }

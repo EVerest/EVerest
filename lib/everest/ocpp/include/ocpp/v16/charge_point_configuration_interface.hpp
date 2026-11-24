@@ -62,6 +62,9 @@ public:
     virtual CiString<20> getChargePointModel() = 0;
     virtual CiString<20> getChargePointVendor() = 0;
 
+    /// \brief AuthEnabled, mapped onto AuthCtrlr.Enabled; only the device model backend stores it, the JSON backend
+    /// always reports true
+    virtual bool getAuthEnabled() = 0;
     virtual bool getAuthorizeConnectorZeroOnConnectorOne() = 0;
     virtual bool getEnableTLSKeylog() = 0;
     virtual bool getLogMessages() = 0;

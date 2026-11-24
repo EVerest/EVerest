@@ -47,7 +47,9 @@ The following flow diagram gives a simplified overview of how an incoming token 
 .. note::
     
     The processing of each authorization request and the respective validation runs in an individual thread. This 
-    allows the parallel processing of authorization requests.
+    allows the parallel processing of authorization requests. A token that arrives while a token with the same value
+    is still being processed is ignored. Tokens of type ``NoAuthorization``, which OCPP publishes for every plug-in
+    while authorisation is disabled, are only ignored if they also reference the same EVSEs.
 
 Integration in EVerest
 ======================

@@ -35,6 +35,7 @@ private:
     bool active;
     bool finished;
     bool has_signed_meter_values;
+    bool id_tag_unvalidated{false};
     std::unique_ptr<Everest::SteadyTimer> meter_values_sample_timer;
     std::string start_transaction_message_id;
     std::string stop_transaction_message_id;
@@ -139,6 +140,12 @@ public:
     /// from \p on_transaction_started and \p on_transaction_stopped
     /// \returns a boolean value indicating if this transaction has signed meter values or not
     bool get_has_signed_meter_values();
+
+    /// \brief Marks the id tag of this transaction as not validated, because AuthEnabled was false
+    void set_id_tag_unvalidated();
+
+    /// \brief Indicates if the id tag of this transaction was not validated, because AuthEnabled was false
+    bool is_id_tag_unvalidated() const;
 };
 
 /// \brief Contains transactions for all available connectors and manages access to these transactions
