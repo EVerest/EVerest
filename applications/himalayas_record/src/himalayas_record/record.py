@@ -2,8 +2,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright Pionix GmbH and Contributors to EVerest
 
-# The record follows section 3.1 of EVerest/Himalayas CONTRIBUTING.md.
-
 import datetime
 import os
 import re
