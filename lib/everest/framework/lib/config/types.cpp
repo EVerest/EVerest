@@ -31,6 +31,13 @@ std::string config_entry_to_string(const everest::config::ConfigEntry& entry) {
     return std::visit(VisitConfigEntry{}, entry);
 }
 
+std::string config_entry_to_storage_string(const ConfigEntry& entry) {
+    if (const auto* str = std::get_if<std::string>(&entry)) {
+        return *str;
+    }
+    return nlohmann::json(entry).dump();
+}
+
 bool ConfigurationParameter::validate_type() const {
     return std::visit(
         [&](auto&& arg) -> bool {
@@ -346,6 +353,27 @@ std::string mutability_to_string(const Mutability mutability) {
         return "WriteOnly";
     }
     throw std::out_of_range("Could not convert Mutability to string");
+}
+
+ConfigurationSource string_to_configuration_source(const std::string& str) {
+    if (str == "default") {
+        return ConfigurationSource::Default;
+    } else if (str == "user") {
+        return ConfigurationSource::User;
+    }
+    throw std::out_of_range("Could not convert: " + str + " to ConfigurationSource");
+}
+
+std::string configuration_source_to_string(const ConfigurationSource source) {
+    switch (source) {
+    case ConfigurationSource::Default:
+        return "default";
+    case ConfigurationSource::User:
+        return "user";
+    case ConfigurationSource::Unknown:
+        break;
+    }
+    throw std::out_of_range("Could not convert ConfigurationSource to string");
 }
 
 } // namespace everest::config

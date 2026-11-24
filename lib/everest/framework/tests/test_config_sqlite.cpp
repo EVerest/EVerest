@@ -79,6 +79,7 @@ ModuleConfigurations get_example_module_configs() {
     param1.name = "integer_param";
     param1.value = 10;
     param1.characteristics = characteristics1;
+    param1.source = ConfigurationSource::Default;
 
     ConfigurationParameter param2;
     param2.name = "string_param";
@@ -202,6 +203,46 @@ TEST_CASE("Database operations", "[db_operation]") {
         REQUIRE(response5.configuration_parameter.has_value());
         REQUIRE(std::get<bool>(response5.configuration_parameter.value().value) == true);
     }
+    SECTION("Configuration source survives the round trip") {
+        auto default_param = storage.get_configuration_parameter({"example_module", "integer_param"});
+        REQUIRE(default_param.configuration_parameter.has_value());
+        CHECK(default_param.configuration_parameter.value().source == ConfigurationSource::Default);
+
+        auto user_param = storage.get_configuration_parameter({"example_module", "decimal_param"});
+        REQUIRE(user_param.configuration_parameter.has_value());
+        CHECK(user_param.configuration_parameter.value().source == ConfigurationSource::User);
+
+        auto response = storage.get_module_config("example_module");
+        REQUIRE(response.config.has_value());
+        for (const auto& param : response.config.value().configuration_parameters.at("!module")) {
+            const auto expected =
+                param.name == "integer_param" ? ConfigurationSource::Default : ConfigurationSource::User;
+            CHECK(param.source == expected);
+        }
+    }
+    SECTION("Updating a configuration parameter marks it as user value") {
+        REQUIRE(storage.update_configuration_parameter({"example_module", "integer_param"}, "20") ==
+                GetSetResponseStatus::OK);
+        auto response = storage.get_configuration_parameter({"example_module", "integer_param"});
+        REQUIRE(response.configuration_parameter.has_value());
+        CHECK(response.configuration_parameter.value().source == ConfigurationSource::User);
+    }
+    SECTION("Configuration parameter without stored source is read as of unknown origin") {
+        c.execute_statement("UPDATE CONFIGURATION SET SOURCE = NULL WHERE PARAMETER_NAME = 'integer_param';");
+        auto response = storage.get_configuration_parameter({"example_module", "integer_param"});
+        REQUIRE(response.configuration_parameter.has_value());
+        CHECK(response.configuration_parameter.value().source == ConfigurationSource::Unknown);
+    }
+    SECTION("Configuration parameter of unknown origin is written without source") {
+        ConfigurationParameterCharacteristics characteristics;
+        characteristics.datatype = Datatype::Integer;
+        characteristics.mutability = Mutability::ReadWrite;
+        REQUIRE(storage.write_configuration_parameter({"example_module", "integer_param"}, characteristics, "10",
+                                                      ConfigurationSource::Unknown) == GetSetResponseStatus::OK);
+        auto response = storage.get_configuration_parameter({"example_module", "integer_param"});
+        REQUIRE(response.configuration_parameter.has_value());
+        CHECK(response.configuration_parameter.value().source == ConfigurationSource::Unknown);
+    }
     SECTION("Unknown configuration can not be found") {
         auto response =
             storage.get_configuration_parameter({"module_that_does_not_exist", "param_that_does_not_exist"});
@@ -232,7 +273,7 @@ TEST_CASE("Database operations", "[db_operation]") {
         ConfigurationParameterCharacteristics characteristics;
         characteristics.datatype = Datatype::String;
         characteristics.mutability = Mutability::ReadWrite;
-        auto response = storage.write_configuration_parameter(id, characteristics, "value");
+        auto response = storage.write_configuration_parameter(id, characteristics, "value", ConfigurationSource::User);
         REQUIRE(response == GetSetResponseStatus::NotFound);
     }
     SECTION("Configuration parameter for wrong type can not be retrieved") {
@@ -243,7 +284,8 @@ TEST_CASE("Database operations", "[db_operation]") {
         ConfigurationParameterCharacteristics characteristics;
         characteristics.datatype = Datatype::Integer;
         characteristics.mutability = Mutability::ReadWrite;
-        auto write_response = storage.write_configuration_parameter(id, characteristics, "value");
+        auto write_response =
+            storage.write_configuration_parameter(id, characteristics, "value", ConfigurationSource::User);
         REQUIRE(write_response == GetSetResponseStatus::OK);
         auto get_response = storage.get_configuration_parameter(id);
         REQUIRE(get_response.status == GetSetResponseStatus::Failed);

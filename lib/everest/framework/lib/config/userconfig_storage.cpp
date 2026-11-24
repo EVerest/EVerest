@@ -53,7 +53,7 @@ UserConfigStorage::update_configuration_parameter(const ConfigurationParameterId
 GetSetResponseStatus
 UserConfigStorage::write_configuration_parameter(const ConfigurationParameterIdentifier& identifier,
                                                  const ConfigurationParameterCharacteristics characteristics,
-                                                 const std::string& value) {
+                                                 const std::string& value, ConfigurationSource /*source*/) {
     // TODO: expect module_id etc. to be valid already
     if (not this->user_config.contains("active_modules")) {
         this->user_config["active_modules"] = nlohmann::json::object();

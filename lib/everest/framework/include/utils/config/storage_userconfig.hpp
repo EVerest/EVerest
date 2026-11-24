@@ -27,7 +27,7 @@ public:
                                                         const std::string& value) override;
     GetSetResponseStatus write_configuration_parameter(const ConfigurationParameterIdentifier& identifier,
                                                        const ConfigurationParameterCharacteristics characteristics,
-                                                       const std::string& value) override;
+                                                       const std::string& value, ConfigurationSource source) override;
 
     const nlohmann::json& get_user_config() const;
 

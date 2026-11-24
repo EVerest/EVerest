@@ -63,8 +63,8 @@ public:
     GetConfigurationParameterResponse
     get_configuration_parameter(const ConfigurationParameterIdentifier& identifier) override;
 
-    /// \brief Updates the value of an existing configuration parameter; returns NotFound if no matching parameter
-    /// exists.
+    /// \brief Updates the value of an existing configuration parameter and marks it as ConfigurationSource::User;
+    /// returns NotFound if no matching parameter exists.
     GetSetResponseStatus update_configuration_parameter(const ConfigurationParameterIdentifier& identifier,
                                                         const std::string& value) override;
 
@@ -72,7 +72,7 @@ public:
     /// target module does not exist in this instance's config slot.
     GetSetResponseStatus write_configuration_parameter(const ConfigurationParameterIdentifier& identifier,
                                                        const ConfigurationParameterCharacteristics characteristics,
-                                                       const std::string& value) override;
+                                                       const std::string& value, ConfigurationSource source) override;
 
 private:
     std::shared_ptr<everest::db::sqlite::ConnectionInterface> m_db;

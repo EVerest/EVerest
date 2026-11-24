@@ -106,6 +106,12 @@ user-config or the database is the integrator's responsibility.
   on a regular start writes the configuration that was actually booted to
   ``config.json`` in that directory; ``--reset-from-yaml`` replaces the stored
   configuration with the config file and discards the persisted changes.
+- With ``--db``, stored values that were taken from a manifest default follow
+  the defaults of the new manifests, and values of a database written by a
+  release that did not record their origin fall back to the manifest default if
+  the new manifest rejects them (see *Manifest Default Changes* in
+  :doc:`/explanation/configuration-service`). A value that was set explicitly
+  and that the new manifest rejects still makes the configuration invalid.
 - Databases created by releases before 2026.10 also held the manager
   ``settings`` (MQTT broker and prefixes, installation paths). The schema
   migration drops them, so a deployment that ran with ``--db`` alone needs

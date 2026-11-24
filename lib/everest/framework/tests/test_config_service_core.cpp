@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
 
+#include <algorithm>
 #include <chrono>
 #include <future>
 
@@ -1888,5 +1889,166 @@ active_modules:
         REQUIRE(result.parameter_results.has_value());
         CHECK(result.parameter_results->front().status == SetConfigParameterResultEnum::Rejected);
         CHECK(result.parameter_results->front().status_info == "Failed to persist change to user-config");
+    }
+}
+
+TEST_CASE("ConfigServiceCore persists manifest default changes", "[config_service_core]") {
+    using everest::config::ConfigurationSource;
+    using everest::config::Datatype;
+
+    auto db = setup_in_memory_db();
+    auto parse_settings = setup_parse_settings();
+    ConfigServiceCore config_service(parse_settings, db);
+
+    const std::string yaml = R"(
+active_modules:
+  cs_target:
+    module: TESTCSTarget
+  valid_module:
+    module: TESTValidManifest
+    config_module:
+      valid_config_entry: "hello there"
+    config_implementation:
+      main:
+        valid_config_entry: "hello there"
+  no_default:
+    module: TESTCSNoDefault
+    config_module:
+      decimal_param: 5.5
+)";
+    const auto result = config_service.load_from_yaml(yaml, "Manifest defaults", 0);
+    INFO(result.error_message);
+    REQUIRE(result.success);
+    config_service.reinitialize_from_db(true);
+
+    const auto stored = [&db](const std::string& module_id, const std::string& name,
+                              const std::string& impl_id = "!module") {
+        everest::config::SqliteStorage storage(db, 0);
+        const auto response = storage.get_configuration_parameter({module_id, name, impl_id});
+        REQUIRE(response.configuration_parameter.has_value());
+        return response.configuration_parameter.value();
+    };
+    const auto in_memory = [&config_service](const std::string& module_id, const std::string& name,
+                                             const std::string& impl_id = "!module") {
+        const auto configs = config_service.get_active_module_configurations();
+        REQUIRE(configs != nullptr);
+        const auto& params = configs->at(module_id).configuration_parameters.at(impl_id);
+        const auto it =
+            std::find_if(params.begin(), params.end(), [&name](const auto& param) { return param.name == name; });
+        REQUIRE(it != params.end());
+        return *it;
+    };
+    // Simulates a database written against an older manifest, then loads the slot again
+    const auto tamper_and_reload = [&db, &config_service](const std::string& sql) {
+        REQUIRE(db->execute_statement(sql));
+        config_service.reinitialize_from_db(true);
+    };
+    const auto where = [](const std::string& module_id, const std::string& name) {
+        return " WHERE CONFIG_ID = 0 AND MODULE_ID = '" + module_id + "' AND PARAMETER_NAME = '" + name + "';";
+    };
+
+    REQUIRE(stored("cs_target", "int_param").source == ConfigurationSource::Default);
+    REQUIRE(stored("valid_module", "valid_config_entry").source == ConfigurationSource::User);
+
+    SECTION("A stale default value is replaced by the manifest default") {
+        tamper_and_reload("UPDATE CONFIGURATION SET VALUE = '7', SOURCE = 'default'" + where("cs_target", "int_param"));
+        for (const auto& param : {stored("cs_target", "int_param"), in_memory("cs_target", "int_param")}) {
+            CHECK(std::get<int>(param.value) == 0);
+            CHECK(param.source == ConfigurationSource::Default);
+        }
+
+        // A second load finds nothing to change
+        config_service.reinitialize_from_db(true);
+        const auto param = stored("cs_target", "int_param");
+        CHECK(std::get<int>(param.value) == 0);
+        CHECK(param.source == ConfigurationSource::Default);
+    }
+
+    SECTION("A user value is never changed") {
+        tamper_and_reload("UPDATE CONFIGURATION SET VALUE = '7', SOURCE = 'user'" + where("cs_target", "int_param"));
+        for (const auto& param : {stored("cs_target", "int_param"), in_memory("cs_target", "int_param")}) {
+            CHECK(std::get<int>(param.value) == 7);
+            CHECK(param.source == ConfigurationSource::User);
+        }
+    }
+
+    SECTION("A default value of a changed datatype is replaced by the new default") {
+        tamper_and_reload("UPDATE CONFIGURATION SET VALUE = 'stale', SOURCE = 'default', DATATYPE_ID = " +
+                          std::to_string(static_cast<int>(Datatype::String)) + where("cs_target", "int_param"));
+        for (const auto& param : {stored("cs_target", "int_param"), in_memory("cs_target", "int_param")}) {
+            CHECK(param.characteristics.datatype == Datatype::Integer);
+            CHECK(std::get<int>(param.value) == 0);
+            CHECK(param.source == ConfigurationSource::Default);
+        }
+    }
+
+    SECTION("A default value whose manifest default vanished is kept as user value") {
+        tamper_and_reload("UPDATE CONFIGURATION SET SOURCE = 'default'" + where("valid_module", "valid_config_entry"));
+        for (const auto& param :
+             {stored("valid_module", "valid_config_entry"), in_memory("valid_module", "valid_config_entry")}) {
+            CHECK(std::get<std::string>(param.value) == "hello there");
+            CHECK(param.source == ConfigurationSource::User);
+        }
+    }
+
+    SECTION("An integer default value without manifest default is widened to decimal and kept as user value") {
+        tamper_and_reload("UPDATE CONFIGURATION SET VALUE = '5', SOURCE = 'default', DATATYPE_ID = " +
+                          std::to_string(static_cast<int>(Datatype::Integer)) + where("no_default", "decimal_param"));
+        for (const auto& param : {stored("no_default", "decimal_param"), in_memory("no_default", "decimal_param")}) {
+            CHECK(param.characteristics.datatype == Datatype::Decimal);
+            CHECK(std::get<double>(param.value) == 5.0);
+            CHECK(param.source == ConfigurationSource::User);
+        }
+    }
+
+    SECTION("A parameter newly defined with a default is added to the slot") {
+        tamper_and_reload("DELETE FROM CONFIGURATION" + where("cs_target", "rw_param"));
+        const auto param = stored("cs_target", "rw_param");
+        CHECK(std::get<std::string>(param.value) == "default_value");
+        CHECK(param.source == ConfigurationSource::Default);
+    }
+
+    SECTION("Values stored without origin") {
+        // Simulates a database written by a release that did not record the origin
+        const auto bounded_to = [&where](const std::string& value) {
+            return "UPDATE CONFIGURATION SET VALUE = '" + value + "'" + where("cs_target", "bounded_param");
+        };
+        const auto check_bounded = [&](int value, ConfigurationSource source) {
+            for (const auto& param : {stored("cs_target", "bounded_param"), in_memory("cs_target", "bounded_param")}) {
+                CHECK(std::get<int>(param.value) == value);
+                CHECK(param.source == source);
+            }
+        };
+
+        SECTION("A value outside the range of the manifest is replaced by the manifest default") {
+            REQUIRE(db->execute_statement(bounded_to("550")));
+            tamper_and_reload("UPDATE CONFIGURATION SET SOURCE = NULL WHERE CONFIG_ID = 0;");
+            check_bounded(5, ConfigurationSource::Default);
+        }
+        SECTION("A valid value that differs from the manifest default is kept as user value") {
+            REQUIRE(db->execute_statement(bounded_to("7")));
+            tamper_and_reload("UPDATE CONFIGURATION SET SOURCE = NULL WHERE CONFIG_ID = 0;");
+            check_bounded(7, ConfigurationSource::User);
+
+            // The origin is settled: the value no longer falls back once it is out of range
+            tamper_and_reload(bounded_to("550"));
+            CHECK(std::get<int>(stored("cs_target", "bounded_param").value) == 550);
+            CHECK(std::get<int>(in_memory("cs_target", "bounded_param").value) == 7);
+        }
+        SECTION("Every value gets an origin") {
+            tamper_and_reload("UPDATE CONFIGURATION SET SOURCE = NULL WHERE CONFIG_ID = 0;");
+            check_bounded(5, ConfigurationSource::Default);
+            CHECK(stored("valid_module", "valid_config_entry").source == ConfigurationSource::User);
+            CHECK(stored("no_default", "decimal_param").source == ConfigurationSource::User);
+            CHECK(stored("cs_target", "impl_bounded_param", "main").source == ConfigurationSource::Default);
+        }
+    }
+
+    SECTION("Parameters of an implementation without stored parameters are added to the slot") {
+        tamper_and_reload("DELETE FROM CONFIGURATION WHERE CONFIG_ID = 0 AND MODULE_ID = 'cs_target' AND "
+                          "MODULE_IMPLEMENTATION_ID = 'main';");
+        const auto param = stored("cs_target", "impl_bounded_param", "main");
+        CHECK(std::get<double>(param.value) == 1.0);
+        CHECK(param.source == ConfigurationSource::Default);
     }
 }
