@@ -118,7 +118,7 @@ private:
     /* OCPP message handlers */
 
     void handle_boot_notification_response(CallResult<BootNotificationResponse> call_result);
-    void handle_set_variables_req(Call<SetVariablesRequest> call);
+    void handle_set_variables_req(const EnhancedMessage<v2::MessageType>& message);
     void handle_get_variables_req(const EnhancedMessage<v2::MessageType>& message);
     void handle_get_base_report_req(Call<GetBaseReportRequest> call);
     void handle_get_report_req(const EnhancedMessage<v2::MessageType>& message);

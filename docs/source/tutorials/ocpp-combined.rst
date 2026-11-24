@@ -127,6 +127,8 @@ specification for further information about the device model and how it is
 composed. You should be familiar with the OCPP 2.x terms **Component**,
 **Variable**, **VariableCharacteristics**, **VariableAttributes** and
 **VariableMonitoring** to be able to follow the further explanations.
+The :ref:`reference-ocpp-device-model-glossary` defines these and the
+EVerest-specific terms, such as component config and owner.
 
 .. note::
 

@@ -41,6 +41,29 @@ struct MappingTargetInfo {
 /// registers at runtime is not a mapping target.
 using MappingTargetLookup = std::function<std::optional<MappingTargetInfo>(const Component&, const Variable&)>;
 
+/// \brief Why a key cannot be mapped to a target
+struct KeyMappingConflict {
+    /// \brief The key or the target belongs to another key: a built-in key, an entry accepted before, or the built-in
+    /// mapping of another key. Otherwise the mapping is not allowed at all.
+    bool in_use;
+    std::string reason;
+};
+
+/// \brief Why \p ocpp16_key cannot be mapped to \p cv next to the entries \p accepted before, whose targets
+/// \p key_by_target indexes: every target stores exactly one OCPP 1.6 key, connection configuration and the variables
+/// the OCPP 1.6 stack computes cannot be targets, and a built-in key can only be mapped when it is overridable (see
+/// ocpp::v16::is_overridable_key).
+std::optional<KeyMappingConflict>
+find_key_mapping_conflict(const std::string& ocpp16_key, const std::pair<Component, Variable>& cv,
+                          const Ocpp16KeyMappings& accepted,
+                          const std::map<std::pair<Component, Variable>, std::string>& key_by_target);
+
+/// \brief Why the target \p cv cannot hold the value of \p ocpp16_key, as found by \p lookup: it is not found, has no
+/// Actual attribute or, for a built-in key, has another data type than the key's built-in variable.
+std::optional<std::string> find_mapping_target_problem(const std::string& ocpp16_key,
+                                                       const std::pair<Component, Variable>& cv,
+                                                       const MappingTargetLookup& lookup);
+
 /// \brief \p mappings without the entries whose target cannot hold the key's value: a target that the component
 /// configuration does not define or that has no Actual attribute and, for an override, a target with another data type
 /// than the key's built-in variable. An overridden key then keeps its built-in OCPP16LegacyCtrlr variable, a custom

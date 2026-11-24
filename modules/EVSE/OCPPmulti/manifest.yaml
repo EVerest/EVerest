@@ -95,6 +95,8 @@ config:
       Relative paths are resolved against this module's share path.
       Applied both when migrating the legacy OCPP 1.6 JSON config into the device model and when
       serving the device-model-backed configuration at runtime.
+      The keys and variables it names are reserved: an external device model owner cannot declare them
+      with ocpp16_key.
       If empty, only built-in mappings are used.
     type: string
     default: ""
@@ -237,6 +239,10 @@ requires:
     interface: display_message
     min_connections: 0
     max_connections: 1
+  device_model:
+    interface: ocpp_device_model
+    min_connections: 0
+    max_connections: 128
   evse_energy_sink:
     interface: external_energy_limits
     min_connections: 0

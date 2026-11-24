@@ -86,7 +86,7 @@ void Provisioning::handle_message(const ocpp::EnhancedMessage<MessageType>& mess
     if (message.messageType == MessageType::BootNotificationResponse) {
         this->handle_boot_notification_response(json_message);
     } else if (message.messageType == MessageType::SetVariables) {
-        this->handle_set_variables_req(json_message);
+        this->handle_set_variables_req(message);
     } else if (message.messageType == MessageType::GetVariables) {
         this->handle_get_variables_req(message);
     } else if (message.messageType == MessageType::GetBaseReport) {
@@ -255,8 +255,20 @@ void Provisioning::handle_boot_notification_response(CallResult<BootNotification
     }
 }
 
-void Provisioning::handle_set_variables_req(Call<SetVariablesRequest> call) {
+void Provisioning::handle_set_variables_req(const EnhancedMessage<MessageType>& message) {
+    const Call<SetVariablesRequest> call = message.call_message;
     const auto msg = call.msg;
+
+    // B05.FR.11 forbids the CSMS to send more entries, but specifies no answer of the Charging Station; answered like
+    // B06.FR.16, with the error code of OCPP-J. Each entry may wait for the owner of its variable, so an oversized
+    // request could outlast the message timeout of the CSMS.
+    const auto max_variables_per_message =
+        this->context.device_model.get_value<int>(ControllerComponentVariables::ItemsPerMessageSetVariables);
+    if (msg.setVariableData.size() > max_variables_per_message) {
+        const auto call_error = CallError(call.uniqueId, "OccurrenceConstraintViolation", "", json({}));
+        this->context.message_dispatcher.dispatch_call_error(call_error);
+        return;
+    }
 
     SetVariablesResponse response;
 
@@ -286,7 +298,7 @@ void Provisioning::handle_get_variables_req(const EnhancedMessage<MessageType>& 
     // B06.FR.16
     if (msg.getVariableData.size() > max_variables_per_message) {
         // send a CALLERROR
-        const auto call_error = CallError(call.uniqueId, "OccurenceConstraintViolation", "", json({}));
+        const auto call_error = CallError(call.uniqueId, "OccurrenceConstraintViolation", "", json({}));
         this->context.message_dispatcher.dispatch_call_error(call_error);
         return;
     }
@@ -334,7 +346,7 @@ void Provisioning::handle_get_report_req(const EnhancedMessage<MessageType>& mes
     // B08.FR.17
     if (msg.componentVariable.has_value() and msg.componentVariable->size() > max_items_per_message) {
         // send a CALLERROR
-        const auto call_error = CallError(call.uniqueId, "OccurenceConstraintViolation", "", json({}));
+        const auto call_error = CallError(call.uniqueId, "OccurrenceConstraintViolation", "", json({}));
         this->context.message_dispatcher.dispatch_call_error(call_error);
         return;
     }

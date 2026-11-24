@@ -177,6 +177,10 @@ std::string format_missing_required_variable(const RequiredComponentVariable& re
         ss << " (the OCPP16LegacyCtrlr component is required for every OCPP version so the device model supports "
               "switching between OCPP 1.6 and 2.x; add standardized/OCPP16LegacyCtrlr.json to the device model "
               "config directory or initialize the database with the built-in OCPP16LegacyCtrlr fallback enabled)";
+    } else if (required_variable.variable.has_value() and
+               is_reserved_variable(required_variable.component, required_variable.variable.value())) {
+        ss << " (the variable is reserved for libocpp, so a registration cannot provide it; define it with a value in "
+              "the component config)";
     }
     return ss.str();
 }

@@ -33,7 +33,10 @@
 #include <ocpp/v2/functional_blocks/transaction.hpp>
 #include <ocpp/v2/messages/BootNotification.hpp>
 #include <ocpp/v2/messages/Get15118EVCertificate.hpp>
+#include <ocpp/v2/messages/GetReport.hpp>
+#include <ocpp/v2/messages/GetVariables.hpp>
 #include <ocpp/v2/messages/Reset.hpp>
+#include <ocpp/v2/messages/SetVariables.hpp>
 #include <ocpp/v2/ocpp_types.hpp>
 
 using namespace ocpp;
@@ -390,6 +393,121 @@ TEST_F(ProvisioningBasicAuthPasswordTest, PasswordAppliedAfterCallInFlightIsAnsw
     message_queue->receive(json{3, "in-flight", {{"currentTime", DateTime().to_rfc3339()}}}.dump());
     ASSERT_EQ(key_set_future.wait_for(std::chrono::seconds(1)), std::future_status::ready);
     EXPECT_EQ(key_set_future.get(), "0123456789abcdef");
+}
+
+class ProvisioningSetVariablesTest : public ProvisioningResetTest {
+protected:
+    static constexpr auto heartbeat_interval_before = "900";
+
+    void SetUp() override {
+        const auto& items = ControllerComponentVariables::ItemsPerMessageSetVariables;
+        ASSERT_EQ(dm->set_value(items.component, items.variable.value(), AttributeEnum::Actual, "2", "test", true),
+                  SetVariableStatusEnum::Accepted);
+        const auto& heartbeat = ControllerComponentVariables::HeartbeatInterval;
+        ASSERT_EQ(dm->set_value(heartbeat.component, heartbeat.variable.value(), AttributeEnum::Actual,
+                                heartbeat_interval_before, "test"),
+                  SetVariableStatusEnum::Accepted);
+    }
+
+    static SetVariableData make_heartbeat_interval(const std::string& value) {
+        SetVariableData data;
+        data.component = ControllerComponentVariables::HeartbeatInterval.component;
+        data.variable = ControllerComponentVariables::HeartbeatInterval.variable.value();
+        data.attributeValue = value;
+        return data;
+    }
+
+    static ocpp::EnhancedMessage<MessageType> make_set_variables_message(std::vector<SetVariableData> data) {
+        SetVariablesRequest request;
+        request.setVariableData = std::move(data);
+        ocpp::Call<SetVariablesRequest> call(request);
+        ocpp::EnhancedMessage<MessageType> enhanced_message;
+        enhanced_message.messageType = MessageType::SetVariables;
+        enhanced_message.message = call;
+        enhanced_message.call_message = enhanced_message.message;
+        enhanced_message.message_size = enhanced_message.message.dump().size();
+        return enhanced_message;
+    }
+
+    std::string heartbeat_interval() {
+        const auto& heartbeat = ControllerComponentVariables::HeartbeatInterval;
+        return dm->get_value<std::string>(heartbeat);
+    }
+};
+
+TEST_F(ProvisioningSetVariablesTest, RequestOverItemsPerMessageIsAnsweredWithCallErrorAndNotApplied) {
+    EXPECT_CALL(mock_dispatcher, dispatch_call_result(::testing::_)).Times(0);
+    EXPECT_CALL(mock_dispatcher, dispatch_call_error(::testing::_)).WillOnce([](const json& call_error) {
+        EXPECT_EQ(call_error.at(2), "OccurrenceConstraintViolation");
+    });
+
+    provisioning->handle_message(make_set_variables_message(
+        {make_heartbeat_interval("60"), make_heartbeat_interval("61"), make_heartbeat_interval("62")}));
+
+    EXPECT_EQ(heartbeat_interval(), heartbeat_interval_before);
+}
+
+TEST_F(ProvisioningSetVariablesTest, RequestAtItemsPerMessageIsApplied) {
+    EXPECT_CALL(mock_dispatcher, dispatch_call_error(::testing::_)).Times(0);
+    EXPECT_CALL(mock_dispatcher, dispatch_call_result(::testing::_)).Times(1);
+
+    provisioning->handle_message(
+        make_set_variables_message({make_heartbeat_interval("60"), make_heartbeat_interval("61")}));
+
+    EXPECT_EQ(heartbeat_interval(), "61");
+}
+
+class ProvisioningItemsPerMessageTest : public ProvisioningResetTest {
+protected:
+    void set_limit(const RequiredComponentVariable& limit, const std::string& value) {
+        ASSERT_EQ(dm->set_value(limit.component, limit.variable.value(), AttributeEnum::Actual, value, "test", true),
+                  SetVariableStatusEnum::Accepted);
+    }
+
+    template <typename Request>
+    static ocpp::EnhancedMessage<MessageType> make_message(const Request& request, const MessageType type) {
+        ocpp::Call<Request> call(request);
+        ocpp::EnhancedMessage<MessageType> enhanced_message;
+        enhanced_message.messageType = type;
+        enhanced_message.message = call;
+        enhanced_message.call_message = enhanced_message.message;
+        enhanced_message.message_size = enhanced_message.message.dump().size();
+        return enhanced_message;
+    }
+
+    void expect_occurrence_constraint_violation() {
+        EXPECT_CALL(mock_dispatcher, dispatch_call_result(::testing::_)).Times(0);
+        EXPECT_CALL(mock_dispatcher, dispatch_call_error(::testing::_)).WillOnce([](const json& call_error) {
+            EXPECT_EQ(call_error.at(2), "OccurrenceConstraintViolation");
+        });
+    }
+};
+
+// B06.FR.16, with the error code of OCPP-J
+TEST_F(ProvisioningItemsPerMessageTest, GetVariablesOverItemsPerMessageIsAnsweredWithCallError) {
+    set_limit(ControllerComponentVariables::ItemsPerMessageGetVariables, "1");
+    GetVariableData data;
+    data.component = ControllerComponentVariables::OrganizationName.component;
+    data.variable = ControllerComponentVariables::OrganizationName.variable.value();
+    GetVariablesRequest request;
+    request.getVariableData = {data, data};
+    expect_occurrence_constraint_violation();
+
+    provisioning->handle_message(make_message(request, MessageType::GetVariables));
+}
+
+// B08.FR.17, with the error code of OCPP-J
+TEST_F(ProvisioningItemsPerMessageTest, GetReportOverItemsPerMessageIsAnsweredWithCallError) {
+    set_limit(ControllerComponentVariables::ItemsPerMessageGetReport, "1");
+    ComponentVariable component_variable;
+    component_variable.component = ControllerComponentVariables::OrganizationName.component;
+    component_variable.variable = ControllerComponentVariables::OrganizationName.variable;
+    GetReportRequest request;
+    request.requestId = 1;
+    request.componentVariable = std::vector<ComponentVariable>{component_variable, component_variable};
+    expect_occurrence_constraint_violation();
+
+    provisioning->handle_message(make_message(request, MessageType::GetReport));
 }
 
 } // namespace

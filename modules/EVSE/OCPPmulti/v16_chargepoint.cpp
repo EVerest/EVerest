@@ -394,21 +394,20 @@ ocpp::v16::GetLogResponse ChargePointV16::cb_upload_logs(ocpp::v16::GetLogReques
 }
 
 void ChargePointV16::cb_variable_listener(const ocpp::v16::KeyValue& key_value) {
-    // In ocpp::v16::ChargePoint a key-specific callback replaces the generic one; forward so other modules (e.g.
-    // EvseManager, Auth) still receive the change
     cb_generic_configuration_key_changed(key_value);
 
+    // Resolved at every change, as the key of an owner's variable is mapped and removed at runtime
+    const auto mapping = m_charge_point_configuration->get_variable_resolver().key_to_cv(key_value.key.get());
+    if (!mapping.has_value() || !key_value.value.has_value() || m_monitored_variables.handle()->count(*mapping) == 0) {
+        return;
+    }
     // copy under lock, invoke outside
     const listener_t listener = *m_variable_listener.handle();
-    // fired key -> canonical CV
-    const auto mapping = m_charge_point_configuration->get_variable_resolver().key_to_cv(key_value.key.get());
     if (listener == nullptr) {
         EVLOG_warning << "cb_variable_listener: no listener configured";
-    } else if (!mapping.has_value()) {
-        EVLOG_warning << "cb_variable_listener: no mapping for " << key_value.key;
-    } else if (key_value.value.has_value()) {
-        listener(mapping->first, mapping->second, key_value.value.value());
+        return;
     }
+    listener(mapping->first, mapping->second, key_value.value.value());
 }
 
 ocpp::v16::ErrorInfo ChargePointV16::convert_error(const Everest::error::Error& error) {
@@ -522,12 +521,13 @@ void ChargePointV16::configure_callbacks() {
         [this](auto&&... args) { return cb_set_display_message(args...); });
     m_charge_point->register_data_transfer_callback([this](auto&&... args) { return cb_data_transfer(args...); });
     m_charge_point->register_generic_configuration_key_changed_callback(
-        [this](auto&&... args) { cb_generic_configuration_key_changed(args...); });
+        [this](auto&&... args) { cb_variable_listener(args...); });
 }
 
 void ChargePointV16::configure_data_model(const config_info_t& config,
                                           ocpp_module_common::device_model::EverestDeviceModel* everest_device_model,
-                                          ocpp_module_common::device_model::ConfigServiceAccess* config_service) {
+                                          ocpp_module_common::device_model::ConfigServiceAccess* config_service,
+                                          ocpp_module_common::device_model::ExternalOwners* external_owners) {
     const auto ocpp_share_path = fs::path(config.ocpp_share_path);
 
     const module::config_factory_v16::Ocpp16DeviceModelParams params{
@@ -547,8 +547,9 @@ void ChargePointV16::configure_data_model(const config_info_t& config,
     m_variable_access.reset();
     auto factory_result = module::config_factory_v16::create_charge_point_configuration(
         ocpp_share_path, params, static_cast<int32_t>(config.number_of_connectors),
-        config.everest_device_model_database_path, everest_device_model, config_service);
+        config.everest_device_model_database_path, everest_device_model, config_service, external_owners);
     m_charge_point_configuration = std::move(factory_result.configuration);
+    m_key_binder = std::move(factory_result.key_binder);
     m_device_model_registrations = std::move(factory_result.registrations);
 
     // m_charge_point is constructed later in init(); the lambdas resolve it at call time.
@@ -610,7 +611,7 @@ void ChargePointV16::init(init_args_t& args) {
         args.fail_on_device_model_conflicts,
     };
 
-    configure_data_model(config, args.everest_device_model, args.config_service);
+    configure_data_model(config, args.everest_device_model, args.config_service, args.external_owners);
 
     // the charge point created below starts without offered limits
     m_offered_limits.clear();
@@ -1038,13 +1039,9 @@ void ChargePointV16::register_variable_listener(const ocpp::v2::Component& compo
             *handle = std::move(listener);
         }
     }
-    const auto reverse = m_charge_point_configuration->get_variable_resolver().cv_to_key(component, variable);
-    if (reverse.has_value()) {
-        // register outside the lock: libocpp may fire the callback synchronously
-        m_charge_point->register_configuration_key_changed_callback(
-            reverse.value(), [this](auto&&... args) { cb_variable_listener(args...); });
-    }
-    // no 1.6 key: nothing to hook; direct writes are covered by synthesized monitor events
+    // A change of a key is reported through cb_variable_listener; a variable without a key gets the monitor events
+    // that direct writes synthesize
+    m_monitored_variables.handle()->emplace(component, variable);
 }
 
 std::optional<ocpp::v2::ComponentVariable> ChargePointV16::resolve_to_canonical(const ocpp::v2::Component& component,

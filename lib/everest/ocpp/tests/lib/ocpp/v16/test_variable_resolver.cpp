@@ -8,9 +8,11 @@
 #include <ocpp/v2/comparators.hpp>
 #include <ocpp/v2/ctrlr_component_variables.hpp>
 
+#include <atomic>
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <thread>
 
 namespace {
 
@@ -356,7 +358,165 @@ TEST(VariableResolver, CustomKeysExcludeKnownKeys) {
     mappings.emplace("VendorKey", std::make_pair(make_component("VendorStation"), make_variable("VendorVariable")));
     const VariableResolver resolver{mappings};
     EXPECT_EQ(resolver.custom_keys().size(), 1);
-    EXPECT_NE(resolver.custom_keys().find("VendorKey"), resolver.custom_keys().end());
+    EXPECT_EQ(resolver.custom_keys().count("VendorKey"), 1);
+}
+
+TEST(VariableResolver, OwnerCustomKeyMapsBothWays) {
+    VariableResolver resolver;
+    EXPECT_FALSE(resolver.add_owner_key("FanSpeedLimit", make_component("CoolingUnit", "1"), make_variable("FanSpeed"))
+                     .has_value());
+
+    const auto cv = resolver.key_to_cv("FanSpeedLimit");
+    ASSERT_TRUE(cv.has_value());
+    EXPECT_TRUE(same_cv(cv.value(), {make_component("CoolingUnit", "1"), make_variable("FanSpeed")}));
+    EXPECT_EQ(resolver.cv_to_key(make_component("CoolingUnit", "1"), make_variable("FanSpeed")), "FanSpeedLimit");
+    EXPECT_EQ(resolver.classify(make_component("CoolingUnit", "1"), make_variable("FanSpeed")), CVClass::KeyBacked);
+    EXPECT_EQ(resolver.custom_keys().count("FanSpeedLimit"), 1);
+}
+
+TEST(VariableResolver, OwnerOverrideReplacesBuiltinMapping) {
+    VariableResolver resolver;
+    EXPECT_FALSE(
+        resolver.add_owner_key("LightIntensity", make_component("Lamp"), make_variable("Intensity")).has_value());
+
+    EXPECT_TRUE(resolver.is_overridden(keys::valid_keys::LightIntensity));
+    const auto cv = resolver.known_key_to_cv(keys::valid_keys::LightIntensity);
+    ASSERT_TRUE(cv.has_value());
+    EXPECT_TRUE(same_cv(cv.value(), {make_component("Lamp"), make_variable("Intensity")}));
+    EXPECT_EQ(resolver.cv_to_key(make_component("Lamp"), make_variable("Intensity")), "LightIntensity");
+    EXPECT_FALSE(
+        resolver.cv_to_known_key(make_component("OCPP16LegacyCtrlr"), make_variable("LightIntensity")).has_value());
+    EXPECT_EQ(resolver.overrides().size(), 1);
+}
+
+TEST(VariableResolver, RemovedOwnerKeysRestoreTheBuiltinMapping) {
+    VariableResolver resolver;
+    ASSERT_FALSE(
+        resolver.add_owner_key("LightIntensity", make_component("Lamp"), make_variable("Intensity")).has_value());
+    ASSERT_FALSE(
+        resolver.add_owner_key("FanSpeedLimit", make_component("CoolingUnit"), make_variable("FanSpeed")).has_value());
+
+    resolver.remove_owner_key("LightIntensity");
+    resolver.remove_owner_key("FanSpeedLimit");
+
+    EXPECT_FALSE(resolver.is_overridden(keys::valid_keys::LightIntensity));
+    EXPECT_EQ(resolver.cv_to_known_key(make_component("OCPP16LegacyCtrlr"), make_variable("LightIntensity")),
+              "LightIntensity");
+    EXPECT_FALSE(resolver.key_to_cv("FanSpeedLimit").has_value());
+    EXPECT_FALSE(resolver.cv_to_key(make_component("Lamp"), make_variable("Intensity")).has_value());
+    EXPECT_FALSE(resolver.cv_to_key(make_component("CoolingUnit"), make_variable("FanSpeed")).has_value());
+}
+
+TEST(VariableResolver, OwnerKeysDoNotTakeMappedKeysOrTargets) {
+    VariableResolver resolver{custom_mappings_fixture()};
+    // a key of the file
+    EXPECT_TRUE(resolver.add_owner_key("VendorBar", make_component("Other"), make_variable("Bar")).has_value());
+    // a target of the file
+    EXPECT_TRUE(
+        resolver.add_owner_key("OwnerBar", make_component("VendorCtrlr"), make_variable("BarSetting")).has_value());
+    // the built-in target of another key
+    EXPECT_TRUE(
+        resolver.add_owner_key("MyInterval", make_component("OCPPCommCtrlr"), make_variable("HeartbeatInterval"))
+            .has_value());
+    // a known key that cannot be overridden
+    EXPECT_TRUE(
+        resolver.add_owner_key("HeartbeatInterval", make_component("Other"), make_variable("Heartbeat")).has_value());
+
+    // a key or a target of another owner
+    ASSERT_FALSE(resolver.add_owner_key("OwnerKey", make_component("Other"), make_variable("First")).has_value());
+    EXPECT_TRUE(resolver.add_owner_key("OwnerKey", make_component("Other"), make_variable("Second")).has_value());
+    EXPECT_TRUE(resolver.add_owner_key("OtherKey", make_component("Other"), make_variable("First")).has_value());
+
+    EXPECT_EQ(resolver.key_to_cv("VendorBar")->second.name.get(), "BarSetting");
+    EXPECT_EQ(resolver.key_to_cv("OwnerKey")->second.name.get(), "First");
+    EXPECT_FALSE(resolver.key_to_cv("OtherKey").has_value());
+}
+
+TEST(VariableResolver, ReplacingFileMappingsKeepsOwnerKeys) {
+    VariableResolver resolver;
+    ASSERT_FALSE(
+        resolver.add_owner_key("FanSpeedLimit", make_component("CoolingUnit"), make_variable("FanSpeed")).has_value());
+    ASSERT_FALSE(
+        resolver.add_owner_key("LightIntensity", make_component("Lamp"), make_variable("Intensity")).has_value());
+
+    resolver.replace_file_mappings(custom_mappings_fixture());
+
+    EXPECT_EQ(resolver.key_to_cv("FanSpeedLimit")->second.name.get(), "FanSpeed");
+    EXPECT_EQ(resolver.known_key_to_cv(keys::valid_keys::LightIntensity)->first.name.get(), "Lamp");
+    EXPECT_EQ(resolver.key_to_cv("VendorBar")->second.name.get(), "BarSetting");
+
+    resolver.replace_file_mappings({});
+    EXPECT_FALSE(resolver.key_to_cv("VendorBar").has_value());
+    EXPECT_EQ(resolver.key_to_cv("FanSpeedLimit")->second.name.get(), "FanSpeed");
+}
+
+TEST(VariableResolver, FileMappingsSkipKeysAndTargetsOfOwners) {
+    VariableResolver resolver;
+    ASSERT_FALSE(resolver.add_owner_key("VendorBar", make_component("Owner"), make_variable("Bar")).has_value());
+    ASSERT_FALSE(
+        resolver.add_owner_key("OwnerFoo", make_component("VendorCtrlr"), make_variable("FooSetting")).has_value());
+
+    resolver.replace_file_mappings(custom_mappings_fixture());
+
+    EXPECT_EQ(resolver.key_to_cv("VendorBar")->first.name.get(), "Owner");
+    EXPECT_EQ(resolver.cv_to_key(make_component("VendorCtrlr"), make_variable("FooSetting")), "OwnerFoo");
+    EXPECT_FALSE(resolver.key_to_cv("VendorFoo").has_value());
+}
+
+TEST(VariableResolver, OwnerKeysChangeWhileOthersLookUp) {
+    VariableResolver resolver{custom_mappings_fixture()};
+    std::atomic<bool> stop{false};
+    std::thread reader([&]() {
+        while (not stop) {
+            EXPECT_EQ(resolver.key_to_cv("VendorBar")->second.name.get(), "BarSetting");
+            static_cast<void>(resolver.cv_to_key(make_component("CoolingUnit"), make_variable("FanSpeed")));
+            static_cast<void>(resolver.custom_keys());
+            static_cast<void>(resolver.is_overridden(keys::valid_keys::LightIntensity));
+            static_cast<void>(resolver.cv_to_known_key(make_component("Lamp"), make_variable("Intensity")));
+            static_cast<void>(resolver.overrides());
+        }
+    });
+    for (int i = 0; i < 1000; ++i) {
+        EXPECT_FALSE(resolver.add_owner_key("FanSpeedLimit", make_component("CoolingUnit"), make_variable("FanSpeed"))
+                         .has_value());
+        EXPECT_FALSE(
+            resolver.add_owner_key("LightIntensity", make_component("Lamp"), make_variable("Intensity")).has_value());
+        resolver.remove_owner_key("FanSpeedLimit");
+        resolver.remove_owner_key("LightIntensity");
+        if (i % 100 == 0) {
+            resolver.replace_file_mappings(custom_mappings_fixture());
+        }
+    }
+    stop = true;
+    reader.join();
+    EXPECT_FALSE(resolver.key_to_cv("FanSpeedLimit").has_value());
+    EXPECT_FALSE(resolver.is_overridden(keys::valid_keys::LightIntensity));
+}
+
+TEST(VariableResolver, RemovingAnOwnerKeyLeavesTheFileMappingsAlone) {
+    auto mappings = custom_mappings_fixture();
+    mappings.emplace("LightIntensity", std::make_pair(make_component("VendorCtrlr"), make_variable("Light")));
+    VariableResolver resolver{mappings};
+    ASSERT_TRUE(resolver.is_overridden(keys::valid_keys::LightIntensity));
+
+    resolver.remove_owner_key("VendorBar");
+    resolver.remove_owner_key("LightIntensity");
+
+    EXPECT_EQ(resolver.key_to_cv("VendorBar")->second.name.get(), "BarSetting");
+    EXPECT_EQ(resolver.known_key_to_cv(keys::valid_keys::LightIntensity)->second.name.get(), "Light");
+}
+
+TEST(VariableResolver, FileOverrideOfAKeyAnOwnerHoldsIsSkipped) {
+    VariableResolver resolver;
+    ASSERT_FALSE(
+        resolver.add_owner_key("LightIntensity", make_component("Lamp"), make_variable("Intensity")).has_value());
+
+    resolver.replace_file_mappings(
+        {{"LightIntensity", std::make_pair(make_component("VendorCtrlr"), make_variable("Light"))}});
+
+    EXPECT_EQ(resolver.known_key_to_cv(keys::valid_keys::LightIntensity)->first.name.get(), "Lamp");
+    EXPECT_FALSE(resolver.cv_to_key(make_component("VendorCtrlr"), make_variable("Light")).has_value());
+    EXPECT_EQ(resolver.overrides().size(), 1);
 }
 
 } // namespace

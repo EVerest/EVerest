@@ -17,9 +17,17 @@ Variable addressing
 ``monitor_and_get_variables`` use canonical component/variable addressing
 (e.g. component ``OCPPCommCtrlr``, variable ``HeartbeatInterval``), identical
 for OCPP 1.6 and 2.x. The OCPP 1.6 key-only
-form (empty ``component.name``, ``variable.name`` = configuration key) is
+form (empty ``component.name``, ``variable.name`` = :term:`configuration key`) is
 deprecated: it is only accepted while OCPP 1.6 is active and will be removed
 per the deprecation policy. See the "Configuration access" and "Migration from
 OCPP 1.6 key addressing" sections in the OCPPmulti module documentation
 (:ref:`everest_modules_OCPPmulti`) for examples and the migration
 guide.
+
+Registered variables
+====================
+
+Variables that an external application registers through the
+:ref:`ocpp_device_model_API <everest_modules_handwritten_ocpp_device_model_API>` are read and watched like any other
+variable. A ``set_variables`` to a ``ReadWrite`` registered variable is passed to its owner like a write of the CSMS;
+one to a ``ReadOnly`` registered variable is rejected. See :ref:`howto-ocpp-device-model`.

@@ -251,6 +251,9 @@ reference only: do not point ``Ocpp16KeyMappingsPath`` at it. Custom or
 vendor-specific keys that are not covered by the built-in table need an
 explicit YAML mapping file.
 
+The terms used below, such as built-in key, custom key, mapping target and
+override, are defined in the :ref:`reference-ocpp-device-model-glossary`.
+
 Example:
 
 .. code-block:: yaml
@@ -266,14 +269,27 @@ Point ``Ocpp16KeyMappingsPath`` to this file. The mappings are applied
 both during the one-time migration and when serving the device-model-backed
 configuration at runtime.
 
-The referenced component and variable must already exist in the component
-configuration at ``DeviceModelConfigPath``. The mapping file tells the
-migration where to write the value — it does not create the target variable.
+The mapping file does not create the target variable. The migration writes a
+value only into a target that the component configuration at
+``DeviceModelConfigPath`` defines. At runtime, the target may also be a variable
+that an external application registers through the
+:ref:`ocpp_device_model_API <everest_modules_handwritten_ocpp_device_model_API>`:
 
-A variable that is added to the device model at runtime, for example an EVerest
-module configuration value or a component that EVerest provides, is not a
-mapping target: an entry that names one is ignored with an error log. An OCPP
-2.x CSMS and the ``ocpp`` interface still reach such a variable by its
+- A :term:`custom key` is looked up at each request. While its target is not
+  registered, the key is unknown to the CSMS.
+- A :term:`built-in key` mapped to such a variable needs it registered at startup.
+  Otherwise the entry is ignored with an error log, and the key keeps its
+  built-in mapping until the next start.
+
+An external application can also declare the key of its variable itself, with
+``ocpp16_key`` in its registration, see :ref:`howto-ocpp-device-model`. The
+mapping file takes precedence: a key or a variable that the file names, whether
+or not its entry is used, is not available to an application.
+
+Other variables that are added to the device model at runtime, for example an
+EVerest module configuration value or a component that EVerest provides, are
+not mapping targets: an entry that names one is ignored with an error log. An
+OCPP 2.x CSMS and the ``ocpp`` interface still reach such a variable by its
 component and variable.
 
 An entry stores its key in the ``Actual`` attribute of the variable, and each
@@ -295,9 +311,9 @@ key leaves the key on its built-in mapping, and the migration writes its value
 to the ``OCPP16LegacyCtrlr`` variable. The value of an ignored custom key is not
 migrated.
 
-A custom key whose variable is not defined in the component configuration or has
-no ``Actual`` attribute is reported with an error log at every start and is not
-available to OCPP 1.6.
+A custom key whose variable has no ``Actual`` attribute, or is registered at
+startup by EVerest rather than by an external application, is reported with an
+error log at every start and is not available to OCPP 1.6.
 
 A file that cannot be read or does not match the mapping file schema stops the
 module at startup.

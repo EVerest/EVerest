@@ -5,7 +5,12 @@
 
 #include <filesystem>
 #include <fstream>
+#include <map>
+#include <optional>
+#include <string>
+#include <utility>
 
+#include <ocpp/v2/comparators.hpp>
 #include <ocpp/v2/ocpp16_key_mappings.hpp>
 #include <test_temp_paths.hpp>
 
@@ -418,6 +423,105 @@ mappings:
     const auto mappings = load_ocpp16_key_mappings_from_yaml(yaml_file);
     ASSERT_EQ(mappings.size(), 1);
     EXPECT_NE(mappings.find("VendorBar"), mappings.end());
+}
+
+namespace {
+
+std::pair<Component, Variable> target(const std::string& component, const std::string& variable) {
+    Component c;
+    c.name = component;
+    Variable v;
+    v.name = variable;
+    return {c, v};
+}
+
+} // namespace
+
+TEST(KeyMappingConflict, free_custom_key_and_target_have_none) {
+    EXPECT_FALSE(find_key_mapping_conflict("VendorKey", target("VendorCtrlr", "Setting"), {}, {}).has_value());
+}
+
+TEST(KeyMappingConflict, overridable_key_has_none) {
+    EXPECT_FALSE(find_key_mapping_conflict("LightIntensity", target("Lamp", "Intensity"), {}, {}).has_value());
+}
+
+TEST(KeyMappingConflict, mapped_key_and_target_are_in_use) {
+    const Ocpp16KeyMappings accepted{{"VendorKey", target("VendorCtrlr", "Setting")}};
+    const std::map<std::pair<Component, Variable>, std::string> key_by_target{
+        {target("VendorCtrlr", "Setting"), "VendorKey"}};
+
+    const auto same_key = find_key_mapping_conflict("VendorKey", target("Other", "Setting"), accepted, key_by_target);
+    ASSERT_TRUE(same_key.has_value());
+    EXPECT_TRUE(same_key->in_use);
+
+    const auto same_target =
+        find_key_mapping_conflict("OtherKey", target("VendorCtrlr", "Setting"), accepted, key_by_target);
+    ASSERT_TRUE(same_target.has_value());
+    EXPECT_TRUE(same_target->in_use);
+}
+
+TEST(KeyMappingConflict, builtin_target_of_another_key_is_in_use) {
+    const auto conflict = find_key_mapping_conflict("MyInterval", target("OCPPCommCtrlr", "HeartbeatInterval"), {}, {});
+    ASSERT_TRUE(conflict.has_value());
+    EXPECT_TRUE(conflict->in_use);
+}
+
+TEST(KeyMappingConflict, standard_key_is_in_use) {
+    const auto conflict = find_key_mapping_conflict("HeartbeatInterval", target("Other", "Heartbeat"), {}, {});
+    ASSERT_TRUE(conflict.has_value());
+    EXPECT_TRUE(conflict->in_use);
+}
+
+TEST(KeyMappingConflict, derived_legacy_key_is_invalid) {
+    const auto conflict = find_key_mapping_conflict("NumberOfConnectors", target("Other", "Connectors"), {}, {});
+    ASSERT_TRUE(conflict.has_value());
+    EXPECT_FALSE(conflict->in_use);
+}
+
+TEST(KeyMappingConflict, connection_config_and_derived_targets_are_invalid) {
+    const auto connection = find_key_mapping_conflict("VendorKey", target("NetworkConfiguration", "Identity"), {}, {});
+    ASSERT_TRUE(connection.has_value());
+    EXPECT_FALSE(connection->in_use);
+
+    const auto derived = find_key_mapping_conflict("VendorKey", target("LocalAuthListCtrlr", "Entries"), {}, {});
+    ASSERT_TRUE(derived.has_value());
+    EXPECT_FALSE(derived->in_use);
+}
+
+TEST(MappingTargetProblem, target_must_exist_and_have_an_actual_attribute) {
+    const auto missing = [](const Component&, const Variable&) -> std::optional<MappingTargetInfo> {
+        return std::nullopt;
+    };
+    EXPECT_TRUE(find_mapping_target_problem("VendorKey", target("Vendor", "Setting"), missing).has_value());
+
+    const auto without_actual = [](const Component&, const Variable&) -> std::optional<MappingTargetInfo> {
+        return MappingTargetInfo{DataEnum::integer, false};
+    };
+    EXPECT_TRUE(find_mapping_target_problem("VendorKey", target("Vendor", "Setting"), without_actual).has_value());
+
+    const auto with_actual = [](const Component&, const Variable&) -> std::optional<MappingTargetInfo> {
+        return MappingTargetInfo{DataEnum::integer, true};
+    };
+    EXPECT_FALSE(find_mapping_target_problem("VendorKey", target("Vendor", "Setting"), with_actual).has_value());
+}
+
+TEST(MappingTargetProblem, override_target_needs_the_data_type_of_the_builtin_variable) {
+    // OCPP16LegacyCtrlr.LightIntensity is an integer
+    const auto lookup = [](const Component& component, const Variable&) -> std::optional<MappingTargetInfo> {
+        if (component.name.get() == "OCPP16LegacyCtrlr") {
+            return MappingTargetInfo{DataEnum::integer, true};
+        }
+        return MappingTargetInfo{DataEnum::string, true};
+    };
+    EXPECT_TRUE(find_mapping_target_problem("LightIntensity", target("Lamp", "Intensity"), lookup).has_value());
+
+    const auto same_type = [](const Component&, const Variable&) -> std::optional<MappingTargetInfo> {
+        return MappingTargetInfo{DataEnum::integer, true};
+    };
+    EXPECT_FALSE(find_mapping_target_problem("LightIntensity", target("Lamp", "Intensity"), same_type).has_value());
+
+    // a custom key has no built-in variable to compare with
+    EXPECT_FALSE(find_mapping_target_problem("VendorKey", target("Lamp", "Intensity"), lookup).has_value());
 }
 
 } // namespace ocpp::v2

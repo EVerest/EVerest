@@ -126,6 +126,13 @@ Have a look at this categorized list of all guides:
 
       How to change the codes, texts and device model components OCPP reports for EVerest errors.
 
+   .. grid-item-card:: Add Components to the OCPP Device Model from an External Application
+      :link: ocpp-device-model-external-owners
+      :link-type: doc
+
+      How an application outside EVerest adds its own components and variables to the OCPP device model and handles
+      the writes to them.
+
    .. grid-item-card:: Migrate from EvseV2G and IsoMux to Evse15118D20
       :link: iso15118-stack-migration
       :link-type: doc
@@ -162,5 +169,6 @@ Have a look at this categorized list of all guides:
     c++-coding-guidelines
     ocpp-storage-migration
     ocpp-custom-error-mapping
+    ocpp-device-model-external-owners
     iso15118-stack-migration
     firmware-update-connector-availability
