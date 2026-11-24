@@ -1,0 +1,82 @@
+description: >-
+  Exposes the AC measurements of one EVSE as a SunSpec device over Modbus TCP,
+  so that an external energy management system can discover and monitor the
+  charger. The device implements the SunSpec Common model (1) and the DER AC
+  Measurement model (701). The server is read-only.
+config:
+  listen_address:
+    description: >-
+      IPv4 address the Modbus TCP server binds to. The default accepts local
+      clients only; set an interface address, or 0.0.0.0 for all interfaces,
+      to serve an external EMS. Modbus TCP has no authentication.
+    type: string
+    default: 127.0.0.1
+  port:
+    description: TCP port of the Modbus server. 502 is the registered Modbus TCP port.
+    type: integer
+    minimum: 1
+    maximum: 65535
+    default: 502
+  manufacturer:
+    description: SunSpec Common model Mn point (up to 32 characters)
+    type: string
+    default: EVerest
+  model:
+    description: SunSpec Common model Md point (up to 32 characters)
+    type: string
+    default: EVSE
+  options:
+    description: SunSpec Common model Opt point (up to 16 characters)
+    type: string
+    default: ""
+  version:
+    description: SunSpec Common model Vr point (up to 16 characters)
+    type: string
+    default: ""
+  serial_number:
+    description: SunSpec Common model SN point (up to 32 characters)
+    type: string
+    default: ""
+  device_address:
+    description: SunSpec Common model DA point (Modbus device address)
+    type: integer
+    minimum: 1
+    maximum: 247
+    default: 1
+  ac_type:
+    description: Wiring reported in the Model 701 ACType point. It also sets which phase blocks are filled.
+    type: string
+    enum:
+      - single_phase
+      - split_phase
+      - three_phase
+    default: single_phase
+  max_power_W:
+    description: >-
+      Largest power magnitude the EVSE reports, in watts. It fixes the power
+      scale factor (W_SF); larger values are reported as the largest
+      representable value.
+    type: number
+    minimum: 1
+    default: 22000
+  max_current_A:
+    description: >-
+      Largest per-phase current the EVSE reports, in amperes. It fixes the
+      current scale factor (A_SF) for the per-phase and total current.
+    type: number
+    minimum: 1
+    default: 32
+  max_voltage_V:
+    description: Largest line-to-neutral voltage the EVSE reports, in volts. It fixes the voltage scale factor (V_SF).
+    type: number
+    minimum: 1
+    default: 480
+requires:
+  evse_manager:
+    interface: evse_manager
+capabilities:
+  - CAP_NET_BIND_SERVICE
+metadata:
+  license: https://opensource.org/licenses/Apache-2.0
+  authors:
+    - Kudrat Kaur

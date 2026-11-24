@@ -1,0 +1,30 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("//modules:module.bzl", "cc_everest_module")
+load("//third-party/bazel/toolchains:defs.bzl", "CROSS_TEST_INCOMPATIBLE")
+
+cc_library(
+    name = "sunspec_map",
+    srcs = ["lib/sunspec_map.cpp"],
+    hdrs = ["include/sunspec_map.hpp"],
+    copts = ["-std=c++17"],
+    strip_include_prefix = "include",
+)
+
+cc_everest_module(
+    name = "SunSpecModbusServer",
+    deps = [
+        ":sunspec_map",
+        "//lib/everest/modbus:modbus_server",
+    ],
+)
+
+cc_test(
+    name = "sunspec_map_tests",
+    srcs = ["tests/sunspec_map_tests.cpp"],
+    copts = ["-std=c++17"],
+    target_compatible_with = CROSS_TEST_INCOMPATIBLE,
+    deps = [
+        ":sunspec_map",
+        "@googletest//:gtest_main",
+    ],
+)
