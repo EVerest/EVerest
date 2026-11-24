@@ -56,6 +56,11 @@ steps to reproduce the issue.
 The repository provides issue templates for bugs and feature requests to help you
 provide all necessary information.
 
+Maintainers triage new issues. An issue starts in the status ``Backlog`` and is
+moved to ``Ready`` once it has been discussed and can be picked up. The status is
+shown in the sidebar of the issue. Say so in the issue if you want to implement it
+yourself, so that maintainers can take this into account when they triage it.
+
 Pull requests
 -------------
 
@@ -83,9 +88,15 @@ eventually which impact the change will have. Issue and pull request templates
 of the repositories of the EVerest organization support a proper format
 of code contributions.
 
-Every pull request for a feature request must link an issue. Pull requests for
-bugfixes do not necessarily need to link an issue, but they should contain a
-proper description of the bug that is fixed.
+Every pull request for a feature request must link an issue, and that issue must
+be in the status ``Ready`` before the pull request is opened. Opening the issue
+and the pull request at the same time leaves maintainers no room to discuss
+whether and how the feature should be implemented. Maintainers may close a
+feature pull request whose issue is not ``Ready`` and ask you to reopen it once
+the issue has been discussed.
+
+Pull requests for bugfixes do not necessarily need to link an issue, but they
+should contain a proper description of the bug that is fixed.
 
 You can use draft pull requests if you want to share your current state
 and start a discussion about your changes. As soon as a draft pull request
