@@ -49,6 +49,11 @@ jobs:
         uses: actions/checkout@v7
         with:
           persist-credentials: false
-          sparse-checkout: .ci/himalayas
+          sparse-checkout: applications/himalayas_record
+      - name: Install himalayas_record
+        run: |
+          python3 -m venv "$RUNNER_TEMP/himalayas"
+          "$RUNNER_TEMP/himalayas/bin/pip" install --quiet ./applications/himalayas_record
       - name: Run unit tests
-        run: python3 -I -m unittest discover -s .ci/himalayas/tests -t .ci/himalayas -v
+        run: |
+          "$RUNNER_TEMP/himalayas/bin/python" -I -m unittest discover -s applications/himalayas_record/tests -v

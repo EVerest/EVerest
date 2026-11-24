@@ -6,7 +6,7 @@ import os
 import tempfile
 import unittest
 
-from record import artifact_name, build_record, find_move, modules_from_dist, record_path
+from himalayas_record.record import artifact_name, build_record, find_move, modules_from_dist, record_path
 
 TESTDATA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "testdata")
 SHA = "0bc286811e1279adc4711b6c5e6d9d141660277f"

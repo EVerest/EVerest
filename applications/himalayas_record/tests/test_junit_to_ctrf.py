@@ -7,7 +7,7 @@ import tempfile
 import unittest
 import xml.etree.ElementTree as ET
 
-from junit_to_ctrf import convert
+from himalayas_record.junit_to_ctrf import convert
 
 TESTDATA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "testdata")
 

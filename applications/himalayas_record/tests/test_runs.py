@@ -7,11 +7,10 @@ import subprocess
 import sys
 import unittest
 
-from runs import build_outcome, cross_targets, native_targets, pick_run
+from himalayas_record.runs import build_outcome, cross_targets, native_targets, pick_run
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 TESTDATA = os.path.join(HERE, "testdata")
-RUNS_PY = os.path.join(os.path.dirname(HERE), "runs.py")
 SHA = "0bc286811e1279adc4711b6c5e6d9d141660277f"
 RERUN_SHA = "bddf6860ff5e2aa1817fb546c00f59948ae66add"
 TOOLCHAIN = "gcc 13.2.0"
@@ -242,7 +241,7 @@ class CliTest(unittest.TestCase):
     def run_cli(self, *args, stdin_name):
         with open(os.path.join(TESTDATA, stdin_name), encoding="utf-8") as stdin:
             return subprocess.run(
-                [sys.executable, "-I", RUNS_PY, *args],
+                [sys.executable, "-I", "-m", "himalayas_record.runs", *args],
                 stdin=stdin,
                 capture_output=True,
                 text=True,

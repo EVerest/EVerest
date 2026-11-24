@@ -21,6 +21,11 @@ manage an EVerest workspace and external dependencies during building.
 
 A CLI designed to provide helpful commands/aliases for developing.
 
+## himalayas_record
+
+A stdlib-only Python package that builds the CTRF records EVerest CI submits to Himalayas,
+from JUnit reports and `gh api` output.
+
 ## utils/
 
 utils/ contains ev-cli and everest-testing as well as additional code integrated from everest-utils.
