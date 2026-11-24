@@ -1,6 +1,7 @@
 ev_add_module(AcTemperatureDerating)
 ev_add_module(EnergyManager)
 ev_add_module(EnergyNode)
+ev_add_module(SunSpecSolarLimit)
 
 set(EVEREST_BUILD_MODULE_EEBUS "AUTO" CACHE STRING "Build the EEBUS module (AUTO, ON, OFF)")
 set_property(CACHE EVEREST_BUILD_MODULE_EEBUS PROPERTY STRINGS "AUTO" "ON" "OFF")

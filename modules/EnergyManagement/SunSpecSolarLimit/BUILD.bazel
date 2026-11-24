@@ -1,0 +1,39 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("//modules:module.bzl", "cc_everest_module")
+load("//third-party/bazel/toolchains:defs.bzl", "CROSS_TEST_INCOMPATIBLE")
+
+cc_library(
+    name = "sunspec_solar",
+    srcs = [
+        "sunspec/limit_policy.cpp",
+        "sunspec/sunspec_reader.cpp",
+    ],
+    hdrs = [
+        "sunspec/limit_policy.hpp",
+        "sunspec/sunspec_reader.hpp",
+    ],
+    copts = ["-std=c++17"],
+    includes = ["."],
+)
+
+cc_everest_module(
+    name = "SunSpecSolarLimit",
+    deps = [
+        ":sunspec_solar",
+        "//lib/everest/modbus:modbus_client",
+    ],
+)
+
+cc_test(
+    name = "sunspec_solar_limit_tests",
+    srcs = [
+        "tests/test_limit_policy.cpp",
+        "tests/test_sunspec_reader.cpp",
+    ],
+    copts = ["-std=c++17"],
+    target_compatible_with = CROSS_TEST_INCOMPATIBLE,
+    deps = [
+        ":sunspec_solar",
+        "@googletest//:gtest_main",
+    ],
+)
