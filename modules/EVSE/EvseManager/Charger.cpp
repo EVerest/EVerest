@@ -1467,6 +1467,9 @@ void Charger::process_cp_events_independent(CPEvent cp_event) {
         break;
     case CPEvent::CarUnplugged:
         shared_context.flag_ev_plugged_in = false;
+        // Not in clear_errors_on_unplug(): that also runs when raising this error re-initializes Idle, e.g. for a
+        // captive cable locked without an EV plugged in.
+        error_handling->clear_connector_lock_confirmation_timeout_error();
         break;
     case CPEvent::PowerOff:
         shared_context.contactor_open = true;
@@ -2044,8 +2047,9 @@ void Charger::handle_connector_lock_confirmation() {
     error_handling->raise_connector_lock_confirmation_timeout_error(
         fmt::format("Connector lock not confirmed within {} ms", connector_lock_confirmation.timeout().count()));
 
-    const bool authorization_held_for_lock = shared_context.current_state == EvseState::WaitingForAuthentication and
-                                             shared_context.flag_authorized and
+    // Not tied to WaitingForAuthentication: a data link error moves a waiting session through T_step_X1 and
+    // T_step_EF before it returns there.
+    const bool authorization_held_for_lock = shared_context.flag_ev_plugged_in and shared_context.flag_authorized and
                                              not shared_context.flag_transaction_active;
     if (not authorization_held_for_lock) {
         return;
@@ -2055,7 +2059,10 @@ void Charger::handle_connector_lock_confirmation() {
     signal_simple_event(types::evse_manager::SessionEventEnum::Deauthorized);
     shared_context.flag_authorized = false;
     shared_context.authorized_pnc = false;
-    signal_hlc_connector_lock_timeout();
+    // Only WaitingForAuthentication can have an ISO stack waiting in its authorization loop.
+    if (shared_context.current_state == EvseState::WaitingForAuthentication) {
+        signal_hlc_connector_lock_timeout();
+    }
 }
 
 bool Charger::get_authorized_pnc_ready_for_hlc() {
@@ -3083,7 +3090,6 @@ void Charger::clear_errors_on_unplug() {
     error_handling->clear_internal_error();
     error_handling->clear_powermeter_transaction_start_failed_error();
     error_handling->clear_authorization_timeout_error();
-    error_handling->clear_connector_lock_confirmation_timeout_error();
     error_handling->clear_isolation_resistance_fault("Resistance");
     error_handling->clear_isolation_resistance_fault("VoltageToEarth");
     error_handling->clear_cable_check_fault();

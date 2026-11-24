@@ -72,6 +72,28 @@ TEST_F(ConnectorLockConfirmationTest, UnlockCommandStopsTheTimeout) {
     EXPECT_EQ(lock.poll(t0 + 1h), Event::None);
 }
 
+TEST_F(ConnectorLockConfirmationTest, UnlockCommandDiscardsTheReportedLocked) {
+    lock.lock_state_reported(LockState::Locked);
+    lock.unlock_commanded();
+
+    EXPECT_FALSE(lock.confirmed());
+
+    lock.lock_commanded(t0);
+
+    EXPECT_EQ(lock.poll(t0 + 5000ms), Event::TimedOut);
+}
+
+TEST_F(ConnectorLockConfirmationTest, LockedAfterUnlockCommandConfirmsAgain) {
+    lock.lock_state_reported(LockState::Locked);
+    lock.unlock_commanded();
+    lock.lock_commanded(t0);
+
+    lock.lock_state_reported(LockState::Locked);
+
+    EXPECT_TRUE(lock.confirmed());
+    EXPECT_EQ(lock.poll(t0 + 1h), Event::None);
+}
+
 TEST_F(ConnectorLockConfirmationTest, RepeatedLockCommandKeepsTheFirstStart) {
     lock.lock_commanded(t0);
     lock.lock_commanded(t0 + 3000ms);

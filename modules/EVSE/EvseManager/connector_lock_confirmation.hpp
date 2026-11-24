@@ -42,11 +42,15 @@ public:
         }
     }
 
+    /// A Locked reported before the unlock command does not confirm a later lock command.
     void unlock_commanded() {
-        state.handle()->pending_since.reset();
+        auto s = state.handle();
+        s->pending_since.reset();
+        s->lock_state = LockState::Unknown;
     }
 
-    /// The last reported state is kept across sessions: a lock that stays Locked publishes no new state.
+    /// The last reported state is kept until the next unlock command: a lock that stays Locked between sessions,
+    /// as in captive cable mode, publishes no new state.
     void lock_state_reported(LockState lock_state) {
         auto s = state.handle();
         s->lock_state = lock_state;

@@ -141,9 +141,11 @@ locked without an EV plugged in, it also clears when the lock reports
 ``Locked`` later. A ``Locked`` report or a new authorization after the timeout
 does not resume the session.
 
-The EvseManager keeps the last reported lock state across sessions. A lock that
-stays ``Locked`` between sessions, as in captive cable mode, therefore needs no
-new report for the next session to start without waiting.
+The EvseManager keeps the last reported lock state until the next ``unlock``
+command. A lock that stays ``Locked`` between sessions, as in captive cable
+mode, therefore needs no new report for the next session to start without
+waiting. After an ``unlock`` command, only a new ``Locked`` report confirms the
+lock, even if the lock never reported ``Unlocked`` in between.
 
 The session log shows every reported lock state and a timeout.
 

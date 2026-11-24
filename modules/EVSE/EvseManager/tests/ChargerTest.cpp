@@ -2008,6 +2008,18 @@ TEST_F(ChargerConnectorLockTest, LockStateIsKeptAcrossSessions) {
     EXPECT_EQ(charger->current_state(), Charger::EvseState::PrepareCharging);
 }
 
+TEST_F(ChargerConnectorLockTest, LockedBeforeUnlockCommandDoesNotConfirmTheNextLock) {
+    setup_plugged_in(5000);
+    lock().lock_state_reported(LockState::Locked);
+    lock().unlock_commanded();
+    lock().lock_commanded();
+
+    authorize();
+
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::WaitingForAuthentication);
+    EXPECT_FALSE(charger->get_shared_context().flag_transaction_active);
+}
+
 TEST_F(ChargerConnectorLockTest, PncAuthorizationWaitsForLock) {
     setup_plugged_in(5000);
 
@@ -2098,6 +2110,66 @@ TEST_F(ChargerConnectorLockTest, LateLockedOutsideSessionClearsTheError) {
     charger->run_state_machine();
 
     EXPECT_EQ(connector_lock_confirmation_timeouts_cleared, 1);
+}
+
+TEST_F(ChargerConnectorLockTest, TimeoutOutsideSessionSurvivesTheErrorShutdown) {
+    auto& ctx = charger->get_shared_context();
+    lock().set_timeout(std::chrono::milliseconds(5000));
+    ctx.current_state = Charger::EvseState::Idle;
+    ctx.session_active = false;
+    ctx.flag_ev_plugged_in = false;
+    expired_lock_command();
+    charger->run_state_machine();
+    ASSERT_EQ(connector_lock_confirmation_timeouts_raised, 1);
+
+    // As the error handling does for the raised error: Idle initializes again.
+    ctx.shutdown_type = ShutdownType::ErrorShutdown;
+    charger->run_state_machine();
+
+    EXPECT_EQ(connector_lock_confirmation_timeouts_cleared, 0);
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::Idle);
+}
+
+TEST_F(ChargerConnectorLockTest, UnplugClearsTheError) {
+    setup_plugged_in(5000);
+    expired_lock_command();
+    charger->run_state_machine();
+    ASSERT_EQ(connector_lock_confirmation_timeouts_raised, 1);
+
+    charger->process_event(CPEvent::CarUnplugged);
+
+    EXPECT_GE(connector_lock_confirmation_timeouts_cleared, 1);
+}
+
+TEST_F(ChargerConnectorLockTest, TimeoutOutsideWaitingForAuthenticationEndsTheAuthorization) {
+    setup_plugged_in(5000);
+    auto& ctx = charger->get_shared_context();
+    ctx.flag_authorized = true;
+    // A data link error moves a waiting session through T_step_EF.
+    ctx.current_state = Charger::EvseState::T_step_EF;
+    expired_lock_command();
+
+    charger->run_state_machine();
+
+    EXPECT_EQ(connector_lock_confirmation_timeouts_raised, 1);
+    EXPECT_EQ(deauthorized_events, 1);
+    EXPECT_FALSE(ctx.flag_authorized);
+    EXPECT_EQ(hlc_connector_lock_timeouts, 0);
+}
+
+TEST_F(ChargerConnectorLockTest, TimeoutBeforePlugInKeepsTheAuthorization) {
+    auto& ctx = charger->get_shared_context();
+    lock().set_timeout(std::chrono::milliseconds(5000));
+    ctx.current_state = Charger::EvseState::Idle;
+    ctx.flag_ev_plugged_in = false;
+    ctx.flag_authorized = true;
+    expired_lock_command();
+
+    charger->run_state_machine();
+
+    EXPECT_EQ(connector_lock_confirmation_timeouts_raised, 1);
+    EXPECT_EQ(deauthorized_events, 0);
+    EXPECT_TRUE(ctx.flag_authorized);
 }
 
 // ----------------------------------------------------------------------------
