@@ -810,7 +810,6 @@ TEST_CASE_METHOD(SessionFixture, "ISO 15118-20 can be limited to TLS 1.3 during 
     const auto use_custom_namespace = GENERATE(false, true);
     const std::string custom_namespace = "urn:example:custom-ac";
     conn->secure = transport != 0;
-    conn->tls_1_3 = transport == 13;
 
     iso15118::session::EvseSetupConfig setup{};
     setup.supported_protocols = {iso15118::ProtocolId::ISO15118_20, iso15118::ProtocolId::ISO15118_2};
@@ -822,6 +821,9 @@ TEST_CASE_METHOD(SessionFixture, "ISO 15118-20 can be limited to TLS 1.3 during 
 
     auto session = make_session(iso15118::session::SessionConfig{setup}, false);
     conn->fire(iso15118::io::ConnectionEvent::ACCEPTED);
+    session->poll();
+    conn->tls_1_3 = transport == 13;
+    conn->fire(iso15118::io::ConnectionEvent::OPEN);
 
     iso15118::message_20::SupportedAppProtocolRequest sap;
     sap.app_protocol.push_back(

@@ -444,10 +444,6 @@ TimePoint const& Session::poll() {
             // Read before the call: an accepted SupportedAppProtocolReq hands over to the protocol engine.
             const bool sap_phase = in_sap_phase();
 
-            if (sap_phase and config.iso15118_20_enforce_tls_1_3 and not connection->is_tls_1_3()) {
-                std::get<SapEngine>(engine).exclude_iso15118_20();
-            }
-
             // Publish the frame the engine is about to decode; cleared right after, the buffer is reused.
             current_request_frame = {packet.get_buffer(),
                                      packet.get_payload_length() + io::SdpPacket::V2GTP_HEADER_SIZE};
@@ -701,11 +697,13 @@ void Session::handle_connection_event(io::ConnectionEvent event) {
 
     case Event::OPEN:
         assert(state.connected);
+        if (in_sap_phase() and config.iso15118_20_enforce_tls_1_3 and not connection->is_tls_1_3()) {
+            std::get<SapEngine>(engine).exclude_iso15118_20();
+        }
         if (const auto new_vehicle_cert_hash = connection->get_vehicle_cert_hash()) {
             logf_info("Vehicle Cert is available");
             vehicle_cert_hash = new_vehicle_cert_hash;
         }
-        // NOTE (aw): for now, we don't really need this information ...
         return;
 
     case Event::CLOSED:
