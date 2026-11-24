@@ -44,6 +44,13 @@ if a protocol is offered without a leaf on its mandated curve. The chain list
 is rebuilt on every ``certificate_store_update`` event, so a renewed leaf of
 either type is served from the next connection on without a restart.
 
+For mixed ISO 15118-2 and ISO 15118-20 AC deployments, set
+``iso15118_20_enforce_tls_1_3: true`` with ``ACCEPT_CLIENT_OFFER`` and
+leave ``enforce_tls_1_3: false``. Protocol selection considers ISO 15118-20
+only after TLS 1.3 has been negotiated. ISO 15118-2 remains eligible on plain
+TCP and TLS 1.2. The policy defaults to false to preserve plaintext
+ISO 15118-20 for lab bring-up.
+
 The two DER flavors are mutually exclusive per EVSE, so at most one is ever
 advertised. EvseManager enforces that when it builds the energy transfer mode
 set; see "DER flavor selection" below.

@@ -252,6 +252,12 @@ Session::Session(std::unique_ptr<io::IConnection> connection_, session::SessionC
     Session(std::move(connection_), std::move(session_config), callbacks_, pause_ctx_, d2_pause_ctx_) {
     throttle_same_type_only = throttle_same_type_only_;
     if (skip_app_protocol_negotiation) {
+        if (config.iso15118_20_enforce_tls_1_3 and not connection->is_tls_1_3()) {
+            logf_error("Cannot start a pre-negotiated ISO 15118-20 session without verifiable TLS 1.3 transport");
+            driver_stopped = true;
+            return;
+        }
+
         // External SAP on a handed-over socket: the handshake already ran, so start directly on the -20
         // engine, which expects a SessionSetupReq first. The vehicle certificate hash arrives with the
         // connection instead of the TLS OPEN event.
@@ -437,6 +443,10 @@ TimePoint const& Session::poll() {
 
             // Read before the call: an accepted SupportedAppProtocolReq hands over to the protocol engine.
             const bool sap_phase = in_sap_phase();
+
+            if (sap_phase and config.iso15118_20_enforce_tls_1_3 and not connection->is_tls_1_3()) {
+                std::get<SapEngine>(engine).exclude_iso15118_20();
+            }
 
             // Publish the frame the engine is about to decode; cleared right after, the buffer is reused.
             current_request_frame = {packet.get_buffer(),

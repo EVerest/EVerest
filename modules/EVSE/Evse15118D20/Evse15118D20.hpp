@@ -5,7 +5,7 @@
 
 //
 // AUTO GENERATED - MARKED REGIONS WILL BE KEPT
-// template version 3
+// template version 7
 //
 
 #include "ld-ev.hpp"
@@ -36,6 +36,7 @@ struct Conf {
     std::string logging_path;
     std::string tls_negotiation_strategy;
     bool enforce_tls_1_3;
+    bool iso15118_20_enforce_tls_1_3;
     bool supported_DIN70121;
     bool supported_ISO15118_2;
     bool supported_ISO15118_20;
@@ -68,7 +69,7 @@ public:
         p_grid_support(std::move(p_grid_support)),
         r_security(std::move(r_security)),
         r_iso15118_vas(std::move(r_iso15118_vas)),
-        config(config){};
+        config(config) {};
 
     const std::unique_ptr<ISO15118_chargerImplBase> p_charger;
     const std::unique_ptr<iso15118_extensionsImplBase> p_extensions;

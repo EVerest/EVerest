@@ -589,22 +589,23 @@ void ISO15118_chargerImpl::ready() {
     // ISO 15118-20 mandates TLS -- [V2G20-2677]: "Only full-handshake TLS shall be used for V2G
     // communication between EVCC and SECC" -- so without a certificate it cannot be offered at all. ISO
     // 15118-2 and DIN SPEC 70121 are offered either way and simply run unsecured.
-    const bool offer_iso15118_20 = mod->config.supported_ISO15118_20 and tls_available;
+    const bool tls_disabled = tls_strategy == iso15118::config::TlsNegotiationStrategy::ENFORCE_NO_TLS;
+    const bool strict_iso15118_20 = mod->config.iso15118_20_enforce_tls_1_3;
+    const bool offer_iso15118_20 =
+        mod->config.supported_ISO15118_20 and tls_available and not(strict_iso15118_20 and tls_disabled);
     iso15118_20_offerable = offer_iso15118_20;
     if (mod->config.supported_ISO15118_20 and not offer_iso15118_20) {
-        EVLOG_warning << "Evse15118D20: supported_ISO15118_20 is set but no V2G leaf certificate is available; "
-                         "ISO 15118-20 requires TLS [V2G20-2677] and is not offered";
+        EVLOG_warning << "Evse15118D20: ISO 15118-20 is unavailable: "
+                      << (tls_available ? "strict TLS 1.3 policy with ENFORCE_NO_TLS"
+                                        : "no V2G leaf certificate configured");
     }
     if (not offer_iso15118_20 and not mod->config.supported_ISO15118_2 and not mod->config.supported_DIN70121) {
-        EVLOG_error << "Evse15118D20: ISO 15118-20 is the only enabled protocol but no V2G leaf certificate is "
-                       "available, and it cannot run unsecured. The SECC will not start";
+        EVLOG_error << "Evse15118D20: no enabled protocol can run with the active TLS configuration. "
+                       "The SECC will not start";
         return;
     }
-    // A certificate exists, so -20 stays in the offer -- but ENFORCE_NO_TLS means every connection is
-    // plain TCP, and -20 is TLS-only [V2G20-2677]. The offer is deliberately left alone (an EV that only
-    // speaks -20 would otherwise get Failed_NoNegotiation instead of a working, if non-conformant,
-    // session), so flag the combination once at startup rather than only per session in the SAP handshake.
-    if (offer_iso15118_20 and tls_strategy == iso15118::config::TlsNegotiationStrategy::ENFORCE_NO_TLS) {
+    // Without strict mode, keep the plaintext -20 offer for lab bring-up and flag it at startup.
+    if (offer_iso15118_20 and tls_disabled) {
         EVLOG_warning << "Evse15118D20: supported_ISO15118_20 is set together with "
                          "tls_negotiation_strategy ENFORCE_NO_TLS. ISO 15118-20 mandates TLS [V2G20-2677], so any "
                          "negotiated -20 session will not be standard-conformant. Set supported_ISO15118_20 to false "
@@ -700,6 +701,7 @@ void ISO15118_chargerImpl::ready() {
     }
 
     setup_config.selecting_sap_based_on_energy_service = mod->config.selecting_sap_based_on_energy_service;
+    setup_config.iso15118_20_enforce_tls_1_3 = strict_iso15118_20;
 
     // How long the ISO 15118-2 / DIN SPEC 70121 SECC keeps answering EVSEProcessing=Ongoing while waiting
     // for the authorization result; 0 waits indefinitely. The manifest constrains both to >= 0, but a
