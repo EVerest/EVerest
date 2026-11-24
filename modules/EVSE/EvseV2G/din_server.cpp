@@ -100,11 +100,12 @@ v2g_event din_validate_response_code(din_responseCodeType* const din_response_co
 
     /* Error shutdown (IEC 61851-23 Table CC.10): the first response after the error is sent with an
      * OK response code so it still carries the shutdown cause (EVSEStatusCode, EVSEIsolationStatus).
-     * Once that has been reported, requests that would continue the energy transfer are answered
-     * with FAILED; the stop sequence (PowerDelivery(Stop), WeldingDetection, SessionStop) is still
-     * allowed to complete normally. */
+     * Once that has been reported, requests that would continue the energy transfer, or wait for an
+     * authorization to start it, are answered with FAILED; the stop sequence (PowerDelivery(Stop),
+     * WeldingDetection, SessionStop) is still allowed to complete normally. */
     if ((conn->ctx->error_shutdown == true) && (conn->ctx->error_shutdown_reported == true)) {
         switch (conn->ctx->current_v2g_msg) {
+        case V2G_AUTHORIZATION_MSG: // otherwise the EV keeps polling with EVSEProcessing=Ongoing
         case V2G_CABLE_CHECK_MSG:
         case V2G_PRE_CHARGE_MSG:
         case V2G_CURRENT_DEMAND_MSG:

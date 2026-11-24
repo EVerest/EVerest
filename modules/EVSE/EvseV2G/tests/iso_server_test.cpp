@@ -505,6 +505,18 @@ TEST_F(IsoServerVasTest, selected_services_are_not_reported_when_authorization_i
     EXPECT_TRUE(vas_adapter.commands.empty());
 }
 
+TEST_F(IsoServerPaymentTest, authorization_fails_once_error_shutdown_is_reported) {
+    use_tcp_connection();
+    ctx->error_shutdown = true;
+
+    send_eim_authorization();
+    EXPECT_EQ(authorization_response(), iso2_responseCodeType_OK);
+    EXPECT_TRUE(ctx->error_shutdown_reported);
+
+    EXPECT_EQ(send_eim_authorization(), V2G_EVENT_SEND_AND_TERMINATE);
+    EXPECT_GE(authorization_response(), iso2_responseCodeType_FAILED);
+}
+
 TEST_F(IsoServerPaymentTest, contract_selected_when_offered) {
     use_tls_connection();
     select_contract({iso2_paymentOptionType_Contract, iso2_paymentOptionType_ExternalPayment});

@@ -97,10 +97,12 @@ static v2g_event iso_validate_response_code(iso2_responseCodeType* const v2g_res
     /* Error shutdown (IEC 61851-23 Table CC.10): the first response after the error is sent with an
      * OK response code so it still carries the shutdown cause (EVSEStatusCode, EVSEIsolationStatus),
      * which a FAILED response must omit (ISO 15118-4). Once that has been reported, requests that
-     * would continue the energy transfer are answered with FAILED; the stop sequence
-     * (PowerDelivery(Stop), WeldingDetection, SessionStop) is still allowed to complete normally. */
+     * would continue the energy transfer, or wait for an authorization to start it, are answered with
+     * FAILED; the stop sequence (PowerDelivery(Stop), WeldingDetection, SessionStop) is still allowed
+     * to complete normally. */
     if ((conn->ctx->error_shutdown == true) && (conn->ctx->error_shutdown_reported == true)) {
         switch (conn->ctx->current_v2g_msg) {
+        case V2G_AUTHORIZATION_MSG: // otherwise the EV keeps polling with EVSEProcessing=Ongoing
         case V2G_CABLE_CHECK_MSG:
         case V2G_PRE_CHARGE_MSG:
         case V2G_CURRENT_DEMAND_MSG:
