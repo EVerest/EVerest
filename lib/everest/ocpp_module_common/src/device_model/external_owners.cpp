@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <exception>
+#include <random>
 #include <stdexcept>
 
 #include <everest/logging.hpp>
@@ -312,7 +313,10 @@ ExternalOwners::ExternalOwners(std::vector<std::shared_ptr<DeviceModelOwnerConne
     auto handle = this->state.handle();
     handle->answered.resize(this->connections.size(), false);
     handle->early.resize(this->connections.size());
-    this->writes.handle()->handling.resize(this->connections.size());
+    auto pending = this->writes.handle();
+    pending->handling.resize(this->connections.size());
+    std::random_device random;
+    pending->request_id_prefix = std::to_string(random()) + "-" + std::to_string(random()) + "-";
 }
 
 ExternalOwners::~ExternalOwners() {
@@ -535,13 +539,19 @@ void ExternalOwners::on_write_result(const std::size_t index, const dm_types::Wr
     {
         auto pending = this->writes.handle();
         const auto entry = pending->pending.find(result.request_id);
-        if (entry != pending->pending.end()) {
+        const auto module_id = this->connections.at(index)->module_id();
+        if (entry != pending->pending.end() and entry->second.connection == index and
+            is_same_attribute(entry->second.owner, module_id, to_value_change(result.request),
+                              to_value_change(entry->second.request))) {
             request = entry->second.request;
         }
     }
     if (result.status == types::ocpp::SetVariableStatusEnumType::Accepted) {
         // The owner applied the value, also when the write stopped waiting for this result
         this->on_value_changed(index, to_value_change(request.value_or(result.request)));
+    }
+    if (not request.has_value()) {
+        return;
     }
     {
         auto pending = this->writes.handle();
@@ -559,8 +569,8 @@ types::ocpp::SetVariableStatusEnumType ExternalOwners::write(const std::size_t i
     std::string request_id;
     {
         auto pending = this->writes.handle();
-        request_id = std::to_string(++pending->last_request_id);
-        pending->pending.emplace(request_id, PendingWrite{owner, request});
+        request_id = pending->request_id_prefix + std::to_string(++pending->last_request_id);
+        pending->pending.emplace(request_id, PendingWrite{index, owner, request});
     }
     auto status = types::ocpp::SetVariableStatusEnumType::Rejected;
     try {
@@ -572,8 +582,11 @@ types::ocpp::SetVariableStatusEnumType ExternalOwners::write(const std::size_t i
 
     auto pending = this->writes.handle();
     if (status == types::ocpp::SetVariableStatusEnumType::Accepted) {
-        if (pending->handling.at(index) == std::this_thread::get_id()) {
-            // Written while applying a message of the connection: the write result is applied after that message
+        const auto self = std::this_thread::get_id();
+        if (std::any_of(pending->handling.begin(), pending->handling.end(),
+                        [self](const auto& thread) { return thread == self; })) {
+            // Written while applying a message of a connection, which may hold up the messages of this connection: the
+            // write result is applied after that message
             pending->pending.erase(request_id);
             return status;
         }
@@ -734,6 +747,7 @@ std::vector<OwnerRegistrationResult> ExternalOwners::register_with(ocpp::v2::Dev
             } catch (const std::exception& e) {
                 EVLOG_error << "Unregistering owner " << owner << " failed: " << e.what();
             }
+            this->writes.handle()->ending.erase(owner);
             handle->owners.erase(owner);
         }
     }
@@ -877,6 +891,8 @@ void ExternalOwners::unregister(ocpp::v2::DeviceModelRegistryInterface& registry
     } catch (const std::exception& e) {
         EVLOG_error << "Unregistering owner " << owner << " failed: " << e.what();
     }
+    // No write to the owner is in progress any more
+    this->writes.handle()->ending.erase(owner);
     if (binder != nullptr) {
         binder->unbind(owner);
     }

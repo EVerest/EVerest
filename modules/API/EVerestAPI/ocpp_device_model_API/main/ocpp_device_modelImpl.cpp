@@ -124,18 +124,8 @@ ocpp_device_modelImpl::handle_set_value(types::ocpp_device_model::WriteRequest& 
                 return;
             }
             if (exchange->expired) {
-                if (status == types::ocpp::SetVariableStatusEnumType::Accepted) {
-                    // Answered Rejected already, but the owner applied the value
-                    types::ocpp_device_model::ValueChange change;
-                    change.owner = request.owner;
-                    change.component = request.component;
-                    change.variable = request.variable;
-                    change.attribute_type = request.attribute_type;
-                    change.value = request.value;
-                    types::ocpp_device_model::OwnerMessage message;
-                    message.value_change = change;
-                    publish_owner_message(message);
-                }
+                EVLOG_info << "Ignoring a reply to the write of " << request.component.name << "."
+                           << request.variable.name << " after the deadline";
                 return;
             }
             publish_write_result(request, request_id, status);

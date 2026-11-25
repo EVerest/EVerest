@@ -1064,6 +1064,80 @@ TEST_F(ExternalOwnersTest, WriteFromTheHandlerOfTheOwnersMessagesDoesNotWaitForI
     EXPECT_EQ(this->read("CoolingCtrlr", "Mode"), "2");
 }
 
+TEST_F(ExternalOwnersTest, WriteFromTheHandlerOfAnotherConnectionDoesNotWaitForItsResult) {
+    this->start(make_registrations({make_registration("meter", "AuxMeter", "Energy", "5")}),
+                make_registrations({make_registration("cooling", "CoolingCtrlr", "FanSpeed", "40")}));
+    // A listener that writes FanSpeed, owned through the second connection, when the first reports Energy
+    this->device_model->register_variable_listener(
+        [this](const std::unordered_map<std::int64_t, ocpp::v2::VariableMonitoringMeta>&, const ocpp::v2::Component&,
+               const ocpp::v2::Variable& variable, const ocpp::v2::VariableCharacteristics&,
+               const ocpp::v2::VariableAttribute&, const std::string&, const std::string&) {
+            if (variable.name.get() == "Energy") {
+                this->write("CoolingCtrlr", "FanSpeed", "60");
+            }
+        });
+    this->second->hold_results = true;
+
+    dm_types::OwnerMessage message;
+    message.value_change = make_change("meter", "AuxMeter", "Energy", "6");
+    auto handling = std::async(std::launch::async, [this, &message]() { this->owners->on_owner_message(0, message); });
+    const bool returned = handling.wait_for(std::chrono::seconds(2)) == std::future_status::ready;
+    this->second->release_results();
+    handling.get();
+
+    EXPECT_TRUE(returned);
+    EXPECT_EQ(this->read("CoolingCtrlr", "FanSpeed"), "60");
+}
+
+TEST_F(ExternalOwnersTest, WriteResultOfAnotherConnectionOrVariableDoesNotAnswerTheWrite) {
+    this->start({}, make_registrations({make_registration("cooling", "CoolingCtrlr", "FanSpeed", "40")}));
+    this->second->hold_results = true;
+
+    auto write = std::async(std::launch::async, [this]() { return this->write("CoolingCtrlr", "FanSpeed", "60"); });
+    while (this->second->write_count() == 0) {
+        std::this_thread::yield();
+    }
+    dm_types::OwnerMessage held;
+    {
+        std::lock_guard<std::mutex> lock(this->second->mutex);
+        held = this->second->held_results.at(0);
+    }
+    // The same request id from the other connection, and for another variable
+    this->owners->on_owner_message(0, held);
+    auto other_variable = held;
+    other_variable.write_result->request.variable.name = "Mode";
+    this->owners->on_owner_message(1, other_variable);
+    EXPECT_EQ(write.wait_for(std::chrono::milliseconds(200)), std::future_status::timeout);
+
+    this->second->release_results();
+    EXPECT_EQ(write.get(), SetVariableStatusEnum::Accepted);
+    EXPECT_EQ(this->read("CoolingCtrlr", "FanSpeed"), "60");
+}
+
+TEST_F(ExternalOwnersTest, RequestIdsDifferBetweenInstances) {
+    this->start({}, make_registrations({make_registration("cooling", "CoolingCtrlr", "FanSpeed", "40")}));
+    std::vector<std::string> ids;
+    this->second->publish = [&ids, this](const dm_types::OwnerMessage& message) {
+        ids.push_back(message.write_result->request_id);
+        this->owners->on_owner_message(1, message);
+    };
+    EXPECT_EQ(this->write("CoolingCtrlr", "FanSpeed", "60"), SetVariableStatusEnum::Accepted);
+
+    const auto other_connection = std::make_shared<FakeConnection>("api_1");
+    dm::ExternalOwners other({other_connection});
+    other_connection->publish = [&ids, &other](const dm_types::OwnerMessage& message) {
+        ids.push_back(message.write_result->request_id);
+        other.on_owner_message(0, message);
+    };
+    other.set_startup_registrations(0, make_registrations({make_registration("aux", "AuxMeter", "Energy", "5")}));
+    other.register_with(*this->device_model);
+    EXPECT_EQ(this->write("AuxMeter", "Energy", "6"), SetVariableStatusEnum::Accepted);
+    other.detach();
+
+    ASSERT_EQ(ids.size(), 2u);
+    EXPECT_NE(ids.at(0), ids.at(1));
+}
+
 TEST_F(ExternalOwnersTest, WriteResultStoresTheWriteItAnswers) {
     this->start({}, make_registrations({make_registration("cooling", "CoolingCtrlr", "FanSpeed", "40")}));
     this->second->hold_results = true;

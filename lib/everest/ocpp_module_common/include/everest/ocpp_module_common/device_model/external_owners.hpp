@@ -127,6 +127,7 @@ private:
 
     /// \brief A write passed on to an owner, until its write result is applied or the write stops waiting for it
     struct PendingWrite {
+        std::size_t connection;
         std::string owner;
         types::ocpp_device_model::WriteRequest request;
         bool applied{false};
@@ -138,6 +139,8 @@ private:
     /// held while the registry waits for the writes in progress
     struct Writes {
         std::map<std::string, PendingWrite> pending;
+        /// \brief Random, so that the request ids of the OCPP modules that share a connection differ
+        std::string request_id_prefix;
         std::uint64_t last_request_id{0};
         /// \brief Per connection, the thread applying one of its messages, whose write results wait behind it
         std::vector<std::optional<std::thread::id>> handling;

@@ -541,7 +541,12 @@ written value, and a value change it sends after the answer replaces it. A value
 registered yet is ignored, and so is the answer to a write the device model no longer waits for unless it is
 ``Accepted``, which is applied like a value change. A write whose result does not arrive is answered ``Rejected``:
 a release, a failed registration or the end of the OCPP service answers the writes to the owner that still wait for
-their result, and so does a timeout of 120 s.
+their result, and so does a timeout of 120 s. The timeout is longer than a CSMS waits for its answer, since the
+owner's messages can be held up for up to ``cfg_request_reply_to_s`` while the device model waits for a write to
+another owner of the module; a shorter one would answer writes that are applied after all. A write made while
+OCPPmulti applies a message of an owner, by a variable listener for example, does not wait for its result, which would
+be queued behind that message: it is answered with the owner's answer at once, and its value is stored once that
+message has been applied, so a read right after the write returns the previous value.
 
 .. _handwritten_ocppmulti_what-the-database-stores:
 

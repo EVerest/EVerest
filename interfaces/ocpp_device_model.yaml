@@ -35,7 +35,8 @@ cmds:
     description: >-
       Applies a write to an attribute of a registered variable, from the CSMS, a SetVariables.req for example, or from
       the OCPP service itself. The module publishes the owner's answer as a write_result in owner_message, in its place
-      among the owner's other messages, and returns the same status only after that. The OCPP module waits for the
+      among the owner's other messages, and returns the same status only after that. A write the owner does not
+      answer in time is answered Rejected with a write_result that carries no value, so its place does not matter. The OCPP module waits for the
       answer without a deadline, so the module answers promptly, well within the message timeout of the CSMS, and
       rejects a write it cannot complete by then, also with a write_result. Calls to one module instance are delivered
       one at a time, so a write answered late delays the following ones.
