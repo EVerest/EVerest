@@ -324,7 +324,7 @@ void to_json(json& j, SessionEventEnum const& k) noexcept {
         j = "SwitchingPhases";
         return;
     case SessionEventEnum::SessionResumed:
-        j = "SessionResumed:";
+        j = "SessionResumed";
         return;
     }
 
@@ -409,7 +409,7 @@ void from_json(json const& j, SessionEventEnum& k) {
         k = SessionEventEnum::SwitchingPhases;
         return;
     }
-    if (s == "SessionResumed:") {
+    if (s == "SessionResumed") {
         k = SessionEventEnum::SessionResumed;
         return;
     }
