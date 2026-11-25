@@ -4,9 +4,11 @@
 #ifndef CARLO_GAVAZZI_EM580_HELPER_HPP
 #define CARLO_GAVAZZI_EM580_HELPER_HPP
 
+#include <algorithm>
 #include <array>
 #include <cctype>
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
 #include <ctime>
 #include <iomanip>
@@ -577,5 +579,77 @@ inline std::vector<std::string> decode_device_state_errors(std::uint16_t device_
 }
 
 } // namespace device_state_utils
+
+namespace schedule_utils {
+
+// Reads are due at a fixed rate. A read that runs over is made up by a shorter wait after it; only falling a whole
+// interval behind drops reads, and that is reported at most once per warning period.
+class MeasurementSchedule {
+public:
+    using Clock = std::chrono::steady_clock;
+
+    struct Overrun {
+        std::size_t skipped_reads;
+        std::chrono::milliseconds slowest_read;
+        std::chrono::milliseconds period;
+    };
+
+    struct Next {
+        Clock::time_point wake_at;
+        std::optional<Overrun> warning;
+    };
+
+    explicit MeasurementSchedule(std::chrono::milliseconds interval,
+                                 std::chrono::milliseconds warning_period = std::chrono::seconds{60}) :
+        m_interval(interval), m_warning_period(warning_period) {
+    }
+
+    void restart(Clock::time_point now) {
+        m_next_due = now;
+        m_window_start = now;
+        m_skipped_reads = 0;
+        m_slowest_read = std::chrono::milliseconds{0};
+        m_last_warning.reset();
+    }
+
+    void read_started(Clock::time_point now) {
+        m_read_start = now;
+    }
+
+    Next read_finished(Clock::time_point now) {
+        m_slowest_read =
+            std::max(m_slowest_read, std::chrono::duration_cast<std::chrono::milliseconds>(now - m_read_start));
+        m_next_due += m_interval;
+        if (now < m_next_due + m_interval) {
+            return {m_next_due, std::nullopt};
+        }
+
+        m_skipped_reads += static_cast<std::size_t>((now - m_next_due) / m_interval);
+        m_next_due = now;
+        if (m_last_warning.has_value() && now - *m_last_warning < m_warning_period) {
+            return {m_next_due, std::nullopt};
+        }
+
+        const Overrun warning{m_skipped_reads, m_slowest_read,
+                              std::chrono::duration_cast<std::chrono::milliseconds>(now - m_window_start)};
+        m_last_warning = now;
+        m_window_start = now;
+        m_skipped_reads = 0;
+        m_slowest_read = std::chrono::milliseconds{0};
+        return {m_next_due, warning};
+    }
+
+private:
+    std::chrono::milliseconds m_interval;
+    std::chrono::milliseconds m_warning_period;
+    Clock::time_point m_next_due{};
+    Clock::time_point m_read_start{};
+    Clock::time_point m_window_start{};
+    std::optional<Clock::time_point> m_last_warning;
+    std::size_t m_skipped_reads{0};
+    std::chrono::milliseconds m_slowest_read{0};
+};
+
+} // namespace schedule_utils
 
 #endif // CARLO_GAVAZZI_EM580_HELPER_HPP
