@@ -20,6 +20,7 @@ namespace {
 using charge_bridge::ce_state_name;
 using charge_bridge::id_state_name;
 using charge_bridge::is_mcs_technology;
+using charge_bridge::lock_feedback_locked;
 using charge_bridge::lock_state_name;
 using charge_bridge::safety_error_mask;
 using charge_bridge::to_bit;
@@ -268,6 +269,15 @@ TEST(mcs_bsp, lock_state_names_keep_undefined_distinct_from_unlocked) {
     EXPECT_STREQ(lock_state_name(LockState_LOCKED), "locked");
     EXPECT_STRNE(lock_state_name(LockState_UNDEFINED), lock_state_name(LockState_UNLOCKED));
     EXPECT_STREQ(lock_state_name(3), "unknown");
+}
+
+TEST(mcs_bsp, lock_feedback_is_empty_without_a_measured_state) {
+    // UNDEFINED must never reach EVerest as Unlocked or Locked: EvseManager takes Locked as
+    // confirmation that the lock engaged.
+    EXPECT_EQ(lock_feedback_locked(LockState_UNDEFINED), std::nullopt);
+    EXPECT_EQ(lock_feedback_locked(LockState_UNLOCKED), false);
+    EXPECT_EQ(lock_feedback_locked(LockState_LOCKED), true);
+    EXPECT_EQ(lock_feedback_locked(3), std::nullopt);
 }
 
 } // namespace

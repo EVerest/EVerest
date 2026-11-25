@@ -3,6 +3,7 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
 #include <protocol/cb_management.h>
 #include <protocol/evse_bsp_cb_to_host.h>
 
@@ -198,6 +199,19 @@ constexpr char const* lock_state_name(std::uint8_t state) {
         return "locked";
     default:
         return "unknown";
+    }
+}
+
+// Measured connector lock feedback: true for LOCKED, false for UNLOCKED. Empty for UNDEFINED (no
+// feedback to report) and for values this host does not know.
+constexpr std::optional<bool> lock_feedback_locked(std::uint8_t state) {
+    switch (state) {
+    case LockState_UNLOCKED:
+        return false;
+    case LockState_LOCKED:
+        return true;
+    default:
+        return std::nullopt;
     }
 }
 
