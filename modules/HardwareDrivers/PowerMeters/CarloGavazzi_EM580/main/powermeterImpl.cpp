@@ -543,8 +543,7 @@ void powermeterImpl::ready() {
         auto last_state_read = std::chrono::steady_clock::time_point{};
         const auto measurement_interval = std::chrono::milliseconds{config.live_measurement_interval_ms};
         const auto state_read_interval = std::chrono::milliseconds{config.device_state_read_interval_ms};
-        auto last_interval_overrun_warning = std::chrono::steady_clock::time_point{};
-        auto measurement_start = std::chrono::steady_clock::time_point{};
+        schedule_utils::MeasurementSchedule schedule{measurement_interval};
         while (!stop_requested_.load()) {
             try {
                 if (device_not_configured.load()) {
@@ -552,8 +551,9 @@ void powermeterImpl::ready() {
                     device_not_configured = false;
                     end_startup_wait();
                     last_state_read = std::chrono::steady_clock::time_point{}; // force state read
+                    schedule.restart(std::chrono::steady_clock::now());
                 }
-                measurement_start = std::chrono::steady_clock::now();
+                schedule.read_started(std::chrono::steady_clock::now());
                 read_powermeter_values();
                 if (m_transaction_support) {
                     const auto now = std::chrono::steady_clock::now();
@@ -583,26 +583,16 @@ void powermeterImpl::ready() {
                 }
                 continue;
             }
-            {
-                const auto now = std::chrono::steady_clock::now();
-                // remaining time until the next measurement is due
-                auto time_to_wait = measurement_interval - (now - measurement_start);
-                if (time_to_wait > std::chrono::milliseconds{0}) {
-                    last_interval_overrun_warning = std::chrono::steady_clock::time_point{};
-                    std::unique_lock<std::mutex> lock(stop_mutex_);
-                    stop_cv_.wait_for(lock, time_to_wait, [this] { return stop_requested_.load(); });
-                } else {
-                    if (last_interval_overrun_warning == std::chrono::steady_clock::time_point{} ||
-                        (now - last_interval_overrun_warning) >= std::chrono::seconds{60}) {
-                        last_interval_overrun_warning = now;
-                        EVLOG_warning
-                            << "Measurement took longer than configured interval " << measurement_interval.count()
-                            << "ms, consider increasing interval or baudrate. Last measurement took "
-                            << std::chrono::duration_cast<std::chrono::milliseconds>(now - measurement_start).count()
-                            << "ms";
-                    }
-                }
+            const auto next = schedule.read_finished(std::chrono::steady_clock::now());
+            if (next.warning.has_value()) {
+                EVLOG_warning << "Live measurements cannot keep up with live_measurement_interval_ms "
+                              << measurement_interval.count() << "ms: skipped " << next.warning->skipped_reads
+                              << " reads in the last " << next.warning->period.count() / 1000 << "s, slowest read took "
+                              << next.warning->slowest_read.count()
+                              << "ms. Consider increasing the interval or the baud rate.";
             }
+            std::unique_lock<std::mutex> lock(stop_mutex_);
+            stop_cv_.wait_until(lock, next.wake_at, [this] { return stop_requested_.load(); });
         }
     });
 

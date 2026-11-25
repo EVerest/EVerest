@@ -23,7 +23,10 @@ The module consists of a single ``main`` implementation. Modbus access is done v
 Features
 ========
 
-- **Live measurements**: Publishes ``powermeter`` readings periodically (``live_measurement_interval_ms``)
+- **Live measurements**: Publishes ``powermeter`` readings at a fixed rate (``live_measurement_interval_ms``).
+  A read that takes longer than the interval, such as the one that also reads the device state, is made up by
+  starting the next read earlier. Reads are only skipped when the module falls a whole interval behind; it then
+  logs a warning with the number of skipped reads and the slowest read time, at most once per minute.
 - **OCMF transactions** (when supported by the meter):
 
   - ``start_transaction``: writes OCMF identification fields + tariff text (TT) + start command
