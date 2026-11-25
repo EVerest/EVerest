@@ -37,6 +37,7 @@ public:
               const std::string& xml_base64, const std::string& json_str);
 
     void xmlOutput(bool e);
+    void consoleOutput(bool e);
 
     void sys(const std::string& msg);
 
@@ -45,6 +46,7 @@ private:
                 const std::string& xml_hex, const std::string& xml_base64, const std::string& json_str);
     std::string html_encode(const std::string& msg);
     bool xmloutput;
+    bool consoleoutput;
     bool session_active;
     bool enabled;
     std::filesystem::path logpath_root;

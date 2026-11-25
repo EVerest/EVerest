@@ -24,6 +24,7 @@ SessionLog::SessionLog() {
     session_active = false;
     enabled = false;
     xmloutput = true;
+    consoleoutput = true;
 }
 
 SessionLog::~SessionLog() {
@@ -219,16 +220,22 @@ void SessionLog::output(unsigned int typ, bool iso15118, const std::string& msg,
         if (typ == 0) {
             origin = "EVSE";
             target = "CAR";
-            EVLOG_info << "\033[1;34mEVSE " << (iso15118 ? "ISO" : "IEC") << " " << log << "\033[1;0m";
+            if (consoleoutput) {
+                EVLOG_info << "\033[1;34mEVSE " << (iso15118 ? "ISO" : "IEC") << " " << log << "\033[1;0m";
+            }
         } else if (typ == 1) {
             origin = "CAR";
             target = "EVSE";
-            EVLOG_info << "                                    \033[1;33mCAR " << (iso15118 ? "ISO" : "IEC") << " "
-                       << log << "\033[1;0m";
+            if (consoleoutput) {
+                EVLOG_info << "                                    \033[1;33mCAR " << (iso15118 ? "ISO" : "IEC") << " "
+                           << log << "\033[1;0m";
+            }
         } else {
             origin = "SYS";
             target = "";
-            EVLOG_info << "SYS  " << msg;
+            if (consoleoutput) {
+                EVLOG_info << "SYS  " << msg;
+            }
         }
 
         // output to session log file
@@ -255,6 +262,10 @@ void SessionLog::output(unsigned int typ, bool iso15118, const std::string& msg,
 
 void SessionLog::xmlOutput(bool e) {
     xmloutput = e;
+}
+
+void SessionLog::consoleOutput(bool e) {
+    consoleoutput = e;
 }
 
 void SessionLog::sys(const std::string& msg) {

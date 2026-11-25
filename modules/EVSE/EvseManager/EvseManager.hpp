@@ -104,6 +104,7 @@ struct Conf {
     bool session_logging;
     std::string session_logging_path;
     bool session_logging_xml;
+    bool session_logging_console;
     bool has_ventilation;
     std::string charge_mode;
     bool supported_iso_ac_bpt;
