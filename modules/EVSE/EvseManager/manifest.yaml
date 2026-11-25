@@ -65,7 +65,15 @@ config:
     type: string
     default: /tmp
   session_logging_xml:
-    description: Log full XML messages for HLC
+    description: >-
+      Include full XML messages for HLC in the console output of the session log. The session log files
+      always contain the full messages.
+    type: boolean
+    default: true
+  session_logging_console:
+    description: >-
+      Also write session log entries to the EVerest log (console). If disabled, session log entries are only
+      written to the session log files and published via MQTT.
     type: boolean
     default: true
   has_ventilation:

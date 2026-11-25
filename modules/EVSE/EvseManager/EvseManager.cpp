@@ -157,6 +157,7 @@ void EvseManager::init() {
         session_log.enable();
     }
     session_log.xmlOutput(config.session_logging_xml);
+    session_log.consoleOutput(config.session_logging_console);
 
     // default initialize hardware capabilities with safe values until actual capabilities are received.
     // This is important to have a defined behavior of the charger even if the bsp does not provide
