@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 #ifndef MAIN_POWER_SUPPLY_DC_IMPL_HPP
 #define MAIN_POWER_SUPPLY_DC_IMPL_HPP
 
@@ -56,6 +56,13 @@ private:
     double minImportVoltage{0.};
     double importCurrentLimit{0.};
     types::power_supply_DC::Capabilities caps;
+
+    // Output switched off while a current below the minimum is requested, see power_supply_DC guideline 5.
+    // Guarded by settings_mutex.
+    types::power_supply_DC::Mode mode{types::power_supply_DC::Mode::Off};
+    bool below_minimum{false};
+    bool output_enabled() const;
+    void set_below_minimum(bool below);
 
     types::power_supply_DC::Mode last_publish_mode{types::power_supply_DC::Mode::Off};
     bool comm_fault_error_raised{false};

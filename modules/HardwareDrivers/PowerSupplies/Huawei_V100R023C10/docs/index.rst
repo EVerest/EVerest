@@ -22,6 +22,16 @@ For the everest measurements two options are available:
 - Using a carside powermeter (ideally the powermeter that is connected to the EvseManager's ``powermeter_car_side``)
 - Using a carside powermeter but during cable check using an ``OVM`` (see ``HACK_use_ovm_while_cable_check`` config option)
 
+Requests below the minimum current
+==================================
+
+The PSU reports its minimum current (``min_rated_psu_current``) as ``min_export_current_A``. During charging
+the EvseManager requests 0 A when the EV asks for less than that minimum (see the EvseManager documentation).
+The PSU does not regulate to 0 A in charging mode (about 1 A was measured), so the driver switches the output
+off instead: it sends module placeholder requests, keeps the module allocation and the ``Charging`` working
+status, and resumes the charging requirement as soon as the request is at or above the minimum again.
+Outside the charging phase (cable check, precharge) a request below the minimum is sent as 0 A.
+
 Telemetry
 =========
 

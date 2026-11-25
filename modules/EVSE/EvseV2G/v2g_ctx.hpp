@@ -99,9 +99,11 @@ void publish_dc_ev_maximum_limits(struct v2g_context* ctx, const float& v2g_dc_e
  * \param ctx  is a pointer of type \c v2g_context
  * \param v2g_dc_ev_target_voltage is the EV target voltage
  * \param v2g_dc_ev_target_current is the EV target current
+ * \param current_demand is true for a CurrentDemandReq target, false for a PreChargeReq target. Published with the
+ * target; a change of the origin is published even if voltage and current are unchanged.
  */
 void publish_dc_ev_target_voltage_current(struct v2g_context* ctx, const float& v2g_dc_ev_target_voltage,
-                                          const float& v2g_dc_ev_target_current);
+                                          const float& v2g_dc_ev_target_current, bool current_demand);
 
 /*!
  * \brief publish_dc_ev_remaining_time This function publishes the dc_ev_remaining_time

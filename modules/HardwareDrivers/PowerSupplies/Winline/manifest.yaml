@@ -44,7 +44,7 @@ config:
   min_export_current_A:
     description: Minimum export current limit (A)
     type: number
-    default: 0.0
+    default: 1.0
   max_export_current_A:
     description: Maximum export current limit (A) - will be updated by device rated values
     type: number

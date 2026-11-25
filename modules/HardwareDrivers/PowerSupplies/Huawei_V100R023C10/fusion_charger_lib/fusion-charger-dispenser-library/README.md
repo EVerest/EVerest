@@ -74,6 +74,8 @@ After a while everest will report some other Mode and phase. Depending on the mo
 
 When we receive an Off without being in the Cablecheck phase we go to the Completed state.
 
+During charging the EV may request less current than the minimum the PSU can regulate. The EVerest driver then switches to the **ExportChargingIdle** mode phase: we stay in Running, keep the Charging working state and send module placeholder requests (no output) until the request is at or above the minimum again, which switches back to ExportCharging.
+
 #### Completed
 
 We are done charging and ready to charge again. If the car disconnects we go back to CarDisconnected; if we receive another Export mode we go back to NoKeyYet and acquire a new key and module placeholder allocation
@@ -89,6 +91,7 @@ We are done charging and ready to charge again. If the car disconnects we go bac
 | Running               | Export  | Cablecheck | ChargingStarting             |
 | Running               | Export  | Precharge  | ChargingStarting             |
 | Running               | Export  | Charge     | Charging                     |
+| Running               | Export  | ChargeIdle | Charging                     |
 | Completed             | *       | *          | ChargingCompleted            |
 
 ### Goose Frames
@@ -103,6 +106,7 @@ We are done charging and ready to charge again. If the car disconnects we go bac
 | Running               | Off     | Cablecheck     | PowerRequirement | InsulationDetectionVoltageOutputStoppage |
 | Running               | Export  | Precharge      | PowerRequirement | Precharge                                |
 | Running               | Export  | Charge         | PowerRequirement | RequirementDuringCharging                |
+| Running               | Export  | ChargeIdle     | PowerRequirement | ModulePlaceholderRequest                 |
 | Completed             | *       | *              | Stop             |                                          |
 
 
