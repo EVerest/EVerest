@@ -55,8 +55,8 @@ registrations collected for it do not reach the OCPP module. Their owners are mi
 client publishes their registration again or EVerest restarts.
 
 A write to a registered variable is answered ``Rejected`` when the client does not reply within
-``cfg_request_reply_to_s``. A reply that still arrives at that moment is ignored, unless it is ``Accepted``: then the
-module passes the value on as a value change, since the client applied it.
+``cfg_request_reply_to_s``. A later reply is ignored, so a client that applies the value after the deadline reports
+it on ``m2e/value_changed``.
 
 The three timeouts are at most 100 s each, below the 120 s after which EVerest aborts a command. A registration that
 does not fit the types of the specification, a string beyond its maximum length for example, is not passed on; the

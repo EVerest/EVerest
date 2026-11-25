@@ -160,10 +160,11 @@ private:
                                               const Variable& variable, const AttributeEnum& attribute_enum,
                                               const std::string& value, const std::string& source);
 
-    /// \brief Stores \p value, which the provider of \p owner accepted, unless the variable is no longer registered by
-    /// \p owner or the value no longer fits it. Requires the mutex not to be held.
-    void store_provided_value(const std::string& owner, const Component& component, const Variable& variable,
-                              const AttributeEnum& attribute_enum, const std::string& value, const std::string& source);
+    /// \brief Stores \p value, which \p provider of \p owner accepted, unless the variable is no longer registered by
+    /// \p owner with \p provider or the value no longer fits it. Requires the mutex not to be held.
+    void store_provided_value(const std::string& owner, const VariableValueProvider* provider,
+                              const Component& component, const Variable& variable, const AttributeEnum& attribute_enum,
+                              const std::string& value, const std::string& source);
 
     /// \brief Updates the model with \p value: persist, then, only if that is Accepted, the value in memory. A storage
     /// exception counts as Rejected.

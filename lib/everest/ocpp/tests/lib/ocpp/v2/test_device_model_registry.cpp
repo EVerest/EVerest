@@ -682,6 +682,23 @@ TEST_F(DeviceModelRegistryTest, provider_may_unregister_its_owner_and_register_a
     EXPECT_TRUE(replacement->received().empty());
 }
 
+TEST_F(DeviceModelRegistryTest, value_accepted_by_a_provider_replaced_during_the_write_is_not_stored) {
+    register_config_view();
+    const auto replacement = std::make_shared<FakeProvider>();
+    provider->on_set = [this, replacement](const Component&, const Variable&, const std::string&) {
+        RegisteredComponent component;
+        component.component = config_component;
+        component.variables.push_back(make_registered_variable(timeout.name, "75"));
+        dm->unregister_components(OWNER);
+        EXPECT_TRUE(dm->register_components(OWNER, {component}, replacement).rejected.empty());
+    };
+
+    EXPECT_EQ(dm->set_value(config_component, timeout, AttributeEnum::Actual, "90", "csms"),
+              SetVariableStatusEnum::Accepted);
+    EXPECT_EQ(get(config_component, timeout), "75");
+    EXPECT_TRUE(replacement->received().empty());
+}
+
 TEST_F(DeviceModelRegistryTest, write_in_progress_returns_the_result_of_the_provider_after_unregistering) {
     register_config_view();
     provider->delay = std::chrono::milliseconds(50);

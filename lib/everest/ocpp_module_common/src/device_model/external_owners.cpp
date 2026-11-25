@@ -93,8 +93,8 @@ dm_types::RegistrationRejectionReason to_everest_rejection_reason(const ocpp::v2
     case ocpp::v2::RegistrationRejectionReason::Ocpp16KeyInvalid:
         return dm_types::RegistrationRejectionReason::Ocpp16KeyInvalid;
     case ocpp::v2::RegistrationRejectionReason::ProviderChanged:
-        // ExternalOwners keeps one provider per owner, so the device model never rejects one of its registrations so
-        break;
+        // The device model still holds the owner with an earlier provider, so the variable is defined by the owner
+        return dm_types::RegistrationRejectionReason::AlreadyDefined;
     }
     throw std::out_of_range("Unknown RegistrationRejectionReason");
 }
@@ -301,7 +301,7 @@ dm_types::RejectedVariable to_everest_rejected_variable(const ocpp::v2::Rejected
     result.component = to_everest_component(rejected.component);
     result.variable = to_everest_variable(rejected.variable);
     result.reason = to_everest_rejection_reason(rejected.reason);
-    if (rejected.reason == ocpp::v2::RegistrationRejectionReason::AlreadyDefined and not rejected.defined_by.empty()) {
+    if (result.reason == dm_types::RegistrationRejectionReason::AlreadyDefined and not rejected.defined_by.empty()) {
         result.defined_by = rejected.defined_by;
     }
     return result;
@@ -312,6 +312,7 @@ ExternalOwners::ExternalOwners(std::vector<std::shared_ptr<DeviceModelOwnerConne
     auto handle = this->state.handle();
     handle->answered.resize(this->connections.size(), false);
     handle->early.resize(this->connections.size());
+    this->writes.handle()->handling.resize(this->connections.size());
 }
 
 ExternalOwners::~ExternalOwners() {
@@ -412,13 +413,20 @@ void ExternalOwners::on_owner_message(const std::size_t index, const dm_types::O
                       << " parts instead of one";
         return;
     }
-    if (message.registration.has_value()) {
-        this->on_registration(index, message.registration.value());
-    } else if (message.value_change.has_value()) {
-        this->on_value_changed(index, message.value_change.value());
-    } else {
-        this->on_write_result(index, message.write_result.value());
+    const auto previous = std::exchange(this->writes.handle()->handling.at(index), std::this_thread::get_id());
+    try {
+        if (message.registration.has_value()) {
+            this->on_registration(index, message.registration.value());
+        } else if (message.value_change.has_value()) {
+            this->on_value_changed(index, message.value_change.value());
+        } else {
+            this->on_write_result(index, message.write_result.value());
+        }
+    } catch (...) {
+        this->writes.handle()->handling.at(index) = previous;
+        throw;
     }
+    this->writes.handle()->handling.at(index) = previous;
 }
 
 void ExternalOwners::on_registration(const std::size_t index, const dm_types::Registration& registration) {
@@ -451,7 +459,7 @@ void ExternalOwners::on_registration(const std::size_t index, const dm_types::Re
     // Without the lock: the device model waits for the writes in progress to the owner and notifies its listeners
     if (applied.call == RegistryCall::Unregister) {
         // Writes to the owner waiting for their write result stop waiting, which unregistering waits for
-        this->state.notify_all();
+        this->end_writes_of(applied.owner);
         this->unregister(*registry, applied.owner);
         this->state.handle()->outbox.push_back(std::move(applied.result.value()));
         EVLOG_info << "Owner " << applied.owner << " released";
@@ -468,6 +476,7 @@ void ExternalOwners::on_registration(const std::size_t index, const dm_types::Re
             // The device model may hold parts of the registration or the previous one: removed like a release, which
             // ends the registry call
             this->state.handle()->owners.at(applied.owner).releasing = true;
+            this->end_writes_of(applied.owner);
             this->unregister(*registry, applied.owner);
             this->state.handle()->outbox.emplace_back(
                 index, make_result(applied.owner, dm_types::RegistrationStatus::Rejected));
@@ -522,28 +531,36 @@ void ExternalOwners::on_value_changed(const std::size_t index, const dm_types::V
 }
 
 void ExternalOwners::on_write_result(const std::size_t index, const dm_types::WriteResult& result) {
+    std::optional<dm_types::WriteRequest> request;
+    {
+        auto pending = this->writes.handle();
+        const auto entry = pending->pending.find(result.request_id);
+        if (entry != pending->pending.end()) {
+            request = entry->second.request;
+        }
+    }
     if (result.status == types::ocpp::SetVariableStatusEnumType::Accepted) {
         // The owner applied the value, also when the write stopped waiting for this result
-        this->on_value_changed(index, to_value_change(result.request));
+        this->on_value_changed(index, to_value_change(request.value_or(result.request)));
     }
     {
-        auto handle = this->state.handle();
-        const auto pending = handle->pending_writes.find(result.request_id);
-        if (pending == handle->pending_writes.end()) {
+        auto pending = this->writes.handle();
+        const auto entry = pending->pending.find(result.request_id);
+        if (entry == pending->pending.end()) {
             return;
         }
-        pending->second.applied = true;
+        entry->second.applied = true;
     }
-    this->state.notify_all();
+    this->writes.notify_all();
 }
 
 types::ocpp::SetVariableStatusEnumType ExternalOwners::write(const std::size_t index, const std::string& owner,
                                                              const dm_types::WriteRequest& request) {
     std::string request_id;
     {
-        auto handle = this->state.handle();
-        request_id = std::to_string(++handle->last_request_id);
-        handle->pending_writes.emplace(request_id, PendingWrite{owner});
+        auto pending = this->writes.handle();
+        request_id = std::to_string(++pending->last_request_id);
+        pending->pending.emplace(request_id, PendingWrite{owner, request});
     }
     auto status = types::ocpp::SetVariableStatusEnumType::Rejected;
     try {
@@ -553,24 +570,53 @@ types::ocpp::SetVariableStatusEnumType ExternalOwners::write(const std::size_t i
                       << " rejected: " << e.what();
     }
 
-    auto handle = this->state.handle();
+    auto pending = this->writes.handle();
     if (status == types::ocpp::SetVariableStatusEnumType::Accepted) {
-        // The connection published the write result before it returned. A release or detach of the owner, which
-        // waits for this write, is handled before it and ends the wait.
-        const bool applied = handle.wait_for(
-            [&handle, &request_id, &owner, index]() {
-                const auto entry = handle->owners.find(owner);
-                return handle->pending_writes.at(request_id).applied or handle->registry == nullptr or
-                       entry == handle->owners.end() or entry->second.connection != index or entry->second.releasing;
+        if (pending->handling.at(index) == std::this_thread::get_id()) {
+            // Written while applying a message of the connection: the write result is applied after that message
+            pending->pending.erase(request_id);
+            return status;
+        }
+        // The connection published the write result before it returned. A release or detach, which waits for this
+        // write, may be handled before the result and ends the wait.
+        pending.wait_for(
+            [&pending, &request_id, &owner]() {
+                const auto& write = pending->pending.at(request_id);
+                return write.applied or write.ended or pending->detached or pending->ending.count(owner) != 0;
             },
             write_result_timeout);
-        if (not applied) {
-            EVLOG_error << "Write to " << request.component.name << "." << request.variable.name << " of owner "
-                        << owner << " accepted, but its write result did not arrive in time: the value is not stored";
+        if (not pending->pending.at(request_id).applied) {
+            EVLOG_warning << "Write to " << request.component.name << "." << request.variable.name << " of owner "
+                          << owner << " answered Rejected: the owner accepted it, but its write result was not applied";
+            status = types::ocpp::SetVariableStatusEnumType::Rejected;
         }
     }
-    handle->pending_writes.erase(request_id);
+    pending->pending.erase(request_id);
     return status;
+}
+
+void ExternalOwners::end_writes_of(const std::string& owner) {
+    {
+        auto pending = this->writes.handle();
+        pending->ending.insert(owner);
+        for (auto& [request_id, write] : pending->pending) {
+            if (write.owner == owner) {
+                write.ended = true;
+            }
+        }
+    }
+    this->writes.notify_all();
+}
+
+void ExternalOwners::end_all_writes() {
+    {
+        auto pending = this->writes.handle();
+        pending->detached = true;
+        for (auto& [request_id, write] : pending->pending) {
+            write.ended = true;
+        }
+    }
+    this->writes.notify_all();
 }
 
 void ExternalOwners::report_held(ocpp::v2::DeviceModelRegistryInterface& registry, const std::size_t index,
@@ -661,6 +707,7 @@ std::vector<OwnerRegistrationResult> ExternalOwners::register_with(ocpp::v2::Dev
         }
         handle->registry = &registry;
         handle->binder = binder;
+        this->writes.handle()->detached = false;
         std::vector<std::string> failed;
         for (auto& [owner, entry] : handle->owners) {
             try {
@@ -680,6 +727,8 @@ std::vector<OwnerRegistrationResult> ExternalOwners::register_with(ocpp::v2::Dev
             }
         }
         for (const auto& owner : failed) {
+            // A write never waits for the lock held here, so unregistering can wait for the writes to the owner
+            this->end_writes_of(owner);
             try {
                 registry.unregister_components(owner);
             } catch (const std::exception& e) {
@@ -709,7 +758,7 @@ void ExternalOwners::detach() {
         }
     }
     // Writes waiting for their write result stop waiting, which unregistering waits for
-    this->state.notify_all();
+    this->end_all_writes();
     // Without the lock: unregistering waits for the writes to the owners in progress
     for (const auto& owner : owners) {
         try {
@@ -777,6 +826,7 @@ ExternalOwners::Applied ExternalOwners::apply(State& state, const std::size_t in
     if (owned.provider == nullptr) {
         owned.provider = std::make_shared<Provider>(*this, index, owner);
     }
+    this->writes.handle()->ending.erase(owner);
     if (state.registry == nullptr) {
         return {owner, std::nullopt, RegistryCall::None};
     }

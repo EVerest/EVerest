@@ -390,11 +390,9 @@ components:
       title: 'Value change of a registered variable'
       summary: >-
         Published when the owner changed a value itself. Report every change: the OCPP service holds the values in
-        memory and serves reads from there. A report published right after a registration is applied once the
-        registration is; it is dropped when the registration is refused or releases the owner. At most 64 reports
-        for owners that are not registered are kept, the oldest is dropped beyond that. A report that does not fit
-        the variable, or for an owner that another module instance holds or that is never registered, is ignored and
-        logged.
+        memory and serves reads from there. Reports, registrations and replies to writes are applied in the order the
+        module receives them. A report that does not fit the variable, or for an owner that another module instance
+        holds or that has not registered, is ignored and logged.
       contentType: application/json
       payload:
         $ref: '#/components/schemas/ValueChange'

@@ -4,6 +4,7 @@
 #include <gtest/gtest.h>
 
 #include <chrono>
+#include <cstdint>
 #include <filesystem>
 #include <functional>
 #include <future>
@@ -15,6 +16,7 @@
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -982,7 +984,7 @@ TEST_F(ExternalOwnersTest, ReleaseBeforeTheWriteResultEndsTheWait) {
     auto release =
         std::async(std::launch::async, [this]() { this->owners->on_registration(1, make_release("cooling")); });
     ASSERT_EQ(release.wait_for(std::chrono::seconds(2)), std::future_status::ready);
-    EXPECT_EQ(write.get(), SetVariableStatusEnum::Accepted);
+    EXPECT_EQ(write.get(), SetVariableStatusEnum::Rejected);
     EXPECT_EQ(this->read("CoolingCtrlr", "FanSpeed"), std::nullopt);
 
     EXPECT_NO_THROW(this->second->release_results());
@@ -999,11 +1001,84 @@ TEST_F(ExternalOwnersTest, DetachEndsTheWaitForWriteResults) {
     }
     auto detach = std::async(std::launch::async, [this]() { this->owners->detach(); });
     ASSERT_EQ(detach.wait_for(std::chrono::seconds(2)), std::future_status::ready);
-    EXPECT_EQ(write.get(), SetVariableStatusEnum::Accepted);
+    EXPECT_EQ(write.get(), SetVariableStatusEnum::Rejected);
 
     // The owner applied the value, which the next device model gets
     this->second->release_results();
     this->owners->register_with(*this->device_model);
+    EXPECT_EQ(this->read("CoolingCtrlr", "FanSpeed"), "60");
+}
+
+TEST_F(ExternalOwnersTest, FailedRegistrationEndsTheWaitForWriteResults) {
+    WrappingRegistry registry(*this->device_model);
+    this->owners->set_startup_registrations(0, {});
+    this->owners->set_startup_registrations(
+        1, make_registrations({make_registration("cooling", "CoolingCtrlr", "FanSpeed", "40")}));
+    this->owners->register_with(registry);
+    this->second->hold_results = true;
+
+    auto write = std::async(std::launch::async, [this]() { return this->write("CoolingCtrlr", "FanSpeed", "60"); });
+    while (this->second->write_count() == 0) {
+        std::this_thread::yield();
+    }
+    registry.fail_next_registration = true;
+    auto registering = std::async(std::launch::async, [this]() {
+        this->owners->on_registration(1, make_registration("cooling", "CoolingCtrlr", "FanSpeed", "40"));
+    });
+    const bool ended = registering.wait_for(std::chrono::seconds(2)) == std::future_status::ready;
+    this->second->release_results();
+    registering.get();
+
+    EXPECT_TRUE(ended);
+    EXPECT_EQ(write.get(), SetVariableStatusEnum::Rejected);
+    this->owners->detach();
+}
+
+TEST_F(ExternalOwnersTest, WriteFromTheHandlerOfTheOwnersMessagesDoesNotWaitForItsResult) {
+    auto registration = make_registration("cooling", "CoolingCtrlr", "FanSpeed", "40");
+    auto mode = registration.components.at(0).variables.at(0);
+    mode.variable.name = "Mode";
+    mode.attributes.at(0).value = "1";
+    registration.components.at(0).variables.push_back(mode);
+    this->start({}, make_registrations({registration}));
+    // A listener that writes Mode of the same owner when the owner reports FanSpeed
+    this->device_model->register_variable_listener(
+        [this](const std::unordered_map<std::int64_t, ocpp::v2::VariableMonitoringMeta>&, const ocpp::v2::Component&,
+               const ocpp::v2::Variable& variable, const ocpp::v2::VariableCharacteristics&,
+               const ocpp::v2::VariableAttribute&, const std::string&, const std::string&) {
+            if (variable.name.get() == "FanSpeed") {
+                this->write("CoolingCtrlr", "Mode", "2");
+            }
+        });
+    this->second->hold_results = true;
+
+    dm_types::OwnerMessage message;
+    message.value_change = make_change("cooling", "CoolingCtrlr", "FanSpeed", "70");
+    auto handling = std::async(std::launch::async, [this, &message]() { this->owners->on_owner_message(1, message); });
+    const bool returned = handling.wait_for(std::chrono::seconds(2)) == std::future_status::ready;
+    this->second->release_results();
+    handling.get();
+
+    EXPECT_TRUE(returned);
+    EXPECT_EQ(this->read("CoolingCtrlr", "FanSpeed"), "70");
+    EXPECT_EQ(this->read("CoolingCtrlr", "Mode"), "2");
+}
+
+TEST_F(ExternalOwnersTest, WriteResultStoresTheWriteItAnswers) {
+    this->start({}, make_registrations({make_registration("cooling", "CoolingCtrlr", "FanSpeed", "40")}));
+    this->second->hold_results = true;
+
+    auto write = std::async(std::launch::async, [this]() { return this->write("CoolingCtrlr", "FanSpeed", "60"); });
+    while (this->second->write_count() == 0) {
+        std::this_thread::yield();
+    }
+    {
+        std::lock_guard<std::mutex> lock(this->second->mutex);
+        this->second->held_results.at(0).write_result->request.value = "99";
+    }
+    this->second->release_results();
+
+    EXPECT_EQ(write.get(), SetVariableStatusEnum::Accepted);
     EXPECT_EQ(this->read("CoolingCtrlr", "FanSpeed"), "60");
 }
 
@@ -1059,6 +1134,15 @@ TEST_F(ExternalOwnersTest, RegisteringAgainKeepsTheProvider) {
     EXPECT_TRUE(results.at(0).result.rejected.empty());
     EXPECT_EQ(this->read("AuxMeter", "Energy"), "6");
     this->owners->detach();
+}
+
+TEST(ExternalOwnerConversions, ProviderChangedIsReportedAsDefinedByTheOwner) {
+    ocpp::v2::RejectedVariable rejected{make_component("CoolingCtrlr"), make_variable("FanSpeed"),
+                                        ocpp::v2::RegistrationRejectionReason::ProviderChanged, "cooling"};
+    dm_types::RejectedVariable converted;
+    ASSERT_NO_THROW(converted = dm::to_everest_rejected_variable(rejected));
+    EXPECT_EQ(converted.reason, dm_types::RegistrationRejectionReason::AlreadyDefined);
+    EXPECT_EQ(converted.defined_by, "cooling");
 }
 
 TEST(ExternalOwnerNames, NamesOfOcppAndLibocppAreNotExternalOwners) {

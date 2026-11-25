@@ -10,7 +10,9 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <set>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -53,8 +55,10 @@ bool is_external_owner(const std::string& owner);
 /// arriving while no device model is attached are kept and applied when one is.
 class ExternalOwners {
 public:
-    /// \brief How long a write the owner accepted waits for its write result to be applied
-    static constexpr std::chrono::seconds write_result_timeout{5};
+    /// \brief How long a write the owner accepted waits for its write result to be applied. Longer than the longest
+    /// time, cfg_request_reply_to_s of ocpp_device_model_API, for which a release of another owner of the connection
+    /// can hold up the messages of the connection while it waits for a write to that owner.
+    static constexpr std::chrono::seconds write_result_timeout{120};
 
     explicit ExternalOwners(std::vector<std::shared_ptr<DeviceModelOwnerConnection>> connections);
     ~ExternalOwners();
@@ -121,10 +125,25 @@ private:
 
     using PendingResult = std::pair<std::size_t, types::ocpp_device_model::RegistrationResult>;
 
-    /// \brief A write the owner accepted, waiting until its write result is applied
+    /// \brief A write passed on to an owner, until its write result is applied or the write stops waiting for it
     struct PendingWrite {
         std::string owner;
+        types::ocpp_device_model::WriteRequest request;
         bool applied{false};
+        /// \brief Set when the owner is released or dropped, or the registry detached, which wait for this write
+        bool ended{false};
+    };
+
+    /// \brief The writes in progress, apart from State so that a write never waits for the lock of State, which is
+    /// held while the registry waits for the writes in progress
+    struct Writes {
+        std::map<std::string, PendingWrite> pending;
+        std::uint64_t last_request_id{0};
+        /// \brief Per connection, the thread applying one of its messages, whose write results wait behind it
+        std::vector<std::optional<std::thread::id>> handling;
+        /// \brief Owners being released or dropped, whose writes do not wait for their results
+        std::set<std::string> ending;
+        bool detached{false};
     };
 
     struct State {
@@ -136,9 +155,6 @@ private:
         /// arrived, in the order they were published: per owner the latest registration and the latest change of each
         /// attribute after it
         std::vector<std::vector<types::ocpp_device_model::OwnerMessage>> early;
-        /// \brief The writes waiting for their write result, by request id
-        std::map<std::string, PendingWrite> pending_writes;
-        std::uint64_t last_request_id{0};
         /// \brief Results in the order they were decided, sent while a registry is attached
         std::deque<PendingResult> outbox;
         /// \brief Whether a thread is sending the outbox
@@ -176,6 +192,10 @@ private:
     /// accepted it, see Provider
     types::ocpp::SetVariableStatusEnumType write(std::size_t index, const std::string& owner,
                                                  const types::ocpp_device_model::WriteRequest& request);
+    /// \brief Ends the wait of the writes to \p owner for their results, before \p owner is unregistered
+    void end_writes_of(const std::string& owner);
+    /// \brief Ends the wait of all writes for their results, before the owners are unregistered for a detach
+    void end_all_writes();
     /// \brief Applies \p registration to \p state, leaving the call to an attached registry to the caller
     /// \param claimed The owners already registered by the same get_registrations answer
     Applied apply(State& state, std::size_t index, const types::ocpp_device_model::Registration& registration,
@@ -210,6 +230,7 @@ private:
 
     std::vector<std::shared_ptr<DeviceModelOwnerConnection>> connections;
     everest::lib::util::monitor<State> state;
+    everest::lib::util::monitor<Writes> writes;
 };
 
 } // namespace ocpp_module_common::device_model

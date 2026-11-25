@@ -122,11 +122,12 @@ bool allow_set_read_only_value(const Component& component, const Variable& varia
 }
 
 ComponentRegistrationResult reject_all(const std::vector<RegisteredComponent>& components,
-                                       const RegistrationRejectionReason reason) {
+                                       const RegistrationRejectionReason reason, const std::string& defined_by = {}) {
     ComponentRegistrationResult result;
     for (const auto& registered_component : components) {
         for (const auto& registered_variable : registered_component.variables) {
-            result.rejected.push_back({registered_component.component, registered_variable.variable, reason});
+            result.rejected.push_back(
+                {registered_component.component, registered_variable.variable, reason, defined_by});
         }
     }
     return result;
@@ -647,19 +648,21 @@ SetVariableStatusEnum DeviceModel::forward_to_provider(Lock lock, const Composed
         EVLOG_error << "Provider of " << component << "." << variable << " failed to set the value: " << e.what();
     }
     if (status == SetVariableStatusEnum::Accepted and not provider->reports_accepted_values()) {
-        this->store_provided_value(owner, component, variable, attribute_enum, value, source);
+        this->store_provided_value(owner, provider.get(), component, variable, attribute_enum, value, source);
     }
     return status;
 }
 
-void DeviceModel::store_provided_value(const std::string& owner, const Component& component, const Variable& variable,
+void DeviceModel::store_provided_value(const std::string& owner, const VariableValueProvider* provider,
+                                       const Component& component, const Variable& variable,
                                        const AttributeEnum& attribute_enum, const std::string& value,
                                        const std::string& source) {
     Lock lock(this->mutex);
     const auto* composed = this->find_variable(component, variable);
-    if (composed == nullptr or composed->registration == nullptr or composed->registration->owner != owner) {
+    if (composed == nullptr or composed->registration == nullptr or composed->registration->owner != owner or
+        composed->registration->provider.get() != provider) {
         EVLOG_warning << "Value of " << component << "." << variable << " accepted by owner " << owner
-                      << " is not stored: the owner no longer registers the variable";
+                      << " is not stored: the owner no longer registers the variable with that provider";
         return;
     }
     bool fits = false;
@@ -823,7 +826,7 @@ ComponentRegistrationResult DeviceModel::register_components_of(const std::strin
         previous_it->second.provider != provider) {
         EVLOG_error << "Owner " << owner
                     << " registered with another provider without unregistering first: its components are ignored";
-        return reject_all(components, RegistrationRejectionReason::ProviderChanged);
+        return reject_all(components, RegistrationRejectionReason::ProviderChanged, owner);
     }
     const auto previous_values = previous_it != this->registrations.end() and !this->variable_listener.empty()
                                      ? actual_values(previous_it->second)

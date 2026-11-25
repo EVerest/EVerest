@@ -32,8 +32,8 @@ public:
     /// report the held value with notify_value_changed before the next start.
     ///
     /// DeviceModel stores an accepted value once this call returned, if the variable is still registered by the same
-    /// owner and the value still fits it. When writes to one variable overlap, the value stored last stays in memory.
-    /// \param source The source of the value (e.g. 'csms', 'internal')
+    /// owner with this provider and the value still fits it. When writes to one variable overlap, the value stored last
+    /// stays in memory. \param source The source of the value (e.g. 'csms', 'internal')
     virtual SetVariableStatusEnum set_value(const Component& component, const Variable& variable,
                                             AttributeEnum attribute, const std::string& value,
                                             const std::string& source) = 0;
@@ -99,8 +99,9 @@ struct RejectedVariable {
     Component component;
     Variable variable;
     RegistrationRejectionReason reason;
-    /// \brief For AlreadyDefined: the owner that defines the variable, the owner of its component config entry or the
-    /// runtime owner that registered it, the registering owner itself for a variable it defines twice
+    /// \brief For AlreadyDefined and ProviderChanged: the owner that defines the variable, the owner of its component
+    /// config entry or the runtime owner that registered it, the registering owner itself for a variable it defines
+    /// twice
     std::string defined_by;
 };
 

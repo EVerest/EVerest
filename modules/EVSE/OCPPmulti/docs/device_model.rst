@@ -539,8 +539,9 @@ OCPPmulti applies an owner's registrations, value changes and answers to writes 
 owner sent last therefore wins: a registration the application sends before it answers a write does not undo the
 written value, and a value change it sends after the answer replaces it. A value change for an owner that has not
 registered yet is ignored, and so is the answer to a write the device model no longer waits for unless it is
-``Accepted``, which is applied like a value change. A release answers the writes to the owner that still wait for
-their result with the application's answer, without storing the value.
+``Accepted``, which is applied like a value change. A write whose result does not arrive is answered ``Rejected``:
+a release, a failed registration or the end of the OCPP service answers the writes to the owner that still wait for
+their result, and so does a timeout of 120 s.
 
 .. _handwritten_ocppmulti_what-the-database-stores:
 
