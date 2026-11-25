@@ -40,15 +40,23 @@ After the answer, each registration is passed on at once. It may reach the OCPP 
 a client replaces or releases an owner registered at startup only after it received the owner's
 ``e2m/set_registration_result``.
 
-Value changes are passed on at once, also while the module collects registrations. The OCPP module keeps the latest
-value of each attribute it receives before the answer and applies it to the registration of the owner.
+Value changes are passed on at once, also while the module collects registrations. The OCPP module applies a value
+change it receives before the answer after the registration of its owner, and ignores one for an owner that has not
+registered.
+
+The module passes registrations, value changes and the replies to writes on to the OCPP module as one
+``owner_message`` var, in the order it receives them, and the OCPP module applies them in that order: the message a
+client sends last wins. A client that sends a registration before it replies to a write keeps the written value, and
+one that changes the value after it replied reports the new value. The order holds for what one module instance
+receives, so a client publishes on one MQTT connection.
 
 If the OCPP module's ``get_registrations`` call fails, for example because EVerest aborted it after 120 s, the
 registrations collected for it do not reach the OCPP module. Their owners are missing from the device model until a
 client publishes their registration again or EVerest restarts.
 
 A write to a registered variable is answered ``Rejected`` when the client does not reply within
-``cfg_request_reply_to_s``.
+``cfg_request_reply_to_s``. A reply that still arrives at that moment is ignored, unless it is ``Accepted``: then the
+module passes the value on as a value change, since the client applied it.
 
 The three timeouts are at most 100 s each, below the 120 s after which EVerest aborts a command. A registration that
 does not fit the types of the specification, a string beyond its maximum length for example, is not passed on; the

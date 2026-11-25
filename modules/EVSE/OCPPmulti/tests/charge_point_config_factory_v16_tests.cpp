@@ -267,9 +267,18 @@ public:
     void set_registration_result(const dm_types::RegistrationResult& result) override {
         this->results.push_back(result);
     }
-    types::ocpp::SetVariableStatusEnumType set_value(const dm_types::WriteRequest& /*request*/) override {
+    types::ocpp::SetVariableStatusEnumType set_value(const dm_types::WriteRequest& request,
+                                                     const std::string& request_id) override {
+        // Published before the answer, as the module providing the interface does
+        if (this->owners != nullptr) {
+            dm_types::OwnerMessage message;
+            message.write_result =
+                dm_types::WriteResult{request_id, request, types::ocpp::SetVariableStatusEnumType::Accepted};
+            this->owners->on_owner_message(0, message);
+        }
         return types::ocpp::SetVariableStatusEnumType::Accepted;
     }
+    ocpp_module_common::device_model::ExternalOwners* owners{nullptr};
     std::vector<dm_types::RegistrationResult> results;
 };
 

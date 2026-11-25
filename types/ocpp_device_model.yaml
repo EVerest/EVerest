@@ -433,3 +433,44 @@ types:
           max_limit are not checked.
         type: string
         maxLength: 2500
+  WriteResult:
+    description: The answer of an owner to a write
+    type: object
+    additionalProperties: false
+    required:
+      - request_id
+      - request
+      - status
+    properties:
+      request_id:
+        description: The id that the OCPP module passed with the write to set_value
+        type: string
+      request:
+        description: The write that the owner answered
+        type: object
+        $ref: /ocpp_device_model#/WriteRequest
+      status:
+        description: >-
+          The answer of the owner: Accepted, RebootRequired or Rejected, Rejected also when the owner did not answer
+          in time
+        type: string
+        $ref: /ocpp#/SetVariableStatusEnumType
+  OwnerMessage:
+    description: >-
+      A message of an owner, in the order in which the providing module received the owner's messages. Exactly one of
+      the properties is present.
+    type: object
+    additionalProperties: false
+    properties:
+      registration:
+        description: Replaces the registration of one owner, or adds or releases an owner
+        type: object
+        $ref: /ocpp_device_model#/Registration
+      value_change:
+        description: A value that the owner changed itself
+        type: object
+        $ref: /ocpp_device_model#/ValueChange
+      write_result:
+        description: The answer of the owner to a write
+        type: object
+        $ref: /ocpp_device_model#/WriteResult

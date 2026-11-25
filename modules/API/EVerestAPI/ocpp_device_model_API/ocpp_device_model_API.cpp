@@ -66,7 +66,9 @@ void ocpp_device_model_API::generate_api_var_registration() {
             return false;
         }
         if (collector->add(payload)) {
-            p_main->publish_registration(to_internal_api(payload));
+            types::ocpp_device_model::OwnerMessage message;
+            message.registration = to_internal_api(payload);
+            p_main->publish_owner_message(message);
         }
         return true;
     });
@@ -78,7 +80,9 @@ void ocpp_device_model_API::generate_api_var_value_changed() {
         if (not deserialize(data, payload)) {
             return false;
         }
-        p_main->publish_value_changed(to_internal_api(payload));
+        types::ocpp_device_model::OwnerMessage message;
+        message.value_change = to_internal_api(payload);
+        p_main->publish_owner_message(message);
         return true;
     });
 }

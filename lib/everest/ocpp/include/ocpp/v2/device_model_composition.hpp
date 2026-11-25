@@ -23,9 +23,6 @@ struct OwnerRegistration {
     std::string owner;
     std::shared_ptr<VariableValueProvider> provider;
     DeviceModelMap variables;
-    /// \brief Unique across the registrations of all owners, so that a write forwarded to an earlier registration of
-    /// the owner is not stored in this one
-    std::uint64_t generation{0};
 };
 
 /// \brief Where the values of a variable are kept. Every backing keeps a copy in memory, which DeviceModel reads.

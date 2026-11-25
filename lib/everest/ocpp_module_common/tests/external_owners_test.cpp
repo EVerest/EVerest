@@ -9,10 +9,12 @@
 #include <future>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <set>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -52,18 +54,54 @@ public:
         }
     }
 
-    types::ocpp::SetVariableStatusEnumType set_value(const dm_types::WriteRequest& request) override {
-        this->writes.push_back(request);
+    types::ocpp::SetVariableStatusEnumType set_value(const dm_types::WriteRequest& request,
+                                                     const std::string& request_id) override {
         if (this->gate.has_value()) {
             this->entered.set_value();
             this->gate->wait();
         }
+        dm_types::OwnerMessage message;
+        message.write_result = dm_types::WriteResult{request_id, request, this->reply};
+        {
+            std::lock_guard<std::mutex> lock(this->mutex);
+            this->writes.push_back(request);
+            if (this->hold_results) {
+                this->held_results.push_back(message);
+                return this->reply;
+            }
+        }
+        // Published before the answer, as the module providing the interface does
+        this->publish(message);
         return this->reply;
+    }
+
+    std::size_t write_count() {
+        std::lock_guard<std::mutex> lock(this->mutex);
+        return this->writes.size();
+    }
+
+    /// \brief Publishes the write results held so far, in order
+    void release_results() {
+        std::vector<dm_types::OwnerMessage> held;
+        {
+            std::lock_guard<std::mutex> lock(this->mutex);
+            held = std::exchange(this->held_results, {});
+        }
+        for (const auto& message : held) {
+            this->publish(message);
+        }
     }
 
     std::string id;
     std::vector<dm_types::RegistrationResult> results;
+    std::mutex mutex;
     std::vector<dm_types::WriteRequest> writes;
+    /// \brief Publishes a message of this connection, as the framework delivers it
+    std::function<void(const dm_types::OwnerMessage&)> publish;
+    /// \brief When set, write results are kept in held_results instead of being published, as if the owner sent
+    /// other messages before it answered
+    bool hold_results{false};
+    std::vector<dm_types::OwnerMessage> held_results;
     types::ocpp::SetVariableStatusEnumType reply{types::ocpp::SetVariableStatusEnumType::Accepted};
     /// \brief When set, a write waits for it after signalling entered
     std::optional<std::shared_future<void>> gate;
@@ -91,6 +129,7 @@ public:
             this->register_gate->wait();
         }
         this->registered = components;
+        this->providers.push_back(provider);
         return this->registry.register_components(owner, components, provider);
     }
     void unregister_components(const std::string& owner) override {
@@ -111,6 +150,7 @@ public:
     std::optional<std::shared_future<void>> register_gate;
     std::promise<void> register_entered;
     std::vector<ocpp::v2::RegisteredComponent> registered;
+    std::vector<std::shared_ptr<ocpp::v2::VariableValueProvider>> providers;
     std::optional<std::shared_future<void>> gate;
     std::promise<void> entered;
 };
@@ -239,6 +279,12 @@ protected:
         this->second = std::make_shared<FakeConnection>("api_2");
         this->owners = std::make_unique<dm::ExternalOwners>(
             std::vector<std::shared_ptr<dm::DeviceModelOwnerConnection>>{this->first, this->second});
+        this->first->publish = [this](const dm_types::OwnerMessage& message) {
+            this->owners->on_owner_message(0, message);
+        };
+        this->second->publish = [this](const dm_types::OwnerMessage& message) {
+            this->owners->on_owner_message(1, message);
+        };
     }
 
     void TearDown() override {
@@ -762,16 +808,15 @@ TEST_F(ExternalOwnersTest, AnsweredRegistrationsAreNotAnsweredAgain) {
     EXPECT_EQ(this->read("AuxMeter", "Energy"), "5");
 }
 
-TEST_F(ExternalOwnersTest, ValueChangeBeforeARuntimeRegistrationIsApplied) {
+TEST_F(ExternalOwnersTest, ValueChangeBeforeTheRegistrationOfItsOwnerIsIgnored) {
     this->start({});
 
-    // registration and value_changed are separate vars, so the change may be handled first
     this->owners->on_value_changed(0, make_change("meter", "AuxMeter", "Energy", "8"));
     this->owners->on_registration(0, make_registration("meter", "AuxMeter", "Energy", "5"));
 
     ASSERT_EQ(this->first->results.size(), 1u);
     EXPECT_EQ(this->first->results.at(0).status, dm_types::RegistrationStatus::Accepted);
-    EXPECT_EQ(this->read("AuxMeter", "Energy"), "8");
+    EXPECT_EQ(this->read("AuxMeter", "Energy"), "5");
 }
 
 TEST_F(ExternalOwnersTest, ValueChangeDuringARuntimeRegistrationIsAppliedAfterIt) {
@@ -821,52 +866,6 @@ TEST_F(ExternalOwnersTest, ValueChangeForARefusedOwnerIsDropped) {
     EXPECT_EQ(this->read("AuxMeter", "Energy"), "7");
 }
 
-TEST_F(ExternalOwnersTest, ValueChangesForUnregisteredOwnersAreBounded) {
-    this->start({});
-
-    this->owners->on_value_changed(0, make_change("oldest", "AuxMeter", "Energy", "8"));
-    for (std::size_t i = 0; i < dm::ExternalOwners::max_unclaimed_values; ++i) {
-        this->owners->on_value_changed(0, make_change("owner_" + std::to_string(i), "OtherMeter", "Energy", "9"));
-    }
-
-    this->owners->on_registration(0, make_registration("oldest", "AuxMeter", "Energy", "5"));
-    EXPECT_EQ(this->read("AuxMeter", "Energy"), "5");
-    const auto newest = "owner_" + std::to_string(dm::ExternalOwners::max_unclaimed_values - 1);
-    this->owners->on_registration(0, make_registration(newest, "OtherMeter", "Energy", "5"));
-    EXPECT_EQ(this->read("OtherMeter", "Energy"), "9");
-}
-
-TEST_F(ExternalOwnersTest, DetachWaitsForHeldValueChanges) {
-    WrappingRegistry registry(*this->device_model);
-    this->owners->set_startup_registrations(0, {});
-    this->owners->set_startup_registrations(1, {});
-    this->owners->register_with(registry);
-
-    this->owners->on_value_changed(0, make_change("meter", "AuxMeter", "Energy", "8"));
-    std::promise<void> open;
-    registry.gate = open.get_future().share();
-    auto registering = std::async(std::launch::async, [this]() {
-        this->owners->on_registration(0, make_registration("meter", "AuxMeter", "Energy", "5"));
-    });
-    const bool held = registry.entered.get_future().wait_for(std::chrono::seconds(5)) == std::future_status::ready;
-    EXPECT_TRUE(held);
-    registry.gate.reset();
-    if (not held) {
-        registering.get();
-        this->owners->detach();
-        return;
-    }
-
-    auto detach = std::async(std::launch::async, [this]() { this->owners->detach(); });
-    EXPECT_EQ(detach.wait_for(std::chrono::milliseconds(200)), std::future_status::timeout);
-    open.set_value();
-    registering.get();
-    detach.get();
-
-    this->owners->register_with(*this->device_model);
-    EXPECT_EQ(this->read("AuxMeter", "Energy"), "8");
-}
-
 TEST_F(ExternalOwnersTest, ValueChangeWhileHeldChangesAreReportedIsReportedAfterThem) {
     auto registration = make_registration("meter", "AuxMeter", "Energy", "5");
     auto power = registration.components.at(0).variables.at(0);
@@ -907,12 +906,159 @@ TEST_F(ExternalOwnersTest, ValueChangeWhileHeldChangesAreReportedIsReportedAfter
     this->owners->detach();
 }
 
-TEST_F(ExternalOwnersTest, ValueChangeBeforeTheStartupAnswerForALaterRegistrationIsApplied) {
+TEST_F(ExternalOwnersTest, ValueChangeBeforeTheStartupAnswerForAnUnregisteredOwnerIsIgnored) {
     this->owners->on_value_changed(0, make_change("meter", "AuxMeter", "Energy", "8"));
     this->start({});
 
     this->owners->on_registration(0, make_registration("meter", "AuxMeter", "Energy", "5"));
+    EXPECT_EQ(this->read("AuxMeter", "Energy"), "5");
+}
+
+TEST_F(ExternalOwnersTest, MessagesBeforeTheStartupAnswerAreAppliedInOrder) {
+    this->owners->on_value_changed(0, make_change("meter", "AuxMeter", "Energy", "7"));
+    this->owners->on_registration(0, make_registration("meter", "AuxMeter", "Energy", "6"));
+    this->owners->on_value_changed(0, make_change("meter", "AuxMeter", "Energy", "8"));
+    this->start({});
+
     EXPECT_EQ(this->read("AuxMeter", "Energy"), "8");
+}
+
+TEST_F(ExternalOwnersTest, AcceptedWriteIsStoredWhenItsResultIsHandled) {
+    this->start({}, make_registrations({make_registration("cooling", "CoolingCtrlr", "FanSpeed", "40")}));
+    this->second->hold_results = true;
+
+    auto write = std::async(std::launch::async, [this]() { return this->write("CoolingCtrlr", "FanSpeed", "60"); });
+    while (this->second->write_count() == 0) {
+        std::this_thread::yield();
+    }
+    EXPECT_EQ(write.wait_for(std::chrono::milliseconds(100)), std::future_status::timeout);
+    EXPECT_EQ(this->read("CoolingCtrlr", "FanSpeed"), "40");
+
+    this->second->release_results();
+    EXPECT_EQ(write.get(), SetVariableStatusEnum::Accepted);
+    EXPECT_EQ(this->read("CoolingCtrlr", "FanSpeed"), "60");
+}
+
+TEST_F(ExternalOwnersTest, RegistrationSentBeforeTheReplyKeepsTheWrittenValue) {
+    this->start({}, make_registrations({make_registration("cooling", "CoolingCtrlr", "FanSpeed", "40")}));
+    this->second->hold_results = true;
+
+    auto write = std::async(std::launch::async, [this]() { return this->write("CoolingCtrlr", "FanSpeed", "60"); });
+    while (this->second->write_count() == 0) {
+        std::this_thread::yield();
+    }
+    // The owner registers again with the value it had before it applied the write, then answers the write
+    this->owners->on_registration(1, make_registration("cooling", "CoolingCtrlr", "FanSpeed", "40"));
+    this->second->release_results();
+
+    EXPECT_EQ(write.get(), SetVariableStatusEnum::Accepted);
+    EXPECT_EQ(this->read("CoolingCtrlr", "FanSpeed"), "60");
+}
+
+TEST_F(ExternalOwnersTest, ValueChangeSentAfterTheReplyWins) {
+    this->start({}, make_registrations({make_registration("cooling", "CoolingCtrlr", "FanSpeed", "40")}));
+    this->second->hold_results = true;
+
+    auto write = std::async(std::launch::async, [this]() { return this->write("CoolingCtrlr", "FanSpeed", "60"); });
+    while (this->second->write_count() == 0) {
+        std::this_thread::yield();
+    }
+    this->second->release_results();
+    this->owners->on_value_changed(1, make_change("cooling", "CoolingCtrlr", "FanSpeed", "70"));
+
+    EXPECT_EQ(write.get(), SetVariableStatusEnum::Accepted);
+    EXPECT_EQ(this->read("CoolingCtrlr", "FanSpeed"), "70");
+}
+
+TEST_F(ExternalOwnersTest, ReleaseBeforeTheWriteResultEndsTheWait) {
+    this->start({}, make_registrations({make_registration("cooling", "CoolingCtrlr", "FanSpeed", "40")}));
+    this->second->hold_results = true;
+
+    auto write = std::async(std::launch::async, [this]() { return this->write("CoolingCtrlr", "FanSpeed", "60"); });
+    while (this->second->write_count() == 0) {
+        std::this_thread::yield();
+    }
+    // The release waits in libocpp for the write, which waits for its result, queued behind the release
+    auto release =
+        std::async(std::launch::async, [this]() { this->owners->on_registration(1, make_release("cooling")); });
+    ASSERT_EQ(release.wait_for(std::chrono::seconds(2)), std::future_status::ready);
+    EXPECT_EQ(write.get(), SetVariableStatusEnum::Accepted);
+    EXPECT_EQ(this->read("CoolingCtrlr", "FanSpeed"), std::nullopt);
+
+    EXPECT_NO_THROW(this->second->release_results());
+    EXPECT_EQ(this->read("CoolingCtrlr", "FanSpeed"), std::nullopt);
+}
+
+TEST_F(ExternalOwnersTest, DetachEndsTheWaitForWriteResults) {
+    this->start({}, make_registrations({make_registration("cooling", "CoolingCtrlr", "FanSpeed", "40")}));
+    this->second->hold_results = true;
+
+    auto write = std::async(std::launch::async, [this]() { return this->write("CoolingCtrlr", "FanSpeed", "60"); });
+    while (this->second->write_count() == 0) {
+        std::this_thread::yield();
+    }
+    auto detach = std::async(std::launch::async, [this]() { this->owners->detach(); });
+    ASSERT_EQ(detach.wait_for(std::chrono::seconds(2)), std::future_status::ready);
+    EXPECT_EQ(write.get(), SetVariableStatusEnum::Accepted);
+
+    // The owner applied the value, which the next device model gets
+    this->second->release_results();
+    this->owners->register_with(*this->device_model);
+    EXPECT_EQ(this->read("CoolingCtrlr", "FanSpeed"), "60");
+}
+
+TEST_F(ExternalOwnersTest, AcceptedResultOfAWriteNoLongerWaitingIsApplied) {
+    this->start({}, make_registrations({make_registration("cooling", "CoolingCtrlr", "FanSpeed", "40")}));
+
+    dm_types::WriteRequest request;
+    request.owner = "cooling";
+    request.component.name = "CoolingCtrlr";
+    request.variable.name = "FanSpeed";
+    request.attribute_type = types::ocpp::AttributeEnum::Actual;
+    request.value = "60";
+    request.source = "csms";
+    dm_types::OwnerMessage message;
+    message.write_result = dm_types::WriteResult{"unknown", request, types::ocpp::SetVariableStatusEnumType::Accepted};
+    this->owners->on_owner_message(1, message);
+    EXPECT_EQ(this->read("CoolingCtrlr", "FanSpeed"), "60");
+
+    message.write_result->request.value = "70";
+    message.write_result->status = types::ocpp::SetVariableStatusEnumType::Rejected;
+    this->owners->on_owner_message(1, message);
+    EXPECT_EQ(this->read("CoolingCtrlr", "FanSpeed"), "60");
+}
+
+TEST_F(ExternalOwnersTest, MessageWithMoreThanOnePartIsIgnored) {
+    this->start({});
+
+    dm_types::OwnerMessage message;
+    message.registration = make_registration("meter", "AuxMeter", "Energy", "5");
+    message.value_change = make_change("meter", "AuxMeter", "Energy", "6");
+    this->owners->on_owner_message(0, message);
+    this->owners->on_owner_message(0, dm_types::OwnerMessage{});
+
+    EXPECT_TRUE(this->first->results.empty());
+    EXPECT_EQ(this->read("AuxMeter", "Energy"), std::nullopt);
+}
+
+TEST_F(ExternalOwnersTest, RegisteringAgainKeepsTheProvider) {
+    WrappingRegistry registry(*this->device_model);
+    this->owners->set_startup_registrations(
+        0, make_registrations({make_registration("meter", "AuxMeter", "Energy", "5")}));
+    this->owners->set_startup_registrations(1, {});
+    this->owners->register_with(registry);
+
+    this->owners->on_registration(0, make_registration("meter", "AuxMeter", "Energy", "6"));
+    this->owners->detach();
+    const auto results = this->owners->register_with(registry);
+
+    ASSERT_EQ(registry.providers.size(), 3u);
+    EXPECT_EQ(registry.providers.at(1), registry.providers.at(0));
+    EXPECT_EQ(registry.providers.at(2), registry.providers.at(0));
+    ASSERT_EQ(results.size(), 1u);
+    EXPECT_TRUE(results.at(0).result.rejected.empty());
+    EXPECT_EQ(this->read("AuxMeter", "Energy"), "6");
+    this->owners->detach();
 }
 
 TEST(ExternalOwnerNames, NamesOfOcppAndLibocppAreNotExternalOwners) {
