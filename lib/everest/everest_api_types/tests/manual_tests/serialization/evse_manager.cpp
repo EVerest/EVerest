@@ -111,3 +111,17 @@ TEST(evse_manager, session_event_reservation_round_trips) {
     EXPECT_EQ(result.reservation->id, 7);
     EXPECT_EQ(result.reservation->id_token, "RFID1");
 }
+
+TEST(evse_manager, session_resumed_event_round_trips) {
+    SessionEvent event{};
+    event.uuid = "";
+    event.timestamp = "2026-10-06T08:00:00.000Z";
+    event.event = SessionEventEnum::SessionResumed;
+
+    const auto payload = nlohmann::json::parse(serialize(event));
+    EXPECT_EQ(payload.at("event"), "SessionResumed");
+
+    SessionEvent result;
+    ASSERT_TRUE(everest::lib::API::deserialize(payload.dump(), result));
+    EXPECT_EQ(result.event, SessionEventEnum::SessionResumed);
+}
