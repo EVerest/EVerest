@@ -110,6 +110,9 @@ The following configuration values fail validation or change meaning:
    * - ``EvseManager`` ``ac_limit_slac_init_retries``
      - Defaults to ``true``, which limits SLAC retries as ISO 15118-3
        requires. Set it to ``false`` for unlimited retries.
+   * - EVerest API modules ``cfg_request_reply_to_s``
+     - Limited to 100 s, default 100 s instead of 550 s. Lower larger values;
+       a client that needs more than 100 s to reply gets the default response.
    * - ``EvseManager`` ``lock_connector_in_state_b: false``
      - Deprecated. Use ``unlock_when_deauthorized: true``.
    * - ``RsIskraMeter`` ``implementation_id: meter``

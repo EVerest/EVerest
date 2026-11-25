@@ -26,8 +26,7 @@ Stable releases
      - Release notes
      - Upgrade guide
    * - 2026.10
-     - `2026.10.0-rc1 <https://github.com/EVerest/EVerest/releases/tag/2026.10.0-rc1>`_
-       (release candidate)
+     - `2026.10.0 <https://github.com/EVerest/EVerest/releases/tag/2026.10.0>`_
      - :ref:`project-upgrading-to-2026-10`
    * - 2026.02
      - `2026.02.1 <https://github.com/EVerest/EVerest/releases/tag/2026.02.1>`_,
