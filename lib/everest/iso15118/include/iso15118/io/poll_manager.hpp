@@ -19,6 +19,8 @@ class PollManager {
 public:
     PollManager();
     ~PollManager();
+    PollManager(const PollManager&) = delete;
+    PollManager& operator=(const PollManager&) = delete;
 
     void register_fd(int fd, PollCallback& poll_callback);
     void unregister_fd(int fd);
@@ -27,7 +29,7 @@ public:
     void abort();
 
 private:
-    std::map<int, PollCallback> registered_fds;
+    std::map<int, PollCallback> registered_fds{};
 
     PollSet poll_set;
 
