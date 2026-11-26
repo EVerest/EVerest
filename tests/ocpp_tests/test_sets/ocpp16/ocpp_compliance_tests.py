@@ -2378,6 +2378,7 @@ async def test_sampled_meter_values(
     charge_point_v16: ChargePoint16,
     test_controller: TestController,
     test_utility: TestUtility,
+    ocpp_impl,
 ):
     logging.info("######### test_sampled_meter_values #########")
 
@@ -2484,12 +2485,13 @@ async def test_sampled_meter_values(
         int(meter_value_sample_interval),
         0,
     )
-    # the limits offered to the EV while it charges
-    for msg in meter_values_messages:
-        for meter_value in msg.payload["meterValue"]:
-            assert validate_offered_limits(
-                meter_value["sampledValue"], whole_numbers=True
-            )
+    # the limits offered to the EV while it charges, which only OCPPmulti reports
+    if ocpp_impl == "multi":
+        for msg in meter_values_messages:
+            for meter_value in msg.payload["meterValue"]:
+                assert validate_offered_limits(
+                    meter_value["sampledValue"], whole_numbers=True
+                )
 
     test_utility.validation_mode = ValidationMode.EASY
 
