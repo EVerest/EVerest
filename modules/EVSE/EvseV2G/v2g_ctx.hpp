@@ -106,7 +106,7 @@ void v2g_ctx_wait_for_welding_voltage(struct v2g_context* const ctx);
  * \brief v2g_ctx_wait_contactor_open This function blocks a DC PowerDeliveryRes(Stop) until the board support reported
  * the contactor open, so that side B is disabled before the EV learns of it [IEC 61851-23:2023 Table CC.9 t103 before
  * t104]. Returns early on an emergency shutdown, an HLC stop or a terminated connection, and after \p timeout_ms with
- * a warning.
+ * a warning (an error if dc_stop_contactor_open_timeout_failed is set).
  * \param ctx is a pointer of type \c v2g_context.
  * \param timeout_ms is the maximum wait.
  * \return true if the contactor is open.

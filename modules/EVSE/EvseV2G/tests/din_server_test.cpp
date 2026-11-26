@@ -792,6 +792,39 @@ TEST_F(DinServerPowerDeliveryTest, power_delivery_stop_sets_shutdown_status_code
     EXPECT_EQ(module::stub::get_logs(dloglevel_t::DLOG_LEVEL_ERROR).size(), 0);
 }
 
+TEST_F(DinServerPowerDeliveryTest, power_delivery_stop_contactor_not_open_answers_ok_by_default) {
+    // dc_stop_contactor_open_timeout_response: ok_with_warning
+    set_power_delivery_req(false);
+    ctx->contactor_is_closed = true;
+    ctx->dc_stop_contactor_open_timeout_failed = false;
+
+    EXPECT_EQ(states::handle_din_power_delivery(conn.get()), V2G_EVENT_NO_EVENT);
+
+    EXPECT_EQ(exi_out->V2G_Message.Body.PowerDeliveryRes.ResponseCode, din_responseCodeType_OK);
+    EXPECT_EQ(ctx->state, WAIT_FOR_WELDINGDETECTION_SESSIONSTOP);
+}
+
+TEST_F(DinServerPowerDeliveryTest, power_delivery_stop_contactor_not_open_answers_failed_if_configured) {
+    // dc_stop_contactor_open_timeout_response: failed
+    set_power_delivery_req(false);
+    ctx->contactor_is_closed = true;
+    ctx->dc_stop_contactor_open_timeout_failed = true;
+
+    states::handle_din_power_delivery(conn.get());
+
+    EXPECT_EQ(exi_out->V2G_Message.Body.PowerDeliveryRes.ResponseCode, din_responseCodeType_FAILED);
+}
+
+TEST_F(DinServerPowerDeliveryTest, power_delivery_stop_contactor_open_answers_ok_if_failed_configured) {
+    set_power_delivery_req(false);
+    ctx->contactor_is_closed = false;
+    ctx->dc_stop_contactor_open_timeout_failed = true;
+
+    EXPECT_EQ(states::handle_din_power_delivery(conn.get()), V2G_EVENT_NO_EVENT);
+
+    EXPECT_EQ(exi_out->V2G_Message.Body.PowerDeliveryRes.ResponseCode, din_responseCodeType_OK);
+}
+
 TEST_F(DinServerPowerDeliveryTest, power_delivery_stop_preserves_more_specific_status_code) {
     // A more specific status code like EVSE_UtilityInterruptEvent must not be overwritten
     // by EVSE_Shutdown when the EV requests to stop the charging session

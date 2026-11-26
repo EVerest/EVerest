@@ -963,7 +963,34 @@ SCENARIO("DIN SPEC 70121 SECC holds PowerDeliveryRes(off) until the contactor is
 
                 THEN("The response is sent anyway") {
                     REQUIRE(secc.fsm.state() == StateID::WeldingDetection);
-                    REQUIRE(secc.fsm.response<message_din::PowerDeliveryResponse>().has_value());
+                    const auto res = secc.fsm.response<message_din::PowerDeliveryResponse>();
+                    REQUIRE(res.has_value());
+                    REQUIRE(res->response_code == dt::ResponseCode::OK);
+                }
+            }
+
+            AND_WHEN("FAILED is configured and the contactor is reported open in time") {
+                secc.fsm.context().session_config.dc_stop_contactor_open_timeout_failed = true;
+                secc.fsm.control(d20::ClosedContactor{false});
+
+                THEN("The response is sent OK and WeldingDetection follows") {
+                    REQUIRE(secc.fsm.state() == StateID::WeldingDetection);
+                    const auto res = secc.fsm.response<message_din::PowerDeliveryResponse>();
+                    REQUIRE(res.has_value());
+                    REQUIRE(res->response_code == dt::ResponseCode::OK);
+                    REQUIRE_FALSE(secc.fsm.context().session_stopped);
+                }
+            }
+
+            AND_WHEN("The contactor is not reported open in time and FAILED is configured") {
+                secc.fsm.context().session_config.dc_stop_contactor_open_timeout_failed = true;
+                secc.fsm.timeout(d20::TimeoutType::CONTACTOR);
+
+                THEN("The response is sent FAILED and the session ends") {
+                    const auto res = secc.fsm.response<message_din::PowerDeliveryResponse>();
+                    REQUIRE(res.has_value());
+                    REQUIRE(res->response_code == dt::ResponseCode::FAILED);
+                    REQUIRE(secc.fsm.context().session_stopped);
                 }
             }
 
@@ -992,6 +1019,18 @@ SCENARIO("DIN SPEC 70121 SECC holds PowerDeliveryRes(off) until the contactor is
             THEN("The response is sent right away") {
                 REQUIRE(secc.fsm.state() == StateID::WeldingDetection);
                 REQUIRE(secc.fsm.response<message_din::PowerDeliveryResponse>().has_value());
+            }
+        }
+
+        WHEN("FAILED is configured and the EV sends PowerDeliveryReq(ReadyToChargeState false)") {
+            secc.fsm.context().session_config.dc_stop_contactor_open_timeout_failed = true;
+            secc.drive(power_delivery_req(false));
+
+            THEN("The response is sent OK right away") {
+                REQUIRE(secc.fsm.state() == StateID::WeldingDetection);
+                const auto res = secc.fsm.response<message_din::PowerDeliveryResponse>();
+                REQUIRE(res.has_value());
+                REQUIRE(res->response_code == dt::ResponseCode::OK);
             }
         }
     }

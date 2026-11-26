@@ -72,6 +72,21 @@ SCENARIO("ISO15118-20 DC charge loop holds PowerDeliveryRes(Stop) until the powe
             }
         }
 
+        WHEN("FAILED is configured and the board support reports the power path off in time") {
+            ctx.session_config.dc_stop_contactor_open_timeout_failed = true;
+            state_helper.set_active_control_event(d20::ClosedContactor{false});
+            const auto off_result = fsm.feed(d20::Event::CONTROL_MESSAGE);
+
+            THEN("The response is sent OK and welding detection follows") {
+                REQUIRE(off_result.transitioned());
+                REQUIRE(fsm.get_current_state_id() == d20::StateID::DC_WeldingDetection);
+                const auto res = ctx.get_response<message_20::PowerDeliveryResponse>();
+                REQUIRE(res.has_value());
+                REQUIRE(res->response_code == dt::ResponseCode::OK);
+                REQUIRE_FALSE(ctx.session_stopped);
+            }
+        }
+
         WHEN("A contactor-closed report arrives") {
             state_helper.set_active_control_event(d20::ClosedContactor{true});
             const auto closed_result = fsm.feed(d20::Event::CONTROL_MESSAGE);
@@ -94,6 +109,20 @@ SCENARIO("ISO15118-20 DC charge loop holds PowerDeliveryRes(Stop) until the powe
                 REQUIRE(res->response_code == dt::ResponseCode::OK);
             }
         }
+
+        WHEN("The power path is not reported off in time and FAILED is configured") {
+            ctx.session_config.dc_stop_contactor_open_timeout_failed = true;
+            ctx.set_active_timeout(d20::TimeoutType::CONTACTOR);
+            const auto timeout_result = fsm.feed(d20::Event::TIMEOUT);
+
+            THEN("The response is sent FAILED and the session ends") {
+                REQUIRE_FALSE(timeout_result.transitioned());
+                const auto res = ctx.get_response<message_20::PowerDeliveryResponse>();
+                REQUIRE(res.has_value());
+                REQUIRE(res->response_code == dt::ResponseCode::FAILED);
+                REQUIRE(ctx.session_stopped);
+            }
+        }
     }
 
     GIVEN("The power path was already reported off") {
@@ -108,6 +137,22 @@ SCENARIO("ISO15118-20 DC charge loop holds PowerDeliveryRes(Stop) until the powe
             REQUIRE(fsm.get_current_state_id() == d20::StateID::DC_WeldingDetection);
             REQUIRE(contains(signals, Signal::DC_OPEN_CONTACTOR));
             REQUIRE(ctx.get_response<message_20::PowerDeliveryResponse>().has_value());
+        }
+    }
+
+    GIVEN("FAILED is configured and the power path was already reported off") {
+        ctx.session_config.dc_stop_contactor_open_timeout_failed = true;
+        state_helper.set_active_control_event(d20::ClosedContactor{false});
+        fsm.feed(d20::Event::CONTROL_MESSAGE);
+
+        state_helper.handle_request(make_power_delivery(ctx.session, dt::Progress::Stop));
+        fsm.feed(d20::Event::V2GTP_MESSAGE);
+
+        THEN("PowerDeliveryRes(Stop) is sent OK right away") {
+            REQUIRE(fsm.get_current_state_id() == d20::StateID::DC_WeldingDetection);
+            const auto res = ctx.get_response<message_20::PowerDeliveryResponse>();
+            REQUIRE(res.has_value());
+            REQUIRE(res->response_code == dt::ResponseCode::OK);
         }
     }
 

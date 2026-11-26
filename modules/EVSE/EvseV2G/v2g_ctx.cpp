@@ -204,8 +204,13 @@ bool v2g_ctx_wait_contactor_open(struct v2g_context* const ctx, int timeout_ms) 
     ctx->response_wait_ms += getmonotonictime() - wait_start;
 
     if (not open and rv == ETIMEDOUT) {
-        dlog(DLOG_LEVEL_WARNING, "Contactor not reported open within %d ms, sending the PowerDeliveryRes anyway",
-             timeout_ms);
+        if (ctx->dc_stop_contactor_open_timeout_failed) {
+            dlog(DLOG_LEVEL_ERROR, "Contactor not reported open within %d ms, sending the PowerDeliveryRes with FAILED",
+                 timeout_ms);
+        } else {
+            dlog(DLOG_LEVEL_WARNING, "Contactor not reported open within %d ms, sending the PowerDeliveryRes anyway",
+                 timeout_ms);
+        }
     }
     return open;
 }

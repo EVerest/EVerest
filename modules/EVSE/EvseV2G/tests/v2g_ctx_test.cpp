@@ -335,6 +335,16 @@ TEST_F(V2gCtxWeldingDetectionTest, stop_response_goes_out_anyway_after_the_timeo
     EXPECT_EQ(module::stub::get_logs(dloglevel_t::DLOG_LEVEL_WARNING).size(), 1);
 }
 
+TEST_F(V2gCtxWeldingDetectionTest, stop_response_timeout_logs_an_error_if_failed_configured) {
+    // dc_stop_contactor_open_timeout_response: failed
+    ctx->dc_stop_contactor_open_timeout_failed = true;
+    report_contactor(true);
+
+    EXPECT_FALSE(v2g_ctx_wait_contactor_open(ctx.get(), 100));
+    EXPECT_EQ(module::stub::get_logs(dloglevel_t::DLOG_LEVEL_ERROR).size(), 1);
+    EXPECT_EQ(module::stub::get_logs(dloglevel_t::DLOG_LEVEL_WARNING).size(), 0);
+}
+
 TEST_F(V2gCtxWeldingDetectionTest, stop_response_wait_ends_on_emergency_shutdown) {
     report_contactor(true);
 

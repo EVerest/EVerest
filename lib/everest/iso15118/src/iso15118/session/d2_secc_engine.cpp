@@ -153,6 +153,7 @@ d2::SessionConfig make_d2_config(const session::SessionConfig& config, bool tls_
     out.no_energy_pause = config.no_energy_pause;
     out.auth_timeout_eim_ms = session::auth_timeout_to_ms(config.auth_timeout_eim_s);
     out.auth_timeout_pnc_ms = session::auth_timeout_to_ms(config.auth_timeout_pnc_s);
+    out.dc_stop_contactor_open_timeout_failed = config.dc_stop_contactor_open_timeout_failed;
 
     apply_vas_services(out, config.pre20_vas_services);
 

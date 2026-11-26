@@ -58,8 +58,11 @@ PowerDeliveryReq with ChargeProgress Stop), EvseV2G publishes ``dc_open_contacto
 PowerDeliveryRes until ``contactor_closed(false)`` reports the contactor open, so that side B is
 disabled before the EV learns of it (IEC 61851-23:2023 Table CC.9, t103 before t104): at most 1.4 s
 on DIN 70121 (1.5 s performance time) and 3 s on ISO 15118-2 (4.5 s), then it sends the response
-anyway and logs a warning. The wait ends early on an emergency shutdown, an HLC stop or a terminated
-connection.
+anyway and logs a warning. With ``dc_stop_contactor_open_timeout_response: failed`` the response
+carries ResponseCode FAILED instead. That skips welding detection and raises no error on the
+station side, and with a board support that reports the contactor open later than the wait every
+DC stop ends with FAILED. The wait ends early on an emergency shutdown, an HLC stop or a
+terminated connection.
 
 The same stop publishes ``welding_detection`` ``Started``; ``Finished`` follows on SessionStop or
 connection teardown, also when the EV sends no WeldingDetectionReq. Every WeldingDetectionRes waits
