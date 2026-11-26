@@ -71,6 +71,11 @@ target_sources(${MODULE_NAME}
 
 # ev@c55432ab-152c-45a9-9d2e-7281d50c69c3:v1
 # insert other things like install cmds etc here
+install(
+    FILES error_classification.yaml
+    DESTINATION "${EVEREST_MODULE_INSTALL_PREFIX}/${MODULE_NAME}"
+)
+
 if(BUILD_TESTING)
     add_subdirectory(tests)
 endif()

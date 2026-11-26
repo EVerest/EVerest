@@ -1,0 +1,55 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright Pionix GmbH and Contributors to EVerest
+#
+# Describes the EvseManager of the release this file ships with. Not part of the EVerest public API: it can change or
+# be removed in any release. `version` changes whenever the format changes.
+version: 1
+description: >-
+  Which errors make the EvseManager Inoperative. Every error type raised through a listed implementation or
+  requirement blocks charging unless it is listed under non_blocking. Implementations and requirements that are not
+  listed are not monitored: their errors never block charging. The error types a requirement can raise are those of
+  its interface, see interfaces/ and errors/. Keys are the implementation and requirement ids of manifest.yaml.
+implementations:
+  evse:
+    # Raised while at least one blocking error is active.
+    result: evse_manager/Inoperative
+    non_blocking: []
+requirements:
+  bsp:
+    non_blocking:
+      - evse_board_support/MREC3HighTemperature
+      - evse_board_support/MREC18CableOverTempDerate
+      - evse_board_support/VendorWarning
+      - ac_rcd/VendorWarning
+  connector_lock:
+    non_blocking:
+      - connector_lock/VendorWarning
+  ac_rcd:
+    non_blocking:
+      - ac_rcd/VendorWarning
+  imd:
+    non_blocking:
+      - isolation_monitor/VendorWarning
+  powersupply_DC:
+    non_blocking:
+      - power_supply_DC/VendorWarning
+  # monitored_if_config: monitored only while this boolean config key of the EvseManager is true.
+  # monitored_if_unconnected: monitored only while this other requirement has no connection.
+  powermeter_car_side:
+    monitored_if_config: fail_on_powermeter_errors
+    non_blocking:
+      - powermeter/VendorWarning
+  powermeter_grid_side:
+    monitored_if_config: fail_on_powermeter_errors
+    monitored_if_unconnected: powermeter_car_side
+    non_blocking:
+      - powermeter/VendorWarning
+  slac:
+    non_blocking:
+      - generic/VendorWarning
+  hlc:
+    non_blocking:
+      - generic/VendorWarning
+  over_voltage_monitor:
+    non_blocking:
+      - over_voltage_monitor/VendorWarning

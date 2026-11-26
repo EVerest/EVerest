@@ -48,6 +48,7 @@ target_sources(${TEST_TARGET_NAME} PRIVATE
 
 target_compile_definitions(${TEST_TARGET_NAME} PRIVATE
     BUILD_TESTING_MODULE_EVSE_MANAGER
+    EVSE_MANAGER_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/.."
 )
 
 target_link_libraries(${TEST_TARGET_NAME} PRIVATE
@@ -59,6 +60,7 @@ target_link_libraries(${TEST_TARGET_NAME} PRIVATE
     pugixml::pugixml
     everest::timer
     everest::util
+    everest::yaml
     sigslot
 )
 

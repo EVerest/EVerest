@@ -630,6 +630,32 @@ EvseManager, and errors of requirements not listed above, never make the EvseMan
 
 The following tables list every error type each source can raise and whether it blocks charging.
 
+Machine-readable classification
+-------------------------------
+
+``error_classification.yaml`` contains the classification of the tables below in machine-readable form. It is installed
+next to the module's ``manifest.yaml``, and a unit test keeps it identical to the lists the EvseManager evaluates.
+
+.. attention::
+
+    ``error_classification.yaml`` describes the EvseManager of the release it ships with. It is not part of the
+    :ref:`public API of EVerest <project-release-and-versioning-public-api>` and can change or be removed in any release.
+    Its ``version`` changes whenever its format changes.
+
+The keys under ``implementations`` and ``requirements`` are the implementation and requirement ids of the manifest. An
+error belongs to the requirement whose connection in the EVerest config names the error's ``origin.module_id`` and
+``origin.implementation_id``. Each entry has these keys:
+
+* ``non_blocking``: the error types that do not block charging. Every other error type raised through the entry blocks
+  charging.
+* ``result`` (``evse`` only): the error the EvseManager raises while a blocking error is active
+* ``monitored_if_config`` (optional): the requirement is monitored only while the named boolean config option of the
+  EvseManager is ``true``
+* ``monitored_if_unconnected`` (optional): the requirement is monitored only while the named other requirement has no
+  connection
+
+Implementations and requirements without an entry are not monitored.
+
 evse_manager
 ------------
 
