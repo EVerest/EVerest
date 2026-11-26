@@ -82,13 +82,17 @@ pub fn to_hex_string(input: Vec<u16>) -> String {
 /// |     |     | start of r/s component.
 /// |     | signature length
 /// | start
-pub fn to_signature(input: Vec<u16>) -> String {
+///
+/// `length` is the length of the signature in bytes, as reported by the meter.
+pub fn to_signature(input: Vec<u16>, length: usize) -> String {
     // The words contain two bytes - split them into bytes.
-    let input: Vec<u8> = input
+    let mut input: Vec<u8> = input
         .iter()
         .flat_map(|w| w.to_be_bytes().to_vec())
         .map(|c| c as u8)
         .collect();
+    // A signature with an odd length leaves a padding byte in the last word.
+    input.truncate(length);
 
     fn to_hex_string_from_bytes(bytes: &[u8]) -> String {
         bytes
@@ -331,7 +335,7 @@ mod tests {
             let input = hex_string_to_vec(input_hex);
             // let expected = hex_string_to_vec(expected_hex);
 
-            assert_eq!(to_signature(input).to_uppercase(), expected_hex.to_uppercase(), "{}", input_hex);
+            assert_eq!(to_signature(input, input_hex.len() / 2).to_uppercase(), expected_hex.to_uppercase(), "{}", input_hex);
         }
 
         // Test cases with invalid input
@@ -344,7 +348,7 @@ mod tests {
             "300402050001", // Sub-component wrong length (too long) - should be 2.
         ] {
             let expected = hex_string_to_vec(input);
-            assert_eq!(to_signature(expected.clone()), input);
+            assert_eq!(to_signature(expected.clone(), input.len() / 2), input);
         }
     }
 }

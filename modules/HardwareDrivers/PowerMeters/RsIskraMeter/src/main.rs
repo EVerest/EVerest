@@ -751,8 +751,7 @@ impl ReadyState {
         log::info!("Length of signature: {}", length_of_signature);
         let registers_amount = (length_of_signature + 1) / 2;
         let regs = self.read_holding_registers(8188, registers_amount)?;
-        let mut signature = to_signature(regs);
-        signature.truncate((length_of_signature * 2) as usize);
+        let signature = to_signature(regs, length_of_signature as usize);
         log::info!("Read the signature: {}", signature);
         Ok(signature)
     }
@@ -1349,6 +1348,46 @@ mod tests {
         let ready_state = make_ready_state(mock);
         let res = ready_state.read_signature().unwrap();
         assert_eq!(res, "DEADBEEFABCD123456");
+    }
+
+    #[test]
+    fn ready_state__read_signature_with_odd_length() {
+        let mut mock = SerialCommunicationHubClientPublisher::default();
+
+        // 71 bytes: r has 32 bytes and a leading zero to remove, s has 33 bytes.
+        mock.expect_modbus_read_holding_registers()
+            .with(eq(7058), eq(1), eq(1234))
+            .times(1)
+            .returning(|_, _, _| {
+                Ok(generated::types::serial_comm_hub_requests::Result {
+                    status_code: StatusCodeEnum::Success,
+                    value: Some(vec![71]),
+                })
+            });
+
+        // 71 bytes need 36 words, so the last word ends with a padding byte.
+        mock.expect_modbus_read_holding_registers()
+            .with(eq(8188), eq(36), eq(1234))
+            .times(1)
+            .returning(|_, _, _| {
+                Ok(generated::types::serial_comm_hub_requests::Result {
+                    status_code: StatusCodeEnum::Success,
+                    value: Some(vec![
+                        0x3045, 0x0220, 0x005d, 0x226c, 0x5f20, 0xebeb, 0xfd9f, 0x0d1d, 0xa2aa,
+                        0x696d, 0xd4f7, 0x7f37, 0x08ee, 0xcde7, 0x2b4a, 0x346a, 0xe03b, 0x8ce4,
+                        0x0221, 0x00ea, 0x9b5a, 0xd6da, 0x8a32, 0x34e5, 0xdf67, 0xfbdd, 0xd2dd,
+                        0x98b4, 0x54c7, 0x4625, 0xf934, 0x0a2e, 0x82fc, 0x81c4, 0xb41d, 0x4900,
+                    ]),
+                })
+            });
+
+        let ready_state = make_ready_state(mock);
+        let res = ready_state.read_signature().unwrap();
+        assert_eq!(
+            res,
+            "3044021F5D226C5F20EBEBFD9F0D1DA2AA696DD4F77F3708EECDE72B4A346AE03B8CE4\
+             022100EA9B5AD6DA8A3234E5DF67FBDDD2DD98B454C74625F9340A2E82FC81C4B41D49"
+        );
     }
 
     #[test]
