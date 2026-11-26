@@ -104,6 +104,11 @@ protected:
         {
             const std::lock_guard<std::mutex> lock(this->mtx);
             this->sent.push_back(call);
+            if (not this->answers_locked(action)) {
+                this->unanswered += 1;
+                this->cv.notify_all();
+                return true;
+            }
             const auto payload = this->response_payload_for_locked(action);
             if (payload.is_null()) {
                 this->pending_responses.push_back(
@@ -113,6 +118,11 @@ protected:
             }
         }
         this->cv.notify_all();
+        return true;
+    }
+
+    /// \brief Whether the call with \p action just sent is answered at all, as if the connection were lost before
+    virtual bool answers_locked(const std::string& /*action*/) {
         return true;
     }
 
@@ -159,10 +169,11 @@ protected:
         }
     }
 
-    /// \brief Wait until every call sent so far has been answered and the answer was processed by the charge point.
+    /// \brief Wait until every call sent so far that is answered has been answered and the answer was processed.
     bool wait_for_all_answered() {
         std::unique_lock<std::mutex> lock(this->mtx);
-        return this->cv.wait_for(lock, WAIT_TIMEOUT, [this]() { return this->delivered >= this->sent.size(); });
+        return this->cv.wait_for(lock, WAIT_TIMEOUT,
+                                 [this]() { return this->delivered + this->unanswered >= this->sent.size(); });
     }
 
     /// \brief Wait until at least \p count calls with \p action have been sent by the charge point.
@@ -220,6 +231,7 @@ protected:
     std::deque<nlohmann::json> pending_responses;
     std::vector<std::string> escaped_exceptions;
     std::size_t delivered{0};
+    std::size_t unanswered{0};
     std::function<void(const std::string&)> to_charge_point;
     std::thread responder;
     bool stop_responder{false};

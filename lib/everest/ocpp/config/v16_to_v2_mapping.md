@@ -180,6 +180,7 @@ The keys in this section are stored in `OCPP16LegacyCtrlr`. An entry for one of 
 | `NumberOfConnectors` | VariableAttribute | `OCPP16LegacyCtrlr` | `NumberOfConnectors` | `Actual` |
 | `ConnectorEvseIds` | VariableAttribute | `OCPP16LegacyCtrlr` | `ConnectorEvseIds` | `Actual` |
 | `RejectRemoteStartTransactionWithoutConnectorId` | VariableAttribute | `OCPP16LegacyCtrlr` | `RejectRemoteStartTransactionWithoutConnectorId` | `Actual` |
+| `BootNotificationAfterNetworkProfileSwitch` | VariableAttribute | `OCPP16LegacyCtrlr` | `BootNotificationAfterNetworkProfileSwitch` | `Actual` |
 | `RemoteStartTransactionWithoutConnectorIdFindFirst` | VariableAttribute | `OCPP16LegacyCtrlr` | `RemoteStartTransactionWithoutConnectorIdFindFirst` | `Actual` |
 | `ReportClearedErrors` | VariableAttribute | `OCPP16LegacyCtrlr` | `ReportClearedErrors` | `Actual` |
 | `SwitchSecurityProfileConnectionTimeout` | VariableAttribute | `OCPP16LegacyCtrlr` | `SwitchSecurityProfileConnectionTimeout` | `Actual` |

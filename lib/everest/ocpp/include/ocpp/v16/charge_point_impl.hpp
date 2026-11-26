@@ -10,6 +10,7 @@
 #include <future>
 #include <iostream>
 #include <mutex>
+#include <ocpp/common/registration_endpoints.hpp>
 #include <ocpp/common/support_older_cpp_versions.hpp>
 #include <optional>
 #include <set>
@@ -97,6 +98,7 @@ private:
     bool InvalidCSMSCertificate_logged{false};
     std::atomic<ChargePointConnectionState> connection_state{ChargePointConnectionState::Disconnected};
     std::atomic<RegistrationStatus> registration_status{RegistrationStatus::Pending};
+    RegistrationEndpoints m_registration_endpoints;
     DiagnosticsStatus diagnostics_status{DiagnosticsStatus::Idle};
     FirmwareStatus firmware_status{FirmwareStatus::Idle};
     struct PendingFirmwareStatus {
@@ -130,6 +132,9 @@ private:
     std::unique_ptr<ChargePointStates> status;
     std::shared_ptr<ocpp::v16::DatabaseHandler> database_handler;
     std::unique_ptr<Everest::SteadyTimer> boot_notification_timer;
+    /// \brief Retry interval of the last BootNotification.conf that was not Accepted, used again when a
+    /// BootNotification.conf cannot be read
+    std::optional<std::chrono::seconds> m_last_boot_notification_retry_interval;
     std::unique_ptr<Everest::SteadyTimer> heartbeat_timer;
     std::unique_ptr<ClockAlignedTimer> clock_aligned_meter_values_timer;
     std::vector<std::unique_ptr<Everest::SteadyTimer>> status_notification_timers;
@@ -239,6 +244,7 @@ private:
 
     /// \brief This function is called after a successful connection to the Websocket
     void connected_callback();
+    void signal_charging_profiles_if_offline_purposes_ignored();
     void init_connectivity_manager();
     void init_state_machine(const std::map<int, ChargePointStatus>& connector_status_map);
     std::unique_ptr<ocpp::MessageQueue<v16::MessageType>> create_message_queue();
@@ -317,6 +323,8 @@ private:
     // core profile
     void handleBootNotificationResponse(
         CallResult<BootNotificationResponse> call_result); // TODO(kai):: async/promise based version?
+    /// \brief Converts \p json_message , scheduling another BootNotification.req if that fails while not registered
+    CallResult<BootNotificationResponse> read_boot_notification_response(const json& json_message);
     void handleChangeAvailabilityRequest(Call<ChangeAvailabilityRequest> call);
     void handleChangeConfigurationRequest(Call<ChangeConfigurationRequest> call);
     void handleClearCacheRequest(Call<ClearCacheRequest> call);

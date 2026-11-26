@@ -1023,6 +1023,22 @@ TEST_F(ConnectivityManagerCacheTest, ConfirmSuccessfulConnectionPersistsActiveSl
     EXPECT_EQ(persisted.value(), 1) << "confirm_successful_connection() must persist the active slot";
 }
 
+// record_successful_connection() only updates the in-memory fallback target: unlike
+// confirm_successful_connection() it neither persists ActiveNetworkProfile nor changes the security profile or the
+// cached profiles, so OCPP 1.6 can call it on every accepted BootNotification and reconnect.
+TEST_F(ConnectivityManagerCacheTest, RecordSuccessfulConnectionHasNoSideEffects) {
+    ASSERT_EQ(cm->get_network_connection_slots().at(0), 1);
+    dm->set_active_network_profile_slot(999, "test");
+    const auto security_profile = dm->get_value<int>(ControllerComponentVariables::SecurityProfile);
+    const auto slots = cm->get_network_connection_slots();
+
+    cm->record_successful_connection();
+
+    EXPECT_EQ(dm->get_optional_value<int>(ControllerComponentVariables::ActiveNetworkProfile).value(), 999);
+    EXPECT_EQ(dm->get_value<int>(ControllerComponentVariables::SecurityProfile), security_profile);
+    EXPECT_EQ(cm->get_network_connection_slots(), slots);
+}
+
 static void set_stored_message_timeout(DeviceModel& dm, const std::string& value) {
     ASSERT_EQ(dm.set_read_only_value(ControllerComponentVariables::MessageTimeout.component,
                                      ControllerComponentVariables::MessageTimeout.variable.value(),
@@ -1656,6 +1672,43 @@ TEST_F(ProvisioningActiveSlotTest, GlobalBasicAuthPasswordChangeClearsActiveSlot
     ASSERT_TRUE(after.has_value());
     EXPECT_FALSE(after->basicAuthPassword.has_value())
         << "Global SecurityCtrlr.BasicAuthPassword change must not mirror onto per-slot (B09.FR.27)";
+}
+
+// ActiveNetworkProfile is persisted only once the CSMS accepted the charging station. While it is registering
+// through another slot (B10.FR.10), the active slot is the connected one, not the persisted one.
+TEST_F(ProvisioningActiveSlotTest, GlobalBasicAuthPasswordChangeClearsConnectedSlotBeforeItIsPersisted) {
+    auto profile = make_basic_profile();
+    profile.basicAuthPassword = CiString<64>("OldPerSlotPassword12");
+    ASSERT_TRUE(NetworkConfigurationComponentVariables::write_profile_to_device_model(*dm, 1, profile, "test"));
+    ASSERT_TRUE(NetworkConfigurationComponentVariables::write_profile_to_device_model(*dm, 2, profile, "test"));
+    set_active_slot(1);
+    this->registration_status = RegistrationStatusEnum::Rejected;
+    ON_CALL(connectivity_manager, is_websocket_connected()).WillByDefault(::testing::Return(true));
+    ON_CALL(connectivity_manager, get_active_network_configuration_slot()).WillByDefault(::testing::Return(2));
+
+    auto result =
+        set_single_variable(make_security_ctrlr_set_variable_data("BasicAuthPassword", "NewGlobalPassword12"));
+    ASSERT_EQ(result.attributeStatus, SetVariableStatusEnum::Accepted);
+
+    const auto connected = NetworkConfigurationComponentVariables::read_profile_from_device_model(*dm, 2);
+    ASSERT_TRUE(connected.has_value());
+    EXPECT_FALSE(connected->basicAuthPassword.has_value())
+        << "the per-slot password of the connected slot was not cleared (B09.FR.27)";
+    const auto persisted = NetworkConfigurationComponentVariables::read_profile_from_device_model(*dm, 1);
+    ASSERT_TRUE(persisted.has_value());
+    EXPECT_TRUE(persisted->basicAuthPassword.has_value())
+        << "the per-slot password of a slot that is not connected was cleared";
+}
+
+// Once the charging station is registered, ActiveNetworkProfile names the connected slot. The connectivity manager's
+// active slot follows NetworkConfigurationPriority and can name another slot when the connected one is dropped from it.
+TEST_F(ProvisioningActiveSlotTest, RejectOcppCsmsUrlOnPersistedSlotOnceRegistered) {
+    set_active_slot(2);
+    ON_CALL(connectivity_manager, is_websocket_connected()).WillByDefault(::testing::Return(true));
+    ON_CALL(connectivity_manager, get_active_network_configuration_slot()).WillByDefault(::testing::Return(1));
+
+    auto result = set_single_variable(make_set_variable_data(2, "OcppCsmsUrl", "wss://new.example.com/ocpp"));
+    EXPECT_TRUE(is_rejected_by_active_slot(result)) << "OcppCsmsUrl on the connected slot must be rejected (B09.FR.22)";
 }
 
 // B09.FR.27 regression: when the per-slot BasicAuthPassword has a non-empty value, a global

@@ -7,6 +7,7 @@ import asyncio
 import ctypes
 import hashlib
 import pytest
+import pytest_asyncio
 import queue
 import os
 from pathlib import Path
@@ -35,11 +36,15 @@ from everest.testing.core_utils._configuration.everest_configuration_strategies.
 from everest.testing.core_utils._configuration.libocpp_configuration_helper import (
     GenericOCPP2XConfigAdjustment,
     OCPP2XConfigVariableIdentifier,
+    OCPPConfigAdjustmentStrategyWrapper,
 )
 
 import json
 import base64
 
+from contextlib import asynccontextmanager
+
+from everest.testing.ocpp_utils.central_system import LocalCentralSystem, determine_ssl_context
 from everest.testing.ocpp_utils.charge_point_utils import (
     OcppTestConfiguration,
     ChargePointInfo,
@@ -50,7 +55,7 @@ from everest.testing.ocpp_utils.charge_point_utils import (
 )
 
 from ocpp.charge_point import snake_to_camel_case, asdict, remove_nones
-from ocpp.messages import Call, _DecimalEncoder, unpack
+from ocpp.messages import Call, CallResult, _DecimalEncoder, unpack
 from ocpp.v16 import call, call_result
 from ocpp.v201 import call as call201
 from ocpp.v16.enums import Action, DataTransferStatus
@@ -122,6 +127,7 @@ def received_calls(charge_point, action):
             if isinstance(message, Call) and message.action == action]
 
 
+<<<<<<< HEAD
 class OCPPMultiConfigurationStrategy(EverestConfigAdjustmentStrategy):
     """Rewrites the EVerest config so the OCPP module is the combined `OCPPmulti`
     module instead of legacy `OCPP`/`OCPP201`. Must run AFTER the framework's
@@ -150,6 +156,112 @@ class OCPPMultiConfigurationStrategy(EverestConfigAdjustmentStrategy):
             config_module.setdefault("EverestDeviceModelDatabasePath",
                                      str(device_model_database.with_name("everest_device_model_storage.db")))
         return adjusted
+=======
+async def wait_for_received_call(charge_point, action, already_received=0, timeout=10):
+    """Waits until the charge point sent more than already_received CALLs with this action. Unlike
+    wait_for_and_validate with an empty payload, a CALLRESULT of the charge point does not count."""
+    deadline = asyncio.get_running_loop().time() + timeout
+    while asyncio.get_running_loop().time() < deadline:
+        if len(received_calls(charge_point, action)) > already_received:
+            return True
+        await asyncio.sleep(0.1)
+    return False
+
+
+@asynccontextmanager
+async def start_second_csms(request, test_config, ocpp_version: OCPPVersion):
+    """Starts another CSMS on a free port, alongside the central_system fixture, for the same charging station."""
+    csms = LocalCentralSystem(test_config.charge_point_info.charge_point_id, ocpp_version=ocpp_version)
+    async with csms.start(determine_ssl_context(request, test_config)):
+        yield csms
+
+
+class _SecondCsmsEndpoint:
+    """Port of the second_csms fixture, read by the configuration strategies below when EVerest's configuration is
+    generated. Request second_csms before any fixture that starts EVerest so the port is known by then."""
+
+    def __init__(self):
+        self.port: Optional[int] = None
+
+    def require_port(self) -> int:
+        assert self.port is not None, "request the second_csms fixture before the fixtures that start EVerest"
+        return self.port
+
+
+SECOND_CSMS = _SecondCsmsEndpoint()
+
+
+@pytest_asyncio.fixture
+async def second_csms(request, test_config, ocpp_version: OCPPVersion):
+    """A second CSMS for the charging station under test, next to the central_system fixture."""
+    async with start_second_csms(request, test_config, ocpp_version) as csms:
+        SECOND_CSMS.port = csms.port
+        try:
+            yield csms
+        finally:
+            SECOND_CSMS.port = None
+
+
+def second_csms_network_profile(slot: int) -> OCPPConfigAdjustmentStrategyWrapper:
+    """OCPP 2.x: configures network connection profile slot as a copy of the first profile that points at
+    the second_csms fixture."""
+    identifier = OCPP2XConfigVariableIdentifier("InternalCtrlr", "NetworkConnectionProfiles", "Actual")
+
+    def adjust(config: dict) -> dict:
+        profiles = json.loads(GenericOCPP2XConfigAdjustment._get_value_from_v2_config(config, identifier))
+        connection_data = deepcopy(profiles[0]["connectionData"])
+        scheme = "ws" if connection_data["securityProfile"] <= 1 else "wss"
+        connection_data["ocppCsmsUrl"] = f"{scheme}://127.0.0.1:{SECOND_CSMS.require_port()}"
+        profiles = [profile for profile in profiles if profile["configurationSlot"] != slot]
+        profiles.append({"configurationSlot": slot, "connectionData": connection_data})
+        GenericOCPP2XConfigAdjustment._set_value_in_v2_config(config, identifier, json.dumps(profiles))
+        return config
+
+    return OCPPConfigAdjustmentStrategyWrapper(adjust)
+
+
+def second_csms_central_system_uri() -> OCPPConfigAdjustmentStrategyWrapper:
+    """OCPP 1.6: points Internal.CentralSystemURI, which becomes network configuration slot 1, at the second_csms
+    fixture."""
+
+    def adjust(config: dict) -> dict:
+        scheme, separator, address = config["Internal"]["CentralSystemURI"].rpartition("://")
+        charge_point_path = address.partition("/")[2]
+        config["Internal"]["CentralSystemURI"] = (
+            f"{scheme}{separator}127.0.0.1:{SECOND_CSMS.require_port()}/{charge_point_path}")
+        return config
+
+    return OCPPConfigAdjustmentStrategyWrapper(adjust)
+
+
+async def stop_csms(csms):
+    """Closes the CSMS server and its open connections, so the charging station loses the connection to it."""
+    csms.ws_server.close()
+    await csms.ws_server.wait_closed()
+
+
+def assert_registered_before(charge_point, held_actions: List[str], reason: Optional[str] = None):
+    """Asserts that the first CALL of the charging station on this connection is a BootNotification, with the given
+    reason if any, and that no CALL with an action in held_actions was sent before the CSMS answered that
+    BootNotification."""
+    entries = [(entry.initiator, unpack(entry.message)) for entry in charge_point.message_history.messages]
+    station_calls = [message for initiator, message in entries
+                     if initiator == "Chargepoint" and isinstance(message, Call)]
+    assert station_calls, "the charging station sent no CALL on this connection"
+    assert station_calls[0].action == "BootNotification", (
+        f"B10.FR.10: the first CALL on the new connection was {station_calls[0].action}, not BootNotification")
+    if reason is not None:
+        assert station_calls[0].payload.get("reason") == reason, (
+            f"B10.FR.10: the BootNotification has reason {station_calls[0].payload.get('reason')}, not {reason}")
+
+    boot_id = station_calls[0].unique_id
+    answered_at = next((index for index, (initiator, message) in enumerate(entries)
+                        if initiator == "CSMS" and isinstance(message, CallResult) and message.unique_id == boot_id),
+                       len(entries))
+    early = [message.action for initiator, message in entries[:answered_at]
+             if initiator == "Chargepoint" and isinstance(message, Call) and message.action in held_actions]
+    assert not early, f"B10.FR.10: {early} sent before the BootNotification was answered"
+>>>>>>> c077c25 (feat(libocpp): send a BootNotification after switching network profile (B10.FR.10) (#3467))
 
 
 class OCPPMultiModuleConfigStrategy(EverestConfigAdjustmentStrategy):

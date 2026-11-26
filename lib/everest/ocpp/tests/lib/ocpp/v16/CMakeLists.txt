@@ -37,6 +37,11 @@ target_sources(libocpp_unit_tests PRIVATE
         test_charge_point_stop_transaction_auth_cache.cpp
         test_charge_point_change_configuration.cpp
         test_charge_point_firmware_status.cpp
+<<<<<<< HEAD
+=======
+        test_charge_point_firmware_connectors.cpp
+        test_charge_point_profile_switch.cpp
+>>>>>>> c077c25 (feat(libocpp): send a BootNotification after switching network profile (B10.FR.10) (#3467))
         test_config_validation.cpp
         utils_tests.cpp
         test_configuration.cpp

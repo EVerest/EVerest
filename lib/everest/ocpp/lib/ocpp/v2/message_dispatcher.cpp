@@ -22,7 +22,8 @@ void MessageDispatcher::dispatch_call(const json& call, bool triggered) {
         queue_until_accepted);
     switch (message_transmission_priority) {
     case MessageTransmissionPriority::SendImmediately:
-        this->message_queue.push_call(call);
+        // Sent only because the registration is accepted: the queue holds it if that changed meanwhile
+        this->message_queue.push_call(call, false, not triggered and not is_boot_notification_message(message_type));
         return;
     case MessageTransmissionPriority::SendAfterRegistrationStatusAccepted:
         this->message_queue.push_call(call, true);
@@ -42,7 +43,8 @@ std::future<ocpp::EnhancedMessage<MessageType>> MessageDispatcher::dispatch_call
         this->device_model.get_optional_value<bool>(ControllerComponentVariables::QueueAllMessages).value_or(false));
     switch (message_transmission_priority) {
     case MessageTransmissionPriority::SendImmediately:
-        return this->message_queue.push_call_async(call);
+        // Sent only because the registration is accepted: the queue answers it as offline if that changed meanwhile
+        return this->message_queue.push_call_async(call, not is_boot_notification_message(message_type));
     case MessageTransmissionPriority::SendAfterRegistrationStatusAccepted:
     case MessageTransmissionPriority::Discard:
         auto promise = std::promise<EnhancedMessage<MessageType>>();
