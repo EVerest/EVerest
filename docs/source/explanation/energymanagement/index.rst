@@ -292,8 +292,8 @@ At the time of writing, the **EnergyNode** module is the sole module that
 provides this functionality.
 
 The `external_energy_limits` interface defines the **set_external_limits**
-command, which modules like OCPP or API can use to specify external energy
-limits.
+command, which modules like OCPPmulti or external_energy_limits_consumer_API can
+use to specify external energy limits.
 These limits are then considered by the **EnergyNode** module when creating
 its energy flow request.
 
@@ -322,12 +322,14 @@ configuration:
 
 This energy tree represents a setup with two EVSEs.
 There are two external sources that are able to provide external energy limits:
-OCPP and the API module.
+OCPP and the EVerest API, through the
+:ref:`external_energy_limits_consumer_API <everest_modules_external_energy_limits_consumer_API>`
+module.
 
 OCPP is able to set external limits for each EVSE as well as for the whole
 charging station.
 This is indicated by the three arrows labeled with OCPP.
-The API module is only able to set the limits for the two EVSEs, but not for
+In this example the API sets the limits for the two EVSEs, but not for
 the whole charging station.
 
 .. note:: 
@@ -377,7 +379,7 @@ its energy child nodes (the EvseManager modules) now.
                   implementation_id: energy_grid
 
 We continue with adding **EnergyNode** modules that represent the sinks for the
-limits received by the API module.
+limits received through the API.
 Note that the **EnergyNode** module provides and requires the
 :doc:`energy </reference/interfaces/energy>` interface at the same time.
 This allows us to connect **EnergyNode** modules and therefore fullfill the
@@ -471,11 +473,11 @@ We connect **api_sink_1** and **api_sink_2** to it.
 
 Now we have the complete energy tree represented, but we're still missing to
 include the modules that set the external energy limits, so the OCPP and API
-module.
-Since these modules require (optionally multiple) connections to modules
-implementing the
-:doc:`external_energy_limits </reference/interfaces/external_energy_limits>` 
-interface, we need to also add the connections to the **EnergyNode** modules we
+modules.
+Since these modules require connections to modules implementing the
+:doc:`external_energy_limits </reference/interfaces/external_energy_limits>`
+interface (the OCPP module optionally several, an API module exactly one), we
+need to also add the connections to the **EnergyNode** modules we
 have added previously.
 Finally, we also add the **EnergyManager** module and connect the
 **grid_connection_point** to it.
@@ -532,12 +534,16 @@ Finally, we also add the **EnergyManager** module and connect the
                     implementation_id: external_limits
                   - module_id: ocpp_sink_2
                     implementation_id: external_limits
-        api:
-            module: API
+        api_limits_1:
+            module: external_energy_limits_consumer_API
             connections:
-                evse_energy_sink:
+                energy_node:
                   - module_id: api_sink_1
                     implementation_id: external_limits
+        api_limits_2:
+            module: external_energy_limits_consumer_API
+            connections:
+                energy_node:
                   - module_id: api_sink_2
                     implementation_id: external_limits
         energy_manager:
@@ -560,9 +566,10 @@ the **EnergyNode** modules must have a module mapping.
 This allows the modules that make use of the **set_external_limits** command to
 call it for the correct node.
 
-Modules like OCPP and API can only know at which requirement the command
-**set_external_limit** shall be called in case the energy node that is
-connected to it has a specified module mapping in the EVerest config.
+A module like OCPP, which connects to several energy nodes, can only know at
+which requirement the command **set_external_limit** shall be called in case
+the energy node that is connected to it has a specified module mapping in the
+EVerest config.
 
 This is a full example including the module mappings:
 
@@ -639,12 +646,16 @@ This is a full example including the module mappings:
                     implementation_id: external_limits
                   - module_id: ocpp_sink_2
                     implementation_id: external_limits
-        api:
-            module: API
+        api_limits_1:
+            module: external_energy_limits_consumer_API
             connections:
-                evse_energy_sink:
+                energy_node:
                   - module_id: api_sink_1
                     implementation_id: external_limits
+        api_limits_2:
+            module: external_energy_limits_consumer_API
+            connections:
+                energy_node:
                   - module_id: api_sink_2
                     implementation_id: external_limits
         energy_manager:

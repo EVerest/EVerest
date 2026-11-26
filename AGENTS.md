@@ -285,7 +285,6 @@ Full C++ conventions: `docs/source/how-to-guides/c++-coding-guidelines.rst`.
 | Thing | Path | Note |
 |---|---|---|
 | OCPP 1.6, 2.0.1 and 2.1 | `modules/EVSE/OCPPmulti/` | one module serves all versions, selected by `Mode` |
-| API module | `modules/API/API/` | directory name is doubled |
 | libocpp | `lib/everest/ocpp/` | in-tree |
 | threading helpers | `lib/everest/util/` | `monitor` for shared state; prefer over raw `std::mutex` |
 | transport and IO | `lib/everest/io/` | use its clients; prefer over raw `poll`/`epoll` |

@@ -272,25 +272,6 @@ active_modules:
           implementation_id: energy_grid
         - module_id: evse_manager_2_api_sink
           implementation_id: energy_grid
-  api:
-    module: API
-    connections:
-      evse_manager:
-        - module_id: evse_manager_1
-          implementation_id: evse
-        - module_id: evse_manager_2
-          implementation_id: evse
-      ocpp:
-        - module_id: ocpp
-          implementation_id: ocpp_generic
-      error_history:
-        - module_id: error_history
-          implementation_id: error_history
-      evse_energy_sink:
-        - module_id: evse_manager_1_api_sink
-          implementation_id: external_limits
-        - module_id: evse_manager_2_api_sink
-          implementation_id: external_limits
   error_history:
     module: ErrorHistory
     config_implementation:
@@ -800,30 +781,6 @@ x-module-layout:
           type: requirement
         - id: price_information
           interface: energy_price_information
-          type: requirement
-  api:
-    position:
-      x: 36
-      'y': 26
-    terminals:
-      top:
-        - id: evse_manager
-          interface: evse_manager
-          type: requirement
-        - id: ocpp
-          interface: ocpp
-          type: requirement
-      right:
-        - id: error_history
-          interface: error_history
-          type: requirement
-      bottom: []
-      left:
-        - id: evse_energy_sink
-          interface: external_energy_limits
-          type: requirement
-        - id: random_delay
-          interface: uk_random_delay
           type: requirement
   error_history:
     position:

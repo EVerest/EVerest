@@ -174,8 +174,8 @@ TEST(RequestReplyDecoding, rejects_reply_to_on_a_topic_everest_subscribes_or_pub
           "everest_api/1/configuration/m2e/mark_active_slot", "everest_api/discover",
           "everest_api/query-modules/evse_manager_consumer", "everest_api/1/evse_board_support/bsp/m2e/reply/0815",
           "everest_api/1/evse_manager_consumer/evse/e2m/get_evse/m2e",
-          // command topics of the API module, Setup, OCPP and the simulators
-          "everest_api/evse_manager/cmd/enable_disable", "everest_api/setup/cmd/reboot",
+          // command topics of Setup, OCPP and the simulators
+          "everest_api/temp_sensor_sim/cmd/set_temperature_C", "everest_api/setup/cmd/reboot",
           "everest_api/ocpp/cmd/disconnect", "everest_api/imd/cmd/set_resistance",
           // EVerest's own publications and requests to clients
           "everest_api/1/evse_manager_consumer/evse/e2m/session_info",
