@@ -115,6 +115,14 @@ no timeout is running, for example because the lock reported ``Locked`` and
 later dropped back to ``Unlocked`` or ``Unknown``, starts the timeout at that
 point. A session therefore never waits longer than the timeout.
 
+An ``unlock`` command also discards the lock state known to the EvseManager, so
+a ``Locked`` reported before it does not confirm a later ``lock`` command. The
+connector lock driver therefore has to publish ``lock_state`` at startup, on
+every change, and ``Locked`` again after a ``lock`` command that finds the lock
+already locked, for example because the preceding ``unlock`` could not open it.
+Without that report nothing changes on the driver side and the check times out
+although the lock is closed.
+
 While an authorized session waits for the lock:
 
 * It stays in ``WaitingForAuthentication`` and starts no transaction.

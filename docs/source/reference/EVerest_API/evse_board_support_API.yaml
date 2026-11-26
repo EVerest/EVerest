@@ -567,7 +567,9 @@ components:
       title: 'Send connector lock state'
       summary: >-
         Physical state of the connector lock as reported by its feedback. Optional: send it only if the
-        hardware has lock feedback. If sent, send it once at startup and on every change.
+        hardware has lock feedback. If sent, send it once at startup and on every change. Also send Locked
+        again after a lock command if the lock is already locked, e.g. because a preceding unlock command
+        could not open it: EvseManager discards the state it knows on an unlock command.
         EvseManager can be configured to wait for Locked before it authorizes a session.
       contentType: application/json
       payload:

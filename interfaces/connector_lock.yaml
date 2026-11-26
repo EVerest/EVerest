@@ -12,7 +12,9 @@ vars:
   lock_state:
     description: >-
       Physical state of the connector lock. Optional: publish it only if the hardware has lock feedback.
-      If published, publish it once at startup and on every change.
+      If published, publish it once at startup and on every change. Also publish Locked again after a lock
+      command if the lock is already locked, e.g. because a preceding unlock command could not open it:
+      a consumer may discard the state it knows on an unlock command.
     type: string
     $ref: /connector_lock#/LockState
 errors:

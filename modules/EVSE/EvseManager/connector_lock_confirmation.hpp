@@ -91,7 +91,7 @@ public:
         if (s->timeout.count() == 0 or not s->pending_since.has_value()) {
             return Event::None;
         }
-        // A lock that already reports Locked publishes nothing new on a further lock command.
+        // Locked with no unlock command since the report already confirms a further lock command.
         if (s->lock_state == LockState::Locked) {
             s->pending_since.reset();
             return Event::None;
