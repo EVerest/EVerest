@@ -29,6 +29,7 @@ async def test_J01_19(
     central_system_v201: CentralSystem,
     test_controller: TestController,
     test_utility: TestUtility,
+    ocpp_impl,
 ):
     """
     J01.FR.19
@@ -183,8 +184,10 @@ async def test_J01_19(
             "TransactionEvent",
             {"eventType": "Updated", "triggerReason": "MeterValuePeriodic"},
         )
-        assert validate_offered_limits(
-            updated["meter_value"][0]["sampled_value"])
+        # only OCPPmulti reports the offered limits
+        if ocpp_impl == "multi":
+            assert validate_offered_limits(
+                updated["meter_value"][0]["sampled_value"])
 
     # swipe id tag to de-authorize
     test_controller.swipe(id_tokenJ01.id_token)
