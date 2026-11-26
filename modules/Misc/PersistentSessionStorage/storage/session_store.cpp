@@ -65,9 +65,23 @@ constexpr int to_int(SessionColumnIndex column) {
     return static_cast<int>(column);
 }
 
-/// \brief Checks that \p timestamp is readable by SQLite's julianday(), which the filter queries compare with
+/// \brief SQL expression turning the timestamp \p operand into fixed-width UTC text with millisecond precision,
+/// which compares chronologically as text
+/// \details The digits of the fraction are cut to three before SQLite parses the value, since SQLite's date functions
+/// round sub-millisecond fractions, and differently across versions. Whatever follows the digits is left for SQLite
+/// to accept or reject.
+std::string utc_milliseconds_sql(const std::string& operand) {
+    const auto after_point = "substr(" + operand + ", 21)";
+    const auto digit_count = "(length(" + after_point + ") - length(ltrim(" + after_point + ", '0123456789')))";
+    const auto truncated = "substr(" + operand + ", 1, 20) || substr(substr(" + operand + ", 21, " + digit_count +
+                           ") || '000', 1, 3) || substr(" + operand + ", 21 + " + digit_count + ")";
+    return "strftime('%Y-%m-%dT%H:%M:%f', CASE WHEN substr(" + operand + ", 20, 1) = '.' AND " + digit_count +
+           " > 0 THEN " + truncated + " ELSE " + operand + " END)";
+}
+
+/// \brief Checks that \p timestamp is readable by utc_milliseconds_sql(), which the filter queries compare with
 bool is_sqlite_timestamp(everest::db::sqlite::ConnectionInterface& connection, const std::string& timestamp) {
-    auto statement = connection.new_statement("SELECT julianday(@timestamp)");
+    auto statement = connection.new_statement("SELECT " + utc_milliseconds_sql("@timestamp"));
     statement->bind_text("@timestamp", timestamp, SQLiteString::Transient);
     return statement->step() == SQLITE_ROW and statement->column_type(0) != SQLITE_NULL;
 }
@@ -567,8 +581,8 @@ SessionStore::get_sessions(const types::session_storage::GetSessionsRequest& req
             sql += " AND EVSE_ID = @evse_id";
         }
         if (started_after.has_value()) {
-            // Chronological instead of lexicographic compare, records may store any RFC3339 spelling
-            sql += " AND julianday(TIMESTAMP_START) > julianday(@started_after)";
+            // Compared as normalised UTC text, records may store any RFC3339 spelling
+            sql += " AND " + utc_milliseconds_sql("TIMESTAMP_START") + " > " + utc_milliseconds_sql("@started_after");
         }
         // One row beyond the page tells whether a continuation token is needed
         sql += " ORDER BY ID ASC LIMIT @limit + 1";
