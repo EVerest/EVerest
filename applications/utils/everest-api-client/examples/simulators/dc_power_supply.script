@@ -1,0 +1,59 @@
+# The DCSupplySimulator, played through the EVerest API: a DC power supply
+# (power_supply_DC_API, client psu_api) and its DC powermeter (powermeter_API,
+# client dc_powermeter_api).
+#
+#   - the mode the charger requests (Off, Export, Import, Fault) is applied
+#     and confirmed;
+#   - in Export (Import) mode the output follows the export (import) voltage
+#     and current the charger sets, clamped to the supply's limits; the current
+#     is the current limit, as in the DCSupplySimulator;
+#   - a connected battery: the voltage reached in pre-charge is taken as the
+#     car's battery voltage, and while charging the output voltage stays at it
+#     when the charger sets a higher voltage, which it then means as a limit
+#     (ISO 15118-20 dynamic control mode sets the car's maximum voltage). The
+#     DCSupplySimulator outputs the set voltage, which an over voltage monitor
+#     reports as over voltage;
+#   - every 0.5 s it reports the output voltage and current, and the
+#     powermeter the energy integrated over time;
+#   - transactions are started and stopped on request.
+#
+# Variables it keeps, for the other simulators: dc_voltage and dc_current.
+# Configure before running it: dc_min_voltage, dc_max_voltage (default 200 and
+# 900 V), dc_min_current, dc_max_current (default 1 and 200 A), dc_max_power
+# (default 150000 W).
+
+client_add power_supply_dc psu_api
+client_add powermeter dc_powermeter_api
+
+let --default dc_min_voltage 200
+let --default dc_max_voltage 900
+let --default dc_min_current 1
+let --default dc_max_current 200
+let --default dc_max_power 150000
+let dc_mode Off
+let dc_phase Off
+let dc_battery_voltage 0
+let dc_export_voltage 0
+let dc_export_current 0
+let dc_import_voltage 0
+let dc_import_current 0
+let dc_voltage 0
+let dc_current 0
+let dc_energy_import 0
+let dc_energy_export 0
+
+# --- mode and setpoints ---
+on psu_api.receive_mode let dc_mode ${msg.mode}; let dc_phase ${msg.charging_phase}; psu_api.send_mode ${= json(msg.mode)}
+on psu_api.receive_export_voltage_current let dc_export_voltage ${= max(dc_min_voltage, min(dc_max_voltage, msg.voltage_V))}; let dc_export_current ${= max(dc_min_current, min(dc_max_current, msg.current_A))}; let dc_battery_voltage ${= dc_export_voltage if dc_phase == "PreCharge" else dc_battery_voltage}
+on psu_api.receive_import_voltage_current let dc_import_voltage ${= max(dc_min_voltage, min(dc_max_voltage, msg.voltage_V))}; let dc_import_current ${= max(dc_min_current, min(dc_max_current, msg.current_A))}
+
+# --- transactions ---
+on dc_powermeter_api.receive_request_start_transaction dc_powermeter_api.send_reply_start_transaction ${msg.headers.replyTo} {"status":"OK"}
+on dc_powermeter_api.receive_request_stop_transaction dc_powermeter_api.send_reply_stop_transaction ${msg.headers.replyTo} {"status":"OK"}
+
+# --- every 0.5 s: output, its measurement, and the powermeter ---
+every 0.5 let dc_voltage ${= (min(dc_export_voltage, dc_battery_voltage) if dc_phase == "Charging" and dc_battery_voltage > 0 else dc_export_voltage) if dc_mode == "Export" else dc_import_voltage if dc_mode == "Import" else 0}; let dc_current ${= dc_export_current if dc_mode == "Export" else -dc_import_current if dc_mode == "Import" else 0}; let dc_energy_import ${= dc_energy_import + max(dc_voltage * dc_current, 0) * 0.5 / 3600}; let dc_energy_export ${= dc_energy_export + max(-dc_voltage * dc_current, 0) * 0.5 / 3600}; psu_api.send_voltage_current {"voltage_V":${dc_voltage},"current_A":${dc_current}}; dc_powermeter_api.send_powermeter_values {"timestamp":"${= now()}","meter_id":"DC_POWERMETER","energy_Wh_import":{"total":${= round(dc_energy_import, 2)}},"energy_Wh_export":{"total":${= round(dc_energy_export, 2)}},"power_W":{"total":${= round(dc_voltage * dc_current, 1)}},"current_A":{"DC":${dc_current}},"voltage_V":{"DC":${dc_voltage}}}
+dc_powermeter_api.send_powermeter_values {"timestamp":"${= now()}","meter_id":"DC_POWERMETER","energy_Wh_import":{"total":0},"power_W":{"total":0},"current_A":{"DC":0},"voltage_V":{"DC":0}}
+
+# --- capabilities ---
+psu_api.send_capabilities {"bidirectional":true,"current_regulation_tolerance_A":2,"peak_current_ripple_A":2,"max_export_voltage_V":${dc_max_voltage},"nominal_max_export_voltage_V":${dc_max_voltage},"min_export_voltage_V":${dc_min_voltage},"nominal_min_export_voltage_V":${dc_min_voltage},"max_export_current_A":${dc_max_current},"nominal_max_export_current_A":${dc_max_current},"min_export_current_A":${dc_min_current},"nominal_min_export_current_A":${dc_min_current},"max_import_voltage_V":${dc_max_voltage},"nominal_max_import_voltage_V":${dc_max_voltage},"min_import_voltage_V":${dc_min_voltage},"nominal_min_import_voltage_V":${dc_min_voltage},"max_import_current_A":${dc_max_current},"nominal_max_import_current_A":${dc_max_current},"min_import_current_A":${dc_min_current},"nominal_min_import_current_A":${dc_min_current},"max_export_power_W":${dc_max_power},"nominal_max_export_power_W":${dc_max_power},"max_import_power_W":${dc_max_power},"nominal_max_import_power_W":${dc_max_power},"conversion_efficiency_import":0.85,"conversion_efficiency_export":0.9}

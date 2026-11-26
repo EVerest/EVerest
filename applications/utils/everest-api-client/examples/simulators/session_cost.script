@@ -1,0 +1,13 @@
+# The DummySessionCostProvider, played through the EVerest API: a session cost
+# provider (session_cost_API, client session_cost_api) that publishes a tariff
+# message and a session cost periodically, the status going round Running,
+# Idle and Finished.
+#
+# Configure before running it: session_cost_period (default 5 s).
+
+client_add session_cost session_cost_api
+
+let --default session_cost_period 5
+let session_cost_count 0
+
+every ${session_cost_period} let session_cost_count ${= session_cost_count + 1}; session_cost_api.send_tariff_message {"identifier_type":"IdToken","identifier_id":"ID${session_cost_count}","messages":[{"content":"Tariff Message content no. ${= '%04d' % session_cost_count}","language":"EN"},{"content":"Tariff Message Inhalt Nr. ${= '%04d' % session_cost_count}","language":"DE"}]}; session_cost_api.send_session_cost {"session_id":"${= '%04d' % session_cost_count}","currency":{"code":"EUR","decimals":2},"status":"${= 'Running' if session_cost_count % 3 == 0 else 'Idle' if session_cost_count % 3 == 1 else 'Finished'}","cost_chunks":[{"timestamp_to":"${= now()}","metervalue_from":54321,"metervalue_to":71233}]}

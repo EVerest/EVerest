@@ -1,0 +1,40 @@
+# AC charging session with ISO 15118-2, driven from the EVerest API client.
+#
+# Run it right after starting EVerest with config-test-ac-iso15118-external-api.yaml:
+#     run_script examples/ac_iso15118_2_session.script
+#
+# The ISO 15118 stacks are real EVerest modules: the charger (Evse15118D20) and
+# the simulated car (PyEvJosev + EvManager), which plugs in by itself a few
+# seconds after EVerest is up and charges for about 20 seconds. Everything
+# else is simulated by the scripts in simulators/: the YetiSimulator (charging
+# cable, both board supports, AC powermeter) and the token provider and
+# validator. This script follows the session.
+#
+# Set 'mute' off to watch every message.
+
+set mute true
+echo ============ EVerest API client: AC charging session with ISO 15118-2 ============
+
+echo [1/3] Simulating the hardware and the backend ...
+# --- 1. the spy feeds wait_for; the simulators run on rules ---
+client_add spy
+@@ simulators/yeti.script
+@@ simulators/token_validator.script
+@@ simulators/token_provider.script
+
+echo [2/3] Waiting for the car to plug in and to be authorized ...
+# --- 2. the car plugs in by itself; the token provider presents a token
+#        when the session starts and the validator accepts it ---
+wait_for session_event SessionStarted --timeout 30
+wait_for session_event Authorized --timeout 30
+
+echo [3/3] Charging with ISO 15118-2 until the car stops and unplugs ...
+# --- 3. SLAC, the ISO 15118-2 session and the charge loop run between the
+#        charger and the car; the car stops after about 20 seconds ---
+wait_for session_event ChargingStarted --timeout 60
+echo charging, the simulated powermeter counts the energy ...
+wait_for session_event SessionFinished --timeout 90
+echo energy charged: ${= round(energy)} Wh
+
+rule_remove all
+echo ==================== Session finished ====================

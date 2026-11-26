@@ -1,0 +1,24 @@
+# The OVMSimulator, played through the EVerest API: an over voltage monitor
+# (over_voltage_monitor_API, client ovm_api).
+#
+#   - between start and stop it reports the output voltage of the DC power
+#     supply (dc_voltage, kept by dc_power_supply.script) every 0.2 s;
+#   - the limits the charger sets are kept in ovm_limits;
+#   - with ovm_simulate_error true it raises an over voltage error when it is
+#     started; a reset clears it.
+#
+# Configure before running it: ovm_simulate_error (default false).
+
+client_add over_voltage_monitor ovm_api
+
+let --default ovm_simulate_error false
+let --default dc_voltage 0
+let ovm_active 0
+let ovm_limits {}
+
+on ovm_api.receive_set_limits let ovm_limits ${msg}
+on ovm_api.receive_start let ovm_active 1
+on ovm_api.receive_stop let ovm_active 0
+on --if ovm_simulate_error=true ovm_api.receive_start ovm_api.send_raise_error {"type":"MREC5OverVoltage","sub_type":"","message":"Simulated over voltage error shutdown","severity":"Medium"}
+on ovm_api.receive_reset_over_voltage_error ovm_api.send_clear_error {"type":"MREC5OverVoltage","sub_type":"","message":"Over voltage error reset"}
+every 0.2 --if ovm_active=1 ovm_api.send_voltage_measurement_V ${dc_voltage}
