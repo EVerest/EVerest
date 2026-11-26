@@ -268,6 +268,12 @@ void Charger::run_state_machine() {
                 internal_context.dc_statistics_printed = false;
                 internal_context.slac_retries = 0;
                 internal_context.slac_retries_exhausted = false;
+                internal_context.over_current = false;
+                internal_context.over_current_retry_pending = false;
+                internal_context.over_current_retry_uncounted = false;
+                internal_context.over_current_retries = 0;
+                internal_context.over_current_retries_exhausted_logged = false;
+                internal_context.over_current_retry_deadline.reset();
                 internal_context.wakeup_link_deadline.reset();
                 hlc_failed = false;
             }
@@ -1145,6 +1151,8 @@ void Charger::run_state_machine() {
             // This allows us to retry a session after a fault in cable check
             error_handling->clear_cable_check_fault();
 
+            retry_after_over_current();
+
             {
                 types::evse_manager::ChargingPausedEVSEReasons r;
                 if (stop_charging_on_fatal_error_internal()) {
@@ -1182,6 +1190,9 @@ void Charger::run_state_machine() {
                         break;
                     }
                     // resume charging
+                    if (std::exchange(internal_context.over_current_retry_uncounted, false)) {
+                        internal_context.over_current_retries++;
+                    }
                     if (shared_context.hlc_charging_terminate_pause != HlcTerminatePause::Pause) {
                         signal_slac_start(); // wake up SLAC as well
                     }
@@ -1971,6 +1982,8 @@ void Charger::setup(const SetupConfig& config) {
     config_context.ac_limit_slac_init_retries = config.ac_limit_slac_init_retries;
     config_context.soft_over_current_timeout_ms = config.soft_over_current_timeout_ms;
     config_context.soft_over_current_stale_data_warning_ms = config.soft_over_current_stale_data_warning_ms;
+    config_context.soft_over_current_max_retries = config.soft_over_current_max_retries;
+    config_context.soft_over_current_retry_timeout_s = config.soft_over_current_retry_timeout_s;
     shared_context.ac_with_soc_timeout = config.ac_with_soc_timeout;
     shared_context.ac_with_soc_timer = 3600000;
     soft_over_current_tolerance_percent = config.soft_over_current_tolerance_percent;
@@ -2429,7 +2442,56 @@ void Charger::check_soft_over_current() {
         session_log.evse(false, errstr);
         // raise the OC error
         error_handling->raise_overcurrent_error(errstr);
+        // An HLC session ends with a D-LINK_ERROR after the emergency shutdown, which has its own restart sequence
+        if (not shared_context.hlc_charging_active) {
+            internal_context.over_current_retry_pending = true;
+        }
     }
+}
+
+void Charger::retry_after_over_current() {
+    if (not internal_context.over_current_retry_pending) {
+        return;
+    }
+
+    if (internal_context.over_current_retries >= config_context.soft_over_current_max_retries) {
+        if (config_context.soft_over_current_max_retries > 0 and
+            not internal_context.over_current_retries_exhausted_logged) {
+            internal_context.over_current_retries_exhausted_logged = true;
+            session_log.evse(false, fmt::format("Soft overcurrent: {} retries used up, charging stays suspended "
+                                                "until the EV is unplugged",
+                                                config_context.soft_over_current_max_retries));
+        }
+        return;
+    }
+
+    const auto now = std::chrono::steady_clock::now();
+    if (not internal_context.over_current_retry_deadline.has_value()) {
+        internal_context.over_current_retry_deadline =
+            now + std::chrono::seconds(config_context.soft_over_current_retry_timeout_s);
+        session_log.evse(
+            false, fmt::format("Soft overcurrent: retrying in {} s", config_context.soft_over_current_retry_timeout_s));
+        return;
+    }
+
+    if (now < internal_context.over_current_retry_deadline.value()) {
+        return;
+    }
+
+    // Without an active error the state machine no longer switches from F to X1
+    if (internal_context.cp_state_F_active) {
+        return;
+    }
+
+    internal_context.over_current_retry_deadline.reset();
+    internal_context.over_current_retry_pending = false;
+    internal_context.over_current_retry_uncounted = true;
+    // A stale detection would raise the error again without the tolerated soft_over_current_timeout_ms
+    internal_context.over_current = false;
+    session_log.evse(false, fmt::format("Soft overcurrent: clearing the error for retry {} of {}",
+                                        internal_context.over_current_retries + 1,
+                                        config_context.soft_over_current_max_retries));
+    error_handling->clear_overcurrent_error();
 }
 
 // returns whether power is actually available from EnergyManager

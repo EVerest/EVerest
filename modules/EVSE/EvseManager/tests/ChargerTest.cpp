@@ -10,7 +10,9 @@
 
 namespace module {
 std::vector<std::string> observed_cp_state_commands;
-}
+int observed_overcurrent_raises{0};
+int observed_overcurrent_clears{0};
+} // namespace module
 
 namespace {
 using namespace module;
@@ -1889,6 +1891,239 @@ TEST_F(ChargerMinX1Test, CpStateEArmsTheTimer) {
 }
 
 // ----------------------------------------------------------------------------
+// Retry after a soft over current error (basic AC charging)
+// The error is cleared after soft_over_current_retry_timeout_s for at most
+// soft_over_current_max_retries times per plug-in, ChargingPausedEVSE then
+// resumes on its own.
+
+struct ChargerOverCurrentRetryTest : public ChargerMinX1Test {
+    void SetUp() override {
+        ChargerMinX1Test::SetUp();
+        observed_overcurrent_raises = 0;
+        observed_overcurrent_clears = 0;
+        charger->get_config_context().soft_over_current_max_retries = 2;
+        charger->get_config_context().soft_over_current_retry_timeout_s = 30;
+    }
+
+    // Charging with more current than signalled for longer than soft_over_current_timeout_ms
+    void raise_over_current() {
+        auto& ctx = charger->get_shared_context();
+        ctx.iec_allow_close_contactor = true;
+        ctx.contactor_open = false;
+        charger->set_current_drawn_by_vehicle(40., 40., 40.);
+        charger->get_internal_context().over_current = true;
+        charger->get_internal_context().last_over_current_event =
+            std::chrono::steady_clock::now() - std::chrono::seconds(10);
+        charger->current_state(Charger::EvseState::Charging);
+        charger->run_state_machine();
+    }
+
+    // What the error thread and the BSP do in response to the raised error
+    void shut_down_into_paused_evse() {
+        auto& ctx = charger->get_shared_context();
+        ctx.shutdown_type = ShutdownType::EmergencyShutdown;
+        charger->run_state_machine();
+        ctx.contactor_open = true;
+        ctx.iec_allow_close_contactor = false;
+        charger->set_current_drawn_by_vehicle(0., 0., 0.);
+        charger->run_state_machine();
+    }
+
+    void over_current_shutdown() {
+        raise_over_current();
+        shut_down_into_paused_evse();
+        ASSERT_EQ(charger->current_state(), Charger::EvseState::ChargingPausedEVSE);
+    }
+
+    void expire_retry_timeout() {
+        ASSERT_TRUE(charger->get_internal_context().over_current_retry_deadline.has_value());
+        charger->get_internal_context().over_current_retry_deadline = std::chrono::steady_clock::now();
+    }
+
+    // What the error thread does once the error is cleared
+    void all_errors_cleared() {
+        charger->get_shared_context().shutdown_type = ShutdownType::None;
+    }
+};
+
+TEST_F(ChargerOverCurrentRetryTest, OverCurrentStopsChargingWithPwmOff) {
+    raise_over_current();
+    EXPECT_GE(observed_overcurrent_raises, 1);
+    EXPECT_TRUE(charger->get_internal_context().over_current_retry_pending);
+
+    shut_down_into_paused_evse();
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::ChargingPausedEVSE);
+    EXPECT_FALSE(pwm_on());
+    EXPECT_EQ(observed_overcurrent_clears, 0);
+}
+
+TEST_F(ChargerOverCurrentRetryTest, DisabledByDefaultErrorStaysUntilUnplug) {
+    charger->get_config_context().soft_over_current_max_retries = 0;
+    over_current_shutdown();
+
+    charger->run_state_machine();
+    EXPECT_FALSE(charger->get_internal_context().over_current_retry_deadline.has_value());
+    EXPECT_EQ(observed_overcurrent_clears, 0);
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::ChargingPausedEVSE);
+}
+
+TEST_F(ChargerOverCurrentRetryTest, ErrorIsClearedOnlyAfterTheRetryTimeout) {
+    over_current_shutdown();
+
+    const auto deadline = charger->get_internal_context().over_current_retry_deadline;
+    ASSERT_TRUE(deadline.has_value());
+    const auto remaining = deadline.value() - std::chrono::steady_clock::now();
+    EXPECT_GT(remaining, std::chrono::seconds(29));
+    EXPECT_LE(remaining, std::chrono::seconds(30));
+
+    charger->run_state_machine();
+    EXPECT_EQ(observed_overcurrent_clears, 0);
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::ChargingPausedEVSE);
+
+    expire_retry_timeout();
+    charger->run_state_machine();
+    EXPECT_EQ(observed_overcurrent_clears, 1);
+    // still paused until the error handling reports that no error is left
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::ChargingPausedEVSE);
+    EXPECT_FALSE(pwm_on());
+}
+
+TEST_F(ChargerOverCurrentRetryTest, RetryCountsOnceChargingResumes) {
+    over_current_shutdown();
+    expire_retry_timeout();
+    charger->run_state_machine();
+    ASSERT_EQ(observed_overcurrent_clears, 1);
+
+    // another blocking error keeps charging suspended
+    charger->run_state_machine();
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::ChargingPausedEVSE);
+    EXPECT_EQ(charger->get_internal_context().over_current_retries, 0);
+
+    all_errors_cleared();
+    pwm_off_since(std::chrono::seconds(30));
+    charger->run_state_machine();
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::PrepareCharging);
+    EXPECT_EQ(charger->get_internal_context().over_current_retries, 1);
+}
+
+TEST_F(ChargerOverCurrentRetryTest, ErrorIsKeptWhileStateFIsSignalled) {
+    charger->get_config_context().state_F_after_fault_ms = 60000;
+    over_current_shutdown();
+    // F is signalled for an error that becomes active in ChargingPausedEVSE
+    charger->get_shared_context().last_shutdown_type = ShutdownType::None;
+    charger->run_state_machine();
+    ASSERT_TRUE(charger->get_internal_context().cp_state_F_active);
+
+    expire_retry_timeout();
+    charger->run_state_machine();
+    EXPECT_EQ(observed_overcurrent_clears, 0);
+
+    charger->get_internal_context().fatal_error_became_active -= std::chrono::seconds(61);
+    charger->run_state_machine();
+    EXPECT_FALSE(charger->get_internal_context().cp_state_F_active);
+    EXPECT_EQ(observed_overcurrent_clears, 1);
+}
+
+TEST_F(ChargerOverCurrentRetryTest, RetryEnablesPwmAgain) {
+    over_current_shutdown();
+    expire_retry_timeout();
+    charger->run_state_machine();
+    ASSERT_EQ(observed_overcurrent_clears, 1);
+
+    all_errors_cleared();
+    pwm_off_since(std::chrono::seconds(30));
+    charger->run_state_machine();
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::PrepareCharging);
+    EXPECT_TRUE(pwm_on());
+
+    // EV requests power again
+    charger->get_shared_context().iec_allow_close_contactor = true;
+    charger->run_state_machine();
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::Charging);
+}
+
+TEST_F(ChargerOverCurrentRetryTest, OverCurrentAfterRetryGetsTheFullTolerance) {
+    over_current_shutdown();
+    expire_retry_timeout();
+    charger->run_state_machine();
+    all_errors_cleared();
+    pwm_off_since(std::chrono::seconds(30));
+    charger->run_state_machine();
+    ASSERT_EQ(charger->current_state(), Charger::EvseState::PrepareCharging);
+    const int raises_before = observed_overcurrent_raises;
+
+    // The EV draws too much again right away: soft_over_current_timeout_ms starts anew
+    charger->get_shared_context().iec_allow_close_contactor = true;
+    charger->set_current_drawn_by_vehicle(40., 40., 40.);
+    charger->run_state_machine();
+    charger->run_state_machine();
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::Charging);
+    EXPECT_TRUE(charger->get_internal_context().over_current);
+    EXPECT_EQ(observed_overcurrent_raises, raises_before);
+}
+
+TEST_F(ChargerOverCurrentRetryTest, StaysSuspendedOnceRetriesAreUsedUp) {
+    for (int retry = 1; retry <= 2; ++retry) {
+        over_current_shutdown();
+        expire_retry_timeout();
+        charger->run_state_machine();
+        ASSERT_EQ(observed_overcurrent_clears, retry);
+        all_errors_cleared();
+        pwm_off_since(std::chrono::seconds(30));
+        charger->run_state_machine();
+        ASSERT_EQ(charger->current_state(), Charger::EvseState::PrepareCharging);
+    }
+
+    over_current_shutdown();
+    charger->run_state_machine();
+    EXPECT_FALSE(charger->get_internal_context().over_current_retry_deadline.has_value());
+    EXPECT_EQ(observed_overcurrent_clears, 2);
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::ChargingPausedEVSE);
+    EXPECT_FALSE(pwm_on());
+}
+
+TEST_F(ChargerOverCurrentRetryTest, UnplugResetsTheRetryCounter) {
+    over_current_shutdown();
+    expire_retry_timeout();
+    charger->run_state_machine();
+    all_errors_cleared();
+    pwm_off_since(std::chrono::seconds(30));
+    charger->run_state_machine();
+    ASSERT_EQ(charger->get_internal_context().over_current_retries, 1);
+    over_current_shutdown();
+    ASSERT_TRUE(charger->get_internal_context().over_current_retry_deadline.has_value());
+
+    charger->current_state(Charger::EvseState::Idle);
+    charger->run_state_machine();
+    EXPECT_EQ(charger->get_internal_context().over_current_retries, 0);
+    EXPECT_FALSE(charger->get_internal_context().over_current_retry_pending);
+    EXPECT_FALSE(charger->get_internal_context().over_current_retry_deadline.has_value());
+}
+
+TEST_F(ChargerOverCurrentRetryTest, UnplugResetsTheOverCurrentDetection) {
+    charger->get_config_context().soft_over_current_max_retries = 0;
+    over_current_shutdown();
+    charger->get_internal_context().over_current = true;
+
+    charger->current_state(Charger::EvseState::Idle);
+    charger->run_state_machine();
+    EXPECT_FALSE(charger->get_internal_context().over_current);
+}
+
+TEST_F(ChargerOverCurrentRetryTest, NoRetryForAnHlcSession) {
+    charger->get_shared_context().hlc_charging_active = true;
+    raise_over_current();
+    EXPECT_GE(observed_overcurrent_raises, 1);
+    EXPECT_FALSE(charger->get_internal_context().over_current_retry_pending);
+
+    charger->current_state(Charger::EvseState::ChargingPausedEVSE);
+    charger->get_shared_context().shutdown_type = ShutdownType::EmergencyShutdown;
+    charger->run_state_machine();
+    EXPECT_FALSE(charger->get_internal_context().over_current_retry_deadline.has_value());
+    EXPECT_EQ(observed_overcurrent_clears, 0);
+}
+
+// ----------------------------------------------------------------------------
 // IECStateMachine stub
 IECStateMachine::IECStateMachine(const std::unique_ptr<evse_board_supportIntf>& r_bsp_, bool lock_connector_in_state_b_,
                                  bool use_authorized_, bool keep_cable_locked_, int keep_cable_locked_lock_delay_ms_) :
@@ -1984,8 +2219,10 @@ ErrorHandling::ErrorHandling(const std::unique_ptr<evse_board_supportIntf>& r_bs
 }
 
 void ErrorHandling::raise_overcurrent_error(const std::string& description) {
+    ++observed_overcurrent_raises;
 }
 void ErrorHandling::clear_overcurrent_error() {
+    ++observed_overcurrent_clears;
 }
 
 void ErrorHandling::raise_over_voltage_error(Everest::error::Severity severity, const std::string& description) {
