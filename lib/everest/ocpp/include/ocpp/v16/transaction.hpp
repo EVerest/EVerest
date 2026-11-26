@@ -7,6 +7,7 @@
 #include <random>
 
 #include <everest/timer.hpp>
+#include <everest/util/async/monitor.hpp>
 #include <ocpp/v16/ocpp_types.hpp>
 #include <ocpp/v16/types.hpp>
 
@@ -37,7 +38,7 @@ private:
     bool has_signed_meter_values;
     std::unique_ptr<Everest::SteadyTimer> meter_values_sample_timer;
     std::string start_transaction_message_id;
-    std::string stop_transaction_message_id;
+    everest::lib::util::monitor<std::string> stop_transaction_message_id;
     std::shared_ptr<StampedEnergyWh> stop_energy_wh;
     std::mutex meter_values_mutex;
     std::vector<MeterValue> meter_values;
@@ -124,11 +125,11 @@ public:
     /// and no StopTransaction.req has been pushed to the message queue yet
     bool is_active() const;
 
-    /// \brief Indicates if a StopTransaction.req for this transaction has already been pushed to the message queue
+    /// \brief Indicates whether the transaction is marked for stop processing
     bool is_finished() const;
 
-    /// \brief Sets the finished flag for this transaction. This is done when a StopTransaction.req has been pushed to
-    /// the message queue
+    /// \brief Marks the transaction for stop processing. The stop path calls this before dispatching
+    /// StopTransaction.req.
     void set_finished();
 
     /// \brief Sets the has_signed_meter_value flag for this transaction, this function is called

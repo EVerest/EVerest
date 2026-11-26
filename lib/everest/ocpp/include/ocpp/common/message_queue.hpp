@@ -140,6 +140,13 @@ template <typename M> auto is_start_transaction_message(const ControlMessage<M>&
     return is_start_transaction_message(control_message.messageType);
 }
 
+bool is_stop_transaction_message(const ocpp::v16::MessageType message_type);
+bool is_stop_transaction_message(const ocpp::v2::MessageType message_type);
+
+template <typename M> auto is_stop_transaction_message(const ControlMessage<M>& control_message) {
+    return is_stop_transaction_message(control_message.messageType);
+}
+
 /// \brief Indicates if the given \p control_message is a transaction related message
 template <typename M> auto is_transaction_message(const ControlMessage<M>& control_message) {
     return is_transaction_message(control_message.messageType);
@@ -213,9 +220,8 @@ private:
     // was queued. This can happen when the CP has not received a StartTransaction.conf from the CSMS.
     std::map<std::string, std::vector<std::string>> start_transaction_mid_meter_values_mid_map;
 
-    // This callback is called when a StartTransaction.req message could not be delivered due to a timeout or CALL_ERROR
     std::function<void(const std::string& new_message_id, const std::string& old_message_id)>
-        start_transaction_message_retry_callback;
+        transaction_message_retry_callback;
 
     MessageId getMessageId(const json::array_t& json_message) {
         if (json_message.size() < 2) {
@@ -341,9 +347,8 @@ private:
                 } else if (queue_type == QueueType::Normal) {
                     this->normal_message_queue.push_front(this->in_flight);
                 }
-                if (is_start_transaction_message(*this->in_flight)) {
-                    this->start_transaction_message_retry_callback(this->in_flight->message[MESSAGE_ID],
-                                                                   old_message_id);
+                if (is_start_transaction_message(*this->in_flight) or is_stop_transaction_message(*this->in_flight)) {
+                    this->transaction_message_retry_callback(this->in_flight->message[MESSAGE_ID], old_message_id);
                 }
                 this->notify_queue_timer.at(
                     [this]() {
@@ -523,7 +528,7 @@ public:
         const std::function<bool(json message)>& send_callback, const MessageQueueConfig<M>& config,
         const std::vector<M>& external_notify, std::shared_ptr<common::DatabaseHandlerCommon> database_handler,
         const std::function<void(const std::string& new_message_id, const std::string& old_message_id)>&
-            start_transaction_message_retry_callback =
+            transaction_message_retry_callback =
                 [](const std::string& new_message_id, const std::string& old_message_id) {}) :
         database_handler(std::move(database_handler)),
         config(config),
@@ -533,7 +538,7 @@ public:
         running(true),
         new_message(false),
         is_registration_status_accepted(false),
-        start_transaction_message_retry_callback(start_transaction_message_retry_callback),
+        transaction_message_retry_callback(transaction_message_retry_callback),
         send_callback(send_callback),
         in_flight(nullptr) {
     }
