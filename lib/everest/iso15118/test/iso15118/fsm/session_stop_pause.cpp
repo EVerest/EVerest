@@ -81,4 +81,26 @@ SCENARIO("A SessionStopReq(Pause) outside the SessionStop state") {
             REQUIRE_FALSE(pause_ctx.has_value());
         }
     }
+
+    GIVEN("An error shutdown is pending when the EV requests a pause") {
+        const d20::SelectedServiceParameters selected(dt::ServiceCategory::AC, dt::AcConnector::ThreePhase,
+                                                      dt::ControlMode::Scheduled, dt::MobilityNeedsMode::ProvidedByEvcc,
+                                                      dt::Pricing::NoPricing, 230);
+        ctx.session = d20::Session(selected);
+        fsm::v2::FSM<d20::StateBase> fsm{ctx.create_state<d20::state::PowerDelivery>()};
+        ctx.request_forced_failed_response();
+
+        state_helper.handle_request(pause_request(ctx.session));
+        REQUIRE_FALSE(fsm.feed(d20::Event::V2GTP_MESSAGE).transitioned());
+
+        THEN("the response and session outcome both report a failed termination") {
+            const auto res = ctx.get_response<message_20::SessionStopResponse>();
+            REQUIRE(res.has_value());
+            REQUIRE(res->response_code == dt::ResponseCode::FAILED);
+            REQUIRE(ctx.session_stopped);
+            REQUIRE_FALSE(ctx.session_paused);
+            REQUIRE(ctx.session_stop_res_pending == session::feedback::SessionStopAction::FailedTermination);
+            REQUIRE_FALSE(pause_ctx.has_value());
+        }
+    }
 }

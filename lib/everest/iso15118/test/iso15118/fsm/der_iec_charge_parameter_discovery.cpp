@@ -73,7 +73,9 @@ SCENARIO("ISO15118-20 der iec ac charge parameter discovery state transitions") 
     const auto evse_setup = make_evse_setup(supported_energy_services);
 
     std::optional<d20::PauseContext> pause_ctx{std::nullopt};
+    std::vector<dt::ResponseCode> response_codes;
     session::feedback::Callbacks callbacks{};
+    callbacks.response_code = [&response_codes](const dt::ResponseCode code) { response_codes.push_back(code); };
 
     auto state_helper = FsmStateHelper(session::SessionConfig(evse_setup), pause_ctx, callbacks);
     auto ctx = state_helper.get_context();
@@ -109,6 +111,7 @@ SCENARIO("ISO15118-20 der iec ac charge parameter discovery state transitions") 
 
             const auto& res = response_message.value();
             REQUIRE(res.response_code == dt::ResponseCode::FAILED_UnknownSession);
+            REQUIRE(response_codes == std::vector<dt::ResponseCode>{dt::ResponseCode::FAILED_UnknownSession});
 
             const auto& transfer_mode = res.transfer_mode;
             REQUIRE(dt::from_RationalNumber(transfer_mode.max_charge_power) == 0.0f);
@@ -167,6 +170,7 @@ SCENARIO("ISO15118-20 der iec ac charge parameter discovery state transitions") 
 
             const auto& res = response_message.value();
             REQUIRE(res.response_code == dt::ResponseCode::OK);
+            REQUIRE(response_codes == std::vector<dt::ResponseCode>{dt::ResponseCode::OK});
 
             const auto& transfer_mode = res.transfer_mode;
             REQUIRE(dt::from_RationalNumber(transfer_mode.max_charge_power) == 11000);
