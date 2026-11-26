@@ -42,10 +42,6 @@ std::string AbstractCryptoSupplier::x509_get_key_hash(X509Handle* /*handle*/) {
     default_crypto_supplier_usage_error() return {};
 }
 
-std::string AbstractCryptoSupplier::x509_get_public_key_algorithm(X509Handle* /*handle*/) {
-    default_crypto_supplier_usage_error() return {};
-}
-
 std::string AbstractCryptoSupplier::x509_get_serial_number(X509Handle* /*handle*/) {
     default_crypto_supplier_usage_error() return {};
 }
@@ -58,11 +54,94 @@ std::string AbstractCryptoSupplier::x509_get_common_name(X509Handle* /*handle*/)
     default_crypto_supplier_usage_error() return {};
 }
 
+std::string AbstractCryptoSupplier::x509_get_key_usage(X509Handle* /*handle*/) {
+    default_crypto_supplier_usage_error() return {};
+}
+
+std::string AbstractCryptoSupplier::x509_get_basic_constraints(X509Handle* /*handle*/) {
+    default_crypto_supplier_usage_error() return {};
+}
+
+std::string AbstractCryptoSupplier::x509_get_subject_key_identifier(X509Handle* /*handle*/) {
+    default_crypto_supplier_usage_error() return {};
+}
+
+std::string AbstractCryptoSupplier::x509_get_authority_key_identifier(X509Handle* /*handle*/) {
+    default_crypto_supplier_usage_error() return {};
+}
+
+std::string AbstractCryptoSupplier::x509_get_issuer_common_name(X509Handle* /*handle*/) {
+    default_crypto_supplier_usage_error() return {};
+}
+
+std::string AbstractCryptoSupplier::x509_get_issuer_organization(X509Handle* /*handle*/) {
+    default_crypto_supplier_usage_error() return {};
+}
+
+std::string AbstractCryptoSupplier::x509_get_issuer_organizational_unit(X509Handle* /*handle*/) {
+    default_crypto_supplier_usage_error() return {};
+}
+
+std::string AbstractCryptoSupplier::x509_get_issuer_country(X509Handle* /*handle*/) {
+    default_crypto_supplier_usage_error() return {};
+}
+
+std::string AbstractCryptoSupplier::x509_get_issuer_state(X509Handle* /*handle*/) {
+    default_crypto_supplier_usage_error() return {};
+}
+
+std::string AbstractCryptoSupplier::x509_get_issuer_locality(X509Handle* /*handle*/) {
+    default_crypto_supplier_usage_error() return {};
+}
+
+std::string AbstractCryptoSupplier::x509_get_issuer_domain_component(X509Handle* /*handle*/) {
+    default_crypto_supplier_usage_error() return {};
+}
+
+std::string AbstractCryptoSupplier::x509_get_crl_distribution_points(X509Handle* /*handle*/) {
+    default_crypto_supplier_usage_error() return {};
+}
+
+std::string AbstractCryptoSupplier::x509_get_not_before(X509Handle* /*handle*/) {
+    default_crypto_supplier_usage_error() return {};
+}
+
+std::string AbstractCryptoSupplier::x509_get_not_after(X509Handle* /*handle*/) {
+    default_crypto_supplier_usage_error() return {};
+}
+
+std::string AbstractCryptoSupplier::x509_get_public_key_algorithm(X509Handle* /*handle*/) {
+    default_crypto_supplier_usage_error() return {};
+}
+
+std::string AbstractCryptoSupplier::x509_get_public_key_bits(X509Handle* /*handle*/) {
+    default_crypto_supplier_usage_error() return {};
+}
+
+std::string AbstractCryptoSupplier::x509_get_extended_key_usage(X509Handle* /*handle*/) {
+    default_crypto_supplier_usage_error() return {};
+}
+
+std::string AbstractCryptoSupplier::x509_get_certificate_policies(X509Handle* /*handle*/) {
+    default_crypto_supplier_usage_error() return {};
+}
+
+std::string AbstractCryptoSupplier::x509_get_authority_info_access(X509Handle* /*handle*/) {
+    default_crypto_supplier_usage_error() return {};
+}
+
 bool AbstractCryptoSupplier::x509_get_validity(X509Handle* /*handle*/, std::int64_t& /*out_valid_in*/,
                                                std::int64_t& /*out_valid_to*/) {
     default_crypto_supplier_usage_error() return false;
 }
 
+bool AbstractCryptoSupplier::x509_has_extension(X509Handle* /*handle*/, const std::string& /*name*/) {
+    default_crypto_supplier_usage_error() return false;
+}
+
+bool AbstractCryptoSupplier::x509_is_extension_critical(X509Handle* /*handle*/, const std::string& /*name*/) {
+    default_crypto_supplier_usage_error() return false;
+}
 bool AbstractCryptoSupplier::x509_is_selfsigned(X509Handle* /*handle*/) {
     default_crypto_supplier_usage_error() return false;
 }
