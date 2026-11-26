@@ -1566,10 +1566,25 @@ TEST_F(SessionStoreTest, the_started_after_filter_truncates_a_stored_fraction_to
     EXPECT_TRUE(page.sessions.empty());
 }
 
+TEST_F(SessionStoreTest, the_started_after_filter_excludes_a_record_whose_start_is_not_a_timestamp) {
+    for (const auto* timestamp :
+         {"2026-08-21T10:00:00.123garbageZ", "2026-08-21T10:00:00.123Z extra", "2026-08-21T10:00:00.123+0200"}) {
+        ASSERT_TRUE(store->store_session_started(make_session(timestamp, 1, timestamp)));
+    }
+
+    SessionFilter filter{};
+    filter.started_after = "2026-08-21T09:00:00Z";
+
+    const auto page = store->get_sessions(make_request(std::nullopt, std::nullopt, filter));
+    EXPECT_TRUE(page.sessions.empty());
+}
+
 TEST_F(SessionStoreTest, a_started_after_value_that_is_not_a_timestamp_is_ignored) {
     ASSERT_TRUE(store->store_session_started(make_session("s1", 1, "2026-08-21T10:00:00Z")));
 
-    for (const auto* started_after : {"yesterday", "2026-08-21T10:00:00Z extra"}) {
+    for (const auto* started_after :
+         {"yesterday", "2026-08-21T10:00:00Z extra", "2026-08-21T11:00:00.123garbageZ",
+          "2026-08-21T11:00:00.123Z extra", "2026-08-21T11:00:00.123+0200", "2026-08-21T11:00:00.Z"}) {
         SessionFilter filter{};
         filter.started_after = started_after;
 

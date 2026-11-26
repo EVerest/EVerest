@@ -67,16 +67,16 @@ constexpr int to_int(SessionColumnIndex column) {
 
 /// \brief SQL expression turning the timestamp \p operand into fixed-width UTC text with millisecond precision,
 /// which compares chronologically as text
-/// \details The fraction is cut to three digits before SQLite parses it, since SQLite's date functions round
-/// sub-millisecond fractions, and differently across versions. Values without an RFC3339 fraction pass unchanged.
+/// \details The digits of the fraction are cut to three before SQLite parses the value, since SQLite's date functions
+/// round sub-millisecond fractions, and differently across versions. Whatever follows the digits is left for SQLite
+/// to accept or reject.
 std::string utc_milliseconds_sql(const std::string& operand) {
-    const auto offset_length = "(CASE WHEN upper(substr(" + operand + ", -1)) = 'Z' THEN 1 WHEN substr(" + operand +
-                               ", -6, 1) IN ('+', '-') THEN 6 ELSE 0 END)";
-    const auto truncated = "substr(" + operand + ", 1, 20) || substr(substr(" + operand + ", 21, length(" + operand +
-                           ") - 20 - " + offset_length + ") || '000', 1, 3) || substr(" + operand + ", length(" +
-                           operand + ") - " + offset_length + " + 1)";
-    return "strftime('%Y-%m-%dT%H:%M:%f', CASE WHEN substr(" + operand + ", 20, 1) = '.' THEN " + truncated + " ELSE " +
-           operand + " END)";
+    const auto after_point = "substr(" + operand + ", 21)";
+    const auto digit_count = "(length(" + after_point + ") - length(ltrim(" + after_point + ", '0123456789')))";
+    const auto truncated = "substr(" + operand + ", 1, 20) || substr(substr(" + operand + ", 21, " + digit_count +
+                           ") || '000', 1, 3) || substr(" + operand + ", 21 + " + digit_count + ")";
+    return "strftime('%Y-%m-%dT%H:%M:%f', CASE WHEN substr(" + operand + ", 20, 1) = '.' AND " + digit_count +
+           " > 0 THEN " + truncated + " ELSE " + operand + " END)";
 }
 
 /// \brief Checks that \p timestamp is readable by utc_milliseconds_sql(), which the filter queries compare with
