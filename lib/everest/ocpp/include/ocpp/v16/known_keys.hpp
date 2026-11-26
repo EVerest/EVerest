@@ -179,6 +179,7 @@ namespace ocpp::v16::keys {
     mapping(SwitchSecurityProfileConnectionTimeout, SwitchSecurityProfileConnectionTimeout) \
     mapping(StopTransactionIfUnlockNotSupported, StopTransactionIfUnlockNotSupported) \
     mapping(RejectRemoteStartTransactionWithoutConnectorId, RejectRemoteStartTransactionWithoutConnectorId) \
+    mapping(BootNotificationAfterNetworkProfileSwitch, BootNotificationAfterNetworkProfileSwitch) \
     mapping(RemoteStartTransactionWithoutConnectorIdFindFirst, RemoteStartTransactionWithoutConnectorIdFindFirst) \
     mapping(MeterPublicKeys, MeterPublicKeys) \
     mapping(DisableSecurityEventNotifications, DisableSecurityEventNotifications) \
@@ -253,6 +254,7 @@ namespace ocpp::v16::keys {
     key(FirmwareManagement, SupportedFileTransferProtocols) \
     key(Internal, AllowChargingProfileWithoutStartSchedule) \
     key(Internal, AuthorizeConnectorZeroOnConnectorOne) \
+    key(Internal, BootNotificationAfterNetworkProfileSwitch) \
     key(Internal, ChargeBoxSerialNumber) \
     key(Internal, ChargePointModel) \
     key(Internal, ChargePointSerialNumber) \

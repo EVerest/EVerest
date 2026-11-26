@@ -102,6 +102,7 @@ class ProvisioningMock : public ProvisioningInterface {
 public:
     MOCK_METHOD(void, handle_message, (const ocpp::EnhancedMessage<MessageType>&), (override));
     MOCK_METHOD(void, boot_notification_req, (const BootReasonEnum&, bool), (override));
+    MOCK_METHOD(void, retry_boot_notification_req, (), (override));
     MOCK_METHOD(void, stop_bootnotification_timer, (), (override));
     MOCK_METHOD(void, on_variable_changed, (const SetVariableData&), (override));
     MOCK_METHOD(std::vector<GetVariableResult>, get_variables, (const std::vector<GetVariableData>&), (override));

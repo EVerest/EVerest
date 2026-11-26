@@ -115,6 +115,7 @@ template <> ControlMessage<TestMessageType>::ControlMessage(const json& message,
     EVLOG_info << this->message;
     this->messageType = to_test_message_type(this->message[2]);
     this->message_attempts = 0;
+    this->initial_unique_id = this->message[MESSAGE_ID];
     this->stall_until_accepted = stall_until_accepted;
 }
 
@@ -183,6 +184,25 @@ protected:
         std::lock_guard<std::mutex> lock(call_marker_mutex);
         this->call_count++;
         this->call_marker_cond_var.notify_one();
+    }
+
+    /// \brief Answers \p message with an empty CALLRESULT and counts it as sent
+    bool answer_and_mark(const json& message) {
+        {
+            std::lock_guard<std::mutex> lock(call_marker_mutex);
+            this->responses_scheduled++;
+        }
+        const std::string message_id = message.at(1);
+        reception_timer.timeout(
+            [this, message_id]() {
+                this->message_queue->receive(json{3, message_id, json::object()}.dump());
+                std::lock_guard<std::mutex> lock(call_marker_mutex);
+                this->responses_delivered++;
+                this->call_marker_cond_var.notify_all();
+            },
+            std::chrono::milliseconds(0));
+        mark_call_sent();
+        return true;
     }
 
     template <typename R> auto MarkAndReturn(R value, bool respond = false) {
@@ -317,6 +337,491 @@ TEST_F(MessageQueueTest, test_stall_until_accepted_message_pushed_while_paused_i
 
     message_queue->set_registration_status_accepted();
     wait_for_calls(1);
+}
+
+/// \brief Records the unique ids of the CALLs the queue sends, in order, and answers each of them.
+class MessageQueueResetRegistrationTest : public MessageQueueTest {
+protected:
+    std::mutex sent_ids_mutex;
+    std::vector<std::string> sent_ids;
+
+    void SetUp() override {
+        MessageQueueTest::SetUp();
+        EXPECT_CALL(*db, insert_message_queue_message(testing::_, testing::_)).Times(testing::AnyNumber());
+        EXPECT_CALL(*db, remove_message_queue_message(testing::_, testing::_)).Times(testing::AnyNumber());
+        mark_and_answer = MarkAndReturn(true, true);
+        EXPECT_CALL(send_callback_mock, Call(testing::_)).WillRepeatedly(testing::Invoke([this](const json& message) {
+            {
+                const std::lock_guard<std::mutex> lock(sent_ids_mutex);
+                sent_ids.push_back(message.at(1).get<std::string>());
+            }
+            return mark_and_answer.Perform(std::make_tuple(message));
+        }));
+    }
+
+    testing::Action<bool(json)> mark_and_answer;
+
+    std::vector<std::string> get_sent_ids() {
+        const std::lock_guard<std::mutex> lock(sent_ids_mutex);
+        return sent_ids;
+    }
+
+    void expect_nothing_sent() {
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+        EXPECT_EQ(0, get_call_count());
+    }
+};
+
+// \brief Messages queued while the registration was accepted are held after reset_registration_status() and sent in
+// their original order once the registration is accepted again
+TEST_F(MessageQueueResetRegistrationTest, test_normal_messages_queued_while_accepted_are_held) {
+    config.queue_all_messages = true;
+    restart_message_queue();
+
+    message_queue->pause();
+    push_message_call(TestMessageType::NON_TRANSACTIONAL, "first");
+    push_message_call(TestMessageType::NON_TRANSACTIONAL, "second");
+    message_queue->reset_registration_status();
+    message_queue->resume(std::chrono::seconds(0));
+    expect_nothing_sent();
+
+    message_queue->set_registration_status_accepted();
+    wait_for_calls(2);
+    EXPECT_EQ(get_sent_ids(), (std::vector<std::string>{"first", "second"}));
+}
+
+// \brief Transaction messages queued while the registration was accepted are held as well and keep their order
+TEST_F(MessageQueueResetRegistrationTest, test_transaction_messages_queued_while_accepted_are_held) {
+    message_queue->pause();
+    push_message_call(TestMessageType::TRANSACTIONAL, "started");
+    push_message_call(TestMessageType::TRANSACTIONAL_UPDATE, "updated");
+    push_message_call(TestMessageType::TRANSACTIONAL, "ended");
+    message_queue->reset_registration_status();
+    message_queue->resume(std::chrono::seconds(0));
+    expect_nothing_sent();
+
+    message_queue->set_registration_status_accepted();
+    wait_for_calls(3);
+    EXPECT_EQ(get_sent_ids(), (std::vector<std::string>{"started", "updated", "ended"}));
+}
+
+// \brief A message that is only sent because the charging station is registered is held when it reaches the queue
+// after reset_registration_status(): its sender may have checked the registration just before the reset
+TEST_F(MessageQueueResetRegistrationTest, test_message_requiring_registration_pushed_after_reset_is_held) {
+    message_queue->reset_registration_status();
+    Call<TestRequest> call;
+    call.msg.type = TestMessageType::NON_TRANSACTIONAL;
+    call.uniqueId = "late";
+    message_queue->push_call(call, false, true);
+    expect_nothing_sent();
+
+    message_queue->set_registration_status_accepted();
+    wait_for_calls(1);
+    EXPECT_EQ(get_sent_ids(), (std::vector<std::string>{"late"}));
+}
+
+// \brief A message that does not depend on the registration, such as one requested by TriggerMessage, is still sent
+// while the registration is not accepted
+TEST_F(MessageQueueResetRegistrationTest, test_message_not_requiring_registration_is_sent_after_reset) {
+    message_queue->reset_registration_status();
+    push_message_call(TestMessageType::NON_TRANSACTIONAL, "triggered");
+    wait_for_calls(1);
+    EXPECT_EQ(get_sent_ids(), (std::vector<std::string>{"triggered"}));
+}
+
+// \brief A message requiring registration is not kept for later when the queue is offline and does not queue it
+TEST_F(MessageQueueResetRegistrationTest, test_message_requiring_registration_is_dropped_while_offline) {
+    message_queue->pause();
+    Call<TestRequest> call;
+    call.msg.type = TestMessageType::NON_TRANSACTIONAL;
+    call.uniqueId = "offline";
+    message_queue->push_call(call, false, true);
+    message_queue->resume(std::chrono::seconds(0));
+    expect_nothing_sent();
+}
+
+// \brief A message sent with a future that is only sent because the charging station is registered is answered as
+// offline when it reaches the queue after reset_registration_status(), as its dispatcher does while not registered
+TEST_F(MessageQueueResetRegistrationTest, test_async_message_requiring_registration_pushed_after_reset_is_offline) {
+    message_queue->reset_registration_status();
+    Call<TestRequest> call;
+    call.msg.type = TestMessageType::NON_TRANSACTIONAL;
+    call.uniqueId = "late";
+    auto future = message_queue->push_call_async(call, true);
+
+    ASSERT_EQ(future.wait_for(std::chrono::seconds(1)), std::future_status::ready);
+    EXPECT_TRUE(future.get().offline);
+    expect_nothing_sent();
+}
+
+// \brief A BootNotification is not held by reset_registration_status() and goes out before the held messages
+TEST_F(MessageQueueResetRegistrationTest, test_boot_notification_is_sent_while_held_messages_wait) {
+    config.queue_all_messages = true;
+    restart_message_queue();
+
+    message_queue->pause();
+    push_message_call(TestMessageType::NON_TRANSACTIONAL, "held");
+    message_queue->reset_registration_status();
+    push_message_call(TestMessageType::BootNotification, "boot");
+    message_queue->resume(std::chrono::seconds(0));
+    wait_for_calls(1);
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    EXPECT_EQ(get_sent_ids(), (std::vector<std::string>{"boot"}));
+
+    message_queue->set_registration_status_accepted();
+    wait_for_calls(2);
+    EXPECT_EQ(get_sent_ids(), (std::vector<std::string>{"boot", "held"}));
+}
+
+// \brief A BootNotification left unanswered by a lost connection goes out again as soon as the queue resumes on the
+// next connection, instead of after the retry interval meant for a CSMS that does not answer
+TEST_F(MessageQueueTest, test_boot_notification_in_flight_when_paused_is_resent_on_resume) {
+    std::mutex ids_mutex;
+    std::vector<std::string> sent_ids;
+    EXPECT_CALL(send_callback_mock, Call(testing::_))
+        .Times(2)
+        .WillRepeatedly(testing::Invoke([this, &ids_mutex, &sent_ids](const json& message) {
+            {
+                const std::lock_guard<std::mutex> lock(ids_mutex);
+                sent_ids.push_back(message.at(1));
+            }
+            mark_call_sent();
+            return true;
+        }));
+
+    push_message_call(TestMessageType::BootNotification, "boot");
+    wait_for_calls(1);
+
+    message_queue->pause();
+    message_queue->resume(std::chrono::seconds(0));
+    wait_for_calls(2);
+
+    const std::lock_guard<std::mutex> lock(ids_mutex);
+    ASSERT_EQ(sent_ids.size(), 2);
+    EXPECT_NE(sent_ids.at(1), "boot") << "the BootNotification was resent with the message id of the lost one";
+}
+
+// \brief Only one BootNotification waits in the queue: a new one replaces the one queued before
+TEST_F(MessageQueueTest, test_boot_notification_replaces_queued_boot_notification) {
+    std::mutex ids_mutex;
+    std::vector<std::string> sent_ids;
+    EXPECT_CALL(send_callback_mock, Call(testing::_))
+        .WillRepeatedly(testing::Invoke([this, &ids_mutex, &sent_ids](const json& message) {
+            {
+                const std::lock_guard<std::mutex> lock(ids_mutex);
+                sent_ids.push_back(message.at(1));
+            }
+            return answer_and_mark(message);
+        }));
+
+    message_queue->pause();
+    push_message_call(TestMessageType::BootNotification, "first");
+    push_message_call(TestMessageType::BootNotification, "second");
+    message_queue->resume(std::chrono::seconds(0));
+    wait_for_calls(1);
+    std::this_thread::sleep_for(std::chrono::milliseconds(300));
+
+    const std::lock_guard<std::mutex> lock(ids_mutex);
+    EXPECT_EQ(sent_ids, (std::vector<std::string>{"second"}));
+}
+
+// \brief A BootNotification pushed after a lost connection replaces the unanswered one the queue put back, so the
+// next connection gets a single BootNotification
+TEST_F(MessageQueueTest, test_boot_notification_replaces_boot_notification_lost_with_connection) {
+    std::mutex ids_mutex;
+    std::vector<std::string> sent_ids;
+    EXPECT_CALL(send_callback_mock, Call(testing::_))
+        .WillRepeatedly(testing::Invoke([this, &ids_mutex, &sent_ids](const json& message) {
+            {
+                const std::lock_guard<std::mutex> lock(ids_mutex);
+                sent_ids.push_back(message.at(1));
+                if (sent_ids.size() == 1) {
+                    mark_call_sent();
+                    return true;
+                }
+            }
+            return answer_and_mark(message);
+        }));
+
+    push_message_call(TestMessageType::BootNotification, "lost");
+    wait_for_calls(1);
+    message_queue->pause();
+    push_message_call(TestMessageType::BootNotification, "again");
+    message_queue->resume(std::chrono::seconds(0));
+    wait_for_calls(2);
+    std::this_thread::sleep_for(std::chrono::milliseconds(300));
+
+    const std::lock_guard<std::mutex> lock(ids_mutex);
+    EXPECT_EQ(sent_ids, (std::vector<std::string>{"lost", "again"}));
+}
+
+// \brief Without a BootNotification the charging station never registers and holds every queued message, so with
+// QueueAllMessages a BootNotification lost with the connection is not dropped once the message attempts are used up
+TEST_F(MessageQueueTest, test_persisted_boot_notification_lost_with_connection_is_never_dropped) {
+    config.queue_all_messages = true;
+    config.transaction_message_attempts = 2;
+    message_queue->stop();
+    EXPECT_CALL(*db, insert_message_queue_message(testing::_, QueueType::Normal));
+    message_queue = std::make_unique<MessageQueue<TestMessageType>>(send_callback_mock.AsStdFunction(), config, db);
+    message_queue->start();
+    message_queue->set_registration_status_accepted();
+    message_queue->resume(std::chrono::seconds(0));
+    EXPECT_CALL(send_callback_mock, Call(testing::_)).Times(4).WillRepeatedly(MarkAndReturn(true));
+    EXPECT_CALL(*db, remove_message_queue_message(testing::_, testing::_)).Times(0);
+
+    push_message_call(TestMessageType::BootNotification, "boot");
+    for (int sent = 1; sent < 4; sent++) {
+        wait_for_calls(sent);
+        message_queue->pause();
+        message_queue->resume(std::chrono::seconds(0));
+    }
+    wait_for_calls(4);
+}
+
+// \brief With QueueAllMessages a BootNotification answered with CALLERROR is retried after the BootNotification retry
+// interval instead of being dropped once the message attempts are used up
+TEST_F(MessageQueueTest, test_persisted_boot_notification_answered_with_callerror_is_never_dropped) {
+    config.queue_all_messages = true;
+    config.transaction_message_attempts = 1;
+    config.boot_notification_retry_interval_seconds = 0;
+    message_queue->stop();
+    EXPECT_CALL(*db, insert_message_queue_message(testing::_, QueueType::Normal));
+    message_queue = std::make_unique<MessageQueue<TestMessageType>>(send_callback_mock.AsStdFunction(), config, db);
+    message_queue->start();
+    message_queue->set_registration_status_accepted();
+    message_queue->resume(std::chrono::seconds(0));
+    std::mutex ids_mutex;
+    std::vector<std::string> sent_ids;
+    EXPECT_CALL(send_callback_mock, Call(testing::_))
+        .Times(2)
+        .WillRepeatedly(testing::Invoke([this, &ids_mutex, &sent_ids](const json& message) {
+            {
+                const std::lock_guard<std::mutex> lock(ids_mutex);
+                sent_ids.push_back(message.at(1));
+            }
+            mark_call_sent();
+            return true;
+        }));
+    EXPECT_CALL(*db, remove_message_queue_message(testing::_, testing::_)).Times(0);
+
+    push_message_call(TestMessageType::BootNotification, "boot");
+    wait_for_calls(1);
+    message_queue->receive(json{4, "boot", "InternalError", "", json::object()}.dump());
+    wait_for_calls(2);
+}
+
+// \brief With QueueAllMessages a replaced BootNotification is also removed from the database, so it is not loaded again
+// after a restart
+TEST_F(MessageQueueTest, test_replaced_persisted_boot_notification_is_removed_from_database) {
+    config.queue_all_messages = true;
+    message_queue->stop();
+    EXPECT_CALL(*db, insert_message_queue_message(testing::_, QueueType::Normal)).Times(2);
+    EXPECT_CALL(*db, remove_message_queue_message("first", QueueType::Normal));
+    message_queue = std::make_unique<MessageQueue<TestMessageType>>(send_callback_mock.AsStdFunction(), config, db);
+    message_queue->start();
+
+    push_message_call(TestMessageType::BootNotification, "first");
+    push_message_call(TestMessageType::BootNotification, "second");
+}
+
+// \brief A BootNotification waiting for its retry after a CALLERROR goes out first thing on the next connection, like
+// one that was in flight when the connection was lost
+TEST_F(MessageQueueTest, test_boot_notification_waiting_for_retry_is_sent_on_next_connection) {
+    config.boot_notification_retry_interval_seconds = 60;
+    restart_message_queue();
+    EXPECT_CALL(send_callback_mock, Call(testing::_)).Times(2).WillRepeatedly(MarkAndReturn(true));
+
+    push_message_call(TestMessageType::BootNotification, "boot");
+    wait_for_calls(1);
+    message_queue->receive(json{4, "boot", "InternalError", "", json::object()}.dump());
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    EXPECT_EQ(get_call_count(), 1) << "the BootNotification was retried before its retry interval";
+
+    message_queue->pause();
+    message_queue->resume(std::chrono::seconds(0));
+    wait_for_calls(2);
+}
+
+// \brief A BootNotification in flight when a newer one is pushed is not retried after a CALLERROR: the newer one
+// replaces it, so the CSMS receives each BootNotification at most once
+TEST_F(MessageQueueTest, test_boot_notification_in_flight_is_not_retried_when_a_newer_one_is_queued) {
+    config.boot_notification_retry_interval_seconds = 0;
+    restart_message_queue();
+    std::mutex ids_mutex;
+    std::vector<std::string> sent_ids;
+    EXPECT_CALL(send_callback_mock, Call(testing::_))
+        .WillRepeatedly(testing::Invoke([this, &ids_mutex, &sent_ids](const json& message) {
+            {
+                const std::lock_guard<std::mutex> lock(ids_mutex);
+                sent_ids.push_back(message.at(1));
+                if (sent_ids.size() == 1) {
+                    mark_call_sent();
+                    return true;
+                }
+            }
+            return answer_and_mark(message);
+        }));
+
+    push_message_call(TestMessageType::BootNotification, "first");
+    wait_for_calls(1);
+    push_message_call(TestMessageType::BootNotification, "second");
+    message_queue->receive(json{4, "first", "InternalError", "", json::object()}.dump());
+    wait_for_calls(2);
+    std::this_thread::sleep_for(std::chrono::milliseconds(300));
+
+    const std::lock_guard<std::mutex> lock(ids_mutex);
+    EXPECT_EQ(sent_ids, (std::vector<std::string>{"first", "second"}));
+}
+
+// \brief A BootNotification in flight when a newer one is pushed is not resent after the connection is lost: the newer
+// one replaces it on the next connection
+TEST_F(MessageQueueTest, test_boot_notification_in_flight_is_not_resent_on_reconnect_when_a_newer_one_is_queued) {
+    std::mutex ids_mutex;
+    std::vector<std::string> sent_ids;
+    EXPECT_CALL(send_callback_mock, Call(testing::_))
+        .WillRepeatedly(testing::Invoke([this, &ids_mutex, &sent_ids](const json& message) {
+            {
+                const std::lock_guard<std::mutex> lock(ids_mutex);
+                sent_ids.push_back(message.at(1));
+                if (sent_ids.size() == 1) {
+                    mark_call_sent();
+                    return true;
+                }
+            }
+            return answer_and_mark(message);
+        }));
+
+    push_message_call(TestMessageType::BootNotification, "first");
+    wait_for_calls(1);
+    push_message_call(TestMessageType::BootNotification, "second");
+    message_queue->pause();
+    message_queue->resume(std::chrono::seconds(0));
+    wait_for_calls(2);
+    std::this_thread::sleep_for(std::chrono::milliseconds(300));
+
+    const std::lock_guard<std::mutex> lock(ids_mutex);
+    EXPECT_EQ(sent_ids, (std::vector<std::string>{"first", "second"}));
+}
+
+// \brief With QueueAllMessages a BootNotification in flight that a newer one replaces is removed from the database once
+// the connection is lost
+TEST_F(MessageQueueTest, test_replaced_persisted_boot_notification_in_flight_is_removed_from_database) {
+    config.queue_all_messages = true;
+    message_queue->stop();
+    EXPECT_CALL(*db, insert_message_queue_message(testing::_, QueueType::Normal)).Times(2);
+    EXPECT_CALL(*db, remove_message_queue_message("first", QueueType::Normal));
+    message_queue = std::make_unique<MessageQueue<TestMessageType>>(send_callback_mock.AsStdFunction(), config, db);
+    message_queue->start();
+    message_queue->set_registration_status_accepted();
+    message_queue->resume(std::chrono::seconds(0));
+    EXPECT_CALL(send_callback_mock, Call(testing::_)).WillOnce(MarkAndReturn(true));
+
+    push_message_call(TestMessageType::BootNotification, "first");
+    wait_for_calls(1);
+    push_message_call(TestMessageType::BootNotification, "second");
+    message_queue->pause();
+}
+
+// \brief A BootNotification that is never answered is retried with the same message timeout each time: retries do not
+// make the queue wait longer and longer for a CSMS that does not answer
+TEST_F(MessageQueueTest, test_boot_notification_retries_keep_their_message_timeout) {
+    config.message_timeout_seconds = 1;
+    config.transaction_message_retry_interval = 3;
+    config.boot_notification_retry_interval_seconds = 0;
+    restart_message_queue();
+    std::mutex times_mutex;
+    std::vector<std::chrono::steady_clock::time_point> sent_at;
+    EXPECT_CALL(send_callback_mock, Call(testing::_))
+        .WillRepeatedly(testing::Invoke([this, &times_mutex, &sent_at](const json&) {
+            {
+                const std::lock_guard<std::mutex> lock(times_mutex);
+                sent_at.push_back(std::chrono::steady_clock::now());
+            }
+            mark_call_sent();
+            return true;
+        }));
+
+    push_message_call(TestMessageType::BootNotification, "boot");
+    // Each attempt times out after message_timeout_seconds + transaction_message_retry_interval * 1 = 4 s. A timeout
+    // that grows with the attempts makes the second wait 7 s.
+    wait_for_calls(3, std::chrono::seconds(16));
+
+    const std::lock_guard<std::mutex> lock(times_mutex);
+    ASSERT_GE(sent_at.size(), 3);
+    const auto first_wait = sent_at.at(1) - sent_at.at(0);
+    const auto second_wait = sent_at.at(2) - sent_at.at(1);
+    EXPECT_LT(second_wait, first_wait + std::chrono::milliseconds(1500))
+        << "the second retry waited longer than the first for the message timeout";
+}
+
+// \brief The retry interval of a BootNotification counts from its timeout, not from when it was first queued, so a
+// BootNotification queued long before the connection is not retried back to back
+TEST_F(MessageQueueTest, test_boot_notification_retry_interval_counts_from_timeout) {
+    config.message_timeout_seconds = 1;
+    config.transaction_message_retry_interval = 0;
+    config.boot_notification_retry_interval_seconds = 2;
+    restart_message_queue();
+    std::mutex times_mutex;
+    std::vector<std::chrono::steady_clock::time_point> sent_at;
+    EXPECT_CALL(send_callback_mock, Call(testing::_))
+        .WillRepeatedly(testing::Invoke([this, &times_mutex, &sent_at](const json&) {
+            {
+                const std::lock_guard<std::mutex> lock(times_mutex);
+                sent_at.push_back(std::chrono::steady_clock::now());
+            }
+            mark_call_sent();
+            return true;
+        }));
+
+    message_queue->pause();
+    push_message_call(TestMessageType::BootNotification, "boot");
+    std::this_thread::sleep_for(std::chrono::seconds(3));
+    message_queue->resume(std::chrono::seconds(0));
+    wait_for_calls(2, std::chrono::seconds(6));
+
+    const std::lock_guard<std::mutex> lock(times_mutex);
+    ASSERT_GE(sent_at.size(), 2);
+    // message timeout of 1 s, then the retry interval of 2 s
+    EXPECT_GE(sent_at.at(1) - sent_at.at(0), std::chrono::milliseconds(2500))
+        << "the BootNotification was retried before its retry interval had passed since the timeout";
+}
+
+// \brief An action run while the queue is idle pauses sending without losing the connection, so a BootNotification
+// waiting for its retry after a CALLERROR keeps its retry interval
+TEST_F(MessageQueueTest, test_idle_action_keeps_boot_notification_retry_interval) {
+    config.boot_notification_retry_interval_seconds = 60;
+    restart_message_queue();
+    EXPECT_CALL(send_callback_mock, Call(testing::_)).WillOnce(MarkAndReturn(true));
+
+    push_message_call(TestMessageType::BootNotification, "boot");
+    wait_for_calls(1);
+    message_queue->receive(json{4, "boot", "InternalError", "", json::object()}.dump());
+
+    std::promise<void> action_ran;
+    message_queue->run_when_idle([&action_ran]() {
+        action_ran.set_value();
+        return true;
+    });
+    ASSERT_EQ(action_ran.get_future().wait_for(std::chrono::seconds(3)), std::future_status::ready);
+    std::this_thread::sleep_for(std::chrono::milliseconds(300));
+    EXPECT_EQ(get_call_count(), 1) << "the idle action made the BootNotification skip its retry interval";
+}
+
+// \brief A BootNotification replaced by a newer one settles the future of its sender as offline
+TEST_F(MessageQueueTest, test_replaced_boot_notification_settles_its_future) {
+    message_queue->pause();
+    Call<TestRequest> first;
+    first.msg.type = TestMessageType::BootNotification;
+    first.uniqueId = "first";
+    auto first_future = message_queue->push_call_async(first);
+    push_message_call(TestMessageType::BootNotification, "second");
+
+    ASSERT_EQ(first_future.wait_for(std::chrono::seconds(1)), std::future_status::ready);
+    try {
+        EXPECT_TRUE(first_future.get().offline);
+    } catch (const std::future_error& e) {
+        ADD_FAILURE() << "the replaced BootNotification left its future unsettled: " << e.what();
+    }
 }
 
 // \brief Test sending a transactional message

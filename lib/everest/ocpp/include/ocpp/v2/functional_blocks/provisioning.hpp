@@ -41,6 +41,8 @@ public:
     // Functional Block B: Provisioning
     virtual void boot_notification_req(const BootReasonEnum& reason,
                                        const bool initiated_by_trigger_message = false) = 0;
+    /// \brief Sends the BootNotification.req again at once, with the reason of the last one that was not triggered
+    virtual void retry_boot_notification_req() = 0;
     virtual void stop_bootnotification_timer() = 0;
     /// \brief Event handler that will update the variable internally when it has been changed on the fly.
     /// \param set_variable_data contains data of the variable to set
@@ -78,6 +80,7 @@ public:
                  FirmwareUpdateInterface& firmware_update);
     void handle_message(const ocpp::EnhancedMessage<MessageType>& message) override;
     void boot_notification_req(const BootReasonEnum& reason, const bool initiated_by_trigger_message = false) override;
+    void retry_boot_notification_req() override;
     void stop_bootnotification_timer() override;
     void on_variable_changed(const SetVariableData& set_variable_data) override;
     std::vector<GetVariableResult> get_variables(const std::vector<GetVariableData>& get_variable_data_vector) override;
@@ -109,6 +112,11 @@ private:
     std::atomic<RegistrationStatusEnum>& registration_status;
 
     Everest::SteadyTimer boot_notification_timer;
+    /// \brief Reason of the last BootNotification.req not requested by TriggerMessage, repeated when it is retried
+    std::atomic<BootReasonEnum> m_last_boot_reason{BootReasonEnum::PowerUp};
+    /// \brief Retry interval of the last BootNotificationResponse that was not Accepted, used again when a
+    /// BootNotificationResponse cannot be read
+    std::optional<std::chrono::seconds> m_last_boot_notification_retry_interval;
 
     // Functions
     /* OCPP message requests */
@@ -118,6 +126,8 @@ private:
     /* OCPP message handlers */
 
     void handle_boot_notification_response(CallResult<BootNotificationResponse> call_result);
+    /// \brief Converts \p json_message , scheduling another BootNotificationRequest if that fails while not registered
+    CallResult<BootNotificationResponse> read_boot_notification_response(const json& json_message);
     void handle_set_variables_req(const EnhancedMessage<v2::MessageType>& message);
     void handle_get_variables_req(const EnhancedMessage<v2::MessageType>& message);
     void handle_get_base_report_req(Call<GetBaseReportRequest> call);
@@ -148,6 +158,10 @@ private:
     /// \return std::nullopt if valid, or a reason code string if rejected
     std::optional<std::string> validate_network_profile_security_preconditions(int32_t configuration_slot,
                                                                                const NetworkConnectionProfile& profile);
+
+    /// \brief The slot of the network connection profile in use: the connected one while not registered, else the
+    /// persisted one
+    std::optional<int> active_network_profile_slot() const;
 
     /// \brief B09.FR.26/27: Clear the given NetworkConfiguration variable on the currently active slot
     /// so subsequent reads fall back to the SecurityCtrlr global per B09.FR.16. Does nothing if no slot

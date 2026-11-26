@@ -1340,6 +1340,12 @@ const ComponentVariable RejectRemoteStartTransactionWithoutConnectorId = {
         "RejectRemoteStartTransactionWithoutConnectorId",
     }),
 };
+const ComponentVariable BootNotificationAfterNetworkProfileSwitch = {
+    ControllerComponents::OCPP16LegacyCtrlr,
+    std::optional<Variable>({
+        "BootNotificationAfterNetworkProfileSwitch",
+    }),
+};
 const ComponentVariable RemoteStartTransactionWithoutConnectorIdFindFirst = {
     ControllerComponents::OCPP16LegacyCtrlr,
     std::optional<Variable>({
