@@ -1118,6 +1118,12 @@ void ChargePoint::message_callback(const std::string& message) {
     enhanced_message.message_size = message.size();
     auto json_message = enhanced_message.message;
     this->logging->central_system(conversions::messagetype_to_string(enhanced_message.messageType), message);
+    if (enhanced_message.messageType == MessageType::BootNotificationResponse and
+        enhanced_message.messageTypeId == MessageTypeId::CALLRESULT) {
+        // Before the response is handled, so a reconnect that sees its registration status compares against the
+        // endpoint that gave it
+        this->m_registration_endpoints.register_connected();
+    }
     try {
         if (this->registration_status == RegistrationStatusEnum::Accepted) {
             this->handle_message(enhanced_message);
@@ -1261,6 +1267,28 @@ void ChargePoint::on_websocket_connected(const int configuration_slot,
     this->message_queue->update_message_timeout(network_connection_profile.messageTimeout);
     this->device_model->set_active_message_timeout(network_connection_profile.messageTimeout,
                                                    VARIABLE_ATTRIBUTE_VALUE_SOURCE_INTERNAL);
+    // B10.FR.10: the CSMS behind a different NetworkConnectionProfile may not know this charging station, so it
+    // registers again although it did not reboot. Until that BootNotification is accepted, queued messages are held.
+    // The connectivity manager has written the identity of the profile to SecurityCtrlr.Identity (B09.FR.16)
+    const auto identity =
+        this->device_model->get_optional_value<std::string>(ControllerComponentVariables::SecurityCtrlrIdentity)
+            .value_or("");
+    const auto registered = this->m_registration_endpoints.connect(RegistrationEndpoint{
+        configuration_slot, normalised_csms_url(network_connection_profile.ocppCsmsUrl.get(), identity)});
+    if (registered.has_value()) {
+        EVLOG_info << "Connected through configurationSlot " << configuration_slot << " ("
+                   << network_connection_profile.ocppCsmsUrl.get() << ") instead of configurationSlot "
+                   << registered->configuration_slot << " (" << registered->ocpp_csms_url
+                   << "), sending BootNotification.req to register again";
+        const bool was_accepted = this->registration_status == RegistrationStatusEnum::Accepted;
+        this->registration_status = RegistrationStatusEnum::Rejected;
+        this->message_queue->reset_registration_status();
+        if (was_accepted) {
+            this->provisioning->boot_notification_req(BootReasonEnum::Unknown);
+        } else {
+            this->provisioning->retry_boot_notification_req();
+        }
+    }
     this->message_queue->resume(this->message_queue_resume_delay);
     this->ocpp_version = ocpp_version;
     const auto time_disconnected = this->connectivity_manager->get_time_disconnected();

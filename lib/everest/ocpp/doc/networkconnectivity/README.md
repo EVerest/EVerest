@@ -41,6 +41,40 @@ However, there may be a situation where libocpp is connected to a profile with p
 A call is added so that you can suggest that libocpp switch to this profile: `bool on_try_switch_network_connection_profile(const std::int32_t configuration_slot)`.
 libocpp will inform the caller by the return value if it tries to switch to this profile.
 
+## Registration after switching profile
+
+When libocpp connects through a different network connection profile than the one whose CSMS last answered its
+BootNotification, without a reboot, the CSMS behind it may not know the charging station. As OCPP 2.0.1 and 2.1
+require (B10.FR.10), libocpp then sends a BootNotification and holds every queued message until the CSMS accepts it.
+In OCPP 2.x a profile counts as different when its configuration slot or its CSMS URL differs, because
+`SetNetworkProfile` or a configuration change can point the active slot at another CSMS. Reconnecting through the same
+profile does not repeat the BootNotification. CSMS URLs are compared as the websocket
+URL they stand for, parsed the same way as for the connection: the case of the host and a trailing slash do not matter,
+a missing port is the default port of the scheme, a URL without a scheme is taken as `ws://` whatever the security profile, and the identity of the
+charging station as last path segment is ignored. `wss://CSMS.example.com/ocpp/` and `wss://csms.example.com:443/ocpp`
+are the same CSMS, while `ws://csms.example.com/ocpp` is another one.
+
+This also applies when the last answer was Pending or Rejected: falling back to a profile whose CSMS accepted the
+charging station before registers again at once instead of waiting for the retry interval of the other CSMS. A
+BootNotification left unanswered by a lost connection is sent again first thing on the next connection, without
+waiting for the retry interval for a CSMS that does not answer. Only one BootNotification waits in the message queue
+at a time: a new one replaces one still queued, and one in flight that gets no answer is not sent again.
+A BootNotification is never dropped for lack of an answer, not even with `QueueAllMessages` once the message attempts
+are used up, because the charging station holds every queued message until one is accepted. When the CSMS answers
+with a BootNotificationResponse that cannot be read, the charging station sends another BootNotification after the
+retry interval of the last response that was not Accepted, or after the default retry interval.
+
+In OCPP 2.x the BootNotification after an accepted registration has reason `Unknown`. Otherwise, and when a
+BootNotification is retried after Pending or Rejected, it keeps the reason of the last BootNotification that was not
+requested by TriggerMessage.
+
+OCPP 1.6 does the same by default, with one difference. OCPP-J 1.6 section 5.4 advises against a BootNotification on
+reconnect, so OCPP 1.6 registers again only when the CSMS URL differs: another slot towards the same Central System,
+such as a second network interface, is a plain reconnect. The `Internal` configuration key
+`BootNotificationAfterNetworkProfileSwitch` turns the behaviour off altogether. OCPP 1.6 reports each
+successful connection with `record_successful_connection()`, which keeps the B10.FR.07 fallback target current without
+the security profile handling of `confirm_successful_connection()`.
+
 ## Disconnected / connected callbacks
 
 libocpp provides two callbacks for when the websocket is connected and disconnected. It will provide the network slot

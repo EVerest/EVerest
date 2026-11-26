@@ -23,6 +23,7 @@ ocpp::v2::Ocpp16KeyMappings create_custom_mappings(
 // also see memory_storage.cpp
 const std::map<std::string, std::string> expected_key_value = {
     {"AuthorizeConnectorZeroOnConnectorOne", "true"},
+    {"BootNotificationAfterNetworkProfileSwitch", "true"},
     {"CentralSystemURI", "127.0.0.1:8180/steve/websocket/CentralSystemService/"},
     {"ChargeBoxSerialNumber", "cp001"},
     {"ChargePointId", "cp001"},
@@ -246,6 +247,27 @@ TEST_P(Configuration, SetGetReportSuspendedEVSEReasonChange) {
     kv = get()->get("ReportSuspendedEVSEReasonChange");
     ASSERT_TRUE(kv);
     EXPECT_EQ(kv.value().value, "false");
+}
+
+TEST_P(Configuration, SetGetBootNotificationAfterNetworkProfileSwitch) {
+    using ConfigurationStatus = ocpp::v16::ConfigurationStatus;
+    ASSERT_NE(get(), nullptr);
+
+    EXPECT_EQ(get()->getBootNotificationAfterNetworkProfileSwitch(), true);
+    auto kv = get()->get("BootNotificationAfterNetworkProfileSwitch");
+    ASSERT_TRUE(kv);
+    EXPECT_EQ(kv.value().value, "true");
+    EXPECT_FALSE(kv.value().readonly);
+
+    EXPECT_EQ(get()->set("BootNotificationAfterNetworkProfileSwitch", "false"), ConfigurationStatus::Accepted);
+    EXPECT_EQ(get()->getBootNotificationAfterNetworkProfileSwitch(), false);
+
+    EXPECT_EQ(get()->set("BootNotificationAfterNetworkProfileSwitch", "NotABool"), ConfigurationStatus::Rejected);
+    EXPECT_EQ(get()->getBootNotificationAfterNetworkProfileSwitch(), false);
+
+    // restore the default, the JSON backend persists to the user config
+    get()->setBootNotificationAfterNetworkProfileSwitch(true);
+    EXPECT_EQ(get()->getBootNotificationAfterNetworkProfileSwitch(), true);
 }
 
 TEST_P(Configuration, GetAllKeyValue) {

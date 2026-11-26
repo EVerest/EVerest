@@ -84,7 +84,7 @@ void Provisioning::handle_message(const ocpp::EnhancedMessage<MessageType>& mess
     const auto& json_message = message.message;
 
     if (message.messageType == MessageType::BootNotificationResponse) {
-        this->handle_boot_notification_response(json_message);
+        this->handle_boot_notification_response(this->read_boot_notification_response(json_message));
     } else if (message.messageType == MessageType::SetVariables) {
         this->handle_set_variables_req(json_message);
     } else if (message.messageType == MessageType::GetVariables) {
@@ -104,6 +104,9 @@ void Provisioning::handle_message(const ocpp::EnhancedMessage<MessageType>& mess
 
 void Provisioning::boot_notification_req(const BootReasonEnum& reason, const bool initiated_by_trigger_message) {
     EVLOG_debug << "Sending BootNotification";
+    if (reason != BootReasonEnum::Triggered) {
+        this->m_last_boot_reason = reason;
+    }
     BootNotificationRequest req;
 
     ChargingStation charging_station;
@@ -135,6 +138,11 @@ void Provisioning::boot_notification_req(const BootReasonEnum& reason, const boo
 
     const ocpp::Call<BootNotificationRequest> call(req);
     this->context.message_dispatcher.dispatch_call(call, initiated_by_trigger_message);
+}
+
+void Provisioning::retry_boot_notification_req() {
+    this->boot_notification_timer.stop();
+    this->boot_notification_req(this->m_last_boot_reason);
 }
 
 void Provisioning::stop_bootnotification_timer() {
@@ -199,16 +207,37 @@ void Provisioning::notify_report_req(const int request_id, const std::vector<Rep
     }
 }
 
+CallResult<BootNotificationResponse> Provisioning::read_boot_notification_response(const json& json_message) {
+    try {
+        CallResult<BootNotificationResponse> call_result = json_message;
+        return call_result;
+    } catch (...) {
+        if (this->registration_status != RegistrationStatusEnum::Accepted) {
+            // The message queue does not send a BootNotificationRequest again once the CSMS answered it
+            const auto retry_interval =
+                this->m_last_boot_notification_retry_interval.value_or(DEFAULT_BOOT_NOTIFICATION_RETRY_INTERVAL);
+            EVLOG_warning << "Could not read BootNotificationResponse, sending BootNotificationRequest again in "
+                          << retry_interval.count() << "s";
+            this->boot_notification_timer.timeout([this]() { this->boot_notification_req(this->m_last_boot_reason); },
+                                                  retry_interval);
+        }
+        throw;
+    }
+}
+
 void Provisioning::handle_boot_notification_response(CallResult<BootNotificationResponse> call_result) {
     EVLOG_info << "Received BootNotificationResponse: " << call_result.msg
                << "\nwith messageId: " << call_result.uniqueId;
 
     const auto msg = call_result.msg;
 
+    if (msg.status == RegistrationStatusEnum::Accepted) {
+        // Before the dispatcher sees the acceptance: the queue refuses messages that require registration until then
+        this->message_queue.set_registration_status_accepted();
+    }
     this->registration_status = msg.status;
 
     if (this->registration_status == RegistrationStatusEnum::Accepted) {
-        this->message_queue.set_registration_status_accepted();
         this->firmware_update.on_registration_accepted();
         // B01.FR.06 Only use boot timestamp if TimeSource contains Heartbeat
         if (this->time_sync_callback.has_value() and
@@ -242,11 +271,9 @@ void Provisioning::handle_boot_notification_response(CallResult<BootNotification
         if (msg.interval > 0) {
             retry_interval = std::chrono::seconds(msg.interval);
         }
-        this->boot_notification_timer.timeout(
-            [this, msg]() {
-                this->boot_notification_req(BootReasonEnum::PowerUp); // FIXME(piet): Choose correct reason here
-            },
-            retry_interval);
+        this->m_last_boot_notification_retry_interval = retry_interval;
+        this->boot_notification_timer.timeout([this]() { this->boot_notification_req(this->m_last_boot_reason); },
+                                              retry_interval);
     }
 
     if (this->boot_notification_callback.has_value()) {
@@ -653,8 +680,7 @@ void Provisioning::handle_variable_changed(const SetVariableData& set_variable_d
         // Writes to other slots are picked up on the next connect.
         try {
             const std::int32_t slot = std::stoi(set_variable_data.component.instance.value().get());
-            const auto active_slot_opt =
-                this->context.device_model.get_optional_value<int>(ControllerComponentVariables::ActiveNetworkProfile);
+            const auto active_slot_opt = this->active_network_profile_slot();
             if (active_slot_opt.has_value() and active_slot_opt.value() == slot) {
                 const auto message_timeout = std::stoi(set_variable_data.attributeValue.get());
                 this->message_queue.update_message_timeout(message_timeout);
@@ -733,8 +759,7 @@ Provisioning::validate_set_network_configuration_slot(const SetVariableData& set
         // B09.FR.22: Reject SetVariables targeting the currently active slot or any slot listed
         // in the current NetworkConfigurationPriority. The spec mandates a single reasonCode
         // `PriorityNetworkConf` for every such slot (no separate "active" reason code).
-        const auto active_slot_opt =
-            this->context.device_model.get_optional_value<int>(ControllerComponentVariables::ActiveNetworkProfile);
+        const auto active_slot_opt = this->active_network_profile_slot();
         if (active_slot_opt.has_value() && slot == active_slot_opt.value()) {
             EVLOG_warning << "Cannot set NetworkConfiguration variable for slot " << slot
                           << " which is the currently active network profile";
@@ -922,9 +947,23 @@ Provisioning::set_variables_internal(const std::vector<SetVariableData>& set_var
     return response;
 }
 
+std::optional<int> Provisioning::active_network_profile_slot() const {
+    // ActiveNetworkProfile is persisted once the CSMS accepted the charging station. Until then, for example while it
+    // registers through another profile (B10.FR.10), the connected slot is the active one. Once accepted, the
+    // persisted slot is authoritative: the connectivity manager's slot follows NetworkConfigurationPriority, which
+    // may no longer list the connected slot.
+    if (this->registration_status != RegistrationStatusEnum::Accepted and
+        this->context.connectivity_manager.is_websocket_connected()) {
+        const auto connected_slot = this->context.connectivity_manager.get_active_network_configuration_slot();
+        if (connected_slot.has_value()) {
+            return connected_slot;
+        }
+    }
+    return this->context.device_model.get_optional_value<int>(ControllerComponentVariables::ActiveNetworkProfile);
+}
+
 void Provisioning::clear_active_slot_variable(const Variable& variable, const std::string& reason_tag) {
-    const auto active_slot_opt =
-        this->context.device_model.get_optional_value<int>(ControllerComponentVariables::ActiveNetworkProfile);
+    const auto active_slot_opt = this->active_network_profile_slot();
     if (!active_slot_opt.has_value()) {
         return;
     }
@@ -958,8 +997,7 @@ void Provisioning::try_apply_active_slot_identity_override(const GetVariableData
         result.attributeStatus != GetVariableStatusEnum::Accepted) {
         return;
     }
-    const auto active_slot_opt =
-        this->context.device_model.get_optional_value<int>(ControllerComponentVariables::ActiveNetworkProfile);
+    const auto active_slot_opt = this->active_network_profile_slot();
     if (!active_slot_opt.has_value()) {
         return;
     }

@@ -45,6 +45,7 @@ const std::map<std::string, std::string> required_vars_internal = {
     {"UseTPMSeccLeafCertificate", "false"},
     {"VerifyCsmsAllowWildcards", "false"},
     {"ReportSuspendedEVSEReasonChange", "false"},
+    {"BootNotificationAfterNetworkProfileSwitch", "true"},
     {"MaxMessageSize", "65000"},
     {"MaxIncomingMessageSize", "4194304"},
     {"MaxCompositeScheduleDuration", "31536000"},

@@ -488,6 +488,9 @@ public:
     std::optional<bool> getRejectRemoteStartTransactionWithoutConnectorId() override;
     void setRejectRemoteStartTransactionWithoutConnectorId(bool reject) override;
     std::optional<KeyValue> getRejectRemoteStartTransactionWithoutConnectorIdKeyValue() override;
+    std::optional<bool> getBootNotificationAfterNetworkProfileSwitch() override;
+    void setBootNotificationAfterNetworkProfileSwitch(bool enabled) override;
+    std::optional<KeyValue> getBootNotificationAfterNetworkProfileSwitchKeyValue() override;
 
     std::optional<bool> getRemoteStartTransactionWithoutConnectorIdFindFirst() override;
     void setRemoteStartTransactionWithoutConnectorIdFindFirst(bool find_first) override;
