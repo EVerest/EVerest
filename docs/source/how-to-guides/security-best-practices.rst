@@ -166,21 +166,14 @@ module, run with the same capabilities.
    -A INPUT -i seth0 -p ipv6-icmp -j ACCEPT
    -A INPUT -i seth0 -p udp -m udp --dport 15118 -j ACCEPT
    -A INPUT -i seth0 -p tcp -m tcp --dport 50000 -j ACCEPT
-   -A INPUT -i seth0 -p tcp -m tcp --dport 61341 -j ACCEPT
-   -A INPUT -i seth0 -p tcp -m tcp --dport 64109 -j ACCEPT
    -A OUTPUT -o seth0 -p ipv6-icmp -j ACCEPT
    -A OUTPUT -o seth0 -p udp -m udp --sport 15118 -j ACCEPT
    -A OUTPUT -o seth0 -p tcp -m tcp --sport 50000 -j ACCEPT
-   -A OUTPUT -o seth0 -p tcp -m tcp --sport 61341 -j ACCEPT
-   -A OUTPUT -o seth0 -p tcp -m tcp --sport 64109 -j ACCEPT
 
 According to the standard, port 15118 is used for SDP messages.
 :ref:`Evse15118D20 <everest_modules_Evse15118D20>` integrates libiso15118 and uses the configured
 ``tcp_port`` value for TCP and TLS1.2/1.3. The default is ``50000``.
-The deprecated :ref:`EvseV2G <everest_modules_EvseV2G>` module uses the configurable ``tcp_port`` and
-``tls_port`` values (defaults: TCP ``61341``, TLS ``64109``); the rules for 61341 and 64109 above are only
-needed while it is still in use.
-When changing these values, update the firewall rules accordingly.
+When changing this value, update the firewall rules accordingly.
 
 General (non-EVerest-related) security aspects
 ====================================================================

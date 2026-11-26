@@ -47,10 +47,6 @@ Evse15118D20
 * Make sure `supported_ISO15118_2` is set to `true` (and `supported_ISO15118_20` for ISO 15118-20
   Plug&Charge, which additionally needs a `V2G20` SECC leaf certificate).
 
-The deprecated EvseV2G module needs `tls_security` set to `allow` or `force` and
-`verify_contract_cert_chain` set to `true` instead; see the
-:ref:`migration guide <howto-iso15118-stack-migration>`.
-
 Auth
 ~~~~~~~~~~~
 

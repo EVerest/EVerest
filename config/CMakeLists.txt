@@ -34,9 +34,6 @@ generate_config_run_script(CONFIG sil-dc-consumer-api)
 generate_config_run_script(CONFIG sil-mcs)
 generate_config_run_script(CONFIG eebus)
 generate_config_run_script(CONFIG test-all-external-api)
-generate_config_run_script(CONFIG sil-evsev2g)
-generate_config_run_script(CONFIG sil-dc-evsev2g)
-generate_config_run_script(CONFIG sil-dc-tls-evsev2g)
 
 add_subdirectory(bringup)
 

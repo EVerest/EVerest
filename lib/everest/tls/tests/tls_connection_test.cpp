@@ -82,7 +82,7 @@ TEST_F(TlsTest, BoundPortReportsEphemeralPort) {
 }
 
 TEST_F(TlsTest, StopBeforeServeIsIgnored) {
-    // EvseV2G stops an initialised server before every serve(), which must not end that serve()
+    // stopping an initialised server before serve() must not end that serve()
     using state_t = tls::Server::state_t;
     const auto res = server.init(server_config, nullptr);
     ASSERT_TRUE((res == state_t::init_complete) || (res == state_t::init_socket));

@@ -18,7 +18,7 @@ script there with `-v iso-2 -i <everest-core>`, and checks that every file liste
 - `ISO15118_2_GENERATE_AND_INSTALL_CERTIFICATES` is ON (the default);
 - edm is enabled, so packaging builds with `DISABLE_EDM=ON` (Yocto) never ship the
   development private keys;
-- at least one of Ev15118, EvseV2G and Evse15118D20 is built.
+- at least one of Ev15118 and Evse15118D20 is built.
 
 Configure fails when the script fails or a listed file is missing, and reports the
 reason when it skips the generation. Intermediate files stay in the build tree; the

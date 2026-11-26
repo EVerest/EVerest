@@ -53,13 +53,11 @@ class TestPlugAndCharge:
 
     @pytest.mark.asyncio
     @pytest.mark.source_certs_dir(Path(__file__).parent.parent / "everest-aux/certs")
-    @parametrize_secc_config(
-        "everest-config-ocpp201-sil-dc-d2.yaml",
-        "everest-config-ocpp201-sil-dc-d2-evsev2g.yaml",
+    @pytest.mark.everest_core_config(
+        get_everest_config_path_str("everest-config-ocpp201-sil-dc-d2.yaml")
     )
     async def test_contract_installation_and_authorization_01(
         self,
-        secc_config,
         request,
         exi_generator,
         central_system: CentralSystem,
@@ -119,13 +117,11 @@ class TestPlugAndCharge:
         )
 
     @pytest.mark.asyncio
-    @parametrize_secc_config(
-        "everest-config-ocpp201-sil-dc-d2.yaml",
-        "everest-config-ocpp201-sil-dc-d2-evsev2g.yaml",
+    @pytest.mark.everest_core_config(
+        get_everest_config_path_str("everest-config-ocpp201-sil-dc-d2.yaml")
     )
     async def test_contract_installation_and_authorization_02(
         self,
-        secc_config,
         request,
         exi_generator,
         central_system: CentralSystem,
@@ -207,13 +203,11 @@ class TestPlugAndCharge:
             ]
         )
     )
-    @parametrize_secc_config(
-        "everest-config-ocpp201-sil-dc-d2.yaml",
-        "everest-config-ocpp201-sil-dc-d2-evsev2g.yaml",
+    @pytest.mark.everest_core_config(
+        get_everest_config_path_str("everest-config-ocpp201-sil-dc-d2.yaml")
     )
     async def test_contract_installation_and_authorization_03(
         self,
-        secc_config,
         request,
         exi_generator,
         central_system: CentralSystem,
@@ -319,13 +313,11 @@ class TestPlugAndCharge:
             ]
         )
     )
-    @parametrize_secc_config(
-        "everest-config-ocpp201-sil-dc-d2.yaml",
-        "everest-config-ocpp201-sil-dc-d2-evsev2g.yaml",
+    @pytest.mark.everest_core_config(
+        get_everest_config_path_str("everest-config-ocpp201-sil-dc-d2.yaml")
     )
     async def test_contract_installation_and_authorization_04(
         self,
-        secc_config,
         request,
         exi_generator,
         central_system: CentralSystem,
@@ -421,13 +413,11 @@ class TestPlugAndCharge:
         )
     )
     @pytest.mark.asyncio
-    @parametrize_secc_config(
-        "everest-config-ocpp201-sil-dc-d2.yaml",
-        "everest-config-ocpp201-sil-dc-d2-evsev2g.yaml",
+    @pytest.mark.everest_core_config(
+        get_everest_config_path_str("everest-config-ocpp201-sil-dc-d2.yaml")
     )
     async def test_contract_revoked(
         self,
-        secc_config,
         request,
         exi_generator,
         central_system: CentralSystem,
@@ -560,13 +550,11 @@ class TestPlugAndCharge:
             ]
         )
     )
-    @parametrize_secc_config(
-        "everest-config-ocpp201-sil-dc-d2.yaml",
-        "everest-config-ocpp201-sil-dc-d2-evsev2g.yaml",
+    @pytest.mark.everest_core_config(
+        get_everest_config_path_str("everest-config-ocpp201-sil-dc-d2.yaml")
     )
     async def test_no_tls_after_secc_leaf_deleted(
         self,
-        secc_config,
         exi_generator,
         central_system: CentralSystem,
         charge_point: ChargePoint201,

@@ -5,7 +5,7 @@ Ev15118
 
 EV-side ISO 15118 EVCC built on the ``libiso15118`` ``ev::Controller``. It
 provides the ``ISO15118_ev`` interface and drives a DC or AC session against a
-SECC such as ``Evse15118D20`` or ``EvseV2G``.
+SECC such as ``Evse15118D20``.
 
 The ``v2g_messages`` notification identifies received responses for all three
 protocol generations, including ``PowerDeliveryRes`` before welding detection.
@@ -152,8 +152,7 @@ Configuration
      - ``false``
      - Accept the deviation from the standard and present a contract over a
        session with no transport security. ``false`` charges by EIM on a
-       plaintext link instead, which is the correction ``EvseV2G`` already makes
-       from the other end. ``true`` puts the contract chain, the eMAID and a
+       plaintext link instead. ``true`` puts the contract chain, the eMAID and a
        contract-key signature on the wire in clear.
    * - ``tls_version``
      - ``auto``

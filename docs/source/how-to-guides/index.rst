@@ -137,7 +137,7 @@ Have a look at this categorized list of all guides:
       :link: iso15118-stack-migration
       :link-type: doc
 
-      How to move a deployment from the deprecated EvseV2G and IsoMux modules to Evse15118D20.
+      How to move a deployment from the removed EvseV2G and IsoMux modules to Evse15118D20.
 
    .. grid-item-card:: Control Connector Availability During a Firmware Update
       :link: firmware-update-connector-availability

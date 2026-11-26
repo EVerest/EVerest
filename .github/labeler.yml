@@ -20,7 +20,6 @@ ISO15118:
   - changed-files:
       - any-glob-to-any-file:
           - modules/EVSE/Evse15118D20/**
-          - modules/EVSE/EvseV2G/**
           - modules/EVSE/Iso15118InternetVas/**
           - modules/EVSE/StaticISO15118VASProvider/**
           - modules/EV/Ev15118/**

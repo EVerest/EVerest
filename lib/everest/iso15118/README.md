@@ -68,8 +68,6 @@ ISO15118 support is distributed accross multiple repositories and modules in EVe
   [cbexigen repository](https://github.com/EVerest/cbexigen).
 - The [repository libSlac](https://github.com/EVerest/libslac) contains
   definitions of SLAC messages that are used for ISO 15118 communication.
-- The deprecated C implementation of DIN SPEC 70121 & ISO 15118-2 lives in the
-  [EVerest module EvseV2G](https://github.com/EVerest/EVerest/tree/main/modules/EVSE/EvseV2G)
 
 Dependencies
 ------------

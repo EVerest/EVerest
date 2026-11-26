@@ -45,7 +45,7 @@ target_link_libraries(cbv2g_json_wrapper
 
 # Hide all symbols by default; the public API is tagged CBV2G_API in the
 # header. This keeps the statically-linked cbv2g/cJSON internals from
-# colliding with EvseV2G (and any other module that statically links cbv2g)
+# colliding with any module that statically links cbv2g
 # at runtime.
 set_target_properties(cbv2g_json_wrapper PROPERTIES
     VERSION ${PROJECT_VERSION}

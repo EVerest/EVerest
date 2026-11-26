@@ -65,16 +65,15 @@ for further information on how to do the configuration for this module.
 
 In the visualization, step (0) shows the process that represents the previously described process of
 provisioning the charger with the correct certificates, before there is a physical
-connection to the EV. The OCPP module (OCPPmulti) and the ISO 15118 module (Evse15118D20; EvseV2G is a
-deprecated alternative) require a module that implements
+connection to the EV. The OCPP module (OCPPmulti) and the ISO 15118 module (Evse15118D20) require a module that implements
 the :doc:`evse_security interface </reference/interfaces/evse_security>`,
 in order to execute the following commands:
 
 * install_ca_certificate (Used by OCPP to install root certificates. This process is initiated by the OCPP CSMS)
 * update_leaf_certificate (Used to install or update SECC leaf certificates)
 * generate_certificate_signing_request (Used to generate a CSR that is used in the SignCertificate.req of OCPP)
-* verify_certificate (Used by EvseV2G to verify the contract certificate and by OCPP to verify new leaf certificates;
-  Evse15118D20 validates the contract chain against the root bundles from get_verify_file instead)
+* verify_certificate (Used by OCPP to verify new leaf certificates; Evse15118D20 validates the contract chain against
+  the root bundles from get_verify_file instead)
 * get_mo_ocsp_request_data (Used by the ISO 15118 module and OCPP to get the OCSP request data of the contract certificate (chain))
 
 There are more commands provided by the :doc:`evse_security interface </reference/interfaces/evse_security>`,
