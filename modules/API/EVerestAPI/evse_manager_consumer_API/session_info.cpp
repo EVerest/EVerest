@@ -54,6 +54,11 @@ void SessionInfo::update_state(const types::evse_manager::SessionEvent& session_
             this->clear_reservation();
             this->handle_transaction_started(session_event);
             break;
+        case Event::TransactionResumed:
+            // A transaction of the previous run continues without SessionStarted
+            this->handle_session_started(session_event);
+            this->handle_transaction_started(session_event);
+            break;
         case Event::ChargingStarted:
             this->ext.state = EvseStateEnum::Charging;
             break;

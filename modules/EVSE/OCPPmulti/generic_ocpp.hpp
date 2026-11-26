@@ -51,6 +51,7 @@
 #include <map>
 #include <mutex>
 #include <queue>
+#include <set>
 #include <thread>
 #include <utility>
 #include <variant>
@@ -248,6 +249,8 @@ private:
     // Runs the stop and system reset of an accepted Reset off the caller's thread, which on OCPP 2.x is
     // libocpp's websocket receive thread; stopping the charge point may join that thread.
     everest::lib::util::monitor<ResetState> m_reset;
+    // EVSEs whose transaction a reset stopped and that have not reported TransactionFinished yet
+    everest::lib::util::monitor<std::set<std::int32_t>> m_reset_pending_stops;
     void join_reset_thread();
 
     // Queue the event if OCPP hasn't started yet; returns true when it was queued.
@@ -326,6 +329,13 @@ public:
     }
 
 protected:
+    // Keeps the transactions of all EVSEs for resumption after a reset, stops those that cannot be kept
+    void prepare_resume_after_reset(const TransactionResumption& resumption);
+    // Undoes prepare_resume_after_reset() for a reset that did not take place
+    void cancel_resume_after_reset();
+    // How long a reset waits for the transactions it stopped to be reported
+    std::chrono::milliseconds m_reset_stop_timeout{std::chrono::seconds(30)};
+
     // Access to member variables for unit tests
     [[nodiscard]] auto& evse_evcc_id() {
         return mv_evse_evcc_id;
@@ -421,7 +431,8 @@ protected:
     void cb_ready(std::int32_t evse_id, bool ready) override;
     void cb_reservation_update(types::reservation::ReservationUpdateStatus status) override;
     ocpp::v2::ReserveNowStatusEnum cb_reserve_now(const ocpp::v2::ReserveNowRequest& request) override;
-    void cb_reset(const std::optional<const std::int32_t>& evse_id, ResetType type) override;
+    void cb_reset(const std::optional<const std::int32_t>& evse_id, ResetType type,
+                  const std::optional<TransactionResumption>& resumption) override;
     bool cb_resume_charging(std::int32_t evse_id) override;
     void cb_security_event(const ocpp::CiString<50>& event_type,
                            const std::optional<ocpp::CiString<255>>& tech_info) override;

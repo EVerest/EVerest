@@ -44,6 +44,8 @@ protected:
     virtual bool handle_pause_charging() override;
     virtual bool handle_resume_charging() override;
     virtual bool handle_stop_transaction(types::evse_manager::StopTransactionRequest& request) override;
+    virtual bool handle_prepare_resume_after_reset(bool& allow_energy_transfer) override;
+    virtual void handle_cancel_resume_after_reset() override;
     virtual bool handle_force_unlock(int& connector_id) override;
     virtual bool handle_external_ready_to_start_charging() override;
     virtual void handle_set_plug_and_charge_configuration(

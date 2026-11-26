@@ -2137,6 +2137,10 @@ std::optional<bool> ChargePointConfigurationDeviceModel::getReportClearedErrors(
     return get_optional<bool>(*storage, resolver, keys::valid_keys::ReportClearedErrors);
 }
 
+std::optional<bool> ChargePointConfigurationDeviceModel::getResumeTransactionsOnReset() {
+    return get_optional<bool>(*storage, resolver, keys::valid_keys::ResumeTransactionsOnReset);
+}
+
 std::optional<int> ChargePointConfigurationDeviceModel::getMessageQueueSizeThreshold() {
     return get_optional<int>(*storage, resolver, keys::valid_keys::MessageQueueSizeThreshold);
 }
@@ -2442,6 +2446,10 @@ std::optional<KeyValue> ChargePointConfigurationDeviceModel::getQueueAllMessages
 
 std::optional<KeyValue> ChargePointConfigurationDeviceModel::getReportClearedErrorsKeyValue() {
     return get_key_value_optional(*storage, resolver, keys::valid_keys::ReportClearedErrors);
+}
+
+std::optional<KeyValue> ChargePointConfigurationDeviceModel::getResumeTransactionsOnResetKeyValue() {
+    return get_key_value_optional(*storage, resolver, keys::valid_keys::ResumeTransactionsOnReset);
 }
 
 std::optional<KeyValue> ChargePointConfigurationDeviceModel::getSeccLeafSubjectCommonNameKeyValue() {
@@ -3929,6 +3937,7 @@ std::optional<ConfigurationStatus> ChargePointConfigurationDeviceModel::set(cons
         case keys::valid_keys::MessageTypesDiscardForQueueing:
         case keys::valid_keys::QueueAllMessages:
         case keys::valid_keys::ReportClearedErrors:
+        case keys::valid_keys::ResumeTransactionsOnReset:
         case keys::valid_keys::SupportedChargingProfilePurposeTypes:
         case keys::valid_keys::SupportedCiphers12:
         case keys::valid_keys::SupportedCiphers13:

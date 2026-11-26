@@ -31,7 +31,8 @@ session, only without a ``transaction`` member: an EV that was plugged in but ne
 authorized still produces a record.
 
 Sessions with a running transaction that are interrupted by a power loss are closed by
-the module during recovery on the next boot. Their transaction gets stop reason
+the module during recovery on the next boot, unless EvseManager resumes the transaction
+(``TransactionResumed``); a resumed session continues under its own ID. Their transaction gets stop reason
 ``PowerLoss`` and the session stop timestamp is the time of the recovery, because the
 EvseManager reports the recovery finish of the transaction but no session finish of its
 own for the resumed session. A session without a running transaction gets no recovery:

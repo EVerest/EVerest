@@ -697,3 +697,95 @@ async def test_stop_pending_transactions(
             }
         },
     )
+
+
+def transaction_events(charge_point, event_type):
+    return [message.payload for message in received_calls(charge_point, "TransactionEvent")
+            if message.payload["eventType"] == event_type]
+
+
+@pytest.mark.asyncio
+@pytest.mark.ocpp_version("ocpp2.0.1")
+@pytest.mark.everest_core_config('everest-config-ocpp201-ps.yaml')
+@pytest.mark.use_temporary_persistent_store
+@pytest.mark.everest_config_adaptions(EvseManagerResumeTransactionStrategy("Crash,Restart"))
+@pytest.mark.ocpp_config_adaptions(
+        GenericOCPP2XConfigAdjustment(
+            [
+                (
+                    OCPP2XConfigVariableIdentifier(
+                        "InternalCtrlr",
+                        "ResumeTransactionsOnBoot",
+                        "Actual",
+                    ),
+                    "true",
+                ),
+            ]
+        )
+    )
+async def test_resume_transaction_after_restart(
+    central_system_v201: CentralSystem,
+    test_controller: TestController,
+    test_utility: TestUtility,
+):
+    logging.info("######### test_resume_transaction_after_restart #########")
+
+    evse_id = 1
+    remote_start_id = 1
+    id_token = IdTokenType(id_token="DEADBEEF", type=IdTokenTypeEnum.iso14443)
+
+    test_controller.start()
+    charge_point_v201 = await central_system_v201.wait_for_chargepoint(
+        wait_for_bootnotification=True
+    )
+
+    await charge_point_v201.request_start_transaction_req(
+        id_token=id_token, remote_start_id=remote_start_id, evse_id=evse_id
+    )
+    test_controller.plug_in()
+
+    assert await wait_for_and_validate(
+        test_utility, charge_point_v201, "TransactionEvent", {"eventType": "Started"}
+    )
+    assert await wait_for_and_validate(
+        test_utility, charge_point_v201, "TransactionEvent",
+        {"eventType": "Updated", "transactionInfo": {"chargingState": "Charging"}},
+    )
+    started = transaction_events(charge_point_v201, "Started")
+    assert len(started) == 1
+    transaction_id = started[0]["transactionInfo"]["transactionId"]
+
+    await asyncio.sleep(2)
+    test_controller.stop()
+    await asyncio.sleep(2)
+    test_utility.messages.clear()
+    test_controller.start()
+
+    charge_point_v201 = await central_system_v201.wait_for_chargepoint(
+        wait_for_bootnotification=False
+    )
+
+    # the EV is still there after the restart
+    test_controller.plug_in()
+
+    assert await wait_for_and_validate(
+        test_utility, charge_point_v201, "TransactionEvent",
+        {
+            "eventType": "Updated",
+            "transactionInfo": {"transactionId": transaction_id, "chargingState": "Charging"},
+        },
+    )
+    assert not transaction_events(charge_point_v201, "Started")
+    assert not transaction_events(charge_point_v201, "Ended")
+
+    test_controller.plug_out()
+
+    assert await wait_for_and_validate(
+        test_utility, charge_point_v201, "TransactionEvent",
+        {
+            "eventType": "Ended",
+            "transactionInfo": {"transactionId": transaction_id, "stoppedReason": "EVDisconnected"},
+        },
+    )
+    assert len(transaction_events(charge_point_v201, "Ended")) == 1
+    assert not transaction_events(charge_point_v201, "Started")

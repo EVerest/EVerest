@@ -19,9 +19,11 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
+#include <atomic>
 #include <chrono>
 #include <future>
 #include <mutex>
+#include <stdexcept>
 #include <thread>
 #include <tuple>
 
@@ -185,7 +187,7 @@ TEST_F(GenericOcppRequiresTester, callIsResetAllowed) {
 }
 
 TEST_F(GenericOcppRequiresTester, callIsResetAllowedImmediateAndResume) {
-    // B13.FR.01: rejected without transaction resumption support
+    // B13.FR.01 (TxCtrlr.ResumptionTimeout) is checked by libocpp, the system decides like for Immediate
 
     using ResetType = ocpp_multi::GenericChargePointCallbacks::ResetType;
 
@@ -194,15 +196,263 @@ TEST_F(GenericOcppRequiresTester, callIsResetAllowedImmediateAndResume) {
                               [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
 
     interfaces->add_cmd_result(R"(true)"_json);
-    interfaces->add_cmd_result(R"(true)"_json);
+    interfaces->add_cmd_result(R"(false)"_json);
 
+    EXPECT_TRUE(ocpp->cb_is_reset_allowed(std::nullopt, ResetType::ImmediateAndResume));
     EXPECT_FALSE(ocpp->cb_is_reset_allowed(std::nullopt, ResetType::ImmediateAndResume));
-    EXPECT_TRUE(received.empty());
+    EXPECT_FALSE(ocpp->cb_is_reset_allowed(1, ResetType::ImmediateAndResume));
 
-    EXPECT_TRUE(ocpp->cb_is_reset_allowed(std::nullopt, ResetType::Immediate));
-    EXPECT_EQ(received.size(), 1);
-    EXPECT_TRUE(ocpp->cb_is_reset_allowed(std::nullopt, ResetType::OnIdle));
-    EXPECT_EQ(received.size(), 2);
+    ASSERT_EQ(received.size(), 2);
+    EXPECT_EQ(received[0], R"({"type":"NotSpecified"})"_json);
+}
+
+struct ResetWithResumptionCalls {
+    std::mutex mutex;
+    std::vector<int> prepared;
+    std::vector<json> prepared_args;
+    std::vector<std::pair<int, json>> stopped;
+    std::vector<int> cancelled;
+    std::vector<json> resets;
+    std::size_t prepared_before_stop{0};
+
+    std::size_t reset_count() {
+        std::lock_guard<std::mutex> lock(mutex);
+        return resets.size();
+    }
+};
+
+void record_reset_with_resumption(stubs::ModuleInterfaces& interfaces, ResetWithResumptionCalls& calls) {
+    for (int index : {0, 1}) {
+        interfaces.subscribe_var("evse_manager", "call_prepare_resume_after_reset", index,
+                                 [&calls, index](const auto&, const auto&, const auto& data) {
+                                     std::lock_guard<std::mutex> lock(calls.mutex);
+                                     calls.prepared.push_back(index);
+                                     calls.prepared_args.push_back(data);
+                                 });
+        interfaces.subscribe_var("evse_manager", "call_stop_transaction", index,
+                                 [&calls, index](const auto&, const auto&, const auto& data) {
+                                     std::lock_guard<std::mutex> lock(calls.mutex);
+                                     calls.stopped.emplace_back(index, data);
+                                 });
+        interfaces.subscribe_var("evse_manager", "call_cancel_resume_after_reset", index,
+                                 [&calls, index](const auto&, const auto&, const auto&) {
+                                     std::lock_guard<std::mutex> lock(calls.mutex);
+                                     calls.cancelled.push_back(index);
+                                 });
+    }
+    interfaces.subscribe_var("system", "call_reset", [&calls](const auto&, const auto&, const auto& data) {
+        std::lock_guard<std::mutex> lock(calls.mutex);
+        calls.resets.push_back(data);
+    });
+}
+
+TEST_F(GenericOcppRequiresTester, callResetWithResumptionKeepsTransactions) {
+    using ResetType = ocpp_multi::GenericChargePointCallbacks::ResetType;
+    ResetWithResumptionCalls calls;
+    record_reset_with_resumption(*interfaces, calls);
+    EXPECT_CALL(chargepoint, stop()).WillOnce([&calls]() {
+        std::lock_guard<std::mutex> lock(calls.mutex);
+        calls.prepared_before_stop = calls.prepared.size();
+    });
+
+    interfaces->add_cmd_result("true"_json); // prepare_resume_after_reset EVSE 1
+    interfaces->add_cmd_result("true"_json); // prepare_resume_after_reset EVSE 2
+    interfaces->add_cmd_result("true"_json); // reset
+
+    ocpp->cb_reset(std::nullopt, ResetType::ImmediateAndResume,
+                   ocpp_multi::GenericChargePointCallbacks::TransactionResumption{false});
+    EXPECT_TRUE(wait_for_condition([&] { return calls.reset_count() >= 1; }));
+    ocpp->shutdown();
+
+    EXPECT_EQ(calls.prepared, (std::vector<int>{0, 1}));
+    EXPECT_EQ(calls.prepared_before_stop, 2);
+    ASSERT_EQ(calls.prepared_args.size(), 2);
+    EXPECT_EQ(calls.prepared_args[0], R"({"allow_energy_transfer":false})"_json);
+    EXPECT_TRUE(calls.stopped.empty());
+    ASSERT_EQ(calls.resets.size(), 1);
+    EXPECT_EQ(calls.resets[0], R"({"scheduled":false,"type":"NotSpecified"})"_json);
+}
+
+TEST_F(GenericOcppRequiresTester, callResetWithResumptionStopsTransactionsThatCannotBeKept) {
+    using ResetType = ocpp_multi::GenericChargePointCallbacks::ResetType;
+    ResetWithResumptionCalls calls;
+    record_reset_with_resumption(*interfaces, calls);
+
+    ocpp->m_reset_stop_timeout = std::chrono::milliseconds(100);
+
+    interfaces->add_cmd_result("false"_json); // prepare_resume_after_reset EVSE 1
+    interfaces->add_cmd_result("true"_json);  // stop_transaction EVSE 1
+    interfaces->add_cmd_result("true"_json);  // prepare_resume_after_reset EVSE 2
+    interfaces->add_cmd_result("true"_json);  // reset
+
+    ocpp->cb_reset(std::nullopt, ResetType::Hard, ocpp_multi::GenericChargePointCallbacks::TransactionResumption{});
+    EXPECT_TRUE(wait_for_condition([&] { return calls.reset_count() >= 1; }));
+    ocpp->shutdown();
+
+    EXPECT_EQ(calls.prepared, (std::vector<int>{0, 1}));
+    ASSERT_EQ(calls.stopped.size(), 1);
+    EXPECT_EQ(calls.stopped[0].first, 0);
+    EXPECT_EQ(calls.stopped[0].second.at("request").at("reason"), "HardReset");
+    ASSERT_EQ(calls.resets.size(), 1);
+    EXPECT_EQ(calls.resets[0], R"({"scheduled":false,"type":"Hard"})"_json);
+}
+
+types::evse_manager::SessionEvent transaction_finished_event() {
+    types::evse_manager::SessionEvent event;
+    event.uuid = "session";
+    event.timestamp = "2026-01-01T00:00:00Z";
+    event.event = types::evse_manager::SessionEventEnum::TransactionFinished;
+    event.connector_id = 1;
+    types::evse_manager::TransactionFinished finished;
+    finished.reason = types::evse_manager::StopTransactionReason::HardReset;
+    event.transaction_finished = finished;
+    return event;
+}
+
+// The stop is reported before the charge point stops, so that it is not lost in the reset
+TEST_F(GenericOcppRequiresTester, callResetWithResumptionWaitsForTheTransactionsItStops) {
+    using ResetType = ocpp_multi::GenericChargePointCallbacks::ResetType;
+    ResetWithResumptionCalls calls;
+    record_reset_with_resumption(*interfaces, calls);
+    std::atomic_bool finished_reported{false};
+    std::atomic_bool finished_before_stop{false};
+    EXPECT_CALL(chargepoint, stop()).WillOnce([&]() { finished_before_stop = finished_reported.load(); });
+
+    interfaces->add_cmd_result("false"_json); // prepare_resume_after_reset EVSE 1
+    interfaces->add_cmd_result("true"_json);  // stop_transaction EVSE 1
+    interfaces->add_cmd_result("true"_json);  // prepare_resume_after_reset EVSE 2
+    interfaces->add_cmd_result("true"_json);  // reset
+
+    ocpp->cb_reset(std::nullopt, ResetType::Hard, ocpp_multi::GenericChargePointCallbacks::TransactionResumption{});
+    ASSERT_TRUE(wait_for_condition([&] {
+        std::lock_guard<std::mutex> lock(calls.mutex);
+        return not calls.stopped.empty();
+    }));
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    EXPECT_EQ(calls.reset_count(), 0);
+
+    finished_reported = true;
+    ocpp->process_session_event(1, transaction_finished_event());
+    EXPECT_TRUE(wait_for_condition([&] { return calls.reset_count() >= 1; }));
+    ocpp->shutdown();
+
+    EXPECT_TRUE(finished_before_stop);
+}
+
+TEST_F(GenericOcppRequiresTester, callResetWithResumptionCancelsWhenTheResetFails) {
+    using ResetType = ocpp_multi::GenericChargePointCallbacks::ResetType;
+    ResetWithResumptionCalls calls;
+    record_reset_with_resumption(*interfaces, calls);
+    interfaces->subscribe_var("system", "call_reset",
+                              [](const auto&, const auto&, const auto&) { throw std::runtime_error("reset failed"); });
+
+    interfaces->add_cmd_result("true"_json); // prepare_resume_after_reset EVSE 1
+    interfaces->add_cmd_result("true"_json); // prepare_resume_after_reset EVSE 2
+
+    ocpp->cb_reset(std::nullopt, ResetType::ImmediateAndResume,
+                   ocpp_multi::GenericChargePointCallbacks::TransactionResumption{});
+    EXPECT_TRUE(wait_for_condition([&] {
+        std::lock_guard<std::mutex> lock(calls.mutex);
+        return calls.cancelled.size() >= 2;
+    }));
+    ocpp->shutdown();
+
+    EXPECT_EQ(calls.cancelled, (std::vector<int>{0, 1}));
+}
+
+// An EVSE whose preparation fails is treated as one that cannot keep its transaction
+TEST_F(GenericOcppRequiresTester, callResetWithResumptionStopsATransactionWhosePreparationFails) {
+    using ResetType = ocpp_multi::GenericChargePointCallbacks::ResetType;
+    ResetWithResumptionCalls calls;
+    record_reset_with_resumption(*interfaces, calls);
+    interfaces->subscribe_var("evse_manager", "call_prepare_resume_after_reset", 0,
+                              [](const auto&, const auto&, const auto&) { throw std::runtime_error("no answer"); });
+    ocpp->m_reset_stop_timeout = std::chrono::milliseconds(100);
+
+    interfaces->add_cmd_result("true"_json); // stop_transaction EVSE 1
+    interfaces->add_cmd_result("true"_json); // prepare_resume_after_reset EVSE 2
+    interfaces->add_cmd_result("true"_json); // reset
+
+    ocpp->cb_reset(std::nullopt, ResetType::ImmediateAndResume,
+                   ocpp_multi::GenericChargePointCallbacks::TransactionResumption{});
+    EXPECT_TRUE(wait_for_condition([&] { return calls.reset_count() >= 1; }));
+    ocpp->shutdown();
+
+    EXPECT_EQ(calls.prepared, (std::vector<int>{0, 1}));
+    ASSERT_EQ(calls.stopped.size(), 1);
+    EXPECT_EQ(calls.stopped[0].first, 0);
+    EXPECT_TRUE(calls.cancelled.empty());
+}
+
+TEST_F(GenericOcppRequiresTester, callResetWithResumptionCancelsWhenStoppingTheChargePointFails) {
+    using ResetType = ocpp_multi::GenericChargePointCallbacks::ResetType;
+    ResetWithResumptionCalls calls;
+    record_reset_with_resumption(*interfaces, calls);
+    EXPECT_CALL(chargepoint, stop()).WillOnce([]() { throw std::runtime_error("stop failed"); });
+
+    interfaces->add_cmd_result("true"_json); // prepare_resume_after_reset EVSE 1
+    interfaces->add_cmd_result("true"_json); // prepare_resume_after_reset EVSE 2
+
+    ocpp->cb_reset(std::nullopt, ResetType::ImmediateAndResume,
+                   ocpp_multi::GenericChargePointCallbacks::TransactionResumption{});
+    EXPECT_TRUE(wait_for_condition([&] {
+        std::lock_guard<std::mutex> lock(calls.mutex);
+        return calls.cancelled.size() >= 2;
+    }));
+    ocpp->shutdown();
+
+    EXPECT_EQ(calls.cancelled, (std::vector<int>{0, 1}));
+    EXPECT_EQ(calls.reset_count(), 0);
+}
+
+TEST_F(GenericOcppRequiresTester, callResetWithResumptionCancelsTheOtherEvsesWhenOneCancelFails) {
+    using ResetType = ocpp_multi::GenericChargePointCallbacks::ResetType;
+    ResetWithResumptionCalls calls;
+    record_reset_with_resumption(*interfaces, calls);
+    interfaces->subscribe_var("evse_manager", "call_cancel_resume_after_reset", 0,
+                              [](const auto&, const auto&, const auto&) { throw std::runtime_error("no answer"); });
+    interfaces->subscribe_var("system", "call_reset",
+                              [](const auto&, const auto&, const auto&) { throw std::runtime_error("reset failed"); });
+
+    interfaces->add_cmd_result("true"_json); // prepare_resume_after_reset EVSE 1
+    interfaces->add_cmd_result("true"_json); // prepare_resume_after_reset EVSE 2
+
+    ocpp->cb_reset(std::nullopt, ResetType::ImmediateAndResume,
+                   ocpp_multi::GenericChargePointCallbacks::TransactionResumption{});
+    EXPECT_TRUE(wait_for_condition([&] {
+        std::lock_guard<std::mutex> lock(calls.mutex);
+        return calls.cancelled.size() >= 2;
+    }));
+    ocpp->shutdown();
+
+    EXPECT_EQ(calls.cancelled, (std::vector<int>{0, 1}));
+}
+
+TEST_F(GenericOcppRequiresTester, callResetWithoutResumptionCancelsNothingWhenTheResetFails) {
+    using ResetType = ocpp_multi::GenericChargePointCallbacks::ResetType;
+    ResetWithResumptionCalls calls;
+    record_reset_with_resumption(*interfaces, calls);
+    interfaces->subscribe_var("system", "call_reset",
+                              [](const auto&, const auto&, const auto&) { throw std::runtime_error("reset failed"); });
+
+    ocpp->cb_reset(std::nullopt, ResetType::Immediate, std::nullopt);
+    EXPECT_TRUE(wait_for_condition([&] { return calls.reset_count() >= 1; }));
+    ocpp->shutdown();
+
+    EXPECT_TRUE(calls.cancelled.empty());
+}
+
+TEST_F(GenericOcppRequiresTester, callResetWithoutResumptionKeepsNothing) {
+    using ResetType = ocpp_multi::GenericChargePointCallbacks::ResetType;
+    ResetWithResumptionCalls calls;
+    record_reset_with_resumption(*interfaces, calls);
+    interfaces->add_cmd_result("true"_json); // reset
+
+    ocpp->cb_reset(std::nullopt, ResetType::Immediate, std::nullopt);
+    EXPECT_TRUE(wait_for_condition([&] { return calls.reset_count() >= 1; }));
+    ocpp->shutdown();
+
+    EXPECT_TRUE(calls.prepared.empty());
 }
 
 using ResetType = ocpp_multi::GenericChargePointCallbacks::ResetType;
@@ -228,7 +478,7 @@ TEST_P(GenericOcppResetTester, callReset) {
 
     interfaces->add_cmd_result(R"(true)"_json);
 
-    ocpp->cb_reset(std::nullopt, type);
+    ocpp->cb_reset(std::nullopt, type, std::nullopt);
     EXPECT_TRUE(wait_for_condition([&] { return received_count() >= 1; }));
 
     // joins the reset work before the fixture tears down the interfaces
@@ -251,7 +501,7 @@ TEST_F(GenericOcppRequiresTester, callResetOfEvseNotSent) {
     interfaces->subscribe_var("system", "call_reset",
                               [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
 
-    ocpp->cb_reset(1, ResetType::OnIdle);
+    ocpp->cb_reset(1, ResetType::OnIdle, std::nullopt);
     ocpp->shutdown();
 
     EXPECT_TRUE(received.empty());
@@ -279,7 +529,8 @@ TEST_F(GenericOcppRequiresTester, callResetDoesNotBlockCaller) {
         release.wait_for(std::chrono::seconds(5));
     });
 
-    auto reset = std::async(std::launch::async, [this]() { ocpp->cb_reset(std::nullopt, ResetType::Hard); });
+    auto reset =
+        std::async(std::launch::async, [this]() { ocpp->cb_reset(std::nullopt, ResetType::Hard, std::nullopt); });
 
     const bool returned = reset.wait_for(std::chrono::seconds(2)) == std::future_status::ready;
     const bool stop_blocked = stop_entered.get_future().wait_for(std::chrono::seconds(2)) == std::future_status::ready;

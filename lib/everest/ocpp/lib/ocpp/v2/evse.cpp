@@ -10,6 +10,7 @@
 #include <everest/logging.hpp>
 #include <ocpp/v2/ctrlr_component_variables.hpp>
 #include <ocpp/v2/evse.hpp>
+#include <ocpp/v2/utils.hpp>
 
 using namespace std::chrono_literals;
 using QueryExecutionException = everest::db::QueryExecutionException;
@@ -69,8 +70,7 @@ Evse::Evse(const std::int32_t evse_id, const std::int32_t number_of_connectors, 
             std::make_pair(connector_id, std::make_unique<Connector>(evse_id, connector_id, component_state_manager)));
     }
 
-    if (this->device_model.get_optional_value<bool>(ControllerComponentVariables::ResumeTransactionsOnBoot)
-            .value_or(false)) {
+    if (utils::transaction_resumption_enabled(this->device_model)) {
         this->try_resume_transaction();
     } else {
         this->delete_database_transaction();
@@ -253,9 +253,7 @@ void Evse::open_transaction(const std::string& transaction_id, const std::int32_
         EVLOG_AND_THROW(std::runtime_error("Attempt to start transaction at invalid connector_id"));
     }
 
-    const bool tx_database_enabled =
-        this->device_model.get_optional_value<bool>(ControllerComponentVariables::ResumeTransactionsOnBoot)
-            .value_or(false);
+    const bool tx_database_enabled = utils::transaction_resumption_enabled(this->device_model);
 
     this->transaction = std::make_unique<EnhancedTransaction>(*this->database_handler.get(), tx_database_enabled);
     this->transaction->transactionId = transaction_id;

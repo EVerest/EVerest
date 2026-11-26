@@ -68,6 +68,11 @@ struct GenericChargePointCallbacks {
         ImmediateAndResume,
     };
 
+    // A reset that keeps the ongoing transactions and resumes them after the restart
+    struct TransactionResumption {
+        bool allow_energy_transfer{true};
+    };
+
     struct IdToken {
         ocpp::v2::IdToken token;
         bool prevalidated;
@@ -126,7 +131,9 @@ struct GenericChargePointCallbacks {
     virtual void cb_ready(std::int32_t evse_id, bool ready) = 0;
     virtual void cb_reservation_update(types::reservation::ReservationUpdateStatus status) = 0;
     virtual ocpp::v2::ReserveNowStatusEnum cb_reserve_now(const ocpp::v2::ReserveNowRequest& request) = 0;
-    virtual void cb_reset(const std::optional<const std::int32_t>& evse_id, ResetType type) = 0;
+    /// \param resumption keep the transactions for resumption after the reset instead of stopping them
+    virtual void cb_reset(const std::optional<const std::int32_t>& evse_id, ResetType type,
+                          const std::optional<TransactionResumption>& resumption) = 0;
     virtual bool cb_resume_charging(std::int32_t evse_id) = 0;
     virtual void cb_security_event(const ocpp::CiString<50>& event_type,
                                    const std::optional<ocpp::CiString<255>>& tech_info) = 0;
@@ -310,6 +317,8 @@ struct GenericChargePointInterface {
                                            const types::evse_manager::SessionEvent& session_event) = 0;
     virtual void on_event_session_resumed(std::int32_t evse_id, std::int32_t connector_id,
                                           const types::evse_manager::SessionEvent& session_event) = 0;
+    virtual void on_event_transaction_resumed(std::int32_t evse_id, std::int32_t connector_id,
+                                              const types::evse_manager::SessionEvent& session_event) = 0;
     virtual SessionResult on_event_session_started(std::int32_t evse_id, std::int32_t connector_id,
                                                    const types::evse_manager::SessionEvent& session_event) = 0;
     virtual void on_event_switching_phases(std::int32_t evse_id, std::int32_t connector_id,

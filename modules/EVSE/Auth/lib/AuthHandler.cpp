@@ -924,6 +924,20 @@ void AuthHandler::handle_session_event(const int evse_id, const SessionEvent& ev
         check_reservations = true;
         break;
     }
+    case SessionEventEnum::TransactionResumed: {
+        // The transaction of the previous run continues: the EVSE is occupied and its token can stop it.
+        auto& evse = this->evses.at(evse_id);
+        evse->plugged_in = true;
+        evse->transaction_active = true;
+        if (event.transaction_started.has_value()) {
+            const auto& id_tag = event.transaction_started->id_tag;
+            evse->identifier.emplace(Identifier{id_tag.id_token, id_tag.authorization_type,
+                                                AuthorizationStatus::Accepted, std::nullopt, id_tag.parent_id_token});
+        }
+        this->submit_event_for_connector(evse_id, connector_id, ConnectorEvent::TRANSACTION_STARTED);
+        check_reservations = true;
+        break;
+    }
     case SessionEventEnum::TransactionFinished:
         this->evses.at(evse_id)->transaction_active = false;
         this->evses.at(evse_id)->identifier.reset();

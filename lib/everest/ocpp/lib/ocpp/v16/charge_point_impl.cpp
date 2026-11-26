@@ -284,6 +284,9 @@ ChargePointImpl::ChargePointImpl(
 ChargePointImpl::~ChargePointImpl() {
     // Suppress deferred websocket callbacks before any member is destroyed.
     this->connectivity_manager->disarm_connection_callbacks();
+    if (this->reset_thread.joinable()) {
+        this->reset_thread.join();
+    }
 }
 
 std::unique_ptr<ocpp::MessageQueue<v16::MessageType>> ChargePointImpl::create_message_queue() {
@@ -1228,6 +1231,7 @@ bool ChargePointImpl::start(const std::map<int, ChargePointStatus>& connector_st
     }
 
     this->stopped = false;
+    this->resetting_with_resume = false;
     return true;
 }
 
@@ -1424,7 +1428,9 @@ bool ChargePointImpl::stop() {
             }
         }
 
-        this->stop_all_transactions();
+        if (not this->resetting_with_resume) {
+            this->stop_all_transactions();
+        }
 
         this->message_queue->stop();
         this->security_profile_revert_timer.stop();
@@ -2469,7 +2475,12 @@ void ChargePointImpl::handleResetRequest(ocpp::Call<ResetRequest> call) {
     const ocpp::CallResult<ResetResponse> call_result(response, call.uniqueId);
     this->message_dispatcher->dispatch_call_result(call_result);
 
-    if (response.status == ResetStatus::Accepted) {
+    if (response.status == ResetStatus::Accepted and
+        this->configuration.getResumeTransactionsOnReset().value_or(false)) {
+        // Deviation from OCPP 1.6: the transactions are not stopped and resume after the reset
+        this->resetting_with_resume = true;
+        this->reset_thread = std::thread([this, reset_type]() { this->reset_callback(reset_type); });
+    } else if (response.status == ResetStatus::Accepted) {
         // gracefully stop all transactions and send StopTransaction. Restart software afterwards
         this->reset_thread = std::thread([this, reset_type]() {
             EVLOG_debug << "Waiting until all transactions are stopped...";

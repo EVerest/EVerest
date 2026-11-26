@@ -107,7 +107,8 @@ void RpcApi::check_evse_session_event(data::DataStoreEvse& evse_data,
         }
     }
 
-    if (session_event.event == types::evse_manager::SessionEventEnum::TransactionStarted) {
+    if (session_event.event == types::evse_manager::SessionEventEnum::TransactionStarted or
+        session_event.event == types::evse_manager::SessionEventEnum::TransactionResumed) {
         if (session_event.transaction_started.has_value()) {
             const auto transaction_started = session_event.transaction_started.value();
             const auto energy_Wh_import = transaction_started.meter_value.energy_Wh_import.total;

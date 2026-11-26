@@ -233,6 +233,20 @@ def probe_module(
         module,
         skip_implementation,
         "ProbeModuleConnectorA",
+        "prepare_resume_after_reset",
+        lambda arg: True,
+    )
+    implement_command(
+        module,
+        skip_implementation,
+        "ProbeModuleConnectorA",
+        "cancel_resume_after_reset",
+        lambda arg: None,
+    )
+    implement_command(
+        module,
+        skip_implementation,
+        "ProbeModuleConnectorA",
         "force_unlock",
         lambda arg: True,
     )
@@ -333,6 +347,20 @@ def probe_module(
         "ProbeModuleConnectorB",
         "stop_transaction",
         lambda arg: True,
+    )
+    implement_command(
+        module,
+        skip_implementation,
+        "ProbeModuleConnectorB",
+        "prepare_resume_after_reset",
+        lambda arg: True,
+    )
+    implement_command(
+        module,
+        skip_implementation,
+        "ProbeModuleConnectorB",
+        "cancel_resume_after_reset",
+        lambda arg: None,
     )
     implement_command(
         module,

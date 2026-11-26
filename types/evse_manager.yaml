@@ -181,7 +181,8 @@ types:
         ReservationEnd: Signaled when a reservation ends
         PluginTimeout: Signaled when an EV has been plugged in but no authorization is present within specified ConnectionTimeout
         SwitchingPhases: Signaled when the EVSE Manager starts switching phases
-        SessionResumed: Signaled when a session is resumed at startup (e.g. because of previous powerloss)
+        SessionResumed: Signaled at startup when a transaction of the previous run (e.g. interrupted by a power loss) was found. It is followed either by TransactionFinished with reason PowerLoss or, if the transaction is continued, by TransactionResumed
+        TransactionResumed: Signaled instead of SessionStarted and TransactionStarted when the EV of a transaction of the previous run is plugged in and the transaction continues with the same session ID. transaction_started carries the id token, the signed start meter value and the meter value at the start of the transaction, and the timestamp of the event is the start time of the transaction
     type: string
     enum:
       - Authorized
@@ -204,6 +205,7 @@ types:
       - PluginTimeout
       - SwitchingPhases
       - SessionResumed
+      - TransactionResumed
   SessionStarted:
     description: Data for the SessionStarted event
     type: object
@@ -414,7 +416,7 @@ types:
         type: object
         $ref: /evse_manager#/SessionFinished
       transaction_started:
-        description: data for TransactionStarted event
+        description: data for TransactionStarted and TransactionResumed events
         type: object
         $ref: /evse_manager#/TransactionStarted
       transaction_finished:

@@ -66,6 +66,10 @@ struct Ocpp2ChargePointMock : public ocpp::v2::ChargePointInterface {
                 (const std::uint32_t evse_id, const ocpp::v2::ChargingStateEnum charging_state,
                  const ocpp::v2::TriggerReasonEnum trigger_reason),
                 (override));
+    MOCK_METHOD(bool, on_transaction_resumed,
+                (const std::uint32_t evse_id, const ocpp::v2::ChargingStateEnum charging_state,
+                 const ocpp::v2::TriggerReasonEnum trigger_reason),
+                (override));
     MOCK_METHOD(ocpp::v2::ChangeAvailabilityResponse, on_change_availability,
                 (const ocpp::v2::ChangeAvailabilityRequest& request), (override));
     MOCK_METHOD(std::optional<std::string>, get_evse_transaction_id, (std::int32_t evse_id), (override));
@@ -178,7 +182,10 @@ struct GenericChargePointCallbacksMock : public ocpp_multi::GenericChargePointCa
     MOCK_METHOD(void, cb_reservation_update, (types::reservation::ReservationUpdateStatus status), (override));
     MOCK_METHOD(ocpp::v2::ReserveNowStatusEnum, cb_reserve_now, (const ocpp::v2::ReserveNowRequest& request),
                 (override));
-    MOCK_METHOD(void, cb_reset, (const std::optional<const std::int32_t>& evse_id, ResetType type), (override));
+    MOCK_METHOD(void, cb_reset,
+                (const std::optional<const std::int32_t>& evse_id, ResetType type,
+                 const std::optional<TransactionResumption>& resumption),
+                (override));
     MOCK_METHOD(bool, cb_resume_charging, (std::int32_t evse_id), (override));
     MOCK_METHOD(void, cb_security_event,
                 (const ocpp::CiString<50>& event_type, const std::optional<ocpp::CiString<255>>& tech_info),

@@ -245,6 +245,7 @@ public:
     std::optional<bool> getRejectRemoteStartTransactionWithoutConnectorId() override;
     std::optional<bool> getRemoteStartTransactionWithoutConnectorIdFindFirst() override;
     std::optional<bool> getReportClearedErrors() override;
+    std::optional<bool> getResumeTransactionsOnReset() override;
     std::optional<int> getMessageQueueSizeThreshold() override;
     std::optional<std::int32_t> getCompositeScheduleDefaultLimitAmps() override;
     std::optional<std::int32_t> getCompositeScheduleDefaultLimitWatts() override;
@@ -307,6 +308,7 @@ public:
     std::optional<KeyValue> getRejectRemoteStartTransactionWithoutConnectorIdKeyValue() override;
     std::optional<KeyValue> getRemoteStartTransactionWithoutConnectorIdFindFirstKeyValue() override;
     std::optional<KeyValue> getReportClearedErrorsKeyValue() override;
+    std::optional<KeyValue> getResumeTransactionsOnResetKeyValue() override;
     std::optional<KeyValue> getSeccLeafSubjectCommonNameKeyValue() override;
     std::optional<KeyValue> getSeccLeafSubjectCountryKeyValue() override;
     std::optional<KeyValue> getSeccLeafSubjectOrganizationKeyValue() override;

@@ -72,6 +72,7 @@ cross-compiling without `CMAKE_CROSSCOMPILING_EMULATOR`.
 | `RetryBackoffRandomRange` | VariableAttribute | `OCPPCommCtrlr` | `RetryBackOffRandomRange` | `Actual` |
 | `RetryBackoffRepeatTimes` | VariableAttribute | `OCPPCommCtrlr` | `RetryBackOffRepeatTimes` | `Actual` |
 | `AuthorizeConnectorZeroOnConnectorOne` | VariableAttribute | `InternalCtrlr` | `AuthorizeConnectorZeroOnConnectorOne` | `Actual` |
+| `ResumeTransactionsOnReset` | VariableAttribute | `InternalCtrlr` | `ResumeTransactionsOnReset` | `Actual` |
 | `LogMessages` | VariableAttribute | `InternalCtrlr` | `LogMessages` | `Actual` |
 | `LogMessagesRaw` | VariableAttribute | `InternalCtrlr` | `LogMessagesRaw` | `Actual` |
 | `LogMessagesFormat` | VariableAttribute | `InternalCtrlr` | `LogMessagesFormat` | `Actual` |

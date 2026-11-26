@@ -149,6 +149,10 @@ struct ChargePointStub : public ocpp_multi::GenericChargePointInterface {
                 (std::int32_t evse_id, std::int32_t connector_id,
                  const types::evse_manager::SessionEvent& session_event),
                 (override));
+    MOCK_METHOD(void, on_event_transaction_resumed,
+                (std::int32_t evse_id, std::int32_t connector_id,
+                 const types::evse_manager::SessionEvent& session_event),
+                (override));
     MOCK_METHOD(SessionResult, on_event_session_started,
                 (std::int32_t evse_id, std::int32_t connector_id,
                  const types::evse_manager::SessionEvent& session_event),

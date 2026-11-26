@@ -496,32 +496,32 @@ This document contains the status of which OCPP 2.0.1 and OCPP2.1 numbered funct
 
 ## Provisioning - Reset - With Ongoing Transaction - Without Termination (New in OCPP 2.1)
 
-| ID        | Status                    | Remark |
-| --------- | ------------------------- | ------ |
-| B13.FR.01 |                           |        |
-| B13.FR.02 |                           |        |
-| B13.FR.03 |                           |        |
-| B13.FR.04 |                           |        |
-| B13.FR.05 |                           |        |
-| B13.FR.06 |                           |        |
-| B13.FR.07 |                           |        |
-| B13.FR.08 |                           |        |
-| B13.FR.09 |                           |        |
-| B13.FR.10 |                           |        |
-| B13.FR.11 |                           |        |
-| B13.FR.12 |                           |        |
-| B13.FR.13 |                           |        |
-| B13.FR.14 |                           |        |
-|           | Reset of Charging Station |        |
-| B13.FR.20 |                           |        |
-| B13.FR.21 |                           |        |
-| B13.FR.22 |                           |        |
-| B13.FR.23 |                           |        |
-| B13.FR.24 |                           |        |
-| B13.FR.25 |                           |        |
-|           | Signal resumption         |        |
-| B13.FR.30 |                           |        |
-| B13.FR.31 |                           |        |
+| ID        | Status                    | Remark                                                                                 |
+| --------- | ------------------------- | -------------------------------------------------------------------------------------- |
+| B13.FR.01 | ✅                         |                                                                                        |
+| B13.FR.02 | ✅                         |                                                                                        |
+| B13.FR.03 | ✅                         |                                                                                        |
+| B13.FR.04 | ✅                         |                                                                                        |
+| B13.FR.05 |                           |                                                                                        |
+| B13.FR.06 |                           |                                                                                        |
+| B13.FR.07 |                           |                                                                                        |
+| B13.FR.08 |                           |                                                                                        |
+| B13.FR.09 |                           |                                                                                        |
+| B13.FR.10 | ⛽️                        | `reset_callback` is called with `ImmediateAndResume` and the `evseId`                  |
+| B13.FR.11 | ⛽️                        |                                                                                        |
+| B13.FR.12 | ⛽️                        |                                                                                        |
+| B13.FR.13 | ⛽️                        |                                                                                        |
+| B13.FR.14 | ⛽️                        |                                                                                        |
+|           | Reset of Charging Station |                                                                                        |
+| B13.FR.20 | ⛽️                        | `reset_callback` is called with `ImmediateAndResume`; the transactions are not stopped |
+| B13.FR.21 | ⛽️                        |                                                                                        |
+| B13.FR.22 | ⛽️                        |                                                                                        |
+| B13.FR.23 | ⛽️                        | Transactions are kept in the database (see E17.FR.01)                                  |
+| B13.FR.24 | ⛽️                        |                                                                                        |
+| B13.FR.25 | ⛽️                        |                                                                                        |
+|           | Signal resumption         |                                                                                        |
+| B13.FR.30 | ✅                         | Charging station calls `on_transaction_resumed` with trigger reason `TxResumed`        |
+| B13.FR.31 | 🌐                         |                                                                                        |
 
 ## Authorization - EV Driver Authorization using RFID
 
@@ -1136,24 +1136,24 @@ This document contains the status of which OCPP 2.0.1 and OCPP2.1 numbered funct
 
 ## Transactions - Resuming transaction after interruption (New in OCPP 2.1)
 
-| ID        | Status         | Remark |
-| --------- | -------------- | ------ |
-| E17.FR.01 |                |        |
-| E17.FR.02 |                |        |
-|           | Within timeout |        |
-| E17.FR.10 |                |        |
-| E17.FR.11 |                |        |
-| E17.FR.12 |                |        |
-| E17.FR.13 |                |        |
-| E17.FR.14 |                |        |
-| E17.FR.15 |                |        |
-| E17.FR.16 |                |        |
-| E17.FR.17 |                |        |
-| E17.FR.18 |                |        |
-|           | After timeout  |        |
-| E17.FR.20 |                |        |
-| E17.FR.21 |                |        |
-| E17.FR.22 |                |        |
+| ID        | Status         | Remark                                                                                                        |
+| --------- | -------------- | ------------------------------------------------------------------------------------------------------------- |
+| E17.FR.01 | ✅              | Transactions are stored if `TxCtrlr.ResumptionTimeout` > 0 or `InternalCtrlr.ResumeTransactionsOnBoot` is set |
+| E17.FR.02 | ⛽️             |                                                                                                               |
+|           | Within timeout |                                                                                                               |
+| E17.FR.10 | ⛽️             | Charging station decides whether a restored transaction is resumed or ended                                   |
+| E17.FR.11 | ⛽️             |                                                                                                               |
+| E17.FR.12 | ⛽️             |                                                                                                               |
+| E17.FR.13 | ⛽️             |                                                                                                               |
+| E17.FR.14 | ✅              | Charging station calls `on_transaction_resumed` with trigger reason `TxResumed`                               |
+| E17.FR.15 | 🌐              |                                                                                                               |
+| E17.FR.16 | ⛽️             |                                                                                                               |
+| E17.FR.17 | ⛽️             |                                                                                                               |
+| E17.FR.18 | ⛽️             |                                                                                                               |
+|           | After timeout  |                                                                                                               |
+| E17.FR.20 | ⛽️             |                                                                                                               |
+| E17.FR.21 | ⛽️             |                                                                                                               |
+| E17.FR.22 | ⛽️             |                                                                                                               |
 
 ## RemoteControl - Remote Start Transaction - Cable Plugin First
 

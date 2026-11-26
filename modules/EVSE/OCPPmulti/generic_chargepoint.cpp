@@ -240,6 +240,11 @@ void GenericChargePoint::on_event_session_resumed(std::int32_t evse_id, std::int
     check_configured("on_event_session_resumed");
     m_active_ptr->on_event_session_resumed(evse_id, connector_id, session_event);
 }
+void GenericChargePoint::on_event_transaction_resumed(std::int32_t evse_id, std::int32_t connector_id,
+                                                      const types::evse_manager::SessionEvent& session_event) {
+    check_configured("on_event_transaction_resumed");
+    m_active_ptr->on_event_transaction_resumed(evse_id, connector_id, session_event);
+}
 GenericChargePointInterface::SessionResult
 GenericChargePoint::on_event_session_started(std::int32_t evse_id, std::int32_t connector_id,
                                              const types::evse_manager::SessionEvent& session_event) {

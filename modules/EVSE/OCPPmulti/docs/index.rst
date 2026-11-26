@@ -419,6 +419,57 @@ voltage: the ``SupplyVoltage`` configuration key in OCPP 1.6, the ``SupplyVoltag
 unset). The supply voltage is read when the limits change, so a changed supply voltage applies with the next changed
 limit. OCPP 1.6 reports whole amperes and watts, rounded down.
 
+**Transactions after a restart.** EvseManager publishes ``SessionResumed`` at startup for a transaction of the previous
+run (see the EvseManager documentation on resuming transactions). It is followed either by ``TransactionFinished`` with
+reason ``PowerLoss``, or by ``TransactionResumed`` if the EV is still plugged in and EvseManager continues the
+transaction:
+
+* OCPP 1.6 keeps transactions whose session ID arrived in ``SessionResumed`` before the module started, instead of
+  queueing a **StopTransaction.req**. On ``TransactionResumed`` the connector reports ``Preparing`` again; the
+  transaction ends with a **StopTransaction.req** carrying the original transaction ID.
+* OCPP 2.x restores the transaction from its database if ``InternalCtrlr.ResumeTransactionsOnBoot`` is ``true`` or
+  ``TxCtrlr.ResumptionTimeout`` is greater than zero (OCPP 2.1 E17.FR.01). On ``TransactionResumed`` the connector
+  becomes ``Occupied`` and the charging state of the transaction is set to ``EVConnected``. Further updates and the
+  final ``Ended`` carry the original transaction ID. If neither variable is set, the module logs an error: the CSMS is
+  not told about the continued transaction.
+
+  * With ``TxCtrlr.ResumptionTimeout`` greater than zero (OCPP 2.1), a **TransactionEvent.req** (``Updated``, trigger
+    reason ``TxResumed``) is always sent (B13.FR.30, E17.FR.14). Unless ``TxCtrlr.AllowEnergyTransferResumption`` is
+    ``true`` (it defaults to ``false``), the transaction continues in ``SuspendedEVSE``. After a reset with resumption
+    EvseManager resumes it paused (B13.FR.25). After an unexpected restart the module pauses charging when the
+    transaction is resumed (E17.FR.12), so energy may flow briefly before the pause takes effect. Set ``ResumptionTimeout`` only on a station that connects with OCPP 2.1,
+    as ``TxResumed`` does not exist in OCPP 2.0.1.
+  * Otherwise a **TransactionEvent.req** (``Updated``, trigger reason ``CablePluggedIn``) is sent only if the charging
+    state restored from the database changes.
+
+  EvseManager decides whether a transaction is resumed after an unexpected restart (``resume_transaction_on_startup``,
+  ``resume_transaction_max_outage_s``); ``ResumptionTimeout`` does not change that decision, so configure both to the
+  same outage.
+
+**Resets that keep transactions.** By default a reset ends all transactions before the system restarts, as OCPP 1.6
+and 2.0.1 require. The transactions are kept and resumed after the restart with:
+
+* OCPP 2.1: a **ResetRequest** of type ``ImmediateAndResume`` (B13). It is rejected unless ``TxCtrlr.ResumptionTimeout``
+  is greater than zero (B13.FR.01). Each ongoing transaction is reported with a **TransactionEvent.req** (``Updated``,
+  trigger reason ``ResetCommand``, B13.FR.04).
+* OCPP 2.0.1, as a deviation from the specification: ``InternalCtrlr.ResumeTransactionsOnReset`` set to ``true``
+  makes a reset of type ``Immediate`` behave like ``ImmediateAndResume``. It needs ``ResumeTransactionsOnBoot`` or
+  ``ResumptionTimeout``; otherwise the reset stops the transactions as usual.
+* OCPP 1.6, as a deviation from the specification: the internal configuration key ``ResumeTransactionsOnReset`` set
+  to ``true`` makes a **Reset.req** (``Hard`` or ``Soft``) keep the transactions; no **StopTransaction.req** is sent.
+
+Before resetting the system, the module calls ``prepare_resume_after_reset`` on every EvseManager, with
+``allow_energy_transfer`` from ``TxCtrlr.AllowEnergyTransferResumption`` for OCPP 2.1 and ``true`` for the 1.6 and 2.0.1
+deviations. An EvseManager that
+cannot keep its transaction (no ``store`` connection) gets ``stop_transaction`` with reason ``HardReset`` instead; the
+module waits up to 30 s for those transactions to end before it stops the OCPP connection, so that the stop is reported.
+An EvseManager that does not answer ``prepare_resume_after_reset`` is treated the same way. If the reset fails before
+the system resets, for example because stopping the OCPP connection or the system reset request fails, the module calls
+``cancel_resume_after_reset`` on every EvseManager, which lifts the pause.
+After the restart the transactions continue as described above if the EV is still plugged in. Not supported: resetting a
+single EVSE (``evseId`` in the request is rejected), unlocking the cable before the reset, and the random delay of
+``TxCtrlr.EnergyTransferResumptionRandomRange`` (E17.FR.18).
+
 Requires: extensions_15118 (0-128)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 

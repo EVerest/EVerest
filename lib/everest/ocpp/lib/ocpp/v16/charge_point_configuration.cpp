@@ -1061,6 +1061,27 @@ std::optional<KeyValue> ChargePointConfiguration::getReportClearedErrorsKeyValue
     return report_cleared_errors_kv;
 }
 
+std::optional<bool> ChargePointConfiguration::getResumeTransactionsOnReset() {
+    std::optional<bool> resume_transactions_on_reset = std::nullopt;
+    if (this->config["Internal"].contains("ResumeTransactionsOnReset")) {
+        resume_transactions_on_reset.emplace(this->config["Internal"]["ResumeTransactionsOnReset"]);
+    }
+    return resume_transactions_on_reset;
+}
+
+std::optional<KeyValue> ChargePointConfiguration::getResumeTransactionsOnResetKeyValue() {
+    std::optional<KeyValue> resume_transactions_on_reset_kv = std::nullopt;
+    auto resume_transactions_on_reset = this->getResumeTransactionsOnReset();
+    if (resume_transactions_on_reset.has_value()) {
+        KeyValue kv;
+        kv.key = "ResumeTransactionsOnReset";
+        kv.readonly = true;
+        kv.value.emplace(ocpp::conversions::bool_to_string(resume_transactions_on_reset.value()));
+        resume_transactions_on_reset_kv.emplace(kv);
+    }
+    return resume_transactions_on_reset_kv;
+}
+
 std::optional<std::string> ChargePointConfiguration::getMessageTypesDiscardForQueueing() {
     if (this->config["Internal"].contains("MessageTypesDiscardForQueueing")) {
         return this->config["Internal"]["MessageTypesDiscardForQueueing"];
@@ -3441,6 +3462,9 @@ std::optional<KeyValue> ChargePointConfiguration::get(const CiString<50>& key) {
     }
     if (key == "ReportClearedErrors") {
         return this->getReportClearedErrorsKeyValue();
+    }
+    if (key == "ResumeTransactionsOnReset") {
+        return this->getResumeTransactionsOnResetKeyValue();
     }
     if (key == "MessageTypesDiscardForQueueing") {
         return this->getMessageTypesDiscardForQueueingKeyValue();

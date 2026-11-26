@@ -347,6 +347,12 @@ const ComponentVariable ResumeTransactionsOnBoot = {
         "ResumeTransactionsOnBoot",
     }),
 };
+const ComponentVariable ResumeTransactionsOnReset = {
+    ControllerComponents::InternalCtrlr,
+    std::optional<Variable>({
+        "ResumeTransactionsOnReset",
+    }),
+};
 const ComponentVariable AllowCSMSRootCertInstallWithUnsecureConnection = {
     ControllerComponents::InternalCtrlr,
     std::optional<Variable>({
@@ -1233,6 +1239,18 @@ const ComponentVariable TxBeforeAcceptedEnabled = {
     ControllerComponents::TxCtrlr,
     std::optional<Variable>({
         "TxBeforeAcceptedEnabled",
+    }),
+};
+const ComponentVariable TxResumptionTimeout = {
+    ControllerComponents::TxCtrlr,
+    std::optional<Variable>({
+        "ResumptionTimeout",
+    }),
+};
+const ComponentVariable TxAllowEnergyTransferResumption = {
+    ControllerComponents::TxCtrlr,
+    std::optional<Variable>({
+        "AllowEnergyTransferResumption",
     }),
 };
 const RequiredComponentVariable TxStartPoint = {

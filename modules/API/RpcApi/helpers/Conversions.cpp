@@ -23,6 +23,8 @@ EVSEStateEnum evse_manager_session_event_to_evse_state(types::evse_manager::Sess
     case Event::SessionResumed:
         [[fallthrough]];
     case Event::TransactionStarted:
+        [[fallthrough]];
+    case Event::TransactionResumed:
         return EVSEStateEnum::Preparing;
     case Event::ChargingStarted:
         return EVSEStateEnum::Charging;

@@ -86,6 +86,29 @@ cmds:
     result:
       description: Returns true if successful
       type: boolean
+  prepare_resume_after_reset:
+    description: >-
+      Call before a reset that keeps the active transaction, e.g. an OCPP 2.1 Reset of type
+      ImmediateAndResume. The EVSE stops energy transfer and stores the transaction so that it
+      continues after the restart with the same session ID if the EV is still plugged in, whatever
+      resume_transaction_on_startup and the outage limit say.
+    arguments:
+      allow_energy_transfer:
+        description: >-
+          Whether energy transfer continues when the transaction is resumed. If false, the
+          resumed transaction stays paused by the EVSE (e.g. OCPP 2.1
+          TxCtrlr.AllowEnergyTransferResumption).
+        type: boolean
+    result:
+      description: >-
+        Returns true if no transaction is active or the active transaction is kept for resumption,
+        false if it cannot be kept (e.g. no persistent storage)
+      type: boolean
+  cancel_resume_after_reset:
+    description: >-
+      Call when a reset prepared with prepare_resume_after_reset does not take place. The
+      transaction is no longer kept for a resumption beyond the usual rules and its energy
+      transfer is no longer paused for the reset.
   force_unlock:
     description: >-
       Forces connector to unlock connector now. During normal operation, connector

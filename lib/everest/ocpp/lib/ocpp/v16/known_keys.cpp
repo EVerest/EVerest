@@ -53,6 +53,7 @@ using ocpp::v16::keys::valid_keys;
     key(WebsocketPongTimeout) \
     key(QueueAllMessages) \
     key(ReportClearedErrors) \
+    key(ResumeTransactionsOnReset) \
     key(MessageTypesDiscardForQueueing) \
     key(MessageQueueSizeThreshold) \
     key(ConnectorPhaseRotationMaxLength) \

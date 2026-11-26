@@ -326,6 +326,9 @@ void to_json(json& j, SessionEventEnum const& k) noexcept {
     case SessionEventEnum::SessionResumed:
         j = "SessionResumed";
         return;
+    case SessionEventEnum::TransactionResumed:
+        j = "TransactionResumed";
+        return;
     }
 
     j = "INVALID_VALUE__everest::lib::API::V1_0::types::evse_manger::SessionEventEnum";
@@ -411,6 +414,10 @@ void from_json(json const& j, SessionEventEnum& k) {
     }
     if (s == "SessionResumed") {
         k = SessionEventEnum::SessionResumed;
+        return;
+    }
+    if (s == "TransactionResumed") {
+        k = SessionEventEnum::TransactionResumed;
         return;
     }
 

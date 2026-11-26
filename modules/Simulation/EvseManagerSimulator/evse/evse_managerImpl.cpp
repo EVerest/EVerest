@@ -76,6 +76,14 @@ bool evse_managerImpl::handle_stop_transaction(types::evse_manager::StopTransact
     return true;
 }
 
+bool evse_managerImpl::handle_prepare_resume_after_reset(bool& allow_energy_transfer) {
+    // the simulator never has a transaction to keep
+    return true;
+}
+
+void evse_managerImpl::handle_cancel_resume_after_reset() {
+}
+
 bool evse_managerImpl::handle_force_unlock(int& connector_id) {
     // your code for cmd force_unlock goes here
     return true;

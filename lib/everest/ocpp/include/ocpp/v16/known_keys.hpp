@@ -192,6 +192,7 @@ namespace ocpp::v16::keys {
     mapping(NumberOfConnectors, NumberOfConnectors) \
     mapping(ConnectorEvseIds, ConnectorEvseIds) \
     mapping(ReportClearedErrors, ReportClearedErrors) \
+    mapping(ResumeTransactionsOnReset, ResumeTransactionsOnReset) \
 
 
 #define MAPPING_ALL(mapping) \
@@ -287,6 +288,7 @@ namespace ocpp::v16::keys {
     key(Internal, RejectRemoteStartTransactionWithoutConnectorId) \
     key(Internal, RemoteStartTransactionWithoutConnectorIdFindFirst) \
     key(Internal, ReportClearedErrors) \
+    key(Internal, ResumeTransactionsOnReset) \
     key(Internal, ReportSuspendedEVSEReasonChange) \
     key(Internal, RetryBackoffRandomRange) \
     key(Internal, RetryBackoffRepeatTimes) \

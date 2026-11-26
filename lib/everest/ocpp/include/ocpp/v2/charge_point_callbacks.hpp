@@ -48,6 +48,11 @@ struct Callbacks {
     ///
     std::function<bool(const std::optional<const std::int32_t> evse_id, const ResetEnum& reset_type)>
         is_reset_allowed_callback;
+    ///
+    /// \brief Callback to perform an accepted reset. With reset_type ImmediateAndResume the ongoing transactions were
+    ///        not stopped and are to be resumed after the reset (OCPP 2.1 B13, or an Immediate reset with
+    ///        InternalCtrlr.ResumeTransactionsOnReset). This type is also passed to is_reset_allowed_callback.
+    ///
     std::function<void(const std::optional<const std::int32_t> evse_id, const ResetEnum& reset_type)> reset_callback;
     std::function<RequestStartStopStatusEnum(const std::int32_t evse_id, const ReasonEnum& stop_reason)>
         stop_transaction_callback;

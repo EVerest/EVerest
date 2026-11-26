@@ -7,6 +7,9 @@
 #include <Charger.hpp>
 #include <memory>
 #include <optional>
+#include <utils/date.hpp>
+
+#include "StoreAdapterStub.hpp"
 
 namespace module {
 std::vector<std::string> observed_cp_state_commands;
@@ -21,7 +24,9 @@ using namespace types::evse_manager;
 
 // class that provides access to internal state from the Charger class
 struct ChargerDerived : public Charger {
+    using Charger::arm_resume_deadline;
     using Charger::Charger;
+    using Charger::check_resume_deadline;
     using Charger::get_config_context;
     using Charger::get_enable_disable_source_table;
     using Charger::get_hlc_use_5percent_current_session;
@@ -29,6 +34,8 @@ struct ChargerDerived : public Charger {
     using Charger::get_shared_context;
     using Charger::process_event;
     using Charger::run_state_machine;
+    using Charger::start_transaction;
+    using Charger::update_last_alive;
 
     // updated when a non-zero connector is used to enable_disable()
     constexpr const auto& connector_enabled() {
@@ -54,6 +61,7 @@ struct ChargerTest : public testing::Test {
     std::unique_ptr<IECStateMachine> charger_bsp;
     std::unique_ptr<ErrorHandling> charger_error_handling;
     std::vector<std::unique_ptr<powermeterIntf>> charger_powermeter_billing;
+    std::vector<std::unique_ptr<kvsIntf>> charger_kvs;
     std::unique_ptr<PersistentStore> charger_store;
 
     // error handling requirements
@@ -80,6 +88,9 @@ struct ChargerTest : public testing::Test {
     void SetUp() override {
         reset_last_event();
         observed_cp_state_commands.clear();
+        if (not charger_store) {
+            charger_store = std::make_unique<PersistentStore>(charger_kvs, "EVSETEST", "boot-test");
+        }
         charger = std::make_unique<ChargerDerived>(
             charger_bsp, charger_error_handling, charger_powermeter_billing, charger_store,
             types::evse_board_support::Connector_type::IEC62196Type2Socket, "EVSETEST");
@@ -1793,6 +1804,96 @@ TEST_F(ChargerMinX1Test, ReplugAfterUnplugEnablesPwmImmediately) {
     EXPECT_EQ(charger->current_state(), Charger::EvseState::PrepareCharging);
 }
 
+// An EVSE pause requested before charging started (e.g. a transaction resumed after an OCPP 2.1 reset without
+// TxCtrlr.AllowEnergyTransferResumption) must not close the contactor first
+TEST_F(ChargerMinX1Test, EvsePauseBeforeChargingGoesToPausedWithoutCharging) {
+    auto& ctx = charger->get_shared_context();
+    ctx.flag_ev_plugged_in = true;
+    ctx.max_current_cable = 32.;
+    ctx.flag_authorized = true;
+    ctx.flag_transaction_active = true;
+    ctx.flag_paused_by_evse = true;
+    ctx.iec_allow_close_contactor = true;
+    int charging_started{0};
+    charger->signal_simple_event.connect([&charging_started](types::evse_manager::SessionEventEnum event) {
+        if (event == types::evse_manager::SessionEventEnum::ChargingStarted) {
+            ++charging_started;
+        }
+    });
+
+    charger->current_state(Charger::EvseState::PrepareCharging);
+    charger->run_state_machine();
+    charger->run_state_machine();
+
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::ChargingPausedEVSE);
+    EXPECT_EQ(charging_started, 0);
+    EXPECT_FALSE(pwm_on());
+}
+
+// Before an ISO 15118 data link exists, X1 tells the EV that the EVSE is not ready
+TEST_F(ChargerMinX1Test, EvsePauseBeforeChargingWithoutDataLinkSwitchesToX1) {
+    auto& ctx = charger->get_shared_context();
+    ctx.flag_paused_by_evse = true;
+    ctx.iec_allow_close_contactor = true;
+    charger->get_hlc_use_5percent_current_session() = true;
+    int hlc_stops{0};
+    charger->signal_hlc_stop_charging.connect([&hlc_stops]() { ++hlc_stops; });
+
+    charger->current_state(Charger::EvseState::PrepareCharging);
+    charger->run_state_machine();
+
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::ChargingPausedEVSE);
+    EXPECT_FALSE(pwm_on());
+    EXPECT_EQ(hlc_stops, 0);
+}
+
+// An ISO 15118 session in progress is told to stop before the contactors close; PWM stays on for it to end in order
+TEST_F(ChargerMinX1Test, EvsePauseBeforeChargingWithDataLinkTellsTheEv) {
+    auto& ctx = charger->get_shared_context();
+    ctx.flag_paused_by_evse = true;
+    ctx.iec_allow_close_contactor = true;
+    ctx.hlc_allow_close_contactor = true;
+    ctx.dlink_established = true;
+    // the data link was set up with 5 % PWM
+    ctx.pwm_running = true;
+    charger->get_internal_context().update_pwm_last_duty_cycle = 0.05;
+    charger->get_hlc_use_5percent_current_session() = true;
+    int hlc_stops{0};
+    int charging_started{0};
+    charger->signal_hlc_stop_charging.connect([&hlc_stops]() { ++hlc_stops; });
+    charger->signal_simple_event.connect([&charging_started](types::evse_manager::SessionEventEnum event) {
+        if (event == types::evse_manager::SessionEventEnum::ChargingStarted) {
+            ++charging_started;
+        }
+    });
+
+    charger->current_state(Charger::EvseState::PrepareCharging);
+    charger->run_state_machine();
+    charger->run_state_machine();
+
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::ChargingPausedEVSE);
+    EXPECT_EQ(hlc_stops, 1);
+    EXPECT_EQ(charging_started, 0);
+    EXPECT_TRUE(pwm_on());
+}
+
+TEST_F(ChargerMinX1Test, EvsePauseBeforeChargingInDcTellsTheEvWithoutPowerOn) {
+    charger->get_config_context().charge_mode = Charger::ChargeMode::DC;
+    auto& ctx = charger->get_shared_context();
+    ctx.flag_paused_by_evse = true;
+    ctx.iec_allow_close_contactor = true;
+    ctx.hlc_allow_close_contactor = true;
+    ctx.dlink_established = true;
+    int hlc_stops{0};
+    charger->signal_hlc_stop_charging.connect([&hlc_stops]() { ++hlc_stops; });
+
+    charger->current_state(Charger::EvseState::PrepareCharging);
+    charger->run_state_machine();
+
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::ChargingPausedEVSE);
+    EXPECT_EQ(hlc_stops, 1);
+}
+
 TEST_F(ChargerMinX1Test, EvPauseKeepsPwmOffForThreeSeconds) {
     // Charging with PWM on and the relays closed
     auto& ctx = charger->get_shared_context();
@@ -2059,20 +2160,6 @@ void SessionLog::sys(const std::string& msg) {
 
 SessionLog session_log;
 
-// ----------------------------------------------------------------------------
-// PersistentStore stub
-PersistentStore::PersistentStore(const std::vector<std::unique_ptr<kvsIntf>>& r_store, const std::string module_id) :
-    r_store(r_store) {
-}
-
-void PersistentStore::store_session(const std::string& session_uuid) {
-}
-void PersistentStore::clear_session() {
-}
-std::string PersistentStore::get_session() {
-    return {};
-}
-
 } // namespace module
 
 // DC current demand: the EVSE limits are re-applied to the power supply periodically, and at once on request.
@@ -2174,3 +2261,456 @@ TEST_F(ChargerTransactionStopTest, UnplugStopsTheTransactionDespiteTheHold) {
     EXPECT_FALSE(charger->get_shared_context().flag_transaction_active);
     EXPECT_EQ(charger->current_state(), Charger::EvseState::Idle);
 }
+
+// ----------------------------------------------------------------------------
+// Resuming a transaction left open by the previous run
+
+namespace {
+
+struct ChargerResumeTest : public ChargerTest {
+    // never dereferenced: the IECStateMachine used here is the no-op stub
+    std::unique_ptr<evse_board_supportIntf> bsp_if;
+    stub::StoreAdapterStub adapter;
+
+    std::vector<SessionEventEnum> simple_events;
+    int sessions_started{0};
+    int transactions_started{0};
+    std::vector<std::string> transactions_resumed;
+    std::optional<types::powermeter::Powermeter> resumed_start_meter_value;
+    std::optional<std::string> resumed_started_at;
+    std::vector<std::string> finished_session_ids;
+    std::vector<StopTransactionReason> transactions_finished;
+
+    void SetUp() override {
+        charger_bsp = std::make_unique<IECStateMachine>(bsp_if, true, false, false, 0);
+        charger_kvs.push_back(std::make_unique<kvsIntf>(&adapter, Requirement{"store", 0}, "EVSETEST", std::nullopt));
+        charger_powermeter_billing.push_back(std::make_unique<powermeterIntf>(
+            &adapter, Requirement{"powermeter_car_side", 0}, "EVSETEST", std::nullopt));
+        charger_store =
+            std::make_unique<PersistentStore>(charger_kvs, "EVSETEST", "boot-2", PersistentStore::Writes::Immediate);
+        ChargerTest::SetUp();
+        charger->signal_simple_event.connect([this](SessionEventEnum e) { simple_events.push_back(e); });
+        charger->signal_session_started_event.connect(
+            [this](StartSessionReason, std::optional<types::authorization::ProvidedIdToken>) { ++sessions_started; });
+        charger->signal_transaction_started_event.connect(
+            [this](types::authorization::ProvidedIdToken) { ++transactions_started; });
+        charger->signal_transaction_finished_event.connect(
+            [this](StopTransactionReason reason, std::optional<types::authorization::ProvidedIdToken>) {
+                transactions_finished.push_back(reason);
+                finished_session_ids.push_back(charger->get_session_id());
+            });
+        charger->signal_transaction_resumed_event.connect([this](const StoredTransaction& transaction) {
+            resumed_start_meter_value = transaction.start_meter_value;
+            resumed_started_at = transaction.transaction_started_at;
+            ASSERT_TRUE(transaction.id_token.has_value());
+            transactions_resumed.push_back(transaction.id_token->id_token.value);
+            // consumers read the session ID and start meter value when they receive the event
+            EXPECT_EQ(charger->get_session_id(), "stored-session");
+            EXPECT_TRUE(charger->get_start_signed_meter_value().has_value());
+        });
+    }
+
+    static types::authorization::ProvidedIdToken token(types::authorization::AuthorizationType type) {
+        types::authorization::ProvidedIdToken provided;
+        provided.id_token.value = "STORED_TOKEN";
+        provided.id_token.type = types::authorization::IdTokenType::ISO14443;
+        provided.authorization_type = type;
+        return provided;
+    }
+
+    static StoredTransaction
+    stored(types::authorization::AuthorizationType type = types::authorization::AuthorizationType::RFID) {
+        StoredTransaction transaction;
+        transaction.session_uuid = "stored-session";
+        transaction.id_token = token(type);
+        types::units_signed::SignedMeterValue start;
+        start.signed_meter_data = "OCMF|start";
+        start.signing_method = "ECDSA";
+        start.encoding_method = "OCMF";
+        transaction.start_signed_meter_value = start;
+        types::powermeter::Powermeter meter;
+        meter.timestamp = "2026-11-24T10:00:00.000Z";
+        meter.energy_Wh_import.total = 1234.0F;
+        transaction.start_meter_value = meter;
+        transaction.transaction_started_at = "2026-11-24T10:00:00.000Z";
+        transaction.boot_id = "boot-1";
+        return transaction;
+    }
+
+    void prepare(const StoredTransaction& transaction) {
+        charger_store->store_transaction(transaction);
+        charger->prepare_resume(transaction, std::chrono::milliseconds(10000));
+        adapter.stored_keys.clear();
+    }
+
+    void plug_in() {
+        auto& ctx = charger->get_shared_context();
+        ctx.flag_ev_plugged_in = true;
+        ctx.current_state = Charger::EvseState::WaitingForAuthentication;
+        charger->run_state_machine();
+    }
+};
+
+TEST_F(ChargerResumeTest, PlugInContinuesTheStoredTransaction) {
+    prepare(stored());
+    plug_in();
+
+    const auto& ctx = charger->get_shared_context();
+    EXPECT_EQ(ctx.session_uuid, "stored-session");
+    EXPECT_EQ(ctx.id_token.id_token.value, "STORED_TOKEN");
+    EXPECT_TRUE(ctx.session_active);
+    EXPECT_TRUE(ctx.flag_authorized);
+    EXPECT_FALSE(ctx.authorized_pnc);
+    EXPECT_TRUE(ctx.flag_transaction_active);
+    ASSERT_TRUE(ctx.start_signed_meter_value.has_value());
+    EXPECT_EQ(ctx.start_signed_meter_value->signed_meter_data, "OCMF|start");
+
+    EXPECT_EQ(sessions_started, 0);
+    EXPECT_EQ(transactions_started, 0);
+    EXPECT_EQ(transactions_resumed, std::vector<std::string>{"STORED_TOKEN"});
+    ASSERT_TRUE(resumed_start_meter_value.has_value());
+    EXPECT_FLOAT_EQ(resumed_start_meter_value->energy_Wh_import.total, 1234.0F);
+    EXPECT_EQ(resumed_started_at, "2026-11-24T10:00:00.000Z");
+    EXPECT_TRUE(transactions_finished.empty());
+    EXPECT_TRUE(adapter.meter_started.empty());
+    EXPECT_TRUE(adapter.meter_stopped.empty());
+    EXPECT_NE(std::find(simple_events.begin(), simple_events.end(), SessionEventEnum::Authorized), simple_events.end());
+    EXPECT_EQ(std::find(simple_events.begin(), simple_events.end(), SessionEventEnum::AuthRequired),
+              simple_events.end());
+    EXPECT_FALSE(charger->get_internal_context().pending_resume.has_value());
+}
+
+// The new ISO 15118 session offers external payment only, so the EV must find the EVSE authorised for EIM.
+TEST_F(ChargerResumeTest, PlugAndChargeTransactionResumesAuthorizedForEim) {
+    prepare(stored(types::authorization::AuthorizationType::PlugAndCharge));
+    plug_in();
+    EXPECT_FALSE(charger->get_shared_context().authorized_pnc);
+    EXPECT_TRUE(charger->get_shared_context().flag_authorized);
+    EXPECT_TRUE(charger->get_authorized_eim());
+}
+
+TEST_F(ChargerResumeTest, AcHlcResumeKeepsFivePercentPwm) {
+    auto& config = charger->get_config_context();
+    config.charge_mode = Charger::ChargeMode::AC;
+    config.ac_hlc_enabled = true;
+    config.ac_hlc_use_5percent = true;
+    config.ac_enforce_hlc = false;
+    config.sleep_before_enabling_pwm_hlc_mode_ms = 0;
+    prepare(stored());
+    plug_in();
+    EXPECT_TRUE(charger->get_hlc_use_5percent_current_session());
+}
+
+TEST_F(ChargerResumeTest, ResumeKeepsTheStoredRecordForTheCurrentRun) {
+    prepare(stored());
+    plug_in();
+    PersistentStore reloaded(charger_kvs, "EVSETEST", "boot-3");
+    const auto record = reloaded.get_transaction();
+    ASSERT_TRUE(record.has_value());
+    EXPECT_EQ(record->session_uuid, "stored-session");
+    EXPECT_EQ(record->boot_id, "boot-2");
+    EXPECT_FALSE(record->clean_shutdown);
+}
+
+TEST_F(ChargerResumeTest, PrepareMarksTheRecordAsCurrentRun) {
+    auto transaction = stored();
+    transaction.clean_shutdown = true;
+    charger_store->store_transaction(transaction);
+    adapter.values["EVSETEST_session"]["clean_shutdown"] = true;
+    adapter.values["EVSETEST_session"]["boot_id"] = "boot-1";
+    charger->prepare_resume(transaction, std::chrono::milliseconds(10000));
+    PersistentStore reloaded(charger_kvs, "EVSETEST", "boot-3");
+    const auto record = reloaded.get_transaction();
+    ASSERT_TRUE(record.has_value());
+    EXPECT_EQ(record->boot_id, "boot-2");
+    EXPECT_FALSE(record->clean_shutdown);
+}
+
+TEST_F(ChargerResumeTest, NoEvBeforeTheDeadlineEndsTheTransactionWithPowerLoss) {
+    prepare(stored());
+    const auto t0 = std::chrono::steady_clock::now();
+    charger->arm_resume_deadline(t0);
+
+    charger->check_resume_deadline(t0 + std::chrono::seconds(9));
+    EXPECT_TRUE(transactions_finished.empty());
+    EXPECT_TRUE(adapter.meter_stopped.empty());
+
+    charger->check_resume_deadline(t0 + std::chrono::seconds(11));
+    ASSERT_EQ(transactions_finished.size(), 1);
+    EXPECT_EQ(transactions_finished.front(), StopTransactionReason::PowerLoss);
+    EXPECT_EQ(finished_session_ids, std::vector<std::string>{"stored-session"});
+    EXPECT_TRUE(charger->get_session_id().empty());
+    ASSERT_FALSE(adapter.meter_stopped.empty());
+    EXPECT_EQ(adapter.meter_stopped.front(), "stored-session");
+    EXPECT_FALSE(charger_store->get_transaction().has_value());
+    EXPECT_FALSE(charger->get_internal_context().pending_resume.has_value());
+
+    // later plug-ins start a session of their own
+    plug_in();
+    EXPECT_NE(charger->get_shared_context().session_uuid, "stored-session");
+    EXPECT_EQ(sessions_started, 1);
+    EXPECT_TRUE(transactions_resumed.empty());
+}
+
+TEST_F(ChargerResumeTest, NoEvAfterResetWithResumptionEndsTheTransactionAsDisconnected) {
+    auto transaction = stored();
+    transaction.resume_after_reset = true;
+    prepare(transaction);
+    const auto t0 = std::chrono::steady_clock::now();
+    charger->arm_resume_deadline(t0);
+    charger->check_resume_deadline(t0 + std::chrono::seconds(11));
+    ASSERT_EQ(transactions_finished.size(), 1);
+    EXPECT_EQ(transactions_finished.front(), StopTransactionReason::EVDisconnected);
+    EXPECT_EQ(finished_session_ids, std::vector<std::string>{"stored-session"});
+}
+
+TEST_F(ChargerResumeTest, PrepareResumeAfterResetPausesAndMarksTheRecord) {
+    auto& ctx = charger->get_shared_context();
+    ctx.session_uuid = "new-session";
+    ctx.id_token = token(types::authorization::AuthorizationType::RFID);
+    ASSERT_TRUE(charger->start_transaction());
+    ctx.flag_transaction_active = true;
+
+    EXPECT_TRUE(charger->prepare_resume_after_reset(true));
+    EXPECT_TRUE(ctx.flag_paused_by_evse);
+    EXPECT_TRUE(ctx.flag_transaction_active);
+    EXPECT_TRUE(transactions_finished.empty());
+    EXPECT_TRUE(adapter.meter_stopped.empty());
+
+    PersistentStore reloaded(charger_kvs, "EVSETEST", "boot-3");
+    const auto record = reloaded.get_transaction();
+    ASSERT_TRUE(record.has_value());
+    EXPECT_EQ(record->session_uuid, "new-session");
+    EXPECT_TRUE(record->resume_after_reset);
+}
+
+TEST_F(ChargerResumeTest, PrepareResumeAfterResetWithoutEnergyTransferStoresThePause) {
+    auto& ctx = charger->get_shared_context();
+    ctx.session_uuid = "new-session";
+    ctx.id_token = token(types::authorization::AuthorizationType::RFID);
+    ASSERT_TRUE(charger->start_transaction());
+    ctx.flag_transaction_active = true;
+
+    EXPECT_TRUE(charger->prepare_resume_after_reset(false));
+
+    PersistentStore reloaded(charger_kvs, "EVSETEST", "boot-3");
+    const auto record = reloaded.get_transaction();
+    ASSERT_TRUE(record.has_value());
+    EXPECT_TRUE(record->energy_transfer_paused);
+}
+
+// OCPP 2.1 B13.FR.25: no energy transfer at all in the resumed transaction
+TEST_F(ChargerResumeTest, ResumeAfterResetWithoutEnergyTransferStartsPaused) {
+    auto transaction = stored();
+    transaction.resume_after_reset = true;
+    transaction.energy_transfer_paused = true;
+    prepare(transaction);
+    plug_in();
+    EXPECT_TRUE(charger->get_shared_context().flag_transaction_active);
+    EXPECT_TRUE(charger->get_shared_context().flag_paused_by_evse);
+}
+
+TEST_F(ChargerResumeTest, ResumeAfterResetWithEnergyTransferIsNotPaused) {
+    auto transaction = stored();
+    transaction.resume_after_reset = true;
+    prepare(transaction);
+    plug_in();
+    EXPECT_TRUE(charger->get_shared_context().flag_transaction_active);
+    EXPECT_FALSE(charger->get_shared_context().flag_paused_by_evse);
+}
+
+TEST_F(ChargerResumeTest, PrepareResumeAfterResetWithoutTransactionHasNothingToKeep) {
+    adapter.stored_keys.clear();
+    EXPECT_TRUE(charger->prepare_resume_after_reset(true));
+    EXPECT_FALSE(charger->get_shared_context().flag_paused_by_evse);
+    EXPECT_TRUE(adapter.stored_keys.empty());
+}
+
+TEST_F(ChargerResumeTest, PrepareResumeAfterResetFailsWithoutStoredRecord) {
+    auto& ctx = charger->get_shared_context();
+    ctx.flag_transaction_active = true;
+    EXPECT_FALSE(charger->prepare_resume_after_reset(true));
+    EXPECT_FALSE(ctx.flag_paused_by_evse);
+}
+
+TEST_F(ChargerResumeTest, CancelResumeAfterResetLiftsThePauseAndClearsTheRecord) {
+    auto& ctx = charger->get_shared_context();
+    ctx.session_uuid = "new-session";
+    ctx.id_token = token(types::authorization::AuthorizationType::RFID);
+    ASSERT_TRUE(charger->start_transaction());
+    ctx.flag_transaction_active = true;
+    ASSERT_TRUE(charger->prepare_resume_after_reset(false));
+
+    charger->cancel_resume_after_reset();
+    EXPECT_FALSE(ctx.flag_paused_by_evse);
+    EXPECT_TRUE(ctx.flag_transaction_active);
+
+    PersistentStore reloaded(charger_kvs, "EVSETEST", "boot-3");
+    const auto record = reloaded.get_transaction();
+    ASSERT_TRUE(record.has_value());
+    EXPECT_FALSE(record->resume_after_reset);
+    EXPECT_FALSE(record->energy_transfer_paused);
+}
+
+TEST_F(ChargerResumeTest, PrepareResumeAfterResetTwiceKeepsThePauseFromBefore) {
+    auto& ctx = charger->get_shared_context();
+    ctx.session_uuid = "new-session";
+    ctx.id_token = token(types::authorization::AuthorizationType::RFID);
+    ASSERT_TRUE(charger->start_transaction());
+    ctx.flag_transaction_active = true;
+    ASSERT_TRUE(charger->prepare_resume_after_reset(true));
+    ASSERT_TRUE(charger->prepare_resume_after_reset(true));
+
+    charger->cancel_resume_after_reset();
+    EXPECT_FALSE(ctx.flag_paused_by_evse);
+}
+
+// A transaction still waiting for its EV is open for the CSMS and is kept as well
+TEST_F(ChargerResumeTest, PrepareResumeAfterResetMarksAPendingResume) {
+    prepare(stored());
+    EXPECT_TRUE(charger->prepare_resume_after_reset(false));
+
+    PersistentStore reloaded(charger_kvs, "EVSETEST", "boot-3");
+    const auto record = reloaded.get_transaction();
+    ASSERT_TRUE(record.has_value());
+    EXPECT_TRUE(record->resume_after_reset);
+    EXPECT_TRUE(record->energy_transfer_paused);
+    ASSERT_TRUE(charger->get_internal_context().pending_resume.has_value());
+    EXPECT_TRUE(charger->get_internal_context().pending_resume->resume_after_reset);
+
+    plug_in();
+    EXPECT_TRUE(charger->get_shared_context().flag_paused_by_evse);
+}
+
+TEST_F(ChargerResumeTest, CancelResumeAfterResetRestoresAPendingResume) {
+    prepare(stored());
+    ASSERT_TRUE(charger->prepare_resume_after_reset(false));
+    charger->cancel_resume_after_reset();
+
+    PersistentStore reloaded(charger_kvs, "EVSETEST", "boot-3");
+    const auto record = reloaded.get_transaction();
+    ASSERT_TRUE(record.has_value());
+    EXPECT_FALSE(record->resume_after_reset);
+    ASSERT_TRUE(charger->get_internal_context().pending_resume.has_value());
+    EXPECT_FALSE(charger->get_internal_context().pending_resume->resume_after_reset);
+}
+
+// A further restart while waiting for the EV after a reset with resumption must not lose the resumption
+TEST_F(ChargerResumeTest, PrepareResumeKeepsTheResetMark) {
+    auto transaction = stored();
+    transaction.resume_after_reset = true;
+    transaction.energy_transfer_paused = true;
+    prepare(transaction);
+
+    PersistentStore reloaded(charger_kvs, "EVSETEST", "boot-3");
+    const auto record = reloaded.get_transaction();
+    ASSERT_TRUE(record.has_value());
+    EXPECT_TRUE(record->resume_after_reset);
+    EXPECT_TRUE(record->energy_transfer_paused);
+    EXPECT_EQ(record->boot_id, "boot-2");
+}
+
+TEST_F(ChargerResumeTest, CancelResumeAfterResetKeepsAPauseOfItsOwn) {
+    auto& ctx = charger->get_shared_context();
+    ctx.flag_transaction_active = true;
+    ctx.flag_paused_by_evse = true;
+    charger->cancel_resume_after_reset();
+    EXPECT_TRUE(ctx.flag_paused_by_evse);
+}
+
+TEST_F(ChargerResumeTest, NoEvBeforeTheDeadlineReportsTheStoredStartSignedMeterValue) {
+    std::optional<types::units_signed::SignedMeterValue> start_signed_meter_value;
+    charger->signal_transaction_finished_event.connect(
+        [this, &start_signed_meter_value](StopTransactionReason, std::optional<types::authorization::ProvidedIdToken>) {
+            start_signed_meter_value = charger->get_start_signed_meter_value();
+        });
+    prepare(stored());
+    const auto t0 = std::chrono::steady_clock::now();
+    charger->arm_resume_deadline(t0);
+    charger->check_resume_deadline(t0 + std::chrono::seconds(11));
+    ASSERT_TRUE(start_signed_meter_value.has_value());
+    EXPECT_EQ(start_signed_meter_value->signed_meter_data, "OCMF|start");
+}
+
+TEST_F(ChargerResumeTest, DeadlineWithoutPendingResumeDoesNothing) {
+    const auto t0 = std::chrono::steady_clock::now();
+    charger->arm_resume_deadline(t0);
+    charger->check_resume_deadline(t0 + std::chrono::hours(1));
+    EXPECT_TRUE(transactions_finished.empty());
+    EXPECT_TRUE(adapter.meter_stopped.empty());
+}
+
+TEST_F(ChargerResumeTest, DeadlineStartsOnlyWhenArmed) {
+    prepare(stored());
+    charger->check_resume_deadline(std::chrono::steady_clock::now() + std::chrono::hours(1));
+    EXPECT_TRUE(transactions_finished.empty());
+}
+
+TEST_F(ChargerResumeTest, AuthorizationWhileResumePendingIsIgnored) {
+    prepare(stored());
+    types::authorization::ValidationResult validation_result;
+    validation_result.authorization_status = types::authorization::AuthorizationStatus::Accepted;
+    EXPECT_FALSE(charger->authorize(true, token(types::authorization::AuthorizationType::RFID), validation_result));
+    EXPECT_FALSE(charger->get_shared_context().session_active);
+    EXPECT_EQ(sessions_started, 0);
+}
+
+TEST_F(ChargerResumeTest, StartTransactionStoresAResumableRecord) {
+    auto& ctx = charger->get_shared_context();
+    ctx.session_uuid = "new-session";
+    ctx.id_token = token(types::authorization::AuthorizationType::PlugAndCharge);
+    ctx.authorized_pnc = true;
+
+    ASSERT_TRUE(charger->start_transaction());
+
+    PersistentStore reloaded(charger_kvs, "EVSETEST", "boot-3");
+    const auto record = reloaded.get_transaction();
+    ASSERT_TRUE(record.has_value());
+    EXPECT_EQ(record->session_uuid, "new-session");
+    ASSERT_TRUE(record->id_token.has_value());
+    EXPECT_EQ(record->id_token->id_token.value, "STORED_TOKEN");
+    EXPECT_EQ(record->boot_id, "boot-2");
+    EXPECT_FALSE(record->clean_shutdown);
+    EXPECT_TRUE(record->last_alive.has_value());
+    EXPECT_TRUE(record->transaction_started_at.has_value());
+}
+
+TEST_F(ChargerResumeTest, LastAliveIsRefreshedEveryInterval) {
+    charger->get_config_context().resume_transaction_alive_interval = std::chrono::seconds(30);
+    auto& ctx = charger->get_shared_context();
+    ctx.session_uuid = "new-session";
+    ctx.id_token = token(types::authorization::AuthorizationType::RFID);
+    ASSERT_TRUE(charger->start_transaction());
+
+    const auto t0 = std::chrono::steady_clock::now();
+    adapter.stored_keys.clear();
+    EXPECT_FALSE(charger->update_last_alive(t0));
+    EXPECT_FALSE(charger->update_last_alive(t0 + std::chrono::seconds(29)));
+    EXPECT_TRUE(charger->update_last_alive(t0 + std::chrono::seconds(30)));
+    EXPECT_FALSE(charger->update_last_alive(t0 + std::chrono::seconds(31)));
+    EXPECT_TRUE(charger->update_last_alive(t0 + std::chrono::seconds(60)));
+    // the main loop writes after releasing the state machine lock
+    EXPECT_TRUE(adapter.stored_keys.empty());
+}
+
+TEST_F(ChargerResumeTest, LastAliveIsNotWrittenWithoutTransaction) {
+    charger->get_config_context().resume_transaction_alive_interval = std::chrono::seconds(30);
+    const auto t0 = std::chrono::steady_clock::now();
+    EXPECT_FALSE(charger->update_last_alive(t0));
+    EXPECT_FALSE(charger->update_last_alive(t0 + std::chrono::minutes(5)));
+}
+
+TEST_F(ChargerResumeTest, LastAliveDisabledWithZeroInterval) {
+    charger->get_config_context().resume_transaction_alive_interval = std::chrono::seconds(0);
+    auto& ctx = charger->get_shared_context();
+    ctx.session_uuid = "new-session";
+    ctx.id_token = token(types::authorization::AuthorizationType::RFID);
+    ASSERT_TRUE(charger->start_transaction());
+    adapter.stored_keys.clear();
+
+    const auto t0 = std::chrono::steady_clock::now();
+    EXPECT_FALSE(charger->update_last_alive(t0));
+    EXPECT_FALSE(charger->update_last_alive(t0 + std::chrono::minutes(5)));
+}
+
+} // namespace

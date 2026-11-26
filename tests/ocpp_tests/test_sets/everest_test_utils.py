@@ -102,6 +102,44 @@ class SystemStoreConfigurationStrategy(EverestConfigAdjustmentStrategy):
         return adjusted
 
 
+class EvseManagerResumeTransactionStrategy(EverestConfigAdjustmentStrategy):
+    """Connects the EvseManager to a PersistentStore next to the OCPP message log and sets
+    `resume_transaction_on_startup`, so that a transaction survives a restart of EVerest."""
+
+    def __init__(self, resume_on_startup: str, evse_manager_id: str = "connector_1",
+                 ev_detect_timeout_ms: Optional[int] = None):
+        self._resume_on_startup = resume_on_startup
+        self._evse_manager_id = evse_manager_id
+        self._ev_detect_timeout_ms = ev_detect_timeout_ms
+
+    def adjust_everest_configuration(self, everest_config: dict) -> dict:
+        adjusted = deepcopy(everest_config)
+        modules = adjusted["active_modules"]
+        evse_manager = modules[self._evse_manager_id]
+        config_module = evse_manager.setdefault("config_module", {})
+        config_module["resume_transaction_on_startup"] = self._resume_on_startup
+        if self._ev_detect_timeout_ms is not None:
+            config_module["resume_transaction_ev_detect_timeout_ms"] = self._ev_detect_timeout_ms
+
+        if "persistent_store" not in modules:
+            ocpp_modules = [module for module in modules.values() if module.get("module") == "OCPPmulti"]
+            if len(ocpp_modules) != 1:
+                raise ValueError(f"EvseManagerResumeTransactionStrategy requires exactly one OCPPmulti module, "
+                                 f"found {len(ocpp_modules)}")
+            message_log_path = ocpp_modules[0].get("config_module", {}).get("MessageLogPath")
+            if not message_log_path:
+                raise ValueError("EvseManagerResumeTransactionStrategy requires MessageLogPath in the OCPP module "
+                                 "config_module")
+            modules["persistent_store"] = {
+                "module": "PersistentStore",
+                "config_module": {"sqlite_db_file_path": str(Path(message_log_path).parent / "persistent_store.db")},
+            }
+        evse_manager.setdefault("connections", {})["store"] = [
+            {"module_id": "persistent_store", "implementation_id": "main"}
+        ]
+        return adjusted
+
+
 def received_calls(charge_point, action):
     messages = (unpack(entry.message) for entry in charge_point.message_history.messages
                 if entry.initiator == "Chargepoint")

@@ -40,6 +40,8 @@ EVSE_MANAGER_COMMANDS = {
     "set_plug_and_charge_configuration": None,
     "update_allowed_energy_transfer_modes": "Rejected",
     "set_der_available": "Rejected",
+    "prepare_resume_after_reset": False,
+    "cancel_resume_after_reset": None,
 }
 
 BOOT_TIMEOUT_S = 30

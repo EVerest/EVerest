@@ -24,9 +24,11 @@ target_sources(${TEST_TARGET_NAME} PRIVATE
     IECStateMachineTest.cpp
     PpAmpacityForwarderTest.cpp
     OverVoltageMonitorTest.cpp
+    PersistentStoreTest.cpp
     PowermeterLimitsTest.cpp
     PowerSupplyMeasurementWaiterTest.cpp
     RandomDelayDurationTest.cpp
+    ResumeTransactionTest.cpp
     SessionLogTest.cpp
     V2gMessageTest.cpp
     VoltagePlausibilityMonitorTest.cpp
@@ -34,11 +36,13 @@ target_sources(${TEST_TARGET_NAME} PRIVATE
     ../CpStateFrameEmitter.cpp
     ../ErrorHandling.cpp
     ../IECStateMachine.cpp
+    ../PersistentStore.cpp
     ../SessionLog.cpp
     ../backtrace.cpp
     ../energy_transfer_modes.cpp
     ../dc_setpoint.cpp
     ../powermeter_limits.cpp
+    ../resume_transaction.cpp
     ../cable_check/PowerSupplyMeasurementWaiter.cpp
     ../over_voltage/OverVoltageMonitor.cpp
     ../voltage_plausibility/VoltagePlausibilityMonitor.cpp
@@ -79,6 +83,8 @@ target_include_directories(${CHARGER_TEST_TARGET_NAME} PRIVATE
 target_sources(${CHARGER_TEST_TARGET_NAME} PRIVATE
     ChargerTest.cpp
     ../Charger.cpp
+    ../PersistentStore.cpp
+    ../resume_transaction.cpp
 )
 
 target_compile_definitions(${CHARGER_TEST_TARGET_NAME} PRIVATE

@@ -401,6 +401,29 @@ bool ChargePoint::on_charging_state_changed(const std::uint32_t evse_id, const C
     return true;
 }
 
+bool ChargePoint::on_transaction_resumed(const std::uint32_t evse_id, const ChargingStateEnum charging_state,
+                                         const TriggerReasonEnum trigger_reason) {
+    if (evse_id > std::numeric_limits<std::int32_t>::max() or
+        !this->evse_manager->does_evse_exist(clamp_to<std::int32_t>(evse_id))) {
+        EVLOG_error << "Can not resume transaction: evse id unknown " << evse_id;
+        return false;
+    }
+    auto& evse = this->evse_manager->get_evse(clamp_to<std::int32_t>(evse_id));
+
+    std::unique_ptr<EnhancedTransaction>& transaction = evse.get_transaction();
+    if (transaction == nullptr) {
+        EVLOG_warning << "Can not resume transaction: no transaction for evse id " << evse_id;
+        return false;
+    }
+
+    transaction->chargingState = charging_state;
+    this->transaction->transaction_event_req(TransactionEventEnum::Updated, DateTime(), transaction->get_transaction(),
+                                             trigger_reason, transaction->get_seq_no(), std::nullopt, std::nullopt,
+                                             std::nullopt, std::nullopt, std::nullopt, this->is_offline(),
+                                             std::nullopt);
+    return true;
+}
+
 ChangeAvailabilityResponse ChargePoint::on_change_availability(const ChangeAvailabilityRequest& request) {
     bool transaction_active;
     const auto response = availability->change_availability_req(transaction_active, request);

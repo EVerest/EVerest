@@ -125,6 +125,7 @@ void SessionInfo::update_state(const types::evse_manager::SessionEvent event) {
     case Event::PrepareCharging:
     case Event::SessionStarted:
     case Event::TransactionStarted:
+    case Event::TransactionResumed:
         this->state = State::Preparing;
         break;
     case Event::ChargingStarted:
@@ -423,7 +424,8 @@ void API::init() {
                         }
                     }
                 }
-                if (session_event.event == types::evse_manager::SessionEventEnum::TransactionStarted) {
+                if (session_event.event == types::evse_manager::SessionEventEnum::TransactionStarted or
+                    session_event.event == types::evse_manager::SessionEventEnum::TransactionResumed) {
                     if (session_event.transaction_started.has_value()) {
                         auto transaction_started = session_event.transaction_started.value();
                         auto energy_Wh_import = transaction_started.meter_value.energy_Wh_import.total;
