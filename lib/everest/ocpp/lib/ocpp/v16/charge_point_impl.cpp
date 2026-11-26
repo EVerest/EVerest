@@ -493,7 +493,13 @@ void ChargePointImpl::boot_notification(bool initiated_by_trigger_message) {
     req.chargePointVendor = this->configuration.getChargePointVendor();
     req.firmwareVersion.emplace(this->configuration.getFirmwareVersion());
     req.iccid = this->configuration.getICCID();
+    if (req.iccid.has_value() && req.iccid->get().empty()) {
+        req.iccid.reset();
+    }
     req.imsi = this->configuration.getIMSI();
+    if (req.imsi.has_value() && req.imsi->get().empty()) {
+        req.imsi.reset();
+    }
     req.meterSerialNumber = this->configuration.getMeterSerialNumber();
     req.meterType = this->configuration.getMeterType();
 
