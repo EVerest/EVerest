@@ -125,14 +125,6 @@ to the corresponding migration guide.
        <howto-iso15118-stack-migration>`. The module logs a deprecation warning
        at startup. SAE J2847/2 bidirectional power transfer is only available in
        EvseV2G until the C++ stack provides it.
-   * - :ref:`IsoMux module <everest_modules_IsoMux>` (multiplexer between EvseV2G
-       and Evse15118D20), superseded by
-       :ref:`Evse15118D20 <everest_modules_Evse15118D20>` alone
-     - 2026.10.0
-     - 2027.04.0
-     - :ref:`Migrate from EvseV2G and IsoMux to Evse15118D20
-       <howto-iso15118-stack-migration>`. The module logs a deprecation warning
-       at startup.
    * - :ref:`Evse15118D20 <everest_modules_Evse15118D20>` configuration option
        ``logging_path``
      - 2026.10.0

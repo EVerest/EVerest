@@ -26,7 +26,6 @@ import test_sets.everest_test_utils as everest_test_utils
 from everest.testing.core_utils.network_isolation import (
     NetworkIsolationStrategy,
     WORKER_INTERFACE_ENV,
-    WORKER_PROXY_INTERFACE_ENV,
 )
 from everest.testing.core_utils._configuration.everest_configuration_strategies.everest_configuration_strategy import (
     EverestConfigAdjustmentStrategy,
@@ -72,8 +71,7 @@ def everest_config_strategies(request) -> list:
 
     interface = os.environ.get(WORKER_INTERFACE_ENV)
     if interface:
-        proxy_interface = os.environ.get(WORKER_PROXY_INTERFACE_ENV)
-        strategies.append(NetworkIsolationStrategy(interface, proxy_interface))
+        strategies.append(NetworkIsolationStrategy(interface))
 
     return strategies
 

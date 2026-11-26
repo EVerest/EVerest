@@ -6,17 +6,19 @@ Migrate from EvseV2G and IsoMux to Evse15118D20
 
 This is a goal-oriented how-to guide on moving an existing deployment from the
 deprecated :ref:`EvseV2G <everest_modules_EvseV2G>` module (DIN SPEC 70121 and
-ISO 15118-2 on the C implementation), or from the deprecated
-:ref:`IsoMux <everest_modules_IsoMux>` module that multiplexes EvseV2G with
-Evse15118D20, to :ref:`Evse15118D20 <everest_modules_Evse15118D20>` alone.
+ISO 15118-2 on the C implementation), or from the ``IsoMux`` module that
+multiplexes EvseV2G with Evse15118D20, to
+:ref:`Evse15118D20 <everest_modules_Evse15118D20>` alone.
 Evse15118D20 runs DIN SPEC 70121, ISO 15118-2 and ISO 15118-20 on the C++
 ISO 15118 stack (``lib/everest/iso15118``) and takes over the responsibilities
 of both modules.
 
-EvseV2G and IsoMux are deprecated in 2026.10.0 and may be removed in 2027.04.0
-at the earliest (see the :ref:`deprecation index <project-deprecation-index>`).
-Both log a ``DEPRECATED MODULE`` warning at startup. Until they are removed
-they keep working as before, so the migration can be planned per station.
+EvseV2G and IsoMux are deprecated in 2026.10.0. IsoMux is removed in 2027.04.0,
+so a configuration that loads it has to be migrated before upgrading to that
+release. EvseV2G may be removed in 2027.04.0 at the earliest (see the
+:ref:`deprecation index <project-deprecation-index>`). It logs a
+``DEPRECATED MODULE`` warning at startup and keeps working as before until it
+is removed.
 
 The migration has three parts:
 
