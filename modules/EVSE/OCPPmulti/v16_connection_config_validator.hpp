@@ -12,8 +12,9 @@
 namespace ocpp_multi {
 
 /// \brief B09-style validation of connection-config writes in v16 mode, mirroring the 2.x
-///        Provisioning::validate_set_variable. The 2.x certificate-installation checks are not
-///        mirrored; a missing certificate surfaces at connect time through slot failover.
+///        Provisioning::validate_set_variable and sharing its NetworkConfigurationPriority rules. The 2.x
+///        certificate-installation checks are not mirrored; a missing certificate surfaces at connect time
+///        through slot failover.
 class V16ConnectionConfigValidator {
 public:
     explicit V16ConnectionConfigValidator(ocpp::v2::DeviceModelVariablesInterface& device_model);
