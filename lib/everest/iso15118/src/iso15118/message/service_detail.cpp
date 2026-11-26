@@ -288,10 +288,15 @@ template <> void convert(const ServiceDetailResponse& in, iso20_ServiceDetailRes
 
     out.ServiceID = in.service;
 
+    // 32 entries are allowed by the schema, but cbExiGen generates much smaller arrays.
+    CPP2CB_ARRAY_SIZE_CHECK(in.service_parameter_list.size(), out.ServiceParameterList.ParameterSet.array);
+
     uint8_t index = 0;
     for (auto const& in_parameter_set : in.service_parameter_list) {
         auto& out_parameter_set = out.ServiceParameterList.ParameterSet.array[index++];
         out_parameter_set.ParameterSetID = in_parameter_set.id;
+
+        CPP2CB_ARRAY_SIZE_CHECK(in_parameter_set.parameter.size(), out_parameter_set.Parameter.array);
 
         uint8_t t = 0;
         for (auto const& in_parameter : in_parameter_set.parameter) {
