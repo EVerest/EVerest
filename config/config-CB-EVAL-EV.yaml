@@ -1,12 +1,6 @@
 settings:
   mqtt_everest_prefix: everest_ev
 active_modules:
-  ev_api:
-    connections:
-      ev_manager:
-        - implementation_id: ev_manager
-          module_id: ev_manager
-    module: EvAPI
   iso15118_ev:
     module: Ev15118
     config_module:

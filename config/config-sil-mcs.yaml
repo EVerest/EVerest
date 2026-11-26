@@ -164,12 +164,6 @@ active_modules:
       evse_energy_sink:
         - module_id: api_sink
           implementation_id: external_limits
-  ev_api:
-    module: EvAPI
-    connections:
-      ev_manager:
-        - implementation_id: ev_manager
-          module_id: ev_manager
   error_history:
     module: ErrorHistory
     config_implementation:
