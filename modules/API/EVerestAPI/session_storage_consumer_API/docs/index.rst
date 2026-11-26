@@ -38,8 +38,8 @@ request to continue the iteration. A reply without a token means the iteration
 is complete. A page can hold fewer records than requested, in rare cases none,
 while still carrying a token. An invalid or outdated token starts the iteration
 from the beginning. The payload is optional: an empty object requests the first
-page with the default page size. The ``started_after`` filter is compared at
-millisecond precision.
+page with the default page size. The ``started_after`` filter is compared with
+fractional seconds truncated to milliseconds.
 
 Deleting records
 ================
