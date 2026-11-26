@@ -37,5 +37,9 @@ endif()
 add_subdirectory(fusion-charger-dispenser-library)
 add_subdirectory(goose-lib)
 add_subdirectory(huawei-fusioncharge-driver)
-add_subdirectory(modbus-server)
-add_subdirectory(log)
+
+if(NOT BUILDING_IN_EVEREST)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../../../../../lib/everest/modbus ${CMAKE_CURRENT_BINARY_DIR}/modbus)
+endif()
+
+add_library(Huawei::FusionCharger::LogInterface ALIAS modbus-log)

@@ -6,8 +6,8 @@ add_library(
         ${MODBUS_SERVER_SOURCES}
 )
 target_include_directories(modbus-server PUBLIC include)
-target_link_libraries(modbus-server PUBLIC modbus-base Huawei::FusionCharger::LogInterface)
+target_link_libraries(modbus-server PUBLIC modbus-base modbus-log)
 
-if(FUSION_CHARGER_LIB_BUILD_TESTS)
+if(BUILD_TESTING)
     add_subdirectory(tests)
 endif()

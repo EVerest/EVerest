@@ -1,0 +1,120 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("//third-party/bazel/toolchains:defs.bzl", "CROSS_TEST_INCOMPATIBLE")
+
+cc_library(
+    name = "modbus_log",
+    srcs = ["libs/log/logs.cpp"],
+    hdrs = ["libs/log/logs/logs.hpp"],
+    copts = ["-std=c++17"],
+    strip_include_prefix = "libs/log",
+    visibility = ["//visibility:public"],
+)
+
+cc_library(
+    name = "modbus_base",
+    srcs = glob(["libs/base/src/**/*.cpp"]),
+    hdrs = glob(["libs/base/include/**/*.hpp"]),
+    copts = ["-std=c++17"],
+    strip_include_prefix = "libs/base/include",
+    visibility = ["//visibility:public"],
+)
+
+cc_library(
+    name = "modbus_server",
+    srcs = glob(["libs/server/src/**/*.cpp"]),
+    hdrs = glob(["libs/server/include/**/*.hpp"]),
+    copts = ["-std=c++17"],
+    strip_include_prefix = "libs/server/include",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":modbus_base",
+        ":modbus_log",
+    ],
+)
+
+cc_library(
+    name = "modbus_client",
+    srcs = glob(["libs/client/src/**/*.cpp"]),
+    hdrs = glob(["libs/client/include/**/*.hpp"]),
+    copts = ["-std=c++17"],
+    strip_include_prefix = "libs/client/include",
+    visibility = ["//visibility:public"],
+    deps = [":modbus_base"],
+)
+
+cc_library(
+    name = "modbus_ssl",
+    srcs = glob(["libs/ssl/src/**/*.cpp"]),
+    hdrs = glob(["libs/ssl/include/**/*.hpp"]),
+    copts = ["-std=c++17"],
+    strip_include_prefix = "libs/ssl/include",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":modbus_base",
+        "//third-party/bazel/openssl:crypto",
+        "//third-party/bazel/openssl:ssl",
+    ],
+)
+
+cc_library(
+    name = "modbus_registers",
+    srcs = glob(["libs/registers/src/**/*.cpp"]),
+    hdrs = glob(["libs/registers/include/**/*.hpp"]),
+    copts = ["-std=c++17"],
+    strip_include_prefix = "libs/registers/include",
+    visibility = ["//visibility:public"],
+    deps = [":modbus_server"],
+)
+
+cc_test(
+    name = "modbus_base_tests",
+    srcs = glob([
+        "libs/base/tests/**/*.cpp",
+        "libs/base/tests/**/*.hpp",
+    ]),
+    copts = ["-std=c++17"],
+    target_compatible_with = CROSS_TEST_INCOMPATIBLE,
+    deps = [
+        ":modbus_base",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "modbus_server_tests",
+    srcs = glob([
+        "libs/server/tests/*.cpp",
+        "libs/server/tests/*.hpp",
+    ]),
+    copts = ["-std=c++17"],
+    target_compatible_with = CROSS_TEST_INCOMPATIBLE,
+    deps = [
+        ":modbus_server",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "modbus_client_tests",
+    srcs = glob([
+        "libs/client/tests/*.cpp",
+        "libs/client/tests/*.hpp",
+    ]),
+    copts = ["-std=c++17"],
+    target_compatible_with = CROSS_TEST_INCOMPATIBLE,
+    deps = [
+        ":modbus_client",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "modbus_registers_tests",
+    srcs = glob(["libs/registers/tests/*.cpp"]),
+    copts = ["-std=c++17"],
+    target_compatible_with = CROSS_TEST_INCOMPATIBLE,
+    deps = [
+        ":modbus_registers",
+        "@googletest//:gtest_main",
+    ],
+)

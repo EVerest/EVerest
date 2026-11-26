@@ -8,6 +8,6 @@ add_library(
 )
 target_include_directories(modbus-base PUBLIC include)
 
-if(FUSION_CHARGER_LIB_BUILD_TESTS)
+if(BUILD_TESTING)
     add_subdirectory(tests)
 endif()
