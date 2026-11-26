@@ -208,7 +208,7 @@ void Charger::run_state_machine() {
             shared_context.switch_3ph1ph_threephase_ongoing = false;
         }
 
-        // [V2G-DC-968] V2G_SECC_CPOscillator_Retain_Time expired: switch the oscillator off now,
+        // The X1 timer armed by notify_session_stop_res_sent() expired: switch the oscillator off now,
         // whatever state we are in. The timer is anchored at the SessionStopRes send, not at the
         // EV's TCP close. One-shot: always disarm, even if the PWM is already off (e.g. dlink_*
         // arrived first on the ISO-2 TLS path).
@@ -216,7 +216,8 @@ void Charger::run_state_machine() {
             std::chrono::steady_clock::now() >= internal_context.session_stop_pwm_off_deadline.value()) {
             internal_context.session_stop_pwm_off_deadline.reset();
             if (shared_context.pwm_running) {
-                session_log.evse(false, "CP oscillator retain time expired -> X1 [V2G-DC-968]");
+                session_log.evse(false, fmt::format("SessionStopRes X1 timer expired -> X1 [{}]",
+                                                    internal_context.session_stop_pwm_off_requirement));
                 cp_state_X1();
             }
         }
@@ -2655,10 +2656,10 @@ bool Charger::dlink_terminate() {
     return true;
 }
 
-// A positive SessionStopRes was sent: start the CP oscillator retain timer [V2G-DC-968]. The PWM
-// stays on for V2G_SECC_CP_OSCILLATOR_RETAIN and is then switched off by the state machine,
-// independent of the EV's TCP close. dlink_terminate()/dlink_pause() follow later (after the TCP
-// connection is gone) and apply a harmless second X1.
+// A positive SessionStopRes was sent: arm the X1 timer. The PWM stays on for V2G_SECC_CP_OSCILLATOR_RETAIN
+// ([V2G-DC-968]), or MCS_TERMINATE_SS3_HOLD after a terminate on MCS (IEC 61851-23-3 Table CC.111 t109), and
+// is then switched off by the state machine, independent of the EV's TCP close. dlink_terminate()/dlink_pause() follow
+// later (after the TCP connection is gone) and apply a harmless second X1.
 void Charger::notify_session_stop_res_sent(types::iso15118::SessionStopAction action) {
     Everest::scoped_lock_timeout lock(state_machine_mutex,
                                       Everest::MutexDescription::Charger_notify_session_stop_res_sent);
@@ -2685,9 +2686,14 @@ void Charger::notify_session_stop_res_sent(types::iso15118::SessionStopAction ac
         cp_state_X1();
         return;
     }
-    shared_context.hlc_charging_terminate_pause =
-        action == types::iso15118::SessionStopAction::Pause ? HlcTerminatePause::Pause : HlcTerminatePause::Terminate;
-    internal_context.session_stop_pwm_off_deadline = std::chrono::steady_clock::now() + V2G_SECC_CP_OSCILLATOR_RETAIN;
+    const bool pause = action == types::iso15118::SessionStopAction::Pause;
+    shared_context.hlc_charging_terminate_pause = pause ? HlcTerminatePause::Pause : HlcTerminatePause::Terminate;
+    const bool mcs_terminate = mcs_connector and not pause;
+    const std::chrono::milliseconds hold = mcs_terminate ? MCS_TERMINATE_SS3_HOLD : V2G_SECC_CP_OSCILLATOR_RETAIN;
+    internal_context.session_stop_pwm_off_requirement = mcs_terminate ? "IEC 61851-23-3 CC.111 t109" : "V2G-DC-968";
+    internal_context.session_stop_pwm_off_deadline = std::chrono::steady_clock::now() + hold;
+    session_log.evse(false,
+                     fmt::format("X1 in {} ms [{}]", hold.count(), internal_context.session_stop_pwm_off_requirement));
 }
 
 void Charger::notify_hlc_session_started_by_ev() {

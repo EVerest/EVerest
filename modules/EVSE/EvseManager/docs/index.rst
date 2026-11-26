@@ -169,6 +169,11 @@ transaction blocks the LEM DCBM 400/600 for seconds while it signs the OCMF reco
 publishes no voltage, so EvseManager delays the ``stop_transaction`` until the welding detection phase
 has ended (or the EV unplugged). An EV-initiated stop keeps the transaction open until unplug anyway.
 
+After a positive ``SessionStopRes`` the CP oscillator stays on for 1.5 s (DIN SPEC 70121 [V2G-DC-968]) before X1,
+independent of the EV's TCP close. With ``connector_type: cMCS`` a terminated session holds S S3 closed
+for 5 s instead (IEC 61851-23-3 Table CC.111 t109); a pause keeps the 1.5 s (t717). A ``FAILED_*``
+response switches to X1 at once ([V2G-DC-942]).
+
 Published variables
 ===================
 
