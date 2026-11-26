@@ -109,6 +109,7 @@ private:
     // Starts unlatched, i.e. "assume CCS until told otherwise": that keeps a board whose heartbeat
     // has not answered yet behaving exactly as it did before MCS existed.
     technology_latch m_link_technology;
+    lock_feedback_reporter m_lock_feedback;
     std::string m_cb_identifier;
     std::chrono::steady_clock::time_point last_everest_heartbeat;
 

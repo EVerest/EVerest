@@ -202,17 +202,55 @@ constexpr char const* lock_state_name(std::uint8_t state) {
     }
 }
 
-// Measured connector lock feedback: true for LOCKED, false for UNLOCKED. Empty for UNDEFINED (no
-// feedback to report) and for values this host does not know.
-constexpr std::optional<bool> lock_feedback_locked(std::uint8_t state) {
-    switch (state) {
-    case LockState_UNLOCKED:
-        return false;
-    case LockState_LOCKED:
-        return true;
-    default:
-        return std::nullopt;
+// Decides which lock reports reach EVerest. The MCU sends lock_state in every BSP status packet, at
+// once when the debounced feedback changes and about once a second otherwise.
+//
+// A measured state is reported when it differs from the last one reported. UNDEFINED (no feedback
+// pin configured) is not a measurement and is never reported.
+//
+// One case needs more than "on change": EvseManager forgets the lock state on every unlock command
+// and takes only a new Locked as confirmation of the next lock command. A lock that failed to
+// retract never leaves LOCKED, so the MCU has no change to report. A lock command therefore makes
+// the next packet count as news if it still reads LOCKED. That packet is the periodic one, so this
+// confirmation can take up to a second.
+class lock_feedback_reporter {
+public:
+    // Offer the lock_state of a status packet. Returns whether to report locked (true) or unlocked
+    // (false), or nothing if there is no news.
+    std::optional<bool> offer(std::uint8_t state) {
+        const auto locked = measured_locked(state);
+        if (not locked.has_value() or locked == m_reported_locked) {
+            return std::nullopt;
+        }
+        m_reported_locked = locked;
+        return locked;
     }
-}
+
+    // EVerest sent a lock command: a Locked reported before it no longer confirms anything.
+    void lock_commanded() {
+        if (m_reported_locked == true) {
+            m_reported_locked.reset();
+        }
+    }
+
+    // EVerest (re)connected and knows nothing: the next offer reports a measured state again.
+    void forget() {
+        m_reported_locked.reset();
+    }
+
+private:
+    static constexpr std::optional<bool> measured_locked(std::uint8_t state) {
+        switch (state) {
+        case LockState_UNLOCKED:
+            return false;
+        case LockState_LOCKED:
+            return true;
+        default:
+            return std::nullopt;
+        }
+    }
+
+    std::optional<bool> m_reported_locked;
+};
 
 } // namespace charge_bridge
