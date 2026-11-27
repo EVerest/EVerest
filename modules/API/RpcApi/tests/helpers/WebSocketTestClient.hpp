@@ -71,11 +71,17 @@ public:
         return m_cv.wait_for(lock, timeout, [this] { return m_connected.load(); });
     }
 
+    bool wait_until_disconnected(std::chrono::milliseconds timeout) {
+        std::unique_lock<std::mutex> lock(m_cv_mutex);
+        return m_cv.wait_for(lock, timeout, [this] { return !m_connected.load(); });
+    }
+
     void start_lws_service_thread();
     void stop_lws_service_thread();
 
 private:
     static int callback(struct lws* wsi, enum lws_callback_reasons reason, void* user, void* in, size_t len);
+    void set_connected(bool connected);
 
     std::string m_address;
     int m_port;

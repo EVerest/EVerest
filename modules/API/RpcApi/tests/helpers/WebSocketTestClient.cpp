@@ -50,8 +50,7 @@ int WebSocketTestClient::callback(struct lws* wsi, enum lws_callback_reasons rea
 
     switch (reason) {
     case LWS_CALLBACK_CLIENT_ESTABLISHED:
-        client->m_connected = true;
-        client->m_cv.notify_all();
+        client->set_connected(true);
         break;
     case LWS_CALLBACK_CLIENT_RECEIVE: {
         std::lock_guard<std::mutex> lock(client->m_cv_mutex);
@@ -70,7 +69,7 @@ int WebSocketTestClient::callback(struct lws* wsi, enum lws_callback_reasons rea
     }
     case LWS_CALLBACK_CLIENT_CLOSED:
     case LWS_CALLBACK_CLOSED_CLIENT_HTTP: {
-        client->m_connected = false;
+        client->set_connected(false);
         EVLOG_info << "Client closed connection: " << (in ? static_cast<const char*>(in) : "(null)")
                    << " reason: " << reason;
         break;
@@ -82,6 +81,14 @@ int WebSocketTestClient::callback(struct lws* wsi, enum lws_callback_reasons rea
         break;
     }
     return 0;
+}
+
+void WebSocketTestClient::set_connected(bool connected) {
+    {
+        std::lock_guard<std::mutex> lock(m_cv_mutex);
+        m_connected = connected;
+    }
+    m_cv.notify_all();
 }
 
 bool WebSocketTestClient::connect() {
@@ -106,17 +113,12 @@ void WebSocketTestClient::start_lws_service_thread() {
     if (m_lws_service_running) {
         return;
     }
+    m_lws_service_running = true;
     m_lws_service_thread = std::thread([this]() {
-        m_lws_service_running = true;
         while (m_lws_service_running) {
             lws_service(m_context, 0);
         }
     });
-
-    // Wait for the service thread to start
-    while (!m_lws_service_running) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(10)); // Wait for service thread to start
-    }
 }
 
 void WebSocketTestClient::stop_lws_service_thread() {
