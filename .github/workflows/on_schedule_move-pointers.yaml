@@ -76,6 +76,7 @@ jobs:
           SHA=$(git rev-parse --verify --quiet "origin/$TRACKS") || {
             echo "::error::origin/$TRACKS does not exist"; exit 1; }
           echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "moved_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
           # --verify --quiet prints nothing and exits non-zero when the ref is
           # missing, so a pointer that does not exist yet is detectable. Plain
           # rev-parse prints the ref name and exits 128, which is what broke the
@@ -143,6 +144,7 @@ jobs:
           POINTER: ${{ matrix.pointer }}
           TRACKS: ${{ matrix.tracks }}
           SHA: ${{ steps.sha.outputs.sha }}
+          MOVED_AT: ${{ steps.sha.outputs.moved_at }}
         run: |
           set -euo pipefail
           if [ -z "${GH_TOKEN:-}" ]; then
@@ -156,4 +158,24 @@ jobs:
             -F "client_payload[pointer]=$POINTER" \
             -F "client_payload[tracks]=$TRACKS" \
             -F "client_payload[sha]=$SHA" \
-            -F "client_payload[moved_at]=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            -F "client_payload[moved_at]=$MOVED_AT"
+
+      - name: Write the moved pointer
+        if: steps.sha.outputs.unchanged != '1'
+        env:
+          POINTER: ${{ matrix.pointer }}
+          TRACKS: ${{ matrix.tracks }}
+          SHA: ${{ steps.sha.outputs.sha }}
+          MOVED_AT: ${{ steps.sha.outputs.moved_at }}
+        run: |
+          set -euo pipefail
+          jq -n --arg pointer "$POINTER" --arg tracks "$TRACKS" --arg sha "$SHA" --arg moved_at "$MOVED_AT" \
+            '{pointer: $pointer, tracks: $tracks, sha: $sha, moved_at: $moved_at}' > moved.json
+
+      - name: Upload the moved pointer
+        if: steps.sha.outputs.unchanged != '1'
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: moved-${{ strategy.job-index }}
+          path: moved.json
+          if-no-files-found: error

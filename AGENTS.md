@@ -180,6 +180,10 @@ python3 -m venv /tmp/himalayas && /tmp/himalayas/bin/pip install ./applications/
 /tmp/himalayas/bin/python -I -m unittest discover -s applications/himalayas_record/tests -v
 ```
 
+The pointer collector's glue in `.ci/himalayas` (`collect.py`, `pick_dispatched.py`) uses that
+package. Its suites in `.ci/himalayas/tests` run in the same job, with the same venv:
+`/tmp/himalayas/bin/python -I -m unittest discover -s .ci/himalayas/tests -v`.
+
 ## Architecture
 
 Each module is an independent process. It declares the interfaces it provides and
