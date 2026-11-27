@@ -11,6 +11,7 @@
 
 #include <fstream>
 #include <memory>
+#include <set>
 #include <string>
 
 namespace {
@@ -58,6 +59,29 @@ void insert_base_row(const fs::path& db_path, const Everest::error::Error& error
     REQUIRE(stmt->step() == SQLITE_DONE);
 }
 
+std::set<std::string> get_column_names(const fs::path& db_path) {
+    everest::db::sqlite::Connection db(db_path);
+    REQUIRE(db.open_connection());
+    auto stmt = db.new_statement("PRAGMA table_info(errors);");
+    std::set<std::string> columns;
+    while (stmt->step() == SQLITE_ROW) {
+        columns.insert(std::get<std::string>(stmt->column_variant("name")));
+    }
+    return columns;
+}
+
+bool has_column(const fs::path& db_path, const std::string& column) {
+    return get_column_names(db_path).count(column) == 1;
+}
+
+/// the error as stored in a database without the added columns
+Everest::error::ErrorPtr base_error(const Everest::error::ErrorPtr& error) {
+    auto result = std::make_shared<Everest::error::Error>(*error);
+    result->trigger_value.reset();
+    result->origin.mapping.reset();
+    return result;
+}
+
 } // namespace
 
 SCENARIO("Opening an existing ErrorDatabaseSqlite database", "[!throws]") {
@@ -75,7 +99,7 @@ SCENARIO("Opening an existing ErrorDatabaseSqlite database", "[!throws]") {
 
     GIVEN("A database with the base columns, an unknown one and an error in it") {
         const auto db_path = create_database(base_schema + ", unknown TEXT);");
-        const auto stored_error = get_test_errors().at(1);
+        const auto stored_error = base_error(get_test_errors().at(1));
         insert_base_row(db_path, *stored_error);
         TestDatabase db(db_path);
         THEN("The database and its error are kept") {
@@ -104,7 +128,7 @@ SCENARIO("Opening an existing ErrorDatabaseSqlite database", "[!throws]") {
 
     GIVEN("A database with the base columns, an unknown NOT NULL one with a default and an error in it") {
         const auto db_path = create_database(base_schema + ", unknown TEXT NOT NULL DEFAULT '');");
-        const auto stored_error = get_test_errors().at(1);
+        const auto stored_error = base_error(get_test_errors().at(1));
         insert_base_row(db_path, *stored_error);
         TestDatabase db(db_path);
         WHEN("Adding an error") {
@@ -113,6 +137,55 @@ SCENARIO("Opening an existing ErrorDatabaseSqlite database", "[!throws]") {
             THEN("The database and its errors are kept") {
                 check_expected_errors_in_list({stored_error, test_errors.at(0)}, db.get_errors({}));
             }
+        }
+    }
+
+    GIVEN("A database with only the base columns and an error in it") {
+        const auto db_path = create_database(base_schema + ");");
+        const auto test_errors = get_test_errors();
+        const auto stored_error = base_error(test_errors.at(1));
+        insert_base_row(db_path, *stored_error);
+        TestDatabase db(db_path);
+        THEN("The added columns are created and the error is kept") {
+            CHECK(has_column(db_path, "trigger_value_text_repr"));
+            check_expected_errors_in_list({stored_error}, db.get_errors({}));
+        }
+        WHEN("Adding an error with a trigger value and opening the database again") {
+            REQUIRE(test_errors.at(0)->trigger_value.has_value());
+            db.add_error(test_errors.at(0));
+            module::ErrorDatabaseSqlite reopened(db_path);
+            THEN("Both errors are kept") {
+                check_expected_errors_in_list({stored_error, test_errors.at(0)},
+                                              reopened.get_errors(std::list<Everest::error::ErrorFilter>()));
+            }
+        }
+    }
+
+    GIVEN("A database with only the base columns that another connection is writing to while it is opened") {
+        const auto db_path = create_database(base_schema + ");");
+        const auto test_errors = get_test_errors();
+        const auto stored_error = base_error(test_errors.at(1));
+        insert_base_row(db_path, *stored_error);
+        auto writer = std::make_unique<everest::db::sqlite::Connection>(db_path);
+        REQUIRE(writer->open_connection());
+        REQUIRE(writer->execute_statement("BEGIN IMMEDIATE;"));
+        // the migration fails after the busy timeout of the sqlite connection (5 s)
+        TestDatabase db(db_path);
+        writer.reset();
+        THEN("The migration is skipped, errors are still stored and edited, and the next start migrates") {
+            CHECK_FALSE(has_column(db_path, "trigger_value_text_repr"));
+            db.edit_errors(
+                {Everest::error::ErrorFilter(Everest::error::HandleFilter(stored_error->uuid))},
+                [](Everest::error::ErrorPtr error) { error->state = Everest::error::State::ClearedByReboot; });
+            stored_error->state = Everest::error::State::ClearedByReboot;
+            db.add_error(test_errors.at(0));
+            const auto added_error = base_error(test_errors.at(0));
+            check_expected_errors_in_list({stored_error, added_error}, db.get_errors({}));
+
+            module::ErrorDatabaseSqlite reopened(db_path);
+            CHECK(has_column(db_path, "trigger_value_text_repr"));
+            check_expected_errors_in_list({stored_error, added_error},
+                                          reopened.get_errors(std::list<Everest::error::ErrorFilter>()));
         }
     }
 

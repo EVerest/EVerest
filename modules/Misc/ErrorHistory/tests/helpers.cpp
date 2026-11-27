@@ -14,7 +14,8 @@ std::string get_unique_db_name() {
     return "error_database_sqlite_" + Everest::error::UUID().to_string() + ".db";
 }
 
-std::vector<Everest::error::ErrorPtr> get_test_errors() {
+namespace {
+std::vector<Everest::error::ErrorPtr> get_base_test_errors() {
     return {// index 0
             std::make_shared<Everest::error::Error>(
                 "test_type_a", "test_sub_type_a", "test_message_a", "test_description_a",
@@ -89,6 +90,16 @@ std::vector<Everest::error::ErrorPtr> get_test_errors() {
                 Everest::error::State::ClearedByReboot)};
 }
 
+} // namespace
+
+std::vector<Everest::error::ErrorPtr> get_test_errors() {
+    auto errors = get_base_test_errors();
+    errors.at(0)->trigger_value = Everest::error::TriggerValue{"85.3 degC"};
+    errors.at(3)->trigger_value = Everest::error::TriggerValue{"85,3 °C – threshold exceeded"};
+    errors.at(4)->trigger_value = Everest::error::TriggerValue{""};
+    return errors;
+}
+
 void check_expected_errors_in_list(const std::vector<Everest::error::ErrorPtr>& expected_errors,
                                    const std::list<Everest::error::ErrorPtr>& errors) {
     REQUIRE(expected_errors.size() == errors.size());
@@ -106,6 +117,10 @@ void check_expected_errors_in_list(const std::vector<Everest::error::ErrorPtr>& 
         REQUIRE((*result)->state == exp_err->state);
         REQUIRE((*result)->sub_type == exp_err->sub_type);
         REQUIRE((*result)->vendor_id == exp_err->vendor_id);
+        REQUIRE((*result)->trigger_value.has_value() == exp_err->trigger_value.has_value());
+        if (exp_err->trigger_value.has_value()) {
+            REQUIRE((*result)->trigger_value.value().text_repr == exp_err->trigger_value.value().text_repr);
+        }
     }
 }
 

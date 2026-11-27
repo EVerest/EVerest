@@ -44,3 +44,21 @@ TEST(error_history, error_object_without_vendor_id_omits_it) {
     const auto serialized = nlohmann::json::parse(serialize(make_error_object()));
     EXPECT_FALSE(serialized.contains("vendor_id"));
 }
+
+TEST(error_history, error_object_serializes_trigger_value) {
+    auto error = make_error_object();
+    error.trigger_value = generic::TriggerValue{"85.3 degC"};
+
+    const auto serialized = nlohmann::json::parse(serialize(error));
+    EXPECT_EQ(serialized.at("trigger_value"), nlohmann::json({{"text_repr", "85.3 degC"}}));
+
+    ErrorObject result;
+    ASSERT_TRUE(everest::lib::API::deserialize(serialized.dump(), result));
+    ASSERT_TRUE(result.trigger_value.has_value());
+    EXPECT_EQ(result.trigger_value->text_repr, "85.3 degC");
+}
+
+TEST(error_history, error_object_without_trigger_value_omits_it) {
+    const auto serialized = nlohmann::json::parse(serialize(make_error_object()));
+    EXPECT_FALSE(serialized.contains("trigger_value"));
+}
