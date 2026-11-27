@@ -131,8 +131,8 @@ EvseManager. Make sure to set the “device” config option to the ethernet
 device of the PLC modem and enable the protocol generations the station
 should offer (``supported_ISO15118_2``, ``supported_DIN70121``,
 ``supported_ISO15118_20``). Leave the other options on default for now.
-The former :ref:`EvseV2G <everest_modules_EvseV2G>` module is deprecated,
-see the :ref:`migration guide <howto-iso15118-stack-migration>`.
+It replaces the former ``EvseV2G`` module, see the
+:ref:`migration guide <howto-iso15118-stack-migration>`.
 
 :ref:`EvseSecurity <everest_modules_EvseSecurity>`: 
 Handles certificates and private keys for TLS/PnC. We

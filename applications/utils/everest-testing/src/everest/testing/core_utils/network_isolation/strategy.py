@@ -15,7 +15,7 @@ from typing import Dict
 from everest.testing.core_utils import EverestConfigAdjustmentStrategy
 
 # All ISO 15118 module types handled by this strategy
-ISO15118_MODULE_TYPES = frozenset({"Ev15118", "EvseV2G", "Evse15118D20"})
+ISO15118_MODULE_TYPES = frozenset({"Ev15118", "Evse15118D20"})
 
 
 class NetworkIsolationStrategy(EverestConfigAdjustmentStrategy):

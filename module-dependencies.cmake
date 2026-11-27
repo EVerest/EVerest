@@ -23,11 +23,6 @@ ev_define_dependency(
     DEPENDENT_MODULES_LIST OCPPmulti)
 
 ev_define_dependency(
-    DEPENDENCY_NAME libcbv2g
-    OUTPUT_VARIABLE_SUFFIX LIBCBV2G
-    DEPENDENT_MODULES_LIST EvseV2G)
-
-ev_define_dependency(
     DEPENDENCY_NAME libiso15118_ev
     OUTPUT_VARIABLE_SUFFIX ISO15118_EV_SIDE
     DEPENDENT_MODULES_LIST Ev15118)
@@ -39,7 +34,7 @@ endif()
 ev_define_dependency(
     DEPENDENCY_NAME libevse-security
     OUTPUT_VARIABLE_SUFFIX LIBEVSE_SECURITY
-    DEPENDENT_MODULES_LIST OCPPmulti EvseSecurity EvseV2G)
+    DEPENDENT_MODULES_LIST OCPPmulti EvseSecurity)
 
 ev_define_dependency(
     DEPENDENCY_NAME everest-sqlite

@@ -81,13 +81,11 @@ class TestIso15118ExtenstionsOcppIntegration:
             {"connectorStatus": "Available", "evseId": 1},
         )
 
-    @parametrize_secc_config(
-        "everest-config-ocpp201-sil-dc-d2.yaml",
-        "everest-config-ocpp201-sil-dc-d2-evsev2g.yaml",
+    @pytest.mark.everest_core_config(
+        get_everest_config_path_str("everest-config-ocpp201-sil-dc-d2.yaml")
     )
     async def test_charge_params_sent_dc_d2(
         self,
-        secc_config,
         request,
         central_system: CentralSystem,
         charge_point: ChargePoint201,
