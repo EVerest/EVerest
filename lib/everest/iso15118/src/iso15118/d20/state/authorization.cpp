@@ -59,7 +59,12 @@ message_20::AuthorizationResponse handle_request(const message_20::Authorization
     }
 
     if (timeout_reached) {
-        set_response_code(res, dt::ResponseCode::FAILED);
+        if (req.selected_authorization_service == dt::Authorization::EIM) {
+            res.evse_processing = dt::Processing::Finished;
+            set_response_code(res, dt::ResponseCode::WARNING_EIMAuthorizationFailure);
+        } else {
+            set_response_code(res, dt::ResponseCode::FAILED);
+        }
         return res;
     }
 
@@ -352,6 +357,12 @@ Result Authorization::handle_authorization_request(const message_20::Authorizati
     m_ctx.respond(res);
 
     if (res.response_code >= dt::ResponseCode::FAILED) {
+        m_ctx.session_stopped = true;
+        return {};
+    }
+
+    // [V2G20-2102]: If the timeout is reached, the evse should stop the connection.
+    if (res.response_code == dt::ResponseCode::WARNING_EIMAuthorizationFailure and timeout_ongoing_reached) {
         m_ctx.session_stopped = true;
         return {};
     }

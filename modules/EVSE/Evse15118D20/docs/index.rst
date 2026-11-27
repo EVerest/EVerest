@@ -98,9 +98,11 @@ arrives. While that poll is open the EV repeats the request unaltered apart from
 the header timestamp ([V2G20-1582]) and a freshly computed header signature,
 which is verified on every repetition; a changed request is a sequence error,
 so a pending result can never be consumed by a different contract. The wait is
-bounded by ``auth_timeout_pnc`` ([V2G20-2102]); an ``EIM`` authorization left
-``Ongoing`` stops the session after the 55 s ``V2G_SECC_Ongoing_Performance_Time``
-(the next repetition is answered ``FAILED``, [V2G20-2102]). ``Accepted`` gives
+bounded by ``auth_timeout_pnc`` ([V2G20-2102]). If an ``EIM`` authorization is
+still ``Ongoing`` when the 55 s ``V2G_SECC_Ongoing_Performance_Time`` expires,
+the SECC answers the next authorization request with
+``WARNING_EIMAuthorizationFailure`` and ``EVSEProcessing`` set to ``Finished``,
+then ends the session ([V2G20-2102]). ``Accepted`` gives
 ``OK``, or ``OK_CertificateExpiresSoon`` when the leaf expires within 14 days
 ([V2G20-2218]), which keeps ``CertificateInstallationReq`` available so the EV
 can install a fresh contract ([V2G20-2232]); a rejection maps the ``CertificateStatus`` onto
