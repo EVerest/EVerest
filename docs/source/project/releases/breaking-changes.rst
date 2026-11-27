@@ -64,6 +64,9 @@ The following changes to :doc:`AsyncAPI specifications </reference/EVerestAPI/au
 - Changing field semantics that affect expected behavior (e.g., units, value ranges)
 - Adding ``required`` constraints to previously unconstrained fields
 - Changing ``enum`` values or removing enum options
+- Adding a constraint (e.g., ``minimum``, ``enum``, ``pattern``) to a previously unconstrained field of a message that
+  clients send
+- Changing the ``default`` of a field of a message that clients send
 
 **Behavioral Changes:**
 
@@ -111,6 +114,8 @@ The following changes are generally non-breaking:
 - Making a required field optional in messages that EVerest sends
 - Adding new enum values
 - Expanding valid value ranges (e.g., ``minimum: 0`` → ``minimum: -10``)
+- Removing an ``enum`` constraint
+- Adding a constraint to a field of a message that EVerest sends
 
 **Documentation:**
 
@@ -158,9 +163,11 @@ Breaking Changes
 - Changing the meaning or behavior of an option (e.g., units, semantics)
 - Changing default values that affect runtime behavior
 - Narrowing acceptable value ranges (e.g., 0-100 → 1-100)
+- Adding a value range or ``enum`` to a previously unconstrained option
 
 **Modules:**
 
+- Changing the interface of an implementation a module provides or requires, so that existing connections no longer match
 - Removing a module name that a configuration may reference, without providing a replacement of equivalent functionality
   under the same name
 - Renaming a module so that the original name is no longer available
@@ -272,6 +279,7 @@ Additional Resources
 
 - :ref:`project-release-and-versioning`
 - :ref:`project-deprecation-policy`
+- :ref:`htg-compatibility-testing`, the automated checks that apply these definitions
 
 For questions about breaking changes or to report potential compatibility issues, please contact the EVerest
 maintainers via Zulip.

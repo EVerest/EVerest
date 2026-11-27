@@ -1,0 +1,18 @@
+# Accepted public API contract changes that the registry of a release does not cover.
+#
+# Deprecated and experimental components need no entry here: the contract diff takes them from
+# docs/source/project/releases/deprecations.yaml and experimental.yaml of the release it compares
+# with. An entry here accepts a finding that is breaking by the rules although the behaviour a
+# deployment sees is unchanged, and goes once the release that contains the change is the baseline.
+#
+# Each entry matches findings by a pointer glob: `*` matches within one path segment, `**` across
+# segments. Optional keys:
+#   kinds:            [add, remove, edit]; default: any
+#   classifications:  [breaking, unclassified]; default: [breaking]
+
+- pointer: asyncapi/system_API/**/disable_connectors_during_install/default
+  kinds: [edit]
+  reason: >-
+    The default was dropped to tell "unset" from an explicit true (#2514). Left unset, connectors
+    are disabled at Downloaded or SignatureVerified as before. Only an explicit true also disables
+    them at InstallScheduled.

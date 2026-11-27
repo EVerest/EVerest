@@ -163,6 +163,7 @@ Have a look at this categorized list of all guides:
     security-best-practices
     bringup/index
     choosing-version-and-upgrading
+    compatibility-testing
     pionix-belay-box
     integrate-tariff-and-cost
     devcontainer-usage/index

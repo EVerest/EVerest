@@ -150,6 +150,16 @@ jobs:
       runner: ${{ inputs.runner || 'ubuntu-24.04' }}
 
 
+  compat-contract:
+    name: Compatibility
+    uses: ./.github/workflows/job_compat-contract.yaml
+    with:
+      runner: ${{ inputs.runner || 'ubuntu-24.04' }}
+      # A change on the stable branch that main lacks would fail every pull request, so the
+      # scheduled runs compare main with the release.
+      release_comparison: ${{ github.event_name == 'schedule' }}
+
+
   bazel-build-and-test:
     name: Bazel
     uses: ./.github/workflows/job_bazel-build-test.yaml

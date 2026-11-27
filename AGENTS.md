@@ -176,6 +176,21 @@ ISO 15118 has no dedicated suite. It is covered by `tests/core_tests/smoke_tests
 (AC and DC end to end), CSMS-side helpers in
 `tests/ocpp_tests/test_sets/validations.py`, and `modules/EVSE/EvseV2G/tests/`.
 
+Public API compatibility (`tests/compat/`, see its README): the contract diff needs no build
+and runs on every PR against the merge base, and on scheduled runs against the latest release
+tag. On a `stable/*` branch nothing but experimental components may change.
+
+```bash
+python3 tests/compat/contract/compat_contract.py check --base 2026.10.0 --tree .
+python3 -m pytest tests/compat/contract           # rule unit tests
+```
+
+What no release ships yet may change freely. A breaking change in the released public API
+is accepted only for a component that the latest release lists in `deprecations.yaml` or
+`experimental.yaml`, with the contract paths under `covers`. A deprecated component is
+removed only once the CMake project version has reached the `earliest_removal` of its
+entry.
+
 ## Architecture
 
 Each module is an independent process. It declares the interfaces it provides and
