@@ -46,7 +46,6 @@ cmds:
         description: List of GetVariableRequest
         type: array
         items:
-          minimum: 0
           type: object
           $ref: /ocpp#/GetVariableRequest
     result:
@@ -79,7 +78,6 @@ cmds:
         description: List of SetVariableRequests
         type: array
         items:
-          minimum: 0
           type: object
           $ref: /ocpp#/SetVariableRequest
       source:
