@@ -1,0 +1,203 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright Pionix GmbH and Contributors to EVerest
+#
+# Experimental public API components, rendered as the Experimental Feature Index
+# (experimental-index.rst).
+#
+# Keys of an entry:
+#   id         unique name of the entry, kept unchanged while the entry exists
+#   component  what is experimental (reStructuredText)
+#   since      release that introduced the component as experimental
+#   notes      what it does and what may change (reStructuredText)
+#   covers     optional: the parts of the public API contract the entry applies to, as paths such
+#              as modules/<Module>, modules/<Module>/config/<option>, asyncapi/<specification> or
+#              manager/options/<option>. `*` matches within one path segment, `**` across
+#              segments; a path includes everything below it.
+
+- id: manager-graceful-shutdown
+  component: |-
+    ``manager --graceful-shutdown``
+  since: 2026.10.0
+  notes: |-
+    Opt-in graceful module shutdown. Without it, module processes are
+    terminated immediately on shutdown, restart and crash.
+  covers:
+    - manager/options/graceful-shutdown
+
+- id: manager-into-idle
+  component: |-
+    ``manager --into-idle``
+  since: 2026.10.0
+  notes: |-
+    Boot into Idle without starting modules, keeping the configuration API
+    available.
+  covers:
+    - manager/options/into-idle
+
+- id: manager-recover-module-crashes
+  component: |-
+    ``manager --recover-module-crashes``
+  since: 2026.10.0
+  notes: |-
+    Bounded automatic module restart after an unexpected module exit.
+  covers:
+    - manager/options/recover-module-crashes
+
+- id: manager-reset-from-yaml
+  component: |-
+    ``manager --reset-from-yaml``
+  since: 2026.10.0
+  notes: |-
+    Discard the database slot and re-seed it from the YAML config. Intended
+    for development use.
+  covers:
+    - manager/options/reset-from-yaml
+
+- id: manager-idle-on-failure
+  component: |-
+    ``manager --idle-on-failure``
+  since: 2026.10.0
+  notes: |-
+    Stay alive in Idle when there is nothing startable, instead of exiting
+    with an error.
+  covers:
+    - manager/options/idle-on-failure
+
+- id: configuration-api
+  component: |-
+    ``manager --configuration-api`` and its ``configuration_API`` AsyncAPI
+    specification
+  since: 2026.10.0
+  notes: |-
+    :ref:`Management API <exp_management_apis>` in the manager for
+    configuration slot management, loading raw YAML and updating
+    configuration parameters. The option values, channels, operations and
+    message payloads may change without further notice.
+  covers:
+    - asyncapi/configuration_API
+    - manager/options/configuration-api
+
+- id: lifecycle-api
+  component: |-
+    ``manager --lifecycle-api`` and its ``lifecycle_API`` AsyncAPI
+    specification
+  since: 2026.10.0
+  notes: |-
+    :ref:`Management API <exp_management_apis>` in the manager for starting
+    and stopping modules and monitoring their status. The option values,
+    channels, operations and message payloads may change without further
+    notice.
+  covers:
+    - asyncapi/lifecycle_API
+    - manager/options/lifecycle-api
+
+- id: eebus-module
+  component: |-
+    :ref:`EEBUS module <everest_modules_EEBUS>`
+  since: 2026.10.0
+  notes: |-
+    Bridge to an external EEBUS gRPC service, implementing the Limitation of
+    Power Consumption use case. Configuration parameters and the integration
+    in EVerest may change without further notice. The maintainer of
+    ``eebus-go``, the EEBUS stack underneath the ``eebus_grpc_api`` sidecar
+    the module drives, will not maintain it going forward.
+  covers:
+    - modules/EEBUS
+
+- id: evse-security-consumer-api
+  component: |-
+    :ref:`evse_security_consumer_API module <everest_modules_evse_security_consumer_API>`
+    and its ``evse_security_consumer_API`` AsyncAPI specification
+  since: 2026.10.0
+  notes: |-
+    External read access to the EvseSecurity module (``is_ca_certificate_installed``,
+    ``get_leaf_certificate_info``, ``get_verify_location``). Channels,
+    operations and message payloads may change without further notice.
+  covers:
+    - modules/evse_security_consumer_API
+    - asyncapi/evse_security_consumer_API
+
+- id: persistent-session-storage-module
+  component: |-
+    :ref:`PersistentSessionStorage module <everest_modules_PersistentSessionStorage>`
+  since: 2026.10.0
+  notes: |-
+    Persists a session record per charging session in a SQLite database and
+    provides paginated read and clear access. Configuration parameters, the
+    stored record format and the integration in EVerest may change without
+    further notice.
+  covers:
+    - modules/PersistentSessionStorage
+    - migrations/persistent_session_storage
+
+- id: session-storage-consumer-api
+  component: |-
+    :ref:`session_storage_consumer_API module <everest_modules_session_storage_consumer_API>`
+    and its ``session_storage_consumer_API`` AsyncAPI specification
+  since: 2026.10.0
+  notes: |-
+    External read and clear access to the session records of the
+    PersistentSessionStorage module (``get_sessions``, ``get_session``,
+    ``clear_sessions``). Channels, operations and message payloads may change
+    without further notice.
+  covers:
+    - modules/session_storage_consumer_API
+    - asyncapi/session_storage_consumer_API
+
+- id: ocpp-device-model-api
+  component: |-
+    :ref:`ocpp_device_model_API module <everest_modules_ocpp_device_model_API>`
+    and its ``ocpp_device_model_API`` AsyncAPI specification
+  since: 2027.04.0
+  notes: |-
+    Lets an application outside EVerest add components and variables to
+    the OCPP device model, see :ref:`howto-ocpp-device-model`. Channels,
+    operations, message payloads and configuration parameters may change
+    without further notice. The module logs a warning at startup.
+  covers:
+    - modules/ocpp_device_model_API
+    - asyncapi/ocpp_device_model_API
+
+- id: entrypoint-api
+  component: |-
+    ``entrypoint_API`` AsyncAPI specification (``everest_api/discover``,
+    ``everest_api/query-modules/{api_type}``, ``everest_api/ready_beacon``),
+    implemented by every EVerestAPI module
+  since: 2026.10.0
+  notes: |-
+    API discovery and the :ref:`ready beacon <tutorial_everest_api_ready_beacon>`.
+    Channels, operations and message payloads, including the beacon's election
+    and guarantees, may change without further notice. Every API module logs a
+    warning at startup.
+  covers:
+    - asyncapi/entrypoint_API
+
+- id: ocppmulti-custom-error-mapping
+  component: |-
+    ``CustomErrorMappingPath`` configuration key of the
+    :ref:`OCPPmulti module <everest_modules_OCPPmulti>` and the custom error
+    mapping file format (``custom_error_mapping.schema.json``)
+  since: 2026.10.0
+  notes: |-
+    Overrides how EVerest errors are reported over OCPP 1.6 and 2.x, see
+    :ref:`howto-ocpp-custom-error-mapping`. The file's keys, fields,
+    placeholders and overlay behavior may change without further notice. The
+    module logs a warning at startup when the key is set.
+  covers:
+    - modules/OCPPmulti/config/CustomErrorMappingPath
+
+- id: ocppmulti-ocpp16-key-mappings
+  component: |-
+    ``Ocpp16KeyMappingsPath`` configuration key of the
+    :ref:`OCPPmulti module <everest_modules_OCPPmulti>` and the OCPP 1.6 key
+    mapping file format
+  since: 2026.10.0
+  notes: |-
+    Maps custom OCPP 1.6 configuration keys to device model variables and
+    replaces built-in ``OCPP16LegacyCtrlr`` mappings, see
+    :ref:`howto-ocpp-storage-migration-custom-key-mappings`. The file's
+    fields and the rules for accepted entries may change without further
+    notice. The built-in mappings are not experimental. The module logs a
+    warning at startup when the key is set.
+  covers:
+    - modules/OCPPmulti/config/Ocpp16KeyMappingsPath

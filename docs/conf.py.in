@@ -41,6 +41,7 @@ extensions = [
     'sphinx.ext.mathjax',      # For rendering math equations
     'sphinxcontrib.mermaid',   # For rendering Mermaid diagrams
     'staticpages.extension',   # For 404 page rendered at <root>/latest/404.html
+    'release_registry',        # Renders the deprecation and experimental registries
 ]
 
 templates_path = ['_templates']

@@ -85,6 +85,8 @@ The public API consists of:
 - Configuration, Storage, and Module contracts. As of today, this includes:
     - EVerest module configuration files (YAML or SQLite)
     - OCPP configuration (JSON or SQLite)
+    - The :ref:`settings file <exp_config_service_settings>` of the manager
+    - The command line options of the manager
 
   These contracts also cover the availability of the EVerest modules that a configuration references by name. Only a
   module's availability under a stable name is guaranteed; its implementation may change, and the interfaces and types it
