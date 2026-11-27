@@ -510,4 +510,45 @@ TEST_F(ProvisioningItemsPerMessageTest, GetReportOverItemsPerMessageIsAnsweredWi
     provisioning->handle_message(make_message(request, MessageType::GetReport));
 }
 
+class ProvisioningBootNotificationTest : public ProvisioningResetTest {
+protected:
+    void set_modem_value(const ComponentVariable& cv, const std::string& value) {
+        ASSERT_EQ(dm->set_value(cv.component, cv.variable.value(), AttributeEnum::Actual, value, "test", true),
+                  SetVariableStatusEnum::Accepted);
+    }
+
+    json send_boot_notification() {
+        json sent;
+        EXPECT_CALL(mock_dispatcher, dispatch_call(::testing::_, ::testing::_)).WillOnce(::testing::SaveArg<0>(&sent));
+        provisioning->boot_notification_req(BootReasonEnum::PowerUp);
+        return sent;
+    }
+};
+
+TEST_F(ProvisioningBootNotificationTest, ModemInformationIsSent) {
+    set_modem_value(ControllerComponentVariables::ICCID, "8914800000000000000");
+    set_modem_value(ControllerComponentVariables::IMSI, "262012345678901");
+    const auto modem = send_boot_notification().at(3).at("chargingStation").at("modem");
+    EXPECT_EQ(modem.at("iccid"), "8914800000000000000");
+    EXPECT_EQ(modem.at("imsi"), "262012345678901");
+}
+
+TEST_F(ProvisioningBootNotificationTest, UndefinedModemInformationIsOmitted) {
+    EXPECT_FALSE(send_boot_notification().at(3).at("chargingStation").contains("modem"));
+}
+
+TEST_F(ProvisioningBootNotificationTest, EmptyModemInformationIsOmitted) {
+    set_modem_value(ControllerComponentVariables::ICCID, "");
+    set_modem_value(ControllerComponentVariables::IMSI, "");
+    EXPECT_FALSE(send_boot_notification().at(3).at("chargingStation").contains("modem"));
+}
+
+TEST_F(ProvisioningBootNotificationTest, OnlyEmptyModemFieldIsOmitted) {
+    set_modem_value(ControllerComponentVariables::ICCID, "8914800000000000000");
+    set_modem_value(ControllerComponentVariables::IMSI, "");
+    const auto modem = send_boot_notification().at(3).at("chargingStation").at("modem");
+    EXPECT_EQ(modem.at("iccid"), "8914800000000000000");
+    EXPECT_FALSE(modem.contains("imsi"));
+}
+
 } // namespace

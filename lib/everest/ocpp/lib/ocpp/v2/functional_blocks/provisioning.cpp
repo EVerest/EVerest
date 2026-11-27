@@ -122,6 +122,13 @@ void Provisioning::boot_notification_req(const BootReasonEnum& reason, const boo
     auto iccid = this->context.device_model.get_optional_value<std::string>(ControllerComponentVariables::ICCID);
     auto imsi = this->context.device_model.get_optional_value<std::string>(ControllerComponentVariables::IMSI);
 
+    if (iccid.has_value() && iccid->empty()) {
+        iccid.reset();
+    }
+    if (imsi.has_value() && imsi->empty()) {
+        imsi.reset();
+    }
+
     if (iccid.has_value() || imsi.has_value()) {
         Modem modem;
         if (iccid.has_value()) {
