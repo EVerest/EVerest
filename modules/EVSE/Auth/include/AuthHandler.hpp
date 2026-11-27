@@ -303,6 +303,7 @@ private:
     struct TokenInProcess {
         ProvidedIdToken token; // Carries the parent id token of the validation result once accepted
         bool accepted{false};  // A validator accepted the token
+        bool withdrawn{false}; // The authorization was withdrawn while the token is still being processed
     };
 
     SelectionAlgorithm selection_algorithm;
@@ -364,10 +365,9 @@ private:
                                                                    const std::vector<int>& referenced_evses);
     /// \brief Returns the pending authorizations at \p referenced_evses, each id token at most once.
     std::vector<PendingAuthorization> get_pending_authorizations(const std::vector<int>& referenced_evses);
-    /// \brief Returns true if \p pending is still one of the pending authorizations at \p referenced_evses.
-    bool is_still_pending(const PendingAuthorization& pending, const std::vector<int>& referenced_evses);
-    /// \brief Withdraws \p pending. Releases and reacquires \p lk. Returns true if it was withdrawn.
-    bool withdraw_pending_authorization(const PendingAuthorization& pending, std::unique_lock<std::mutex>& lk);
+    /// \brief Withdraws \p pending at \p referenced_evses without stopping a transaction. Must be called with the
+    /// event_mutex held by the caller.
+    bool withdraw_pending_authorization(const PendingAuthorization& pending, const std::vector<int>& referenced_evses);
     bool any_evse_available(const std::vector<int>& evse_ids);
     bool any_parent_id_present(const std::vector<int>& evse_ids);
     bool equals_master_pass_group_id(const std::optional<types::authorization::IdToken> parent_id_token);

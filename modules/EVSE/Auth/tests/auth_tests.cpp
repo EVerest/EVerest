@@ -545,6 +545,42 @@ TEST_F(AuthTest, test_parent_id_reswipe_publishes_used_to_reauthorize) {
     ASSERT_FALSE(this->auth_receiver->get_authorization(1));
 }
 
+/// \brief Test that a token of a type other than RFID or BankCard does not stop the transaction of a token
+/// sharing its parent id, even if stop_transaction_on_reswipe is true
+TEST_F(AuthTest, test_stop_transaction_on_reswipe_ignores_non_rfid_token_with_same_parent_id) {
+    this->auth_handler->set_stop_transaction_on_reswipe(true);
+
+    std::vector<int32_t> connectors{1};
+    ProvidedIdToken provided_token_1 = get_provided_token(VALID_TOKEN_1, connectors);
+    ProvidedIdToken provided_token_2 = get_provided_token(VALID_TOKEN_3, connectors);
+    provided_token_2.authorization_type = types::authorization::AuthorizationType::OCPP;
+
+    SessionEvent session_event1 = get_session_started_event(types::evse_manager::StartSessionReason::EVConnected);
+    SessionEvent session_event2 = get_transaction_started_event(provided_token_1);
+
+    this->auth_handler->handle_session_event(1, session_event1);
+
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, provided_token_1.id_token), TokenValidationStatus::Processing));
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, provided_token_1.id_token), TokenValidationStatus::Accepted));
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, provided_token_1.id_token), TokenValidationStatus::UsedToStart));
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, provided_token_2.id_token), TokenValidationStatus::Processing));
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, provided_token_2.id_token), TokenValidationStatus::Rejected));
+    EXPECT_CALL(mock_stop_transaction_callback, Call(_, _)).Times(0);
+
+    auto result = this->auth_handler->on_token(provided_token_1);
+    ASSERT_EQ(result, TokenHandlingResult::USED_TO_START_TRANSACTION);
+
+    this->auth_handler->handle_session_event(1, session_event2);
+
+    result = this->auth_handler->on_token(provided_token_2);
+    ASSERT_EQ(result, TokenHandlingResult::NO_CONNECTOR_AVAILABLE);
+}
+
 /// \brief Simple test to test if authorize first and plugin provides authorization
 TEST_F(AuthTest, test_authorize_first) {
 
@@ -1838,6 +1874,36 @@ TEST_F(AuthTest, test_deauthorize_on_reswipe_withdraws_authorization_without_tra
     ASSERT_FALSE(this->auth_receiver->get_authorization(0));
 }
 
+/// \brief Test that withdrawing a pending authorization on reswipe never stops a transaction of the same token that
+/// is active at an EVSE which is not referenced by the presented token
+TEST_F(AuthTest, test_deauthorize_on_reswipe_does_not_stop_transaction_at_other_evse) {
+    this->auth_handler->set_deauthorize_on_reswipe(true);
+    this->auth_handler->set_stop_transaction_on_reswipe(false);
+
+    ProvidedIdToken token_evse0 = get_provided_token(VALID_TOKEN_1, std::vector<int32_t>{1});
+    ProvidedIdToken token_evse1 = get_provided_token(VALID_TOKEN_1, std::vector<int32_t>{2});
+
+    this->auth_handler->handle_session_event(
+        1, get_session_started_event(types::evse_manager::StartSessionReason::EVConnected));
+    EXPECT_CALL(mock_publish_token_validation_status_callback, Call(_, _)).Times(testing::AnyNumber());
+    EXPECT_CALL(mock_withdraw_authorization_callback_mock, Call(1)).Times(1);
+    EXPECT_CALL(mock_stop_transaction_callback, Call(_, _)).Times(0);
+
+    ASSERT_TRUE(this->auth_handler->on_token(token_evse0) == TokenHandlingResult::USED_TO_START_TRANSACTION);
+    this->auth_handler->handle_session_event(1, get_transaction_started_event(token_evse0));
+
+    // no plug in at EVSE 2, so the authorization stays pending until the reswipe
+    TokenHandlingResult result1;
+    std::thread t1([this, token_evse1, &result1]() { result1 = this->auth_handler->on_token(token_evse1); });
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+
+    TokenHandlingResult result2 = this->auth_handler->on_token(token_evse1);
+    t1.join();
+
+    ASSERT_TRUE(result2 == TokenHandlingResult::WITHDRAWN);
+    ASSERT_TRUE(this->auth_receiver->get_authorization(0));
+}
+
 /// \brief Test that swiping a token again interrupts the wait for a plug in if deauthorize_on_reswipe is true
 TEST_F(AuthTest, test_deauthorize_on_reswipe_interrupts_wait_for_plug_in) {
     this->auth_handler->set_deauthorize_on_reswipe(true);
@@ -2649,8 +2715,8 @@ TEST_F(AuthTest, test_deauthorize_on_reswipe_ignores_non_rfid_token_with_same_pa
 
     std::vector<int32_t> connectors{1};
     ProvidedIdToken provided_token_1 = get_provided_token(VALID_TOKEN_1, connectors);
-    ProvidedIdToken provided_token_3 = get_provided_token(VALID_TOKEN_3, connectors);
-    provided_token_3.authorization_type = types::authorization::AuthorizationType::OCPP;
+    ProvidedIdToken provided_token_2 = get_provided_token(VALID_TOKEN_3, connectors);
+    provided_token_2.authorization_type = types::authorization::AuthorizationType::OCPP;
 
     EXPECT_CALL(mock_publish_token_validation_status_callback,
                 Call(Field(&ProvidedIdToken::id_token, provided_token_1.id_token), TokenValidationStatus::Processing));
@@ -2659,15 +2725,17 @@ TEST_F(AuthTest, test_deauthorize_on_reswipe_ignores_non_rfid_token_with_same_pa
     EXPECT_CALL(mock_publish_token_validation_status_callback,
                 Call(Field(&ProvidedIdToken::id_token, provided_token_1.id_token), TokenValidationStatus::UsedToStart));
     EXPECT_CALL(mock_publish_token_validation_status_callback,
-                Call(Field(&ProvidedIdToken::id_token, provided_token_3.id_token), TokenValidationStatus::Processing));
+                Call(Field(&ProvidedIdToken::id_token, provided_token_2.id_token), TokenValidationStatus::Processing));
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, provided_token_2.id_token), TokenValidationStatus::Rejected));
     EXPECT_CALL(mock_withdraw_authorization_callback_mock, Call(_)).Times(0);
     EXPECT_CALL(mock_stop_transaction_callback, Call(_, _)).Times(0);
 
     auto result = this->auth_handler->on_token(provided_token_1);
-    ASSERT_TRUE(result == TokenHandlingResult::USED_TO_START_TRANSACTION);
+    ASSERT_EQ(result, TokenHandlingResult::USED_TO_START_TRANSACTION);
 
-    result = this->auth_handler->on_token(provided_token_3);
-    ASSERT_TRUE(result == TokenHandlingResult::ALREADY_IN_PROCESS);
+    result = this->auth_handler->on_token(provided_token_2);
+    ASSERT_EQ(result, TokenHandlingResult::NO_CONNECTOR_AVAILABLE);
     ASSERT_TRUE(this->auth_receiver->get_authorization(0));
 }
 

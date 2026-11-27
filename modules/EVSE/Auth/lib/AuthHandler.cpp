@@ -136,7 +136,8 @@ TokenHandlingResult AuthHandler::on_token(const ProvidedIdToken& provided_token)
     // attempt to withdraw pending authorization
     if (already_in_process && this->deauthorize_on_reswipe && can_stop_or_deauthorize(provided_token) &&
         this->is_authorization_pending(provided_token, referenced_evses)) {
-        const bool withdrawn = this->withdraw_pending_authorization({provided_token.id_token, std::nullopt}, lk);
+        const bool withdrawn =
+            this->withdraw_pending_authorization({provided_token.id_token, std::nullopt}, referenced_evses);
         EVLOG_info << "Token " << everest::helpers::redact(provided_token.id_token.value)
                    << " presented again: " << (withdrawn ? "Authorization withdrawn" : "No authorization to withdraw");
         return withdrawn ? TokenHandlingResult::WITHDRAWN : TokenHandlingResult::ALREADY_IN_PROCESS;
@@ -226,7 +227,7 @@ TokenHandlingResult AuthHandler::handle_token(ProvidedIdToken& provided_token, s
             if (this->deauthorize_on_reswipe && !evse_used->transaction_active) {
                 // the token is the owner of an authorization that has no transaction yet
                 const PendingAuthorization pending{evse_used->identifier->id_token, evse_used_for_transaction};
-                if (this->withdraw_pending_authorization(pending, lk)) {
+                if (this->withdraw_pending_authorization(pending, referenced_evses)) {
                     provided_token.connectors = std::vector<int32_t>{evse_used_for_transaction};
                     return TokenHandlingResult::WITHDRAWN;
                 }
@@ -329,11 +330,7 @@ TokenHandlingResult AuthHandler::handle_token(ProvidedIdToken& provided_token, s
         std::vector<int32_t> connectors;
         bool withdrawn_any = false;
         for (const auto& pending : this->get_pending_authorizations(referenced_evses)) {
-            // each withdrawal releases the lock, so an earlier one may have changed the remaining entries
-            if (!this->is_still_pending(pending, referenced_evses)) {
-                continue;
-            }
-            if (this->withdraw_pending_authorization(pending, lk)) {
+            if (this->withdraw_pending_authorization(pending, referenced_evses)) {
                 withdrawn_any = true;
                 if (pending.evse_id.has_value()) {
                     connectors.emplace_back(pending.evse_id.value());
@@ -362,7 +359,7 @@ TokenHandlingResult AuthHandler::handle_token(ProvidedIdToken& provided_token, s
     }
 
     /* Check if the provided token should deauthorize any pending authorizations based on the parent ID token */
-    if (this->deauthorize_on_reswipe) {
+    if (this->deauthorize_on_reswipe && can_stop_or_deauthorize(provided_token)) {
         const auto accepted_result =
             std::find_if(validation_results.begin(), validation_results.end(), [](const ValidationResult& result) {
                 return result.authorization_status == AuthorizationStatus::Accepted;
@@ -373,7 +370,7 @@ TokenHandlingResult AuthHandler::handle_token(ProvidedIdToken& provided_token, s
             if (pending.has_value()) {
                 EVLOG_info << "Token " << everest::helpers::redact(provided_token.id_token.value)
                            << " shares its id or group id with a pending authorization: deauthorizing";
-                if (this->withdraw_pending_authorization(pending.value(), lk)) {
+                if (this->withdraw_pending_authorization(pending.value(), referenced_evses)) {
                     if (pending->evse_id.has_value()) {
                         provided_token.connectors = std::vector<int32_t>{pending->evse_id.value()};
                     }
@@ -395,7 +392,7 @@ TokenHandlingResult AuthHandler::handle_token(ProvidedIdToken& provided_token, s
         attempt_stop_with_parent_id_token = true;
     }
 
-    if (attempt_stop_with_parent_id_token) {
+    if (attempt_stop_with_parent_id_token && can_stop_or_deauthorize(provided_token)) {
         for (const auto& validation_result : validation_results) {
             if (validation_result.authorization_status == AuthorizationStatus::Accepted &&
                 validation_result.parent_id_token.has_value()) {
@@ -604,7 +601,8 @@ bool AuthHandler::is_authorized_without_transaction(const IdToken& id_token, con
 bool AuthHandler::is_authorization_pending(const ProvidedIdToken& provided_id_token,
                                            const std::vector<int>& referenced_evses) {
     const auto token_in_process = this->tokens_in_process.find(provided_id_token.id_token);
-    return (token_in_process != this->tokens_in_process.end() && token_in_process->second.accepted) ||
+    return (token_in_process != this->tokens_in_process.end() && token_in_process->second.accepted &&
+            !token_in_process->second.withdrawn) ||
            this->is_authorized_without_transaction(provided_id_token.id_token, referenced_evses);
 }
 
@@ -629,7 +627,8 @@ AuthHandler::find_pending_authorization(const IdToken& id_token, const std::opti
     for (const auto& [token_id, token_in_process] : this->tokens_in_process) {
         const auto& accepted_token = token_in_process.token;
         // withdrawing the handled token itself would wait for this very thread to finish
-        if (!token_in_process.accepted || is_equal_case_insensitive(accepted_token.id_token, id_token) ||
+        if (!token_in_process.accepted || token_in_process.withdrawn ||
+            is_equal_case_insensitive(accepted_token.id_token, id_token) ||
             !this->references_any_evse(accepted_token, referenced_evses)) {
             continue;
         }
@@ -658,7 +657,8 @@ AuthHandler::get_pending_authorizations(const std::vector<int>& referenced_evses
     };
     for (const auto& [token_id, token_in_process] : this->tokens_in_process) {
         // a token that already authorized an evse is covered by the evse entry above or is not at referenced_evses
-        if (token_in_process.accepted && this->references_any_evse(token_in_process.token, referenced_evses) &&
+        if (token_in_process.accepted && !token_in_process.withdrawn &&
+            this->references_any_evse(token_in_process.token, referenced_evses) &&
             !is_authorized_at_any_evse(token_id)) {
             pending.push_back({token_id, std::nullopt});
         }
@@ -666,23 +666,42 @@ AuthHandler::get_pending_authorizations(const std::vector<int>& referenced_evses
     return pending;
 }
 
-bool AuthHandler::is_still_pending(const PendingAuthorization& pending, const std::vector<int>& referenced_evses) {
-    const auto current = this->get_pending_authorizations(referenced_evses);
-    return std::any_of(current.begin(), current.end(), [&pending](const PendingAuthorization& entry) {
-        return entry.evse_id == pending.evse_id && is_equal_case_insensitive(entry.id_token, pending.id_token);
-    });
-}
-
 bool AuthHandler::withdraw_pending_authorization(const PendingAuthorization& pending,
-                                                 std::unique_lock<std::mutex>& lk) {
-    // handle_withdraw_authorization acquires the event_mutex and waits for the processing threads
-    lk.unlock();
-    WithdrawAuthorizationRequest request;
-    request.evse_id = pending.evse_id;
-    request.id_token = pending.id_token;
-    const auto result = this->handle_withdraw_authorization(request);
-    lk.lock();
-    return result == WithdrawAuthorizationResult::Accepted;
+                                                 const std::vector<int>& referenced_evses) {
+    const auto withdraw_granted_authorization = [this, &pending](const EVSEContext& evse) {
+        if (!evse.identifier.has_value() || evse.transaction_active ||
+            !is_equal_case_insensitive(evse.identifier->id_token, pending.id_token)) {
+            return false;
+        }
+        this->withdraw_authorization_callback(evse.evse_index);
+        const auto& identifier = evse.identifier.value();
+        ProvidedIdToken provided_token;
+        provided_token.id_token = identifier.id_token;
+        provided_token.authorization_type = identifier.type;
+        provided_token.parent_id_token = identifier.parent_id_token;
+        provided_token.connectors = std::vector<int32_t>{evse.evse_id};
+        this->publish_token_validation_status(provided_token, TokenValidationStatus::Withdrawn);
+        return true;
+    };
+
+    if (pending.evse_id.has_value()) {
+        return withdraw_granted_authorization(*this->evses.at(pending.evse_id.value()));
+    }
+
+    const auto token_in_process = this->tokens_in_process.find(pending.id_token);
+    if (token_in_process != this->tokens_in_process.end() && token_in_process->second.accepted &&
+        !token_in_process->second.withdrawn) {
+        // The processing thread of the token picks this up in select_evse
+        token_in_process->second.withdrawn = true;
+        this->cv.notify_all();
+        return true;
+    }
+
+    bool withdrawn = false;
+    for (const auto evse_id : referenced_evses) {
+        withdrawn |= withdraw_granted_authorization(*this->evses.at(evse_id));
+    }
+    return withdrawn;
 }
 
 bool AuthHandler::any_evse_available(const std::vector<int>& evse_ids) {
@@ -831,6 +850,10 @@ bool does_withdraw_request_match(const WithdrawAuthorizationRequest& withdraw_re
 }
 
 bool AuthHandler::is_authorization_withdrawn(const std::vector<int>& selected_evses, const IdToken& id_token) {
+    const auto token_in_process = this->tokens_in_process.find(id_token);
+    if (token_in_process != this->tokens_in_process.end() && token_in_process->second.withdrawn) {
+        return true;
+    }
     if (withdraw_request == nullptr) {
         return false;
     }
