@@ -314,6 +314,14 @@ void EvseManager::init() {
 }
 
 void EvseManager::shutdown() {
+    try {
+        if (store) {
+            store->mark_clean_shutdown();
+            store->flush();
+        }
+    } catch (const std::exception& e) {
+        EVLOG_warning << "Could not mark the stored transaction as cleanly shut down: " << e.what();
+    }
     invoke_shutdown(*p_evse);
     invoke_shutdown(*p_energy_grid);
     invoke_shutdown(*p_token_provider);
@@ -1512,9 +1520,28 @@ void EvseManager::ready() {
         update_hlc_session_setup(session_setup);
     });
 
+    // The session is already authorised, so only ExternalPayment is offered in PaymentOptions
+    const auto offer_external_payment_only = [this]() {
+        HlcSessionSetupConfig session_setup;
+        session_setup.include_contract_payment = false;
+        session_setup.supported_certificate_service = false;
+        session_setup.central_contract_validation = false;
+        session_setup.force_external_payment = true;
+        update_hlc_session_setup(session_setup);
+    };
+
+    charger->signal_transaction_resumed_event.connect([this, offer_external_payment_only](const StoredTransaction&) {
+        ev_info = types::evse_manager::EVInfo();
+        p_evse->publish_ev_info(ev_info);
+        if (hlc_enabled) {
+            offer_external_payment_only();
+        }
+    });
+
     charger->signal_session_started_event.connect(
-        [this](types::evse_manager::StartSessionReason start_reason,
-               const std::optional<types::authorization::ProvidedIdToken>& provided_id_token) {
+        [this,
+         offer_external_payment_only](types::evse_manager::StartSessionReason start_reason,
+                                      const std::optional<types::authorization::ProvidedIdToken>& provided_id_token) {
             // Reset EV information on Session start and end
             ev_info = types::evse_manager::EVInfo();
             p_evse->publish_ev_info(ev_info);
@@ -1524,13 +1551,7 @@ void EvseManager::ready() {
             }
 
             if (start_reason == types::evse_manager::StartSessionReason::Authorized) {
-                // Session is already authorized, only use ExternalPayment in PaymentOptions
-                HlcSessionSetupConfig session_setup;
-                session_setup.include_contract_payment = false;
-                session_setup.supported_certificate_service = false;
-                session_setup.central_contract_validation = false;
-                session_setup.force_external_payment = true;
-                update_hlc_session_setup(session_setup);
+                offer_external_payment_only();
             } else {
                 // Set payment options according to configuration
                 HlcSessionSetupConfig session_setup;
@@ -1664,16 +1685,30 @@ void EvseManager::ready() {
                                      [this] { return initial_powermeter_value_received; });
     }
 
-    // Resuming left-over transaction from e.g. powerloss. This information allows other modules like to OCPP to be
-    // informed that the EvseManager is aware of previous sessions so that no individual cleanup is required
-    const auto session_id = store->get_session();
-    if (!session_id.empty()) {
-        charger->signal_session_resumed_event(session_id);
+    // Left-over transaction from e.g. power loss. This information allows other modules like OCPP to be informed
+    // that the EvseManager is aware of previous sessions so that no individual cleanup is required
+    const auto stored_transaction = store->get_transaction();
+    if (stored_transaction.has_value()) {
+        charger->signal_session_resumed_event(stored_transaction->session_uuid);
     }
 
-    // By default cleanup left-over transaction from e.g. power loss
-    // TOOD: Add resume handling
-    charger->cleanup_transactions_on_startup();
+    const auto resume_limits = get_resume_limits();
+    const auto resume_decision =
+        stored_transaction.has_value()
+            ? decide_resume(stored_transaction.value(), store->get_boot_id(), resume_limits, date::utc_clock::now())
+            : ResumeDecision{};
+    if (resume_decision.resume) {
+        EVLOG_info << "Resuming transaction with UUID " << stored_transaction->session_uuid << " ("
+                   << resume_decision.reason << ") if an EV is plugged in";
+        charger->prepare_resume(stored_transaction.value(),
+                                std::chrono::milliseconds(config.resume_transaction_ev_detect_timeout_ms));
+    } else {
+        if (stored_transaction.has_value()) {
+            EVLOG_info << "Not resuming transaction with UUID " << stored_transaction->session_uuid << ": "
+                       << resume_decision.reason;
+        }
+        charger->cleanup_transactions_on_startup();
+    }
 
     //  start with a limit of 0 amps. We will get a budget from EnergyManager that is locally limited by hw
     //  caps.
@@ -1787,7 +1822,23 @@ Charger::SetupConfig EvseManager::get_charger_setup_config(Charger::ChargeMode c
     charger_setup.sleep_before_enabling_pwm_hlc_mode_ms = config.sleep_before_enabling_pwm_hlc_mode_ms;
     charger_setup.session_id_type = utils::get_session_id_type_from_string(config.session_id_type);
     charger_setup.hlc_charge_loop_without_energy_timeout_s = config.hlc_charge_loop_without_energy_timeout_s;
+    charger_setup.resume_transaction_alive_interval_s = config.resume_transaction_alive_interval_s;
     return charger_setup;
+}
+
+ResumeLimits EvseManager::get_resume_limits() const {
+    ResumeLimits limits;
+    limits.max_outage = std::chrono::seconds(config.resume_transaction_max_outage_s);
+    const auto situations = parse_resume_situations(config.resume_transaction_on_startup);
+    if (situations.has_value()) {
+        limits.situations = situations.value();
+    } else {
+        limits.valid_configuration = false;
+        EVLOG_error << "Invalid resume_transaction_on_startup '" << config.resume_transaction_on_startup
+                    << "', transactions are not resumed. Use Never, Always or a comma-separated list of PowerLoss, "
+                       "Crash, Restart and Reboot.";
+    }
+    return limits;
 }
 
 // This sets up a fake DC mode that is just supposed to work until we get the SoC.

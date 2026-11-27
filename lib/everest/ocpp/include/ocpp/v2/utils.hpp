@@ -95,6 +95,14 @@ std::vector<OcppProtocolVersion> get_ocpp_protocol_versions(const std::string& c
 bool filter_criteria_monitor(const std::vector<MonitoringCriterionEnum>& criteria,
                              const VariableMonitoringMeta& monitor);
 
+/// \brief Whether transactions are stored persistently so that they can be resumed after a restart: with
+/// InternalCtrlr.ResumeTransactionsOnBoot or a TxCtrlr.ResumptionTimeout greater than zero (OCPP 2.1 E17.FR.01)
+bool transaction_resumption_enabled(DeviceModelAbstract& device_model);
+
+/// \brief Whether a Reset of type ImmediateAndResume is supported: TxCtrlr.ResumptionTimeout is greater than zero
+/// (OCPP 2.1 B13.FR.01)
+bool immediate_and_resume_supported(DeviceModelAbstract& device_model);
+
 } // namespace utils
 } // namespace v2
 } // namespace ocpp

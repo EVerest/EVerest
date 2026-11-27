@@ -65,6 +65,10 @@ private:
     std::optional<std::string> get_string(const ocpp::v2::Component& component_id,
                                           const ocpp::v2::Variable& variable_id,
                                           ocpp::v2::AttributeEnum attribute_enum);
+    // Actual value of a boolean variable, false if absent
+    bool get_bool_variable(const ocpp::v2::ComponentVariable& component_variable);
+    // OCPP 2.1 transaction resumption (B13, E17) is enabled by TxCtrlr.ResumptionTimeout > 0
+    bool ocpp21_resumption_enabled();
 
     void process_tx_event_effect(std::int32_t evse_id, module::TxEventEffect tx_event_effect,
                                  const types::evse_manager::SessionEvent& session_event);
@@ -144,6 +148,8 @@ public:
                                    const types::evse_manager::SessionEvent& session_event) override;
     void on_event_session_resumed(std::int32_t evse_id, std::int32_t connector_id,
                                   const types::evse_manager::SessionEvent& session_event) override;
+    void on_event_transaction_resumed(std::int32_t evse_id, std::int32_t connector_id,
+                                      const types::evse_manager::SessionEvent& session_event) override;
     SessionResult on_event_session_started(std::int32_t evse_id, std::int32_t connector_id,
                                            const types::evse_manager::SessionEvent& session_event) override;
     void on_event_switching_phases(std::int32_t evse_id, std::int32_t connector_id,

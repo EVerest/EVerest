@@ -25,6 +25,7 @@
 #include "everest/logging.hpp"
 #include "scoped_lock_timeout.hpp"
 #include "utils.hpp"
+#include <utils/date.hpp>
 
 namespace module {
 
@@ -105,6 +106,11 @@ void Charger::main_thread() {
     signal_max_current(get_max_current_internal());
     signal_state(shared_context.current_state);
 
+    {
+        Everest::scoped_lock_timeout lock(state_machine_mutex, Everest::MutexDescription::Charger_mainloop);
+        arm_resume_deadline(std::chrono::steady_clock::now());
+    }
+
     while (!main_thread_handle.shouldExit()) {
 
         const auto events = bsp_event_queue.wait_for(MAINLOOP_UPDATE_RATE);
@@ -113,13 +119,21 @@ void Charger::main_thread() {
             process_event(event);
         }
 
+        bool last_alive_due{false};
         {
             Everest::scoped_lock_timeout lock(state_machine_mutex, Everest::MutexDescription::Charger_mainloop);
+            const auto now = std::chrono::steady_clock::now();
+            check_resume_deadline(now);
+            last_alive_due = update_last_alive(now);
             // update power limits
             power_available();
             // Run our own state machine update (i.e. run everything that needs
             // to be done on regular intervals independent from events)
             run_state_machine();
+        }
+        // A blocking kvs command must not hold up the state machine
+        if (last_alive_due) {
+            store->touch_last_alive();
         }
     }
 }
@@ -302,12 +316,21 @@ void Charger::run_state_machine() {
 
                 bsp->allow_power_on(false, types::evse_board_support::Reason::PowerOff);
 
-                // First user interaction was plug in of car? Start session here.
+                // First user interaction was plug in of car? Start session here, or continue the transaction of
+                // the previous run.
+                bool resumed{false};
                 if (not shared_context.session_active) {
-                    start_session(false);
+                    if (internal_context.pending_resume.has_value()) {
+                        resume_session();
+                        resumed = true;
+                    } else {
+                        start_session(false);
+                    }
                 }
-                // External signal on MQTT
-                signal_simple_event(types::evse_manager::SessionEventEnum::AuthRequired);
+                if (not resumed) {
+                    // External signal on MQTT
+                    signal_simple_event(types::evse_manager::SessionEventEnum::AuthRequired);
+                }
 
                 hlc_use_5percent_current_session = false;
 
@@ -336,8 +359,9 @@ void Charger::run_state_machine() {
                         std::chrono::milliseconds(config_context.sleep_before_enabling_pwm_hlc_mode_ms));
 
                     // If already authorized before plugin, do not use 5% PWM on AC HLC
-                    if (shared_context.flag_authorized and config_context.charge_mode == ChargeMode::AC and
-                        ac_hlc_enabled_current_session and not config_context.ac_enforce_hlc) {
+                    if (shared_context.flag_authorized and not resumed and
+                        config_context.charge_mode == ChargeMode::AC and ac_hlc_enabled_current_session and
+                        not config_context.ac_enforce_hlc) {
                         hlc_use_5percent_current_session = false;
                     } else {
                         update_pwm_now(PWM_5_PERCENT);
@@ -758,6 +782,10 @@ void Charger::run_state_machine() {
         case EvseState::PrepareCharging:
             if (initialize_state) {
                 signal_simple_event(types::evse_manager::SessionEventEnum::PrepareCharging);
+                if (std::exchange(internal_context.hlc_paused_before_charging, false) and
+                    shared_context.hlc_d20_active) {
+                    signal_hlc_resume_charging();
+                }
                 bcb_toggle_reset();
                 internal_context.hlc_charge_loop_no_energy_timeout_running = false;
 
@@ -779,6 +807,25 @@ void Charger::run_state_machine() {
                     set_state(EvseState::StoppingCharging);
                     break;
                 }
+            }
+
+            // No energy at all for a session paused by the EVSE before it started charging (e.g. OCPP 2.1 B13.FR.25)
+            if (shared_context.flag_paused_by_evse) {
+                if (shared_context.dlink_established or shared_context.hlc_charging_active) {
+                    // The ISO 15118 session in progress is told before any contactor closes and ends in order
+                    session_log.evse(false, "Paused by EVSE before charging started: stopping the ISO 15118 session");
+                    if (shared_context.hlc_d20_active) {
+                        signal_hlc_pause_charging();
+                    } else {
+                        signal_hlc_stop_charging();
+                    }
+                    internal_context.hlc_paused_before_charging = true;
+                    shared_context.hlc_session_paused_by_evse = true;
+                } else {
+                    session_log.evse(false, "Paused by EVSE before charging started");
+                }
+                set_state(EvseState::ChargingPausedEVSE);
+                break;
             }
 
             if (config_context.charge_mode == ChargeMode::DC) {
@@ -1115,8 +1162,9 @@ void Charger::run_state_machine() {
 
         case EvseState::ChargingPausedEVSE:
             if (initialize_state) {
-                if (not shared_context.hlc_charging_active or not shared_context.flag_transaction_active) {
-                    // Basic Charging: just turn off PWM
+                // Basic Charging: just turn off PWM. An ISO 15118 session paused before charging ends on its own.
+                if ((not shared_context.hlc_charging_active and not internal_context.hlc_paused_before_charging) or
+                    not shared_context.flag_transaction_active) {
                     cp_state_X1();
                 }
                 internal_context.last_charging_paused_evse_reasons = {};
@@ -1672,6 +1720,62 @@ bool Charger::pause_charging() {
     return false;
 }
 
+bool Charger::prepare_resume_after_reset(bool allow_energy_transfer) {
+    Everest::scoped_lock_timeout lock(state_machine_mutex,
+                                      Everest::MutexDescription::Charger_prepare_resume_after_reset);
+    if (not shared_context.flag_transaction_active) {
+        if (not internal_context.pending_resume.has_value()) {
+            return true;
+        }
+        // still waiting for its EV, but open for the CSMS
+        if (not store->mark_resume_after_reset(not allow_energy_transfer)) {
+            EVLOG_warning << "Transaction with UUID " << internal_context.pending_resume->session_uuid
+                          << " cannot be kept for resumption after the reset: it is not stored";
+            return false;
+        }
+        if (not internal_context.reset_preparation.has_value()) {
+            internal_context.reset_preparation =
+                ResetPreparation{shared_context.flag_paused_by_evse, internal_context.pending_resume};
+        }
+        internal_context.pending_resume->resume_after_reset = true;
+        internal_context.pending_resume->energy_transfer_paused = not allow_energy_transfer;
+        EVLOG_info << "Keeping transaction with UUID " << internal_context.pending_resume->session_uuid
+                   << " for resumption after the reset";
+        return true;
+    }
+    if (not store->mark_resume_after_reset(not allow_energy_transfer)) {
+        EVLOG_warning << "Transaction with UUID " << shared_context.session_uuid
+                      << " cannot be kept for resumption after the reset: it is not stored";
+        return false;
+    }
+    // a repeated preparation keeps the pause from before the first one
+    if (not internal_context.reset_preparation.has_value()) {
+        internal_context.reset_preparation = ResetPreparation{shared_context.flag_paused_by_evse, std::nullopt};
+    }
+    shared_context.flag_paused_by_evse = true;
+    EVLOG_info << "Keeping transaction with UUID " << shared_context.session_uuid << " for resumption after the reset";
+    return true;
+}
+
+void Charger::cancel_resume_after_reset() {
+    Everest::scoped_lock_timeout lock(state_machine_mutex,
+                                      Everest::MutexDescription::Charger_cancel_resume_after_reset);
+    if (not internal_context.reset_preparation.has_value()) {
+        return;
+    }
+    const auto preparation = std::move(internal_context.reset_preparation.value());
+    internal_context.reset_preparation.reset();
+    store->clear_resume_after_reset();
+    shared_context.flag_paused_by_evse = preparation.paused_by_evse;
+    if (preparation.pending_resume.has_value() and internal_context.pending_resume.has_value()) {
+        internal_context.pending_resume = preparation.pending_resume;
+        if (preparation.pending_resume->resume_after_reset) {
+            store->mark_resume_after_reset(preparation.pending_resume->energy_transfer_paused);
+        }
+    }
+    EVLOG_info << "The reset did not take place, transaction with UUID " << shared_context.session_uuid << " continues";
+}
+
 bool Charger::resume_charging() {
     if (shared_context.flag_transaction_active) {
         shared_context.flag_paused_by_evse = false;
@@ -1760,6 +1864,7 @@ void Charger::stop_session() {
     shared_context.authorized_pnc = false;
     shared_context.flag_externally_cancelled = false;
     shared_context.flag_paused_by_evse = false;
+    internal_context.reset_preparation.reset();
     signal_simple_event(types::evse_manager::SessionEventEnum::SessionFinished);
     shared_context.session_uuid.clear();
 }
@@ -1801,7 +1906,12 @@ bool Charger::start_transaction() {
         }
     }
 
-    store->store_session(shared_context.session_uuid);
+    StoredTransaction stored;
+    stored.session_uuid = shared_context.session_uuid;
+    stored.id_token = shared_context.id_token;
+    stored.start_signed_meter_value = shared_context.start_signed_meter_value;
+    stored.transaction_started_at = Everest::Date::to_rfc3339(date::utc_clock::now());
+    store->store_transaction(stored);
     signal_transaction_started_event(shared_context.id_token);
     shared_context.flag_transaction_active = true;
     return true;
@@ -1840,12 +1950,15 @@ void Charger::stop_transaction() {
                                       shared_context.stop_transaction_id_token);
 }
 
-void Charger::cleanup_transactions_on_startup() {
+void Charger::cleanup_transactions_on_startup(types::evse_manager::StopTransactionReason reason) {
     // See if we have an open transaction in persistent storage
-    auto session_uuid = store->get_session();
+    const auto stored = store->get_transaction();
+    const auto session_uuid = stored.has_value() ? stored->session_uuid : std::string{};
     if (not session_uuid.empty()) {
         EVLOG_info << "Cleaning up transaction with UUID " << session_uuid << " on start up";
         store->clear_session();
+        shared_context.start_signed_meter_value = stored->start_signed_meter_value;
+        shared_context.stop_signed_meter_value.reset();
 
         // If yes, try to close nicely with the ID we remember and trigger a transaction finished event on success
         for (const auto& meter : r_powermeter_billing) {
@@ -1856,7 +1969,9 @@ void Charger::cleanup_transactions_on_startup() {
                 break;
             } else if (response.status == types::powermeter::TransactionRequestStatus::OK) {
                 // Fill in OCMF from the recovered transaction
-                shared_context.start_signed_meter_value = response.start_signed_meter_value;
+                if (response.start_signed_meter_value.has_value()) {
+                    shared_context.start_signed_meter_value = response.start_signed_meter_value;
+                }
                 shared_context.stop_signed_meter_value = response.signed_meter_value;
                 break;
             }
@@ -1864,7 +1979,10 @@ void Charger::cleanup_transactions_on_startup() {
 
         // Send out event to inform OCPP et al
         std::optional<types::authorization::ProvidedIdToken> id_token;
-        signal_transaction_finished_event(types::evse_manager::StopTransactionReason::PowerLoss, id_token);
+        // Consumers read the session ID of the finished transaction from the charger
+        shared_context.session_uuid = session_uuid;
+        signal_transaction_finished_event(reason, id_token);
+        shared_context.session_uuid.clear();
     }
 
     // Now we did what we could to clean up, so if there are still transactions going on in the power meter close them
@@ -1874,6 +1992,97 @@ void Charger::cleanup_transactions_on_startup() {
     for (const auto& meter : r_powermeter_billing) {
         meter->call_stop_transaction("");
     }
+}
+
+void Charger::prepare_resume(const StoredTransaction& transaction, std::chrono::milliseconds ev_detect_timeout) {
+    Everest::scoped_lock_timeout lock(state_machine_mutex, Everest::MutexDescription::Charger_prepare_resume);
+    // Re-stamp the record so that a further restart before the EV is detected is judged by this run.
+    store->store_transaction(transaction);
+    if (transaction.resume_after_reset) {
+        // OCPP 2.1 B13.FR.23 also applies after a further restart
+        store->mark_resume_after_reset(transaction.energy_transfer_paused);
+    }
+    internal_context.pending_resume = transaction;
+    internal_context.pending_resume_timeout = ev_detect_timeout;
+    internal_context.pending_resume_deadline.reset();
+    EVLOG_info << "Waiting up to " << ev_detect_timeout.count() << " ms for the EV to resume transaction with UUID "
+               << transaction.session_uuid;
+}
+
+void Charger::resume_session() {
+    const auto transaction = internal_context.pending_resume.value();
+    internal_context.pending_resume.reset();
+    internal_context.pending_resume_deadline.reset();
+
+    shared_context.session_active = true;
+    shared_context.dlink_established = false;
+    shared_context.flag_externally_cancelled = false;
+    shared_context.session_uuid = transaction.session_uuid;
+    shared_context.last_start_session_reason = types::evse_manager::StartSessionReason::EVConnected;
+    shared_context.id_token = transaction.id_token.value_or(types::authorization::ProvidedIdToken{});
+    shared_context.validation_result = {};
+    shared_context.validation_result.authorization_status = types::authorization::AuthorizationStatus::Accepted;
+    // The new ISO 15118 session offers external payment only, so a Plug and Charge transaction continues as EIM.
+    shared_context.authorized_pnc = false;
+    shared_context.stop_transaction_id_token.reset();
+    shared_context.last_stop_transaction_reason.reset();
+    shared_context.start_signed_meter_value = transaction.start_signed_meter_value;
+    shared_context.stop_signed_meter_value.reset();
+    shared_context.flag_transaction_active = true;
+    if (transaction.resume_after_reset and transaction.energy_transfer_paused) {
+        shared_context.flag_paused_by_evse = true;
+    }
+
+    EVLOG_info << "Resuming transaction with UUID " << transaction.session_uuid;
+    session_log.evse(false, "Resuming transaction " + transaction.session_uuid);
+    signal_transaction_resumed_event(transaction);
+    signal_simple_event(types::evse_manager::SessionEventEnum::Authorized);
+    shared_context.flag_authorized = true;
+}
+
+void Charger::arm_resume_deadline(std::chrono::time_point<std::chrono::steady_clock> now) {
+    if (internal_context.pending_resume.has_value() and not internal_context.pending_resume_deadline.has_value()) {
+        internal_context.pending_resume_deadline = now + internal_context.pending_resume_timeout;
+    }
+}
+
+void Charger::check_resume_deadline(std::chrono::time_point<std::chrono::steady_clock> now) {
+    if (not internal_context.pending_resume.has_value() or not internal_context.pending_resume_deadline.has_value() or
+        now < internal_context.pending_resume_deadline.value()) {
+        return;
+    }
+    // A plug-in already reported is turned into the resumed session by the next state machine run.
+    const bool resume_imminent =
+        shared_context.flag_ev_plugged_in and (shared_context.current_state == EvseState::Idle or
+                                               shared_context.current_state == EvseState::WaitingForAuthentication);
+    if (resume_imminent) {
+        return;
+    }
+    EVLOG_info << "No EV detected to resume transaction with UUID " << internal_context.pending_resume->session_uuid;
+    // After a reset with resumption the transaction ends as if the EV left during the reset (OCPP 2.1 E17.FR.17)
+    const auto reason = internal_context.pending_resume->resume_after_reset
+                            ? types::evse_manager::StopTransactionReason::EVDisconnected
+                            : types::evse_manager::StopTransactionReason::PowerLoss;
+    internal_context.pending_resume.reset();
+    internal_context.pending_resume_deadline.reset();
+    cleanup_transactions_on_startup(reason);
+}
+
+bool Charger::update_last_alive(std::chrono::time_point<std::chrono::steady_clock> now) {
+    const auto interval = config_context.resume_transaction_alive_interval;
+    if (interval.count() <= 0 or not shared_context.flag_transaction_active) {
+        internal_context.last_alive_written.reset();
+        return false;
+    }
+    if (not internal_context.last_alive_written.has_value()) {
+        internal_context.last_alive_written = now;
+        return false;
+    }
+    if (now - internal_context.last_alive_written.value() >= interval) {
+        internal_context.last_alive_written = now;
+        return true;
+    }
+    return false;
 }
 
 std::optional<types::units_signed::SignedMeterValue> Charger::get_stop_signed_meter_value() {
@@ -1987,6 +2196,7 @@ void Charger::setup(const SetupConfig& config) {
     config_context.sleep_before_enabling_pwm_hlc_mode_ms = config.sleep_before_enabling_pwm_hlc_mode_ms;
     config_context.session_id_type = config.session_id_type;
     config_context.hlc_charge_loop_without_energy_timeout_s = config.hlc_charge_loop_without_energy_timeout_s;
+    config_context.resume_transaction_alive_interval = std::chrono::seconds(config.resume_transaction_alive_interval_s);
 
     if (config_context.charge_mode == ChargeMode::DC) {
         shared_context.hlc_charging_active = true;
@@ -2049,6 +2259,11 @@ bool Charger::authorize(bool a, const types::authorization::ProvidedIdToken& tok
             // Ignore (delayed) authorization responses after an external cancellation or while EVSE is disabled.
             // Without this guard, a delayed auth could restore flag_authorized and prevent the state machine
             // from routing to EvseState::Finished
+            return false;
+        }
+        if (internal_context.pending_resume.has_value() and not shared_context.session_active) {
+            EVLOG_warning << "Received an authorization while waiting for the EV of the transaction to resume. "
+                             "Ignoring this authorization.";
             return false;
         }
         // First user interaction was auth? Then start session already here and not at plug in.

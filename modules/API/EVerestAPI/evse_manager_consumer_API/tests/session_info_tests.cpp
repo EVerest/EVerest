@@ -82,6 +82,30 @@ TEST_F(SessionInfoReservationTest, transaction_started_consumes_reservation) {
     EXPECT_FALSE(published().reserved);
 }
 
+TEST_F(SessionInfoReservationTest, transaction_resumed_continues_energy_from_the_original_start) {
+    types::evse_manager::SessionEvent session_event;
+    session_event.uuid = "session";
+    // the start time of the original transaction
+    session_event.timestamp = "2026-11-24T10:00:00.000Z";
+    session_event.event = SessionEventEnum::TransactionResumed;
+    types::evse_manager::TransactionStarted transaction_started;
+    transaction_started.id_tag.id_token = {"RFID1", types::authorization::IdTokenType::ISO14443};
+    transaction_started.id_tag.authorization_type = types::authorization::AuthorizationType::RFID;
+    transaction_started.meter_value.energy_Wh_import.total = 1000;
+    session_event.transaction_started = transaction_started;
+    session_info.update_state(session_event);
+
+    EXPECT_EQ(published().state, EvseStateEnum::Preparing);
+
+    types::powermeter::Powermeter meter;
+    meter.timestamp = session_event.timestamp;
+    meter.energy_Wh_import.total = 1500;
+    session_info.update_powermeter(meter);
+
+    EXPECT_EQ(published().charged_energy_wh, 500);
+    EXPECT_EQ(published().transaction_start_time, "2026-11-24T10:00:00.000Z");
+}
+
 TEST_F(SessionInfoReservationTest, reservation_end_after_disable_keeps_disabled_state) {
     send(SessionEventEnum::ReservationStart);
     send(SessionEventEnum::Disabled);

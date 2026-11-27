@@ -182,6 +182,8 @@ private:
     std::map<std::string, TariffMessage> tariff_messages_by_id_token;
 
     std::thread reset_thread;
+    // set by an accepted Reset.req that keeps the transactions (internal key ResumeTransactionsOnReset)
+    std::atomic<bool> resetting_with_resume{false};
 
     int log_status_request_id{-1};
 

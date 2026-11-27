@@ -581,6 +581,53 @@ TEST_F(EvseSessionRecorderTest, finish_with_uuid_does_not_consume_the_resumed_se
     EXPECT_TRUE(captured.at(1).closes_session);
 }
 
+// EvseManager ends a transaction it does not resume with the stored session id and no SessionFinished
+TEST_F(EvseSessionRecorderTest, finish_of_the_resumed_session_closes_it) {
+    TransactionFinish captured{};
+    EXPECT_CALL(store, store_transaction_finished(_)).WillOnce([&captured](const TransactionFinish& finish) {
+        captured = finish;
+        return true;
+    });
+
+    recorder.on_session_event(make_session_event(SessionEventEnum::SessionResumed, SESSION_ID));
+    recorder.on_session_event(make_transaction_finished_event(SESSION_ID));
+
+    EXPECT_EQ(captured.session_id, SESSION_ID);
+    EXPECT_TRUE(captured.closes_session);
+}
+
+TEST_F(EvseSessionRecorderStrictTest, transaction_resumed_does_not_touch_the_store) {
+    auto resumed = make_transaction_started_event(SESSION_ID);
+    resumed.event = SessionEventEnum::TransactionResumed;
+    recorder.on_session_event(make_session_event(SessionEventEnum::SessionResumed, SESSION_ID));
+    recorder.on_session_event(resumed);
+}
+
+TEST_F(EvseSessionRecorderStrictTest, transaction_resumed_consumes_the_resumed_session) {
+    auto resumed = make_transaction_started_event(SESSION_ID);
+    resumed.event = SessionEventEnum::TransactionResumed;
+    recorder.on_session_event(make_session_event(SessionEventEnum::SessionResumed, SESSION_ID));
+    recorder.on_session_event(resumed);
+    recorder.on_session_event(make_transaction_finished_event(""));
+}
+
+TEST_F(EvseSessionRecorderTest, resumed_transaction_finishes_with_its_session_id) {
+    TransactionFinish captured{};
+    EXPECT_CALL(store, store_transaction_finished(_)).WillOnce([&captured](const TransactionFinish& finish) {
+        captured = finish;
+        return true;
+    });
+
+    auto resumed = make_transaction_started_event(SESSION_ID);
+    resumed.event = SessionEventEnum::TransactionResumed;
+    recorder.on_session_event(make_session_event(SessionEventEnum::SessionResumed, SESSION_ID));
+    recorder.on_session_event(resumed);
+    recorder.on_session_event(make_transaction_finished_event(SESSION_ID));
+
+    EXPECT_EQ(captured.session_id, SESSION_ID);
+    EXPECT_FALSE(captured.closes_session);
+}
+
 // --- session finish ----------------------------------------------------------
 
 TEST_F(EvseSessionRecorderTest, session_finished_is_forwarded) {

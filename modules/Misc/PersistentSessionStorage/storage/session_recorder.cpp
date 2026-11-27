@@ -51,6 +51,10 @@ void EvseSessionRecorder::on_session_event(const types::evse_manager::SessionEve
     case types::evse_manager::SessionEventEnum::SessionResumed:
         state->resumed_session_id = event.uuid;
         break;
+    case types::evse_manager::SessionEventEnum::TransactionResumed:
+        // The stored session continues and ends with its own session id
+        state->resumed_session_id.reset();
+        break;
     default:
         break;
     }
@@ -103,17 +107,18 @@ void EvseSessionRecorder::handle_transaction_finished(State& state, const types:
 
     TransactionFinish finish{};
     finish.session_id = event.uuid;
-    if (finish.session_id.empty()) {
-        // The recovery finish after a power loss carries no uuid, only the preceding
-        // SessionResumed identifies the session, and no SessionFinished follows it
-        if (not state.resumed_session_id.has_value()) {
-            EVLOG_warning << "Dropping TransactionFinished event without session id on EVSE " << state.evse_id
-                          << ", no resumed session is pending";
-            return;
-        }
+    // The recovery finish of a transaction that is not resumed follows SessionResumed and no SessionFinished
+    // follows it. It carries the session id of the stored transaction, or none from older EvseManagers.
+    const bool recovery_finish = state.resumed_session_id.has_value() and
+                                 (finish.session_id.empty() or finish.session_id == state.resumed_session_id.value());
+    if (recovery_finish) {
         finish.session_id = std::move(state.resumed_session_id.value());
         state.resumed_session_id.reset();
         finish.closes_session = true;
+    } else if (finish.session_id.empty()) {
+        EVLOG_warning << "Dropping TransactionFinished event without session id on EVSE " << state.evse_id
+                      << ", no resumed session is pending";
+        return;
     }
 
     finish.timestamp_stop = event.timestamp;

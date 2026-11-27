@@ -90,6 +90,190 @@ async def test_stop_pending_transactions(
     )
 
 
+async def start_charging_and_restart(
+    test_config: OcppTestConfiguration,
+    charge_point_v16: ChargePoint16,
+    test_utility: TestUtility,
+    test_controller: TestController,
+    central_system_v16: CentralSystem,
+) -> ChargePoint16:
+    test_controller.plug_in()
+    await charge_point_v16.remote_start_transaction_req(
+        id_tag=test_config.authorization_info.valid_id_tag_1, connector_id=1
+    )
+    assert await wait_for_and_validate(
+        test_utility,
+        charge_point_v16,
+        "StartTransaction",
+        call.StartTransaction(
+            1, test_config.authorization_info.valid_id_tag_1, 0, ""
+        ),
+        validate_standard_start_transaction,
+    )
+    assert await wait_for_and_validate(
+        test_utility,
+        charge_point_v16,
+        "StatusNotification",
+        call.StatusNotification(
+            1, ChargePointErrorCode.no_error, ChargePointStatus.charging
+        ),
+    )
+    await asyncio.sleep(2)
+
+    test_controller.stop()
+    await asyncio.sleep(2)
+    test_utility.messages.clear()
+    test_controller.start()
+
+    return await central_system_v16.wait_for_chargepoint(wait_for_bootnotification=False)
+
+
+@pytest.mark.asyncio
+@pytest.mark.everest_config_adaptions(EvseManagerResumeTransactionStrategy("Crash,Restart"))
+async def test_resume_transaction_after_restart(
+    test_config: OcppTestConfiguration,
+    charge_point_v16: ChargePoint16,
+    test_utility: TestUtility,
+    test_controller: TestController,
+    central_system_v16: CentralSystem,
+):
+    logging.info("######### test_resume_transaction_after_restart #########")
+
+    charge_point_v16 = await start_charging_and_restart(
+        test_config, charge_point_v16, test_utility, test_controller, central_system_v16
+    )
+
+    # the EV is still there after the restart
+    test_controller.plug_in()
+
+    assert await wait_for_and_validate(
+        test_utility,
+        charge_point_v16,
+        "StatusNotification",
+        call.StatusNotification(
+            1, ChargePointErrorCode.no_error, ChargePointStatus.preparing
+        ),
+    )
+    assert await wait_for_and_validate(
+        test_utility,
+        charge_point_v16,
+        "StatusNotification",
+        call.StatusNotification(
+            1, ChargePointErrorCode.no_error, ChargePointStatus.charging
+        ),
+    )
+    assert not received_calls(charge_point_v16, "StartTransaction")
+    assert not received_calls(charge_point_v16, "StopTransaction")
+
+    test_controller.plug_out()
+
+    assert await wait_for_and_validate(
+        test_utility,
+        charge_point_v16,
+        "StopTransaction",
+        {"transactionId": 1, "reason": Reason.ev_disconnected},
+    )
+    assert len(received_calls(charge_point_v16, "StopTransaction")) == 1
+    assert not received_calls(charge_point_v16, "StartTransaction")
+
+
+@pytest.mark.asyncio
+@pytest.mark.everest_config_adaptions(
+    EvseManagerResumeTransactionStrategy("Crash,Restart", ev_detect_timeout_ms=3000)
+)
+async def test_resumable_transaction_without_ev_stops_with_power_loss(
+    test_config: OcppTestConfiguration,
+    charge_point_v16: ChargePoint16,
+    test_utility: TestUtility,
+    test_controller: TestController,
+    central_system_v16: CentralSystem,
+):
+    logging.info("######### test_resumable_transaction_without_ev_stops_with_power_loss #########")
+
+    charge_point_v16 = await start_charging_and_restart(
+        test_config, charge_point_v16, test_utility, test_controller, central_system_v16
+    )
+
+    assert await wait_for_and_validate(
+        test_utility,
+        charge_point_v16,
+        "StopTransaction",
+        {"transactionId": 1, "reason": Reason.power_loss},
+    )
+    await asyncio.sleep(2)
+    assert len(received_calls(charge_point_v16, "StopTransaction")) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.everest_config_adaptions(EvseManagerResumeTransactionStrategy("Never"))
+@pytest.mark.ocpp_config_adaptions(
+    GenericOCPP16ConfigAdjustment([("Internal", "ResumeTransactionsOnReset", True)])
+)
+async def test_hard_reset_with_resume_transactions_on_reset(
+    test_config: OcppTestConfiguration,
+    charge_point_v16: ChargePoint16,
+    test_utility: TestUtility,
+    test_controller: TestController,
+    central_system_v16: CentralSystem,
+):
+    logging.info("######### test_hard_reset_with_resume_transactions_on_reset #########")
+
+    test_controller.plug_in()
+    await charge_point_v16.remote_start_transaction_req(
+        id_tag=test_config.authorization_info.valid_id_tag_1, connector_id=1
+    )
+    assert await wait_for_and_validate(
+        test_utility,
+        charge_point_v16,
+        "StartTransaction",
+        call.StartTransaction(
+            1, test_config.authorization_info.valid_id_tag_1, 0, ""
+        ),
+        validate_standard_start_transaction,
+    )
+    assert await wait_for_and_validate(
+        test_utility,
+        charge_point_v16,
+        "StatusNotification",
+        call.StatusNotification(
+            1, ChargePointErrorCode.no_error, ChargePointStatus.charging
+        ),
+    )
+
+    # the reset keeps the transaction although resume_transaction_on_startup is Never
+    await charge_point_v16.reset_req(type=ResetType.hard)
+    await asyncio.sleep(3)
+    assert not received_calls(charge_point_v16, "StopTransaction")
+
+    test_controller.stop()
+    await asyncio.sleep(2)
+    test_utility.messages.clear()
+    test_controller.start()
+    charge_point_v16 = await central_system_v16.wait_for_chargepoint(wait_for_bootnotification=False)
+
+    # the EV is still there after the reset
+    test_controller.plug_in()
+    assert await wait_for_and_validate(
+        test_utility,
+        charge_point_v16,
+        "StatusNotification",
+        call.StatusNotification(
+            1, ChargePointErrorCode.no_error, ChargePointStatus.charging
+        ),
+    )
+    assert not received_calls(charge_point_v16, "StartTransaction")
+    assert not received_calls(charge_point_v16, "StopTransaction")
+
+    test_controller.plug_out()
+    assert await wait_for_and_validate(
+        test_utility,
+        charge_point_v16,
+        "StopTransaction",
+        {"transactionId": 1, "reason": Reason.ev_disconnected},
+    )
+    assert len(received_calls(charge_point_v16, "StopTransaction")) == 1
+
+
 @pytest.mark.everest_core_config(
     get_everest_config_path_str("everest-config-security-profile-1.yaml")
 )

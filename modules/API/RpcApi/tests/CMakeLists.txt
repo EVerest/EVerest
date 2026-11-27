@@ -15,6 +15,7 @@ set(TEST_SOURCES
     ../server/WebsocketServer.cpp
     server/WebsocketServerTests.cpp
     rpc/RpcHandlerTests.cpp
+    helpers/ConversionsTests.cpp
 )
 
 add_executable(${TEST_TARGET_NAME} ${TEST_SOURCES})

@@ -118,6 +118,38 @@
       "description": "Allow charging before having received a BootNotificationResponse with RegistrationStatus: Accepted.",
       "type": "boolean"
     },
+    "ResumptionTimeout": {
+      "variable_name": "ResumptionTimeout",
+      "characteristics": {
+        "unit": "s",
+        "minLimit": 0,
+        "supportsMonitoring": true,
+        "dataType": "integer"
+      },
+      "attributes": [
+        {
+          "type": "Actual",
+          "mutability": "ReadWrite"
+        }
+      ],
+      "description": "OCPP 2.1: maximum number of seconds that a transaction may be interrupted by a power outage and still be resumed afterwards. A value greater than zero also enables Reset of type ImmediateAndResume. Absent means 0.",
+      "type": "integer"
+    },
+    "AllowEnergyTransferResumption": {
+      "variable_name": "AllowEnergyTransferResumption",
+      "characteristics": {
+        "supportsMonitoring": true,
+        "dataType": "boolean"
+      },
+      "attributes": [
+        {
+          "type": "Actual",
+          "mutability": "ReadWrite"
+        }
+      ],
+      "description": "OCPP 2.1: whether energy transfer is allowed to be resumed when the transaction is resumed after a reset or power outage. Absent means false.",
+      "type": "boolean"
+    },
     "TxStartPoint": {
       "variable_name": "TxStartPoint",
       "characteristics": {

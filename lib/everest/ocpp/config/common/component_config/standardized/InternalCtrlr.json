@@ -784,6 +784,23 @@
           "default": false,
           "type": "boolean"
       },
+      "ResumeTransactionsOnReset": {
+          "variable_name": "ResumeTransactionsOnReset",
+          "characteristics": {
+              "supportsMonitoring": false,
+              "dataType": "boolean"
+          },
+          "attributes": [
+              {
+                  "type": "Actual",
+                  "mutability": "ReadOnly",
+                  "value": false
+              }
+          ],
+          "description": "Deviation from the specification: if enabled a Reset of type Immediate keeps ongoing transactions and resumes them after the reset, as a Reset of type ImmediateAndResume does. Without transaction resumption (ResumeTransactionsOnBoot or TxCtrlr.ResumptionTimeout) the transactions are stopped as usual",
+          "default": false,
+          "type": "boolean"
+      },
       "NetworkConfigTimeout": {
           "variable_name": "NetworkConfigTimeout",
           "characteristics": {

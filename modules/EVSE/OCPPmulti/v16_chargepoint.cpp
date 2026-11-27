@@ -41,6 +41,7 @@ constexpr const auto SUPPLY_VOLTAGE_CONFIG_KEY = "SupplyVoltage";
 
 constexpr const auto SWITCHING_PHASES_REASON = "SwitchingPhases";
 constexpr const auto REPORT_SUSPENDED_EVSE_REASON_CHANGE_CONFIG_KEY = "ReportSuspendedEVSEReasonChange";
+constexpr const auto RESUME_TRANSACTIONS_ON_RESET_CONFIG_KEY = "ResumeTransactionsOnReset";
 
 template <typename T> std::optional<T> get(ocpp::v16::ChargePoint& charge_point, const std::string_view& variable) {
     std::optional<T> result;
@@ -260,7 +261,12 @@ ocpp::v16::ReservationStatus ChargePointV16::cb_reserve_now(std::int32_t reserva
 }
 
 void ChargePointV16::cb_reset(const ocpp::v16::ResetType& reset_type) {
-    m_callbacks_ptr->cb_reset(std::nullopt, convert(reset_type));
+    std::optional<GenericChargePointCallbacks::TransactionResumption> resumption;
+    // Deviation from OCPP 1.6: libocpp has not stopped the transactions
+    if (get<bool>(*m_charge_point, RESUME_TRANSACTIONS_ON_RESET_CONFIG_KEY).value_or(false)) {
+        resumption.emplace();
+    }
+    m_callbacks_ptr->cb_reset(std::nullopt, convert(reset_type), resumption);
 }
 
 ocpp::v16::DataTransferResponse ChargePointV16::cb_session_cost(const ocpp::RunningCost& running_cost,
@@ -879,6 +885,13 @@ void ChargePointV16::on_event_session_finished(std::int32_t evse_id, std::int32_
 void ChargePointV16::on_event_session_resumed(std::int32_t evse_id, std::int32_t connector_id,
                                               const types::evse_manager::SessionEvent& session_event) {
     check_configured("on_event_session_resumed");
+}
+void ChargePointV16::on_event_transaction_resumed(std::int32_t evse_id, std::int32_t connector_id,
+                                                  const types::evse_manager::SessionEvent& session_event) {
+    check_configured("on_event_transaction_resumed");
+    // The transaction was kept at start up because of SessionResumed; only the connector is in use again.
+    const auto cid = ocpp_connector_id(m_connector_mapping, evse_id, session_event.connector_id);
+    m_charge_point->on_session_started(cid, session_event.uuid, ocpp::SessionStartedReason::EVConnected, std::nullopt);
 }
 GenericChargePointInterface::SessionResult
 ChargePointV16::on_event_session_started(std::int32_t evse_id, std::int32_t connector_id,

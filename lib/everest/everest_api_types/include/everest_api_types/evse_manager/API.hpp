@@ -67,6 +67,7 @@ enum class SessionEventEnum {
     PluginTimeout,
     SwitchingPhases,
     SessionResumed,
+    TransactionResumed,
 };
 
 enum class PauseChargingEVSEReasonEnum {

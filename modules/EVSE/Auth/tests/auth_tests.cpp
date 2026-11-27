@@ -395,6 +395,48 @@ TEST_F(AuthTest, test_stop_transaction) {
     ASSERT_FALSE(this->auth_receiver->get_authorization(1));
 }
 
+/// \brief Test that a transaction resumed after a restart is stopped by the token that started it
+TEST_F(AuthTest, test_stop_resumed_transaction) {
+    std::vector<int32_t> connectors{1};
+    ProvidedIdToken provided_token = get_provided_token(VALID_TOKEN_1, connectors);
+
+    SessionEvent resumed = get_transaction_started_event(provided_token);
+    resumed.event = SessionEventEnum::TransactionResumed;
+    this->auth_handler->handle_session_event(1, resumed);
+
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, provided_token.id_token), TokenValidationStatus::Processing))
+        .Times(1);
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, provided_token.id_token), TokenValidationStatus::UsedToStop))
+        .Times(1);
+
+    const auto result = this->auth_handler->on_token(provided_token);
+    ASSERT_TRUE(result == TokenHandlingResult::USED_TO_STOP_TRANSACTION);
+}
+
+/// \brief Test that the EVSE of a resumed transaction is not handed to another token
+TEST_F(AuthTest, test_resumed_transaction_occupies_evse) {
+    std::vector<int32_t> connectors{1};
+    ProvidedIdToken resumed_token = get_provided_token(VALID_TOKEN_1, connectors);
+    ProvidedIdToken other_token = get_provided_token(VALID_TOKEN_2, connectors);
+
+    SessionEvent resumed = get_transaction_started_event(resumed_token);
+    resumed.event = SessionEventEnum::TransactionResumed;
+    this->auth_handler->handle_session_event(1, resumed);
+
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, other_token.id_token), TokenValidationStatus::Processing))
+        .Times(1);
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, other_token.id_token), TokenValidationStatus::Rejected))
+        .Times(1);
+
+    const auto result = this->auth_handler->on_token(other_token);
+    ASSERT_TRUE(result == TokenHandlingResult::NO_CONNECTOR_AVAILABLE);
+    ASSERT_FALSE(this->auth_receiver->get_authorization(0));
+}
+
 /// \brief Test that a BankCard token that started a transaction stops it when presented again, without invoking the
 /// validators a second time (a second validation would reserve money from the card again)
 TEST_F(AuthTest, test_stop_transaction_with_bank_card) {

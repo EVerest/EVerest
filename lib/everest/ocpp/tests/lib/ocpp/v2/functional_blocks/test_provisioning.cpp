@@ -159,6 +159,9 @@ protected:
     // Controls / observations for the reset path.
     bool allow_reset{true};
     std::optional<std::optional<std::int32_t>> reset_callback_evse_id;
+    std::optional<ResetEnum> reset_callback_type;
+    std::optional<ResetStatusEnum> reset_status;
+    std::vector<std::pair<std::int32_t, ReasonEnum>> stopped_transactions;
 
     ProvisioningResetTest() : dm_helper() {
         create_functional_blocks();
@@ -191,9 +194,15 @@ protected:
             std::nullopt, // boot_notification_callback
             std::nullopt, // validate_network_profile_callback
             [this](auto, auto) { return this->allow_reset; },
-            [this](std::optional<std::int32_t> evse_id, auto) { this->reset_callback_evse_id = evse_id; },
-            [](auto, auto) { return RequestStartStopStatusEnum::Accepted; }, // stop_transaction
-            std::nullopt,                                                    // variable_changed_callback
+            [this](std::optional<std::int32_t> evse_id, ResetEnum type) {
+                this->reset_callback_evse_id = evse_id;
+                this->reset_callback_type = type;
+            },
+            [this](std::int32_t evse_id, ReasonEnum reason) {
+                this->stopped_transactions.emplace_back(evse_id, reason);
+                return RequestStartStopStatusEnum::Accepted;
+            },
+            std::nullopt, // variable_changed_callback
             *tariff_and_cost, registration_status, firmware_update);
     }
 
@@ -207,6 +216,20 @@ protected:
         enhanced_message.messageType = MessageType::Reset;
         enhanced_message.message = call;
         return enhanced_message;
+    }
+
+    void set_variable(const ComponentVariable& component_variable, const std::string& value) {
+        ASSERT_EQ(dm->set_value(component_variable.component, component_variable.variable.value(),
+                                AttributeEnum::Actual, value, "test", true),
+                  SetVariableStatusEnum::Accepted);
+    }
+
+    void capture_reset_status() {
+        ON_CALL(mock_dispatcher, dispatch_call_result(::testing::_))
+            .WillByDefault(::testing::Invoke([this](const json& call_result) {
+                this->reset_status = ocpp::v2::conversions::string_to_reset_status_enum(
+                    call_result.at(ocpp::CALLRESULT_PAYLOAD).at("status").get<std::string>());
+            }));
     }
 };
 
@@ -277,6 +300,104 @@ TEST_F(ProvisioningResetTest, RejectedResetDoesNotSuppressReconnect) {
     EXPECT_CALL(connectivity_manager, disconnect()).Times(0);
     provisioning->handle_message(make_reset_message(ResetEnum::Immediate));
     EXPECT_FALSE(reset_callback_evse_id.has_value()) << "rejected reset must not fire the reset callback";
+}
+
+// B13.FR.01
+TEST_F(ProvisioningResetTest, ImmediateAndResumeRejectedWithoutResumptionTimeout) {
+    ocpp_version = OcppProtocolVersion::v21;
+    capture_reset_status();
+    evse_manager->open_transaction(1, "test-transaction");
+    provisioning->handle_message(make_reset_message(ResetEnum::ImmediateAndResume));
+    EXPECT_EQ(reset_status, ResetStatusEnum::Rejected);
+    EXPECT_FALSE(reset_callback_evse_id.has_value());
+    EXPECT_TRUE(stopped_transactions.empty());
+}
+
+// B13.FR.01
+TEST_F(ProvisioningResetTest, ImmediateAndResumeRejectedWithZeroResumptionTimeout) {
+    ocpp_version = OcppProtocolVersion::v21;
+    set_variable(ControllerComponentVariables::TxResumptionTimeout, "0");
+    capture_reset_status();
+    provisioning->handle_message(make_reset_message(ResetEnum::ImmediateAndResume));
+    EXPECT_EQ(reset_status, ResetStatusEnum::Rejected);
+    EXPECT_FALSE(reset_callback_evse_id.has_value());
+}
+
+// B13.FR.03, B13.FR.04: the transaction is kept and announced with ResetCommand
+TEST_F(ProvisioningResetTest, ImmediateAndResumeKeepsTransactions) {
+    ocpp_version = OcppProtocolVersion::v21;
+    set_variable(ControllerComponentVariables::TxResumptionTimeout, "60");
+    capture_reset_status();
+    evse_manager->open_transaction(1, "test-transaction");
+    EXPECT_CALL(transaction, transaction_event_req(TransactionEventEnum::Updated, ::testing::_,
+                                                   ::testing::Field(&Transaction::transactionId, "test-transaction"),
+                                                   TriggerReasonEnum::ResetCommand, ::testing::_, ::testing::_,
+                                                   ::testing::_, ::testing::_, ::testing::_, ::testing::_, ::testing::_,
+                                                   ::testing::_, ::testing::_))
+        .Times(1);
+    EXPECT_CALL(connectivity_manager, suppress_reconnect()).Times(1);
+
+    provisioning->handle_message(make_reset_message(ResetEnum::ImmediateAndResume));
+
+    EXPECT_EQ(reset_status, ResetStatusEnum::Accepted);
+    EXPECT_TRUE(stopped_transactions.empty());
+    ASSERT_TRUE(reset_callback_type.has_value());
+    EXPECT_EQ(reset_callback_type.value(), ResetEnum::ImmediateAndResume);
+}
+
+// B13.FR.02
+TEST_F(ProvisioningResetTest, ImmediateAndResumeWithoutTransactions) {
+    ocpp_version = OcppProtocolVersion::v21;
+    set_variable(ControllerComponentVariables::TxResumptionTimeout, "60");
+    capture_reset_status();
+    EXPECT_CALL(transaction, transaction_event_req).Times(0);
+    provisioning->handle_message(make_reset_message(ResetEnum::ImmediateAndResume));
+    EXPECT_EQ(reset_status, ResetStatusEnum::Accepted);
+    ASSERT_TRUE(reset_callback_type.has_value());
+    EXPECT_EQ(reset_callback_type.value(), ResetEnum::ImmediateAndResume);
+}
+
+TEST_F(ProvisioningResetTest, ImmediateStopsTransactionsByDefault) {
+    set_variable(ControllerComponentVariables::ResumeTransactionsOnBoot, "true");
+    evse_manager->open_transaction(1, "test-transaction");
+    provisioning->handle_message(make_reset_message(ResetEnum::Immediate));
+    ASSERT_EQ(stopped_transactions.size(), 1);
+    EXPECT_EQ(stopped_transactions.front().second, ReasonEnum::ImmediateReset);
+    ASSERT_TRUE(reset_callback_type.has_value());
+    EXPECT_EQ(reset_callback_type.value(), ResetEnum::Immediate);
+}
+
+// Deviation from OCPP 2.0.1: InternalCtrlr.ResumeTransactionsOnReset makes Immediate keep the transactions
+TEST_F(ProvisioningResetTest, ImmediateKeepsTransactionsWithResumeTransactionsOnReset) {
+    set_variable(ControllerComponentVariables::ResumeTransactionsOnBoot, "true");
+    set_variable(ControllerComponentVariables::ResumeTransactionsOnReset, "true");
+    capture_reset_status();
+    evse_manager->open_transaction(1, "test-transaction");
+    EXPECT_CALL(transaction, transaction_event_req(TransactionEventEnum::Updated, ::testing::_, ::testing::_,
+                                                   TriggerReasonEnum::ResetCommand, ::testing::_, ::testing::_,
+                                                   ::testing::_, ::testing::_, ::testing::_, ::testing::_, ::testing::_,
+                                                   ::testing::_, ::testing::_))
+        .Times(1);
+
+    provisioning->handle_message(make_reset_message(ResetEnum::Immediate));
+
+    EXPECT_EQ(reset_status, ResetStatusEnum::Accepted);
+    EXPECT_TRUE(stopped_transactions.empty());
+    ASSERT_TRUE(reset_callback_type.has_value());
+    EXPECT_EQ(reset_callback_type.value(), ResetEnum::ImmediateAndResume);
+}
+
+// Without stored transactions there is nothing to resume, so the reset stops them as usual
+TEST_F(ProvisioningResetTest, ResumeTransactionsOnResetWithoutTransactionResumptionStopsTransactions) {
+    set_variable(ControllerComponentVariables::ResumeTransactionsOnReset, "true");
+    capture_reset_status();
+    evse_manager->open_transaction(1, "test-transaction");
+    provisioning->handle_message(make_reset_message(ResetEnum::Immediate));
+    EXPECT_EQ(reset_status, ResetStatusEnum::Accepted);
+    ASSERT_EQ(stopped_transactions.size(), 1);
+    EXPECT_EQ(stopped_transactions.front().second, ReasonEnum::ImmediateReset);
+    ASSERT_TRUE(reset_callback_type.has_value());
+    EXPECT_EQ(reset_callback_type.value(), ResetEnum::Immediate);
 }
 
 using ProvisioningGetVariablesTest = ProvisioningResetTest;

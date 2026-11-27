@@ -1452,12 +1452,8 @@ bool GenericOcpp::cb_is_reset_allowed(const std::optional<std::int32_t>& evse_id
             r_type = types::system::ResetType::Soft;
             break;
         case ResetType::Immediate:
-        case ResetType::OnIdle:
-            break;
         case ResetType::ImmediateAndResume:
-            // B13.FR.01: TxCtrlr.ResumptionTimeout is not reported
-            EVLOG_info << "Rejecting ImmediateAndResume reset: transaction resumption is not supported";
-            do_reset = false;
+        case ResetType::OnIdle:
             break;
         default:
             EVLOG_warning << "Could not convert OCPP ResetEnum to EVerest ResetType while executing "
@@ -1622,7 +1618,8 @@ ocpp::v2::ReserveNowStatusEnum GenericOcpp::cb_reserve_now(const ocpp::v2::Reser
     return result;
 }
 
-void GenericOcpp::cb_reset(const std::optional<const std::int32_t>& evse_id, ResetType type) {
+void GenericOcpp::cb_reset(const std::optional<const std::int32_t>& evse_id, ResetType type,
+                           const std::optional<TransactionResumption>& resumption) {
     if (evse_id.has_value()) {
         EVLOG_warning << "Reset of EVSE is currently not supported";
     } else {
@@ -1664,10 +1661,13 @@ void GenericOcpp::cb_reset(const std::optional<const std::int32_t>& evse_id, Res
                 reset->thread.join();
             }
             reset->running = true;
-            reset->thread = std::thread([this, r_type, scheduled]() {
+            reset->thread = std::thread([this, r_type, scheduled, resumption]() {
                 try {
                     // small delay before stopping the charge point to make sure all responses are received
                     std::this_thread::sleep_for(std::chrono::seconds(mv_config.getResetStopDelay()));
+                    if (resumption.has_value()) {
+                        prepare_resume_after_reset(resumption.value());
+                    }
                     mv_charge_point.stop();
                     try {
                         mv_requires.system.call_reset(r_type, scheduled);
@@ -1675,12 +1675,70 @@ void GenericOcpp::cb_reset(const std::optional<const std::int32_t>& evse_id, Res
                         EVLOG_warning << "System reset request interrupted by module shutdown: " << e.what();
                     } catch (const std::exception& e) {
                         EVLOG_error << "System reset request failed: " << e.what();
+                        if (resumption.has_value()) {
+                            cancel_resume_after_reset();
+                        }
                     }
+                } catch (const Everest::Shutdown& e) {
+                    EVLOG_warning << "Reset interrupted by module shutdown: " << e.what();
                 } catch (const std::exception& e) {
                     EVLOG_error << "Reset failed, no system reset requested: " << e.what();
+                    if (resumption.has_value()) {
+                        cancel_resume_after_reset();
+                    }
                 }
                 m_reset.handle()->running = false;
             });
+        }
+    }
+}
+
+void GenericOcpp::prepare_resume_after_reset(const TransactionResumption& resumption) {
+    for (std::size_t index = 0; index < mv_requires.evse_manager.size(); ++index) {
+        const auto& evse_manager = mv_requires.evse_manager.at(index);
+        const auto evse_id = static_cast<std::int32_t>(index + 1);
+        try {
+            if (evse_manager->call_prepare_resume_after_reset(resumption.allow_energy_transfer)) {
+                continue;
+            }
+        } catch (const Everest::Shutdown&) {
+            throw;
+        } catch (const std::exception& e) {
+            EVLOG_warning << "EVSE " << evse_id << " could not prepare the resumption after the reset: " << e.what();
+        }
+        EVLOG_warning << "EVSE " << evse_id
+                      << " cannot keep its transaction for resumption after the reset, stopping it instead";
+        // registered before the stop, whose TransactionFinished may be processed before the call returns
+        m_reset_pending_stops.handle()->insert(evse_id);
+        types::evse_manager::StopTransactionRequest request;
+        request.reason = types::evse_manager::StopTransactionReason::HardReset;
+        bool stopping{false};
+        try {
+            stopping = evse_manager->call_stop_transaction(request);
+        } catch (const Everest::Shutdown&) {
+            throw;
+        } catch (const std::exception& e) {
+            EVLOG_warning << "EVSE " << evse_id << " could not stop its transaction before the reset: " << e.what();
+        }
+        if (not stopping) {
+            m_reset_pending_stops.handle()->erase(evse_id);
+        }
+    }
+
+    // the charge point is stopped next, so the stops have to be reported first
+    auto pending = m_reset_pending_stops.handle();
+    if (not pending.wait_for([&pending]() { return pending->empty(); }, m_reset_stop_timeout)) {
+        EVLOG_warning << "Resetting before all stopped transactions were reported";
+        pending->clear();
+    }
+}
+
+void GenericOcpp::cancel_resume_after_reset() {
+    for (std::size_t index = 0; index < mv_requires.evse_manager.size(); ++index) {
+        try {
+            mv_requires.evse_manager.at(index)->call_cancel_resume_after_reset();
+        } catch (const std::exception& e) {
+            EVLOG_error << "EVSE " << index + 1 << " could not cancel the resumption after the reset: " << e.what();
         }
     }
 }
@@ -2508,6 +2566,10 @@ void GenericOcpp::process_session_event(std::int32_t evse_id, const types::evse_
         case types::evse_manager::SessionEventEnum::SessionResumed:
             mv_charge_point.on_event_session_resumed(evse_id, connector_id, session_event);
             break;
+        case types::evse_manager::SessionEventEnum::TransactionResumed:
+            mv_charge_point.on_event_transaction_resumed(evse_id, connector_id, session_event);
+            mv_device_model_sources.everest_device_model->update_connected_ev_available(evse_id, true);
+            break;
         case types::evse_manager::SessionEventEnum::SessionStarted:
             if (mv_charge_point.on_event_session_started(evse_id, connector_id, session_event)) {
                 mv_device_model_sources.everest_device_model->update_connected_ev_available(evse_id, true);
@@ -2518,6 +2580,9 @@ void GenericOcpp::process_session_event(std::int32_t evse_id, const types::evse_
             break;
         case types::evse_manager::SessionEventEnum::TransactionFinished:
             mv_charge_point.on_event_transaction_finished(evse_id, connector_id, session_event);
+            if (m_reset_pending_stops.handle()->erase(evse_id) > 0) {
+                m_reset_pending_stops.notify_all();
+            }
             break;
         case types::evse_manager::SessionEventEnum::TransactionStarted:
             if (mv_charge_point.on_event_transaction_started(evse_id, connector_id, session_event)) {

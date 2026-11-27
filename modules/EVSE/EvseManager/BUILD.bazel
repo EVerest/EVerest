@@ -93,8 +93,12 @@ cc_test(
     srcs = [
         # Test source
         "tests/ChargerTest.cpp",
-        # Module source
+        # Test stub headers
+        "tests/StoreAdapterStub.hpp",
+        # Module sources
         "Charger.cpp",
+        "PersistentStore.cpp",
+        "resume_transaction.cpp",
     ] + glob([
         "*.hpp",
     ]) + [

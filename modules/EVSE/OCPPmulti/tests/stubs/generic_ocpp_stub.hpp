@@ -87,6 +87,7 @@ struct GenericOcppTester : private ocpp_multi::DeviceModelSources, public ocpp_m
     using ocpp_multi::GenericOcpp::init_evse_maps;
     using ocpp_multi::GenericOcpp::init_evse_subscribe;
     using ocpp_multi::GenericOcpp::init_subscribe;
+    using ocpp_multi::GenericOcpp::m_reset_stop_timeout;
     using ocpp_multi::GenericOcpp::process_authorised;
     using ocpp_multi::GenericOcpp::process_charging_paused_ev;
     using ocpp_multi::GenericOcpp::process_charging_paused_evse;

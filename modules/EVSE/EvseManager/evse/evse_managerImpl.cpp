@@ -208,6 +208,7 @@ void evse_managerImpl::ready() {
         }
 
         transaction_started.id_tag = id_token;
+        mod->store->set_start_meter_value(transaction_started.meter_value);
 
         double energy_import = transaction_started.meter_value.energy_Wh_import.total;
 
@@ -387,6 +388,48 @@ void evse_managerImpl::ready() {
         publish_session_event(session_event);
     });
 
+    mod->charger->signal_transaction_resumed_event.connect([this](const StoredTransaction& transaction) {
+        const auto id_token = transaction.id_token.value_or(types::authorization::ProvidedIdToken{});
+        const auto& start_meter_value = transaction.start_meter_value;
+        const auto session_uuid = mod->charger->get_session_id();
+        types::evse_manager::SessionEvent session_event;
+        session_event.uuid = session_uuid;
+        // The start of the original transaction, so consumers report its real start time
+        session_event.timestamp =
+            transaction.transaction_started_at.value_or(Everest::Date::to_rfc3339(date::utc_clock::now()));
+        session_event.event = types::evse_manager::SessionEventEnum::TransactionResumed;
+
+        types::evse_manager::TransactionStarted transaction_started;
+        transaction_started.id_tag = id_token;
+        transaction_started.meter_value = start_meter_value.value_or(mod->get_latest_powermeter_data_billing());
+        transaction_started.signed_meter_value = mod->charger->get_start_signed_meter_value();
+        session_event.transaction_started = transaction_started;
+
+        // the resumed transaction replaces SessionStarted, which starts the session log and sets the protocol
+        this->mod->selected_protocol = "IEC61851-1";
+        publish_selected_protocol(this->mod->selected_protocol);
+        session_log.startSession(mod->config.logfile_suffix == "session_uuid" ? session_uuid
+                                                                              : mod->config.logfile_suffix);
+        session_log.evse(false, "Transaction Resumed");
+
+        Everest::TelemetryMap telemetry_data = {
+            {"timestamp", Everest::Date::to_rfc3339(date::utc_clock::now())},
+            {"type", "transaction_resumed"},
+            {"session_id", session_uuid},
+            {"energy_counter_import_wh", transaction_started.meter_value.energy_Wh_import.total},
+            {"id_tag", transaction_started.id_tag.id_token.value}};
+        mod->telemetry.publish("session", "events", telemetry_data);
+
+        publish_session_event(session_event);
+
+        update_control_telemetry([](ControlStatus& status) {
+            status.authorisation_finished = true;
+            status.normal_stop = false;
+            status.error_stop = false;
+            status.emergency_stop = false;
+        });
+    });
+
     // Note: Deprecated. Only kept for Node red compatibility, will be removed in the future
     // Legacy external mqtt pubs
     mod->charger->signal_max_current.connect([this](float c) {
@@ -499,6 +542,14 @@ bool evse_managerImpl::handle_resume_charging() {
 
 bool evse_managerImpl::handle_stop_transaction(types::evse_manager::StopTransactionRequest& request) {
     return mod->charger->cancel_transaction(request);
+};
+
+bool evse_managerImpl::handle_prepare_resume_after_reset(bool& allow_energy_transfer) {
+    return mod->charger->prepare_resume_after_reset(allow_energy_transfer);
+};
+
+void evse_managerImpl::handle_cancel_resume_after_reset() {
+    mod->charger->cancel_resume_after_reset();
 };
 
 bool evse_managerImpl::handle_external_ready_to_start_charging() {

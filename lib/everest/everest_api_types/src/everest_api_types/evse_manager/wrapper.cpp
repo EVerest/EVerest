@@ -263,6 +263,8 @@ SessionEventEnum_Internal to_internal_api(SessionEventEnum_External const& val) 
         return TarT::SwitchingPhases;
     case SrcT::SessionResumed:
         return TarT::SessionResumed;
+    case SrcT::TransactionResumed:
+        return TarT::TransactionResumed;
     }
 
     throw std::out_of_range(
@@ -314,6 +316,8 @@ SessionEventEnum_External to_external_api(SessionEventEnum_Internal const& val) 
         return TarT::SwitchingPhases;
     case SrcT::SessionResumed:
         return TarT::SessionResumed;
+    case SrcT::TransactionResumed:
+        return TarT::TransactionResumed;
     }
 
     throw std::out_of_range(

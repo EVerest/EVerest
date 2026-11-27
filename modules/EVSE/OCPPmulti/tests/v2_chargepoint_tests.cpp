@@ -11,6 +11,7 @@
 
 #include <chrono>
 #include <future>
+#include <map>
 
 namespace {
 
@@ -406,6 +407,112 @@ TEST_F(ChargePointV2Test, transactionStartedWithoutReservationKeepsReservation) 
 }
 
 // a registered variable listener receives changes reported by libocpp
+types::evse_manager::SessionEvent transaction_resumed_event() {
+    auto session_event = transaction_started_event(std::nullopt);
+    session_event.event = types::evse_manager::SessionEventEnum::TransactionResumed;
+    session_event.transaction_started->id_tag = provided_id_token("TOKEN123", "PARENT456");
+    return session_event;
+}
+
+// The transaction restored at startup continues: the EV is connected and authorised again, without a new start
+TEST_F(ChargePointV2Test, transactionResumedRestoresConnectedAndAuthorized) {
+    auto transaction_data =
+        make_transaction_data(ocpp::v2::TriggerReasonEnum::TxResumed, ocpp::v2::ChargingStateEnum::Idle);
+    transaction_data->started = true;
+
+    EXPECT_CALL(m_callbacks, transaction_event(EVSE_ID, module::TxEvent::EV_CONNECTED))
+        .WillOnce(Return(module::TxEventEffect::NONE));
+    EXPECT_CALL(m_callbacks, transaction_event(EVSE_ID, module::TxEvent::AUTHORIZED))
+        .WillOnce(Return(module::TxEventEffect::NONE));
+    EXPECT_CALL(*m_libocpp, on_transaction_started(_, _, _, _, _, _, _, _, _, _, _)).Times(0);
+    EXPECT_CALL(*m_libocpp, on_session_started(EVSE_ID, CONNECTOR_ID)).Times(1);
+    EXPECT_CALL(*m_libocpp, on_charging_state_changed(EVSE_ID, ocpp::v2::ChargingStateEnum::EVConnected,
+                                                      ocpp::v2::TriggerReasonEnum::CablePluggedIn))
+        .Times(1);
+
+    m_chargepoint.on_event_transaction_resumed(EVSE_ID, CONNECTOR_ID, transaction_resumed_event());
+
+    EXPECT_TRUE(transaction_data->started);
+    EXPECT_EQ(transaction_data->charging_state, ocpp::v2::ChargingStateEnum::EVConnected);
+    ASSERT_TRUE(transaction_data->id_token.has_value());
+    EXPECT_EQ(transaction_data->id_token->idToken.get(), "TOKEN123");
+    ASSERT_TRUE(transaction_data->group_id_token.has_value());
+    EXPECT_EQ(transaction_data->group_id_token->idToken.get(), "PARENT456");
+}
+
+// Without the data of SessionResumed there is no OCPP transaction to continue
+TEST_F(ChargePointV2Test, transactionResumedWithoutTransactionDataStartsNothing) {
+    ON_CALL(m_callbacks, transaction_data(EVSE_ID)).WillByDefault(Return(nullptr));
+    EXPECT_CALL(*m_libocpp, on_transaction_started(_, _, _, _, _, _, _, _, _, _, _)).Times(0);
+    EXPECT_CALL(*m_libocpp, on_session_started(EVSE_ID, CONNECTOR_ID)).Times(1);
+
+    m_chargepoint.on_event_transaction_resumed(EVSE_ID, CONNECTOR_ID, transaction_resumed_event());
+}
+
+void answer_variables(stubs::Ocpp2ChargePointMock& libocpp, const std::map<std::string, std::string>& values) {
+    ON_CALL(libocpp, get_variables(_)).WillByDefault([values](const std::vector<ocpp::v2::GetVariableData>& requests) {
+        std::vector<ocpp::v2::GetVariableResult> results;
+        for (const auto& request : requests) {
+            ocpp::v2::GetVariableResult result;
+            result.component = request.component;
+            result.variable = request.variable;
+            const auto value = values.find(request.variable.name.get());
+            if (value == values.end()) {
+                result.attributeStatus = ocpp::v2::GetVariableStatusEnum::UnknownVariable;
+            } else {
+                result.attributeStatus = ocpp::v2::GetVariableStatusEnum::Accepted;
+                result.attributeValue = value->second;
+            }
+            results.push_back(result);
+        }
+        return results;
+    });
+}
+
+// B13.FR.30, E17.FR.14: OCPP 2.1 reports the resumed transaction with TxResumed, even without a state change;
+// B13.FR.25, E17.FR.12: without TxCtrlr.AllowEnergyTransferResumption energy transfer stays paused
+TEST_F(ChargePointV2Test, transactionResumedWithResumptionTimeoutReportsTxResumed) {
+    answer_variables(*m_libocpp, {{"ResumptionTimeout", "60"}});
+    auto transaction_data =
+        make_transaction_data(ocpp::v2::TriggerReasonEnum::TxResumed, ocpp::v2::ChargingStateEnum::EVConnected);
+    transaction_data->started = true;
+
+    EXPECT_CALL(*m_libocpp, on_transaction_resumed(EVSE_ID, ocpp::v2::ChargingStateEnum::EVConnected,
+                                                   ocpp::v2::TriggerReasonEnum::TxResumed))
+        .WillOnce(Return(true));
+    EXPECT_CALL(*m_libocpp, on_charging_state_changed(_, _, _)).Times(0);
+    EXPECT_CALL(m_callbacks, cb_pause_charging(EVSE_ID)).WillOnce(Return(true));
+
+    m_chargepoint.on_event_transaction_resumed(EVSE_ID, CONNECTOR_ID, transaction_resumed_event());
+
+    EXPECT_EQ(transaction_data->trigger_reason, ocpp::v2::TriggerReasonEnum::TxResumed);
+}
+
+TEST_F(ChargePointV2Test, transactionResumedWithEnergyTransferResumptionKeepsCharging) {
+    answer_variables(*m_libocpp, {{"ResumptionTimeout", "60"}, {"AllowEnergyTransferResumption", "true"}});
+    auto transaction_data =
+        make_transaction_data(ocpp::v2::TriggerReasonEnum::TxResumed, ocpp::v2::ChargingStateEnum::EVConnected);
+    transaction_data->started = true;
+
+    EXPECT_CALL(*m_libocpp, on_transaction_resumed(EVSE_ID, _, ocpp::v2::TriggerReasonEnum::TxResumed))
+        .WillOnce(Return(true));
+    EXPECT_CALL(m_callbacks, cb_pause_charging(_)).Times(0);
+
+    m_chargepoint.on_event_transaction_resumed(EVSE_ID, CONNECTOR_ID, transaction_resumed_event());
+}
+
+TEST_F(ChargePointV2Test, transactionResumedWithoutResumptionTimeoutDoesNotPause) {
+    answer_variables(*m_libocpp, {{"ResumeTransactionsOnBoot", "true"}});
+    auto transaction_data =
+        make_transaction_data(ocpp::v2::TriggerReasonEnum::TxResumed, ocpp::v2::ChargingStateEnum::Idle);
+    transaction_data->started = true;
+
+    EXPECT_CALL(*m_libocpp, on_transaction_resumed(_, _, _)).Times(0);
+    EXPECT_CALL(m_callbacks, cb_pause_charging(_)).Times(0);
+
+    m_chargepoint.on_event_transaction_resumed(EVSE_ID, CONNECTOR_ID, transaction_resumed_event());
+}
+
 TEST_F(ChargePointV2Test, variableListenerForwardsChanges) {
     stubs::Ocpp2ChargePointMock::variable_listener_t libocpp_listener;
     EXPECT_CALL(*m_libocpp, register_variable_listener(_))

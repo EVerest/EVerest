@@ -383,6 +383,168 @@ states and transitions.
    * - ``Finished`` -> ``Idle``
      - ``SessionFinished``
      - When EV unplugs and ``stop_session()`` is called
+   * - Startup
+     - ``SessionResumed``
+     - A transaction of the previous run was found in storage, see
+       `Resuming transactions after a restart`_
+   * - ``WaitingForAuthentication``
+     - ``TransactionResumed``
+     - On entry, instead of ``SessionStarted``, ``AuthRequired`` and ``TransactionStarted``,
+       when the EV of a resumed transaction is plugged in
+
+Resuming transactions after a restart
+=====================================
+
+While a transaction is active, EvseManager keeps a record of it in the ``kvs`` connected as ``store``:
+the session ID, the id token, the start time, the signed and unsigned start meter values, the boot ID of the kernel (``/proc/sys/kernel/random/boot_id``), a last-alive time and
+whether EvseManager shut down cleanly. Each EvseManager keeps its own record under the key
+``<module id>_session``, so every EVSE resumes or ends its transaction independently. Without a
+``store`` connection nothing is recorded and nothing can be resumed.
+
+At startup, EvseManager publishes ``SessionResumed`` with the stored session ID and then decides
+whether to continue the transaction. By default (``resume_transaction_on_startup: Never``) it ends
+the transaction: it stops the power meter transaction and publishes ``TransactionFinished`` with
+reason ``PowerLoss`` and the stored session ID.
+
+``resume_transaction_on_startup`` is a comma-separated list of the situations in which the
+transaction is continued instead. The situation is derived from the boot ID and the
+clean-shutdown mark of the stored record:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 15 45 40
+
+   * - Value
+     - Situation
+     - Detected by
+   * - ``Never``
+     - Never resume. Must be the only entry.
+     -
+   * - ``Always``
+     - Every situation below, and also when the situation cannot be determined because a boot ID
+       is missing. Must be the only entry.
+     -
+   * - ``PowerLoss``
+     - The system rebooted without a clean shutdown: power cut, kernel panic, hardware watchdog.
+     - Boot ID changed, no clean shutdown
+   * - ``Crash``
+     - EVerest stopped without a clean shutdown while the OS kept running: crash, ``kill -9``,
+       software watchdog.
+     - Same boot ID, no clean shutdown
+   * - ``Restart``
+     - EVerest was stopped cleanly and restarted while the OS kept running, for example
+       ``systemctl restart``.
+     - Same boot ID, clean shutdown
+   * - ``Reboot``
+     - The OS was rebooted after EVerest was stopped cleanly.
+     - Boot ID changed, clean shutdown
+
+Examples: ``PowerLoss``, ``PowerLoss,Crash``, ``Always``. Whitespace around entries is ignored and
+the values are case-sensitive. An unknown entry, an empty value, or ``Never`` or ``Always``
+combined with other entries is logged as an error and treated as ``Never``.
+
+EvseManager marks the record in its ``shutdown()`` handler. The manager only calls it with
+``--graceful-shutdown`` (see the manager lifecycle explanation); by default it terminates the
+modules on SIGINT or SIGTERM, so every stop is detected as ``Crash`` (OS kept running) or
+``PowerLoss`` (OS rebooted), and ``Restart`` and ``Reboot`` never apply. The mark is also lost if
+the ``kvs`` provider has already shut down when EvseManager writes it.
+
+The record is written to ``kvs`` by a thread of its own, so that a slow ``kvs`` provider does not
+hold up the charging state machine; only the latest version of the record is written.
+
+In addition, a transaction is only resumed if
+
+* the record contains an id token (records written by earlier versions contain the session ID
+  only and are always ended), and
+* the outage, the time from the stored last-alive time to the startup, is at most
+  ``resume_transaction_max_outage_s``, 300 s by default (0 disables this check). A longer outage
+  ends the transaction. If the system clock is earlier than
+  the last-alive time, for example on a system without RTC before time synchronisation, the
+  outage is treated as unknown and the transaction is not resumed. On such a system set
+  ``resume_transaction_max_outage_s`` to 0, or make sure the time is synchronised before
+  EvseManager starts. The last-alive time is
+  written when the transaction starts or is resumed and then every
+  ``resume_transaction_alive_interval_s`` (0 disables the periodic writes).
+
+When the transaction is to be resumed, the power meter transaction stays open and EvseManager
+waits up to ``resume_transaction_ev_detect_timeout_ms``, counted from the start of the state
+machine, for an EV:
+
+* EV plugged in: the session continues with the stored session ID, id token and signed start
+  meter value. EvseManager publishes ``TransactionResumed`` followed by ``Authorized``, but
+  neither ``SessionStarted``, ``AuthRequired`` nor ``TransactionStarted``, so consumers do not
+  open a second transaction. ``TransactionResumed`` carries ``transaction_started`` with the id
+  token, the signed start meter value and the meter value at the original start of the
+  transaction. The session then continues like an authorised plug-in: ISO 15118 sessions
+  restart with SLAC and a new V2G session (including cable check and pre-charge for DC), basic
+  charging restarts the PWM. The transaction ends through the usual paths, with the original
+  session ID.
+* No EV in time, or the connector is disabled: the transaction ends as above with reason
+  ``PowerLoss``.
+
+Authorisations received while waiting for the EV are ignored.
+
+Limitations:
+
+* The ``powermeter`` interface cannot report whether the meter still has the transaction open. A
+  meter that lost it during the outage reports an error when the transaction is stopped, and the
+  transaction may end without a signed stop meter value. Installations under calibration law
+  (for example Eichrecht) must check whether continuing a transaction across a power loss is
+  permitted with their meter before enabling this feature.
+* Not restored: a pause (by the user, the CSMS or the EVSE), so charging starts again on
+  resumption; the session log; tariff and validation messages of the authorisation; the
+  reservation ID.
+* ISO 15118 needs a new SLAC and V2G session. An EV that ended its session when the EVSE went
+  dark may refuse it; the transaction then ends through the usual paths. The new session offers
+  external payment only, so a transaction started by Plug and Charge continues as authorised by
+  external identification (EIM). Resuming with real EVs has not been tested.
+* The CSMS gets no explicit notification that the transaction continues, except with OCPP 2.1
+  and ``TxCtrlr.ResumptionTimeout`` set (trigger reason ``TxResumed``). OCPP 1.6 reports the
+  connector as ``Preparing`` again; OCPP 2.0.1 sends a **TransactionEvent.req** only if the
+  charging state changes.
+* When a transaction is resumed, other open power meter transactions are not closed at startup.
+* Consumers of ``session_events`` see ``TransactionResumed`` instead of ``SessionStarted`` and
+  ``TransactionStarted``. The Auth module treats the EVSE as occupied by the transaction, and the
+  token that started it stops it. OCPP 1.6 keeps the transaction open at startup and reports the
+  connector as ``Preparing`` again. OCPP 2.x continues the transaction only with
+  ``InternalCtrlr.ResumeTransactionsOnBoot`` set to ``true`` or ``TxCtrlr.ResumptionTimeout``
+  greater than zero, see the OCPPmulti documentation.
+* The timestamp of ``TransactionResumed`` is the start time of the original transaction. The
+  ``evse_manager_consumer_API`` reports it as the transaction start; RpcApi and the API module
+  report the time of the resumption. All of them count the energy from the original start.
+
+Resuming transactions after a reset
+-----------------------------------
+
+A reset that keeps the transactions, such as the OCPP 2.1 reset type ``ImmediateAndResume``, calls
+the command ``prepare_resume_after_reset`` before the system restarts. EvseManager then pauses
+energy transfer (as ``pause_charging`` does) and marks the stored record. At the next startup a
+marked transaction is resumed whatever ``resume_transaction_on_startup`` and
+``resume_transaction_max_outage_s`` say, as OCPP 2.1 B13.FR.23 requires; only the id token must be
+stored. With ``allow_energy_transfer`` set to ``false`` the resumed transaction starts paused by
+the EVSE, so no energy is transferred until ``resume_charging`` is called (OCPP 2.1
+``TxCtrlr.AllowEnergyTransferResumption``). An EVSE pause that is set before charging starts moves
+the session from ``PrepareCharging`` straight to ``ChargingPausedEVSE``, so no contactor closes and
+no DC power is switched on. Without an ISO 15118 data link the PWM is switched off (X1); in an
+ISO 15118 session that is already under way the EV is told first (``stop_charging``, or
+``pause_charging`` with ISO 15118-20) and the PWM stays on so that the EV ends the session in
+order. The EV must still be plugged in within
+``resume_transaction_ev_detect_timeout_ms``; if it is not, the transaction ends with reason
+``EVDisconnected`` instead of ``PowerLoss``.
+
+The command returns ``false`` if a transaction is active but cannot be kept, which is the case
+without a ``store`` connection; OCPPmulti then stops that transaction instead. It returns ``true``
+if no transaction is active. A transaction that is still waiting for its EV after a restart is
+kept as well, and a transaction resumed after a reset with resumption stays marked until its EV
+is back, so a further restart in between does not lose it. The connector stays locked until the
+restart: the cable is not unlocked before the reset.
+
+If the reset does not take place after all, ``cancel_resume_after_reset`` undoes the command: the
+mark is removed from the stored record and the EVSE pause is lifted, unless the transaction was
+already paused by the EVSE before the first ``prepare_resume_after_reset``.
+
+A resumed transaction is already authorised, so a new ISO 15118 session offers only external
+payment, as for a session that started authorised; a Plug and Charge transaction continues as EIM.
 
 Authentication
 ==============

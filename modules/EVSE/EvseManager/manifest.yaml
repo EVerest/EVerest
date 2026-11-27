@@ -623,6 +623,46 @@ config:
       typically the PLC modem interface also used by the SLAC module.
     type: string
     default: ''
+  resume_transaction_on_startup:
+    description: >-
+      Comma-separated list of the situations in which a transaction left open by the previous run is
+      continued at startup, provided that an EV is still plugged in. Otherwise the transaction ends with
+      reason PowerLoss. Never: never resume (must be the only entry). Always: resume in every situation
+      below and when the situation cannot be determined (must be the only entry). PowerLoss: the system
+      rebooted without a clean shutdown (power cut, kernel panic, hardware watchdog). Crash: EVerest stopped
+      without a clean shutdown while the OS kept running. Restart: EVerest restarted after a clean shutdown
+      while the OS kept running. Reboot: the OS rebooted after a clean shutdown. Example: PowerLoss,Crash.
+      An invalid value is logged as an error and treated as Never. Requires a kvs connection (store).
+      A clean shutdown is only recorded when the manager runs with --graceful-shutdown; otherwise
+      every stop counts as Crash or PowerLoss.
+    type: string
+    default: Never
+  resume_transaction_max_outage_s:
+    description: >-
+      Maximum time in seconds between the last-alive time stored with the transaction and the startup
+      for the transaction to be resumed. 0 disables the limit. The limit needs the correct time at
+      startup (a real-time clock, or NTP before EvseManager starts); a clock before the last-alive time
+      prevents resumption.
+    type: integer
+    minimum: 0
+    default: 300
+  resume_transaction_alive_interval_s:
+    description: >-
+      Interval in seconds in which the last-alive time of an active transaction is written to the kvs.
+      Shorter intervals make resume_transaction_max_outage_s more precise but cause more writes.
+      0 disables the periodic writes, the last-alive time is then the start of the transaction or of its
+      resumption.
+    type: integer
+    minimum: 0
+    default: 30
+  resume_transaction_ev_detect_timeout_ms:
+    description: >-
+      Time in milliseconds after startup to wait for the EV of a transaction to resume. If no EV is
+      detected in this time, the transaction ends with reason PowerLoss, or with reason
+      EVDisconnected after a reset with resumption.
+    type: integer
+    minimum: 0
+    default: 10000
 provides:
   evse:
     interface: evse_manager

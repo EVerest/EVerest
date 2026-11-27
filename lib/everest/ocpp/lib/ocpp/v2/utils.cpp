@@ -8,6 +8,7 @@
 #include <openssl/sha.h>
 
 #include <ocpp/common/utils.hpp>
+#include <ocpp/v2/ctrlr_component_variables.hpp>
 #include <ocpp/v2/utils.hpp>
 
 namespace ocpp {
@@ -287,6 +288,16 @@ bool filter_criteria_monitor(const std::vector<MonitoringCriterionEnum>& criteri
     }
 
     return any_filter_match;
+}
+
+bool immediate_and_resume_supported(DeviceModelAbstract& device_model) {
+    return device_model.get_optional_value<int>(ControllerComponentVariables::TxResumptionTimeout).value_or(0) > 0;
+}
+
+bool transaction_resumption_enabled(DeviceModelAbstract& device_model) {
+    return device_model.get_optional_value<bool>(ControllerComponentVariables::ResumeTransactionsOnBoot)
+               .value_or(false) or
+           immediate_and_resume_supported(device_model);
 }
 
 } // namespace utils

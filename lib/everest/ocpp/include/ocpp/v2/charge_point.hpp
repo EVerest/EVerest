@@ -250,6 +250,16 @@ public:
     on_charging_state_changed(const std::uint32_t evse_id, const ChargingStateEnum charging_state,
                               const TriggerReasonEnum trigger_reason = TriggerReasonEnum::ChargingStateChanged) = 0;
 
+    /// \brief Event handler for a transaction restored from the database that continues after a reset or restart.
+    /// Sends a TransactionEventRequest(Updated) with the given trigger reason, also when the charging state did not
+    /// change (OCPP 2.1 B13.FR.30, E17.FR.14).
+    /// \param evse_id          The evse id of the resumed transaction.
+    /// \param charging_state   The charging state of the resumed transaction.
+    /// \param trigger_reason   TxResumed for OCPP 2.1.
+    /// \return True on success. False if the evse id does not exist or has no transaction.
+    virtual bool on_transaction_resumed(const std::uint32_t evse_id, const ChargingStateEnum charging_state,
+                                        const TriggerReasonEnum trigger_reason) = 0;
+
     /// \brief Event handler that will update the charging station availability
     /// \param request          The request
     /// \return returns a ChangeAvailabilityResponse
@@ -679,6 +689,9 @@ public:
     bool on_charging_state_changed(
         const std::uint32_t evse_id, const ChargingStateEnum charging_state,
         const TriggerReasonEnum trigger_reason = TriggerReasonEnum::ChargingStateChanged) override;
+
+    bool on_transaction_resumed(const std::uint32_t evse_id, const ChargingStateEnum charging_state,
+                                const TriggerReasonEnum trigger_reason) override;
 
     ChangeAvailabilityResponse on_change_availability(const ChangeAvailabilityRequest& request) override;
 

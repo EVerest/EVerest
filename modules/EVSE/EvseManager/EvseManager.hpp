@@ -175,6 +175,10 @@ struct Conf {
     std::string phase_rotation_grid_side;
     bool debug_emit_cp_state_hpav_frames;
     std::string debug_cp_state_hpav_device;
+    std::string resume_transaction_on_startup;
+    int resume_transaction_max_outage_s;
+    int resume_transaction_alive_interval_s;
+    int resume_transaction_ev_detect_timeout_ms;
 
     const bool& keep_cable_locked;
 
@@ -511,6 +515,7 @@ private:
 
     void setup_AC_mode(bool ac_hlc_enabled = true);
     void setup_fake_DC_mode();
+    ResumeLimits get_resume_limits() const;
     Charger::SetupConfig get_charger_setup_config(Charger::ChargeMode charge_mode, bool ac_hlc_enabled,
                                                   bool ac_with_soc_timeout) const;
     struct HlcSessionSetupConfig {

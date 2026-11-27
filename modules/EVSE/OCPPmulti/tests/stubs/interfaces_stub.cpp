@@ -471,6 +471,24 @@ std::optional<json> ModuleAdapter::evse_manager_call_pause_charging(const Requir
     return result;
 }
 
+std::optional<json> ModuleAdapter::evse_manager_call_prepare_resume_after_reset(const Requirement& req,
+                                                                                const json& args) {
+    EVLOG_debug << "Call call_prepare_resume_after_reset: " << args.dump();
+    publish_fn("evse_manager", "call_prepare_resume_after_reset", req.index, args);
+    auto result = get_cmd_response("false"_json);
+    if (result) {
+        EVLOG_debug << "result:                   " << result.value().dump();
+    }
+    return result;
+}
+
+std::optional<json> ModuleAdapter::evse_manager_call_cancel_resume_after_reset(const Requirement& req,
+                                                                               const json& args) {
+    EVLOG_debug << "Call call_cancel_resume_after_reset: " << args.dump();
+    publish_fn("evse_manager", "call_cancel_resume_after_reset", req.index, args);
+    return {};
+}
+
 std::optional<json> ModuleAdapter::evse_manager_call_resume_charging(const Requirement& req, const json& args) {
     // evse_manager interface
     // resume_charging:
@@ -1027,6 +1045,10 @@ ModuleAdapter::ModuleAdapter() : m_error_type_map(std::make_shared<Everest::erro
     m_call_implementations.insert({"get_evse", &ModuleAdapter::evse_manager_call_get_evse});
     m_call_implementations.insert({"is_reset_allowed", &ModuleAdapter::system_call_is_reset_allowed});
     m_call_implementations.insert({"pause_charging", &ModuleAdapter::evse_manager_call_pause_charging});
+    m_call_implementations.insert(
+        {"prepare_resume_after_reset", &ModuleAdapter::evse_manager_call_prepare_resume_after_reset});
+    m_call_implementations.insert(
+        {"cancel_resume_after_reset", &ModuleAdapter::evse_manager_call_cancel_resume_after_reset});
     m_call_implementations.insert({"reserve_now", &ModuleAdapter::reservation_call_reserve_now});
     m_call_implementations.insert({"reset", &ModuleAdapter::system_call_reset});
     m_call_implementations.insert({"set_der_available", &ModuleAdapter::evse_manager_call_set_der_available});

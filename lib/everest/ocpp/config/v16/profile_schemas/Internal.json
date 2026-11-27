@@ -359,6 +359,11 @@
             "type": "boolean",
             "readOnly": true
         },
+        "ResumeTransactionsOnReset": {
+            "$comment": "Deviation from OCPP 1.6: if true, a Reset.req does not stop ongoing transactions; they are resumed after the reset if the EVSE manager can keep them. Defaults to false.",
+            "type": "boolean",
+            "readOnly": true
+        },
         "ReportSuspendedEVSEReasonChange": {
             "$comment": "Resend StatusNotification when the SuspendedEVSE reason changes while the status stays SuspendedEVSE",
             "type": "boolean",

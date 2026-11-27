@@ -14,6 +14,7 @@
 #include <ocpp/v2/evse_manager.hpp>
 #include <ocpp/v2/functional_blocks/functional_block_context.hpp>
 #include <ocpp/v2/notify_report_requests_splitter.hpp>
+#include <ocpp/v2/utils.hpp>
 
 #include <ocpp/v2/functional_blocks/availability.hpp>
 #include <ocpp/v2/functional_blocks/diagnostics.hpp>
@@ -547,8 +548,25 @@ void Provisioning::handle_reset_req(Call<ResetRequest> call) {
         }
     }
 
+    // Deviation from OCPP 2.0.1: InternalCtrlr.ResumeTransactionsOnReset lets an Immediate reset keep the transactions,
+    // provided they are stored persistently
+    const bool resume_transactions =
+        msg.type == ResetEnum::ImmediateAndResume or
+        (msg.type == ResetEnum::Immediate and
+         this->context.device_model.get_optional_value<bool>(ControllerComponentVariables::ResumeTransactionsOnReset)
+             .value_or(false) and
+         utils::transaction_resumption_enabled(this->context.device_model));
+    const auto reset_type = resume_transactions ? ResetEnum::ImmediateAndResume : msg.type;
+
     const auto is_reset_allowed = [&]() {
-        if (!this->is_reset_allowed_callback(msg.evseId, msg.type)) {
+        // B13.FR.01
+        if (msg.type == ResetEnum::ImmediateAndResume and
+            !utils::immediate_and_resume_supported(this->context.device_model)) {
+            EVLOG_info << "Rejecting ImmediateAndResume reset: TxCtrlr.ResumptionTimeout is not greater than zero";
+            return false;
+        }
+
+        if (!this->is_reset_allowed_callback(msg.evseId, reset_type)) {
             return false;
         }
 
@@ -588,7 +606,20 @@ void Provisioning::handle_reset_req(Call<ResetRequest> call) {
     // Reset response is sent, now set evse connectors to unavailable and / or
     // stop transaction (depending on reset type)
     if (response.status != ResetStatusEnum::Rejected and transaction_active) {
-        if (msg.type == ResetEnum::Immediate) {
+        if (resume_transactions) {
+            // B13.FR.04: the transactions are not ended but resumed after the reset
+            for (const std::int32_t evse_id : evse_active_transactions) {
+                auto& enhanced_transaction = this->context.evse_manager.get_evse(evse_id).get_transaction();
+                if (enhanced_transaction == nullptr) {
+                    continue;
+                }
+                this->transaction.transaction_event_req(
+                    TransactionEventEnum::Updated, DateTime(), enhanced_transaction->get_transaction(),
+                    TriggerReasonEnum::ResetCommand, enhanced_transaction->get_seq_no(), std::nullopt, std::nullopt,
+                    std::nullopt, std::nullopt, std::nullopt,
+                    !this->context.connectivity_manager.is_websocket_connected(), std::nullopt);
+            }
+        } else if (msg.type == ResetEnum::Immediate) {
             // B12.FR.08 and B12.FR.04
             for (const std::int32_t evse_id : evse_active_transactions) {
                 stop_transaction_callback(evse_id, ReasonEnum::ImmediateReset);
@@ -608,7 +639,8 @@ void Provisioning::handle_reset_req(Call<ResetRequest> call) {
             // TransactionEvent(Ended, ImmediateReset) can still flush before the reboot.
             this->context.connectivity_manager.suppress_reconnect();
         }
-        this->reset_callback(call.msg.evseId, ResetEnum::Immediate);
+        this->reset_callback(call.msg.evseId,
+                             resume_transactions ? ResetEnum::ImmediateAndResume : ResetEnum::Immediate);
     }
 }
 

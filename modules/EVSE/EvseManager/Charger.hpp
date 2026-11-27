@@ -94,6 +94,7 @@ public:
         int sleep_before_enabling_pwm_hlc_mode_ms{0};
         utils::SessionIdType session_id_type{utils::SessionIdType::UUID};
         int hlc_charge_loop_without_energy_timeout_s{0};
+        int resume_transaction_alive_interval_s{30};
     };
 
     enum class EvseState {
@@ -142,6 +143,10 @@ public:
 
     // Returns active session_uuid. Returns empty string if not session is active
     std::string get_session_id() const;
+
+    // Call before run(): keeps the stored transaction open and continues it if an EV is plugged in before the timeout,
+    // which starts with run(). Otherwise it is cleaned up as on any other start up.
+    void prepare_resume(const StoredTransaction& transaction, std::chrono::milliseconds ev_detect_timeout);
     void set_supports_cp_state_E(bool value);
 
     // call when in state WaitingForAuthentication
@@ -163,6 +168,10 @@ public:
     bool start_reinit();
 
     bool pause_charging();
+    // Stops energy transfer and keeps the active transaction for resumption after the coming OCPP reset.
+    // Returns false if the transaction cannot be kept.
+    bool prepare_resume_after_reset(bool allow_energy_transfer);
+    void cancel_resume_after_reset();
     bool resume_charging();
 
     bool cancel_transaction(const types::evse_manager::StopTransactionRequest&
@@ -176,6 +185,7 @@ public:
     sigslot::signal<types::evse_manager::StartSessionReason, std::optional<types::authorization::ProvidedIdToken>>
         signal_session_started_event;
     sigslot::signal<types::authorization::ProvidedIdToken> signal_transaction_started_event;
+    sigslot::signal<const StoredTransaction&> signal_transaction_resumed_event;
     sigslot::signal<types::evse_manager::StopTransactionReason, std::optional<types::authorization::ProvidedIdToken>>
         signal_transaction_finished_event;
     sigslot::signal<types::evse_manager::ChargingPausedEVSEReasons> signal_charging_paused_evse_event;
@@ -288,7 +298,8 @@ public:
 
     std::optional<types::evse_manager::StopTransactionReason> get_last_stop_transaction_reason();
 
-    void cleanup_transactions_on_startup();
+    void cleanup_transactions_on_startup(
+        types::evse_manager::StopTransactionReason reason = types::evse_manager::StopTransactionReason::PowerLoss);
     EventQueue<CPEvent> bsp_event_queue;
 
 private:
@@ -345,9 +356,9 @@ private:
     bool power_available();
 
     void start_session(bool authfirst);
+    void resume_session();
     void stop_session();
 
-    bool start_transaction();
     void stop_transaction();
 
     void set_state(EvseState s);
@@ -490,6 +501,8 @@ private:
         // Timeout in seconds that defines for how long the EVSE allows the ISO charge loop (AC: ChargingStatus, DC:
         // CurrentDemand)
         int hlc_charge_loop_without_energy_timeout_s{300};
+        // Interval for refreshing the last-alive time of the stored transaction (0 = disabled)
+        std::chrono::seconds resume_transaction_alive_interval{30};
     } config_context;
 
     // Used by different threads, but requires no complete state machine locking
@@ -504,8 +517,21 @@ private:
     // HLC failed for the current plug-in session. AC falls back to nominal PWM after this.
     std::atomic_bool hlc_failed{false};
 
+    struct ResetPreparation {
+        bool paused_by_evse{false};
+        std::optional<StoredTransaction> pending_resume;
+    };
+
     // This struct is only used from main loop thread
     struct InternalContext {
+        std::optional<StoredTransaction> pending_resume;
+        std::chrono::milliseconds pending_resume_timeout{0};
+        std::optional<std::chrono::time_point<std::chrono::steady_clock>> pending_resume_deadline;
+        std::optional<std::chrono::time_point<std::chrono::steady_clock>> last_alive_written;
+        // set while the transaction is kept for a reset; holds what the reset preparation changed
+        std::optional<ResetPreparation> reset_preparation;
+        // an ISO 15118 session was told to stop as the EVSE paused before charging started
+        bool hlc_paused_before_charging{false};
         bool hlc_bcb_sequence_started{false};
         int hlc_ev_pause_bcb_count{0};
         std::chrono::time_point<std::chrono::steady_clock> hlc_ev_pause_start_of_bcb;
@@ -685,6 +711,11 @@ protected:
     // provide access for unit tests
     void run_state_machine();
     void process_event(CPEvent event);
+    bool start_transaction();
+    void arm_resume_deadline(std::chrono::time_point<std::chrono::steady_clock> now);
+    void check_resume_deadline(std::chrono::time_point<std::chrono::steady_clock> now);
+    // True when the last-alive time of the stored transaction is due; the caller writes it outside the lock
+    bool update_last_alive(std::chrono::time_point<std::chrono::steady_clock> now);
     constexpr auto& get_shared_context() {
         return shared_context;
     }

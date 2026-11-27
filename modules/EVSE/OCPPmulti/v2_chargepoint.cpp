@@ -305,7 +305,17 @@ ChargePointV2::cb_remote_start_transaction(const ocpp::v2::RequestStartTransacti
 }
 
 void ChargePointV2::cb_reset(const std::optional<const std::int32_t>& evse_id, const ocpp::v2::ResetEnum& type) {
-    m_callbacks_ptr->cb_reset(evse_id, convert(type));
+    std::optional<GenericChargePointCallbacks::TransactionResumption> resumption;
+    // libocpp passes ImmediateAndResume also for an Immediate reset with InternalCtrlr.ResumeTransactionsOnReset
+    if (type == ocpp::v2::ResetEnum::ImmediateAndResume) {
+        resumption.emplace();
+        // B13.FR.24, B13.FR.25: only OCPP 2.1 resumption (TxCtrlr.ResumptionTimeout) knows this variable
+        if (ocpp21_resumption_enabled()) {
+            resumption->allow_energy_transfer =
+                get_bool_variable(ocpp::v2::ControllerComponentVariables::TxAllowEnergyTransferResumption);
+        }
+    }
+    m_callbacks_ptr->cb_reset(evse_id, convert(type), resumption);
 }
 
 ocpp::v2::RequestStartStopStatusEnum ChargePointV2::cb_stop_transaction(std::int32_t evse_id,
@@ -352,6 +362,17 @@ std::optional<std::string> ChargePointV2::get_string(const ocpp::v2::Component& 
                                                      ocpp::v2::AttributeEnum attribute_enum) {
     check_configured("get_string");
     return get_device_model_value<std::string>(*m_charge_point, component_id, variable_id, attribute_enum);
+}
+
+bool ChargePointV2::get_bool_variable(const ocpp::v2::ComponentVariable& component_variable) {
+    return get_bool(component_variable.component, component_variable.variable.value(), ocpp::v2::AttributeEnum::Actual)
+        .value_or(false);
+}
+
+bool ChargePointV2::ocpp21_resumption_enabled() {
+    const auto& resumption_timeout = ocpp::v2::ControllerComponentVariables::TxResumptionTimeout;
+    return get_int32(resumption_timeout.component, resumption_timeout.variable.value(), ocpp::v2::AttributeEnum::Actual)
+               .value_or(0) > 0;
 }
 
 void ChargePointV2::process_tx_event_effect(std::int32_t evse_id, module::TxEventEffect tx_event_effect,
@@ -768,9 +789,9 @@ void ChargePointV2::on_event_session_resumed(std::int32_t evse_id, std::int32_t 
                                              const types::evse_manager::SessionEvent& session_event) {
     check_configured("on_event_session_resumed");
     // resume transaction with data we get from the session event
-    // currently, the SessionResumed event only occurs after a power outage followed by
-    // a TransactionFinished event. We have to add the transaction data again to be able to
-    // properly process the transaction finished event.
+    // SessionResumed occurs at start up for a transaction of the previous run. It is followed either by
+    // TransactionFinished or, if EvseManager continues the transaction, by TransactionResumed. Both need the
+    // transaction data again.
     // Currently, sending a TransactionEvent(Ended) after a power loss is only supported if
     // the configuration variable InternalCtrlr::ResumeTransactionsOnBoot is set to true.
     // If this is not the case, libocpp will not be able to process a TransactionFinished event
@@ -781,6 +802,58 @@ void ChargePointV2::on_event_session_resumed(std::int32_t evse_id, std::int32_t 
                                                                       ocpp::v2::ChargingStateEnum::Idle);
     transaction_data->started = true;
     m_callbacks_ptr->transaction_add(evse_id, transaction_data);
+}
+void ChargePointV2::on_event_transaction_resumed(std::int32_t evse_id, std::int32_t connector_id,
+                                                 const types::evse_manager::SessionEvent& session_event) {
+    check_configured("on_event_transaction_resumed");
+    using namespace module::conversions;
+    namespace ControllerComponentVariables = ocpp::v2::ControllerComponentVariables;
+
+    const bool ocpp21_resumption = ocpp21_resumption_enabled();
+    if (not ocpp21_resumption and not get_bool_variable(ControllerComponentVariables::ResumeTransactionsOnBoot)) {
+        EVLOG_error << "Transaction of session " << session_event.uuid << " on EVSE " << evse_id
+                    << " continues after a restart, but neither InternalCtrlr.ResumeTransactionsOnBoot nor "
+                       "TxCtrlr.ResumptionTimeout is enabled: the CSMS is not informed about it";
+    }
+    const auto trigger_reason =
+        ocpp21_resumption ? ocpp::v2::TriggerReasonEnum::TxResumed : ocpp::v2::TriggerReasonEnum::CablePluggedIn;
+
+    // Created by on_event_session_resumed() and already started in OCPP
+    auto transaction_data = m_callbacks_ptr->transaction_data(evse_id);
+    if (transaction_data == nullptr) {
+        EVLOG_error << "No transaction to continue for session " << session_event.uuid << " on EVSE " << evse_id;
+    } else {
+        transaction_data->charging_state = ocpp::v2::ChargingStateEnum::EVConnected;
+        transaction_data->trigger_reason = trigger_reason;
+        if (session_event.transaction_started.has_value()) {
+            const auto& id_tag = session_event.transaction_started->id_tag;
+            transaction_data->id_token = to_ocpp_id_token(id_tag.id_token);
+            if (id_tag.parent_id_token.has_value()) {
+                transaction_data->group_id_token = to_ocpp_id_token(id_tag.parent_id_token.value());
+            }
+        }
+        // Restore the conditions the TxStopPoints of the started transaction are checked against
+        m_callbacks_ptr->transaction_event(evse_id, module::TxEvent::EV_CONNECTED);
+        m_callbacks_ptr->transaction_event(evse_id, module::TxEvent::AUTHORIZED);
+    }
+
+    m_charge_point->on_session_started(evse_id, connector_id);
+    if (transaction_data == nullptr) {
+        return;
+    }
+    if (ocpp21_resumption) {
+        // B13.FR.30, E17.FR.14
+        m_charge_point->on_transaction_resumed(evse_id, ocpp::v2::ChargingStateEnum::EVConnected, trigger_reason);
+        // E17.FR.12: TxCtrlr.AllowEnergyTransferResumption defaults to false. After a reset with resumption
+        // EvseManager resumes the transaction paused already (B13.FR.25).
+        if (not get_bool_variable(ControllerComponentVariables::TxAllowEnergyTransferResumption)) {
+            EVLOG_info << "Energy transfer of the resumed transaction on EVSE " << evse_id
+                       << " stays paused: TxCtrlr.AllowEnergyTransferResumption is not true";
+            m_callbacks_ptr->cb_pause_charging(evse_id);
+        }
+    } else {
+        m_charge_point->on_charging_state_changed(evse_id, ocpp::v2::ChargingStateEnum::EVConnected, trigger_reason);
+    }
 }
 GenericChargePointInterface::SessionResult
 ChargePointV2::on_event_session_started(std::int32_t evse_id, std::int32_t connector_id,
