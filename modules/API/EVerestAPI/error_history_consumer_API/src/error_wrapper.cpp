@@ -55,6 +55,9 @@ types::error_history::ErrorObject framework_to_internal_api(Everest::error::Erro
     if (not val.sub_type.empty()) {
         result.sub_type.emplace(val.sub_type);
     }
+    if (not val.vendor_id.empty()) {
+        result.vendor_id.emplace(val.vendor_id);
+    }
     return result;
 }
 
