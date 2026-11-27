@@ -295,25 +295,6 @@ active_modules:
           implementation_id: energy_grid
         - module_id: evse_manager_2_api_sink
           implementation_id: energy_grid
-  api:
-    module: API
-    connections:
-      evse_manager:
-        - module_id: evse_manager_1
-          implementation_id: evse
-        - module_id: evse_manager_2
-          implementation_id: evse
-      ocpp:
-        - module_id: ocpp
-          implementation_id: ocpp_generic
-      error_history:
-        - module_id: error_history
-          implementation_id: error_history
-      evse_energy_sink:
-        - module_id: evse_manager_1_api_sink
-          implementation_id: external_limits
-        - module_id: evse_manager_2_api_sink
-          implementation_id: external_limits
   error_history:
     module: ErrorHistory
     config_implementation:

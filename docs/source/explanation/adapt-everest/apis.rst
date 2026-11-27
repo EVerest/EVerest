@@ -12,8 +12,6 @@ This page describes the stable EVerest API which consists of a number of API mod
 
 Other APIs that are available, but not described here:
 
-- :ref:`API module <everest_modules_API>` (deprecated, see the
-  :ref:`deprecation index <project-deprecation-index>`)
 - :ref:`RpcApi module <everest_modules_RpcApi>`
 
 Part of the EVerest APIs described here are the management APIs, which are a special case
@@ -327,8 +325,8 @@ EVerest rejects a request without executing it if
     below an ``e2m`` level, or that has an ``m2e`` level. This covers the
     ``m2e`` and ``e2m/<name>`` channels of the API modules,
     ``everest_api/discover``, ``everest_api/query-modules/...`` and the
-    ``everest_api/<module>/cmd/...`` topics of the ``API``, ``Setup`` and
-    OCPP modules and the simulators.
+    ``everest_api/<module>/cmd/...`` topics of the ``Setup`` and OCPP
+    modules and the simulators.
 
   A reply topic in ``everest_api`` therefore looks like
   ``everest_api/1/<api_type>/<module_id>/e2m/<operation>/<unique id>``. The

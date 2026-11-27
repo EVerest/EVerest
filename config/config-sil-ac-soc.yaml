@@ -1,20 +1,6 @@
 settings:
   telemetry_enabled: true
 active_modules:
-  api:
-    connections:
-      evse_manager:
-        - implementation_id: evse
-          module_id: connector_1
-      error_history:
-        - module_id: error_history
-          implementation_id: error_history
-      evse_energy_sink:
-        - module_id: grid_connection_point
-          implementation_id: external_limits
-        - module_id: api_sink_1_evsemgr
-          implementation_id: external_limits
-    module: API
   error_history:
     module: ErrorHistory
     config_implementation:
@@ -206,21 +192,6 @@ active_modules:
     telemetry:
       id: 1
 'x-module-layout':
-  api:
-    position:
-      x: 33
-      y: 13
-    terminals:
-      bottom: []
-      left:
-        - id: evse_manager
-          interface: evse_manager
-          type: requirement
-      right:
-        - id: main
-          interface: empty
-          type: provide
-      top: []
   auth:
     position:
       x: 33

@@ -149,15 +149,6 @@ active_modules:
       powermeter:
         - module_id: yeti_driver_1
           implementation_id: powermeter
-  api:
-    module: API
-    connections:
-      evse_manager:
-        - module_id: evse_manager_1
-          implementation_id: evse
-      error_history:
-        - module_id: error_history
-          implementation_id: error_history
   error_history:
     module: ErrorHistory
     config_implementation:

@@ -180,21 +180,6 @@ active_modules:
       energy_consumer:
         - module_id: evse_manager_1
           implementation_id: energy_grid
-  api:
-    module: API
-    connections:
-      evse_manager:
-        - module_id: evse_manager_1
-          implementation_id: evse
-      random_delay:
-        - module_id: evse_manager_1
-          implementation_id: random_delay
-      error_history:
-        - module_id: error_history
-          implementation_id: error_history
-      evse_energy_sink:
-        - module_id: evse_manager_1_sink
-          implementation_id: external_limits
   error_history:
     module: ErrorHistory
     config_implementation:
