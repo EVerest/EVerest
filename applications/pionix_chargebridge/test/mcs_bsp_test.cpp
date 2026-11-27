@@ -20,6 +20,7 @@ namespace {
 using charge_bridge::ce_state_name;
 using charge_bridge::id_state_name;
 using charge_bridge::is_mcs_technology;
+using charge_bridge::lock_feedback_reporter;
 using charge_bridge::lock_state_name;
 using charge_bridge::safety_error_mask;
 using charge_bridge::to_bit;
@@ -268,6 +269,53 @@ TEST(mcs_bsp, lock_state_names_keep_undefined_distinct_from_unlocked) {
     EXPECT_STREQ(lock_state_name(LockState_LOCKED), "locked");
     EXPECT_STRNE(lock_state_name(LockState_UNDEFINED), lock_state_name(LockState_UNLOCKED));
     EXPECT_STREQ(lock_state_name(3), "unknown");
+}
+
+TEST(mcs_bsp, lock_feedback_reports_a_measured_state_once) {
+    lock_feedback_reporter reporter;
+    EXPECT_EQ(reporter.offer(LockState_UNLOCKED), false);
+    EXPECT_EQ(reporter.offer(LockState_UNLOCKED), std::nullopt);
+    EXPECT_EQ(reporter.offer(LockState_LOCKED), true);
+    EXPECT_EQ(reporter.offer(LockState_LOCKED), std::nullopt);
+}
+
+TEST(mcs_bsp, lock_feedback_never_reports_undefined) {
+    // UNDEFINED must never reach EVerest as Unlocked or Locked: EvseManager takes Locked as
+    // confirmation that the lock engaged.
+    lock_feedback_reporter reporter;
+    EXPECT_EQ(reporter.offer(LockState_UNDEFINED), std::nullopt);
+    EXPECT_EQ(reporter.offer(3), std::nullopt);
+    reporter.lock_commanded();
+    EXPECT_EQ(reporter.offer(LockState_UNDEFINED), std::nullopt);
+
+    // Nor does it disturb what was reported: the same state after it is not news.
+    ASSERT_EQ(reporter.offer(LockState_LOCKED), true);
+    EXPECT_EQ(reporter.offer(LockState_UNDEFINED), std::nullopt);
+    EXPECT_EQ(reporter.offer(LockState_LOCKED), std::nullopt);
+}
+
+TEST(mcs_bsp, lock_feedback_confirms_a_lock_command_on_a_lock_that_never_opened) {
+    // EvseManager forgets Locked on unlock and waits for a new report after the next lock command.
+    lock_feedback_reporter reporter;
+    ASSERT_EQ(reporter.offer(LockState_LOCKED), true);
+    reporter.lock_commanded();
+    EXPECT_EQ(reporter.offer(LockState_LOCKED), true);
+    EXPECT_EQ(reporter.offer(LockState_LOCKED), std::nullopt);
+}
+
+TEST(mcs_bsp, lock_feedback_lock_command_does_not_repeat_unlocked) {
+    lock_feedback_reporter reporter;
+    ASSERT_EQ(reporter.offer(LockState_UNLOCKED), false);
+    reporter.lock_commanded();
+    EXPECT_EQ(reporter.offer(LockState_UNLOCKED), std::nullopt);
+    EXPECT_EQ(reporter.offer(LockState_LOCKED), true);
+}
+
+TEST(mcs_bsp, lock_feedback_reports_again_after_forget) {
+    lock_feedback_reporter reporter;
+    ASSERT_EQ(reporter.offer(LockState_UNLOCKED), false);
+    reporter.forget();
+    EXPECT_EQ(reporter.offer(LockState_UNLOCKED), false);
 }
 
 } // namespace

@@ -63,12 +63,14 @@ private:
     void handle_pp_type1(std::uint8_t data);
     void handle_pp_type2(std::uint8_t data, bool republish = false);
     void handle_stop_button(std::uint8_t data);
+    void handle_lock_state(std::uint8_t data);
 
     void send_event(API_BSP::Event data);
     void send_ac_nr_of_phases(std::uint8_t data);
     void send_capabilities();
     void send_ac_pp_amapcity(API_BSP::Ampacity data);
     void send_request_stop_transaction(API_EVM::StopTransactionReason data);
+    void send_lock_state(API_BSP::LockState data);
     void send_rcd_current(std::uint8_t data);
     void send_raise_error(API_BSP::ErrorEnum error, std::string const& subtype, std::string const& msg);
     void send_clear_error(API_BSP::ErrorEnum error, std::string const& subtype, std::string const& msg);
@@ -107,6 +109,7 @@ private:
     // Starts unlatched, i.e. "assume CCS until told otherwise": that keeps a board whose heartbeat
     // has not answered yet behaving exactly as it did before MCS existed.
     technology_latch m_link_technology;
+    lock_feedback_reporter m_lock_feedback;
     std::string m_cb_identifier;
     std::chrono::steady_clock::time_point last_everest_heartbeat;
 

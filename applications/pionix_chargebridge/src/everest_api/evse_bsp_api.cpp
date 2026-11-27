@@ -155,11 +155,13 @@ void evse_bsp_api::set_cb_message(evse_bsp_cb_to_host const& msg) {
         if (cb_status.pp_state_type2 not_eq msg.pp_state_type2) {
             handle_pp_type2(msg.pp_state_type2);
         }
+        // An MCS board without a feedback pin reports the commanded lock position, which is not
+        // feedback. Offered with every packet: the reporter decides what is news.
+        handle_lock_state(msg.lock_state);
     }
     if (cb_status.stop_charging not_eq msg.stop_charging) {
         handle_stop_button(msg.stop_charging);
     }
-    // cb_status.lock_state is not checked here as it cannot be reported to EVerest.
 
     cb_status = msg;
 }
@@ -324,6 +326,14 @@ void evse_bsp_api::handle_pp_type2(std::uint8_t data, bool republish) {
         }
         send_ac_pp_amapcity(bc_ampacity);
     }
+}
+
+void evse_bsp_api::handle_lock_state(std::uint8_t data) {
+    const auto locked = m_lock_feedback.offer(data);
+    if (not locked.has_value()) {
+        return;
+    }
+    send_lock_state(locked.value() ? API_BSP::LockState::Locked : API_BSP::LockState::Unlocked);
 }
 
 void evse_bsp_api::handle_pp_type1(std::uint8_t data) {
@@ -512,6 +522,9 @@ void evse_bsp_api::receive_ac_overcurrent_limit(std::string const&) {
 void evse_bsp_api::receive_lock() {
     host_status.connector_lock = 1;
     tx(host_status);
+    // EvseManager waits for a new Locked after this command, also from a lock that failed to
+    // retract and so never left LOCKED.
+    m_lock_feedback.lock_commanded();
 }
 
 void evse_bsp_api::receive_unlock() {
@@ -560,6 +573,11 @@ void evse_bsp_api::send_capabilities() {
 void evse_bsp_api::send_ac_pp_amapcity(API_BSP::Ampacity data) {
     API_BSP::ProximityPilot msg{data};
     send_mqtt("ac_pp_ampacity", serialize(msg));
+}
+
+void evse_bsp_api::send_lock_state(API_BSP::LockState data) {
+    API_BSP::LockStatus msg{data};
+    send_mqtt("lock_state", serialize(msg));
 }
 
 void evse_bsp_api::send_request_stop_transaction(API_EVM::StopTransactionReason data) {
@@ -620,6 +638,9 @@ void evse_bsp_api::handle_everest_connection_state() {
                 publish_error_flag_edges(0, cb_status.error_flags.raw);
                 if (not is_mcs_technology(m_link_technology.value())) {
                     handle_pp_type2(cb_status.pp_state_type2, true);
+                    // A restarted EVerest does not know the lock state.
+                    m_lock_feedback.forget();
+                    handle_lock_state(cb_status.lock_state);
                 }
                 // CP and relay state are published on change only, so a restarted EVerest would
                 // otherwise see no BSP event (and no MREC14PilotFault/DiodeFault) until the MCU
