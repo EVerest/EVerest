@@ -1,0 +1,11 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "himalayas_record"
+version = "0.1.0"
+description = "Build the CTRF records that EVerest CI submits to Himalayas"
+license = "Apache-2.0"
+requires-python = ">=3.10"
+dependencies = []

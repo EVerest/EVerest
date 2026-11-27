@@ -38,3 +38,22 @@ jobs:
           source-dir: source
           extensions: hpp,cpp
           exclude: applications/utils/ev-dev-tools/tests/fixtures/golden
+
+  himalayas-tests:
+    name: himalayas unit tests
+    runs-on: ${{ inputs.runner }}
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          sparse-checkout: applications/himalayas_record
+      - name: Install himalayas_record
+        run: |
+          python3 -m venv "$RUNNER_TEMP/himalayas"
+          "$RUNNER_TEMP/himalayas/bin/pip" install --quiet ./applications/himalayas_record
+      - name: Run unit tests
+        run: |
+          "$RUNNER_TEMP/himalayas/bin/python" -I -m unittest discover -s applications/himalayas_record/tests -v
