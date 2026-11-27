@@ -617,9 +617,9 @@ components:
       name: send_clear_error
       title: 'Send clear error'
       summary: >-
-        raise_error is logged and dropped, because ev_manager declares no generic errors, so no such error
-        is ever active: with sub_type the clear is rejected with reason "no such error active", and
-        without it, it clears nothing.
+        Asks ev_manager to clear the error. No such error is ever active, because raise_error is logged and
+        dropped: with sub_type the clear is rejected with reason "no such error active", and without it, it
+        clears nothing.
       contentType: application/json
       payload:
         $ref: '#/components/schemas/Error'
