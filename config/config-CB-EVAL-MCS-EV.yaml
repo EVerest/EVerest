@@ -64,9 +64,3 @@ active_modules:
       slac:
         - module_id: mcs_ev_datalink
           implementation_id: main
-  ev_api:
-    module: EvAPI
-    connections:
-      ev_manager:
-        - module_id: ev_manager
-          implementation_id: ev_manager

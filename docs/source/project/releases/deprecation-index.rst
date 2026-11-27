@@ -103,11 +103,6 @@ to the corresponding migration guide.
        ``ocpp/var/charging_schedules``, and ``error_history_consumer_API`` for
        ``errors/var/active_errors``. ``info/var/info`` (charger information) has
        no replacement. The module logs a deprecation warning at startup.
-   * - :ref:`EvAPI module <everest_modules_EvAPI>` (``everest_api/ev_connectors``
-       and ``everest_api/<connector>/var/*`` topics)
-     - 2026.10.0
-     - 2027.04.0
-     - No replacement. The module logs a deprecation warning at startup.
    * - ``error_history_consumer_API``: ``severity`` property of ``ErrorObject``
        (all messages carrying errors: ``get_errors``, ``active_errors``,
        ``error_raised``, ``error_cleared``), the ``severity_filter`` argument of
