@@ -1354,7 +1354,8 @@ mod tests {
     fn ready_state__read_signature_with_odd_length() {
         let mut mock = SerialCommunicationHubClientPublisher::default();
 
-        // 71 bytes: r has 32 bytes and a leading zero to remove, s has 33 bytes.
+        // r has 32 bytes whose leading 00 the fix removes (0x5d < 0x80), so 3045 becomes 3044.
+        // s has 33 bytes and keeps its leading 00 (0xea >= 0x80). 71 bytes in total.
         mock.expect_modbus_read_holding_registers()
             .with(eq(7058), eq(1), eq(1234))
             .times(1)
