@@ -1,5 +1,16 @@
 description: This file contains the types for the error history interface
 types:
+  Mapping:
+    description: EVSE and optional connector an implementation is mapped to
+    type: object
+    required:
+      - evse
+    properties:
+      evse:
+        type: integer
+      connector:
+        type: integer
+    additionalProperties: false
   ImplementationIdentifier:
     description: Identifier of an implementation
     type: object
@@ -13,6 +24,9 @@ types:
       implementation_id:
         type: string
         minLength: 2
+      mapping:
+        description: EVSE and connector the implementation is mapped to; ignored when used as a filter
+        $ref: /error_history#/Mapping
   State:
     description: State of an error
     type: string

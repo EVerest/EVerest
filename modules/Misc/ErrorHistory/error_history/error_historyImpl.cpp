@@ -99,6 +99,10 @@ error_historyImpl::handle_get_errors(types::error_history::FilterArguments& filt
         error_object.sub_type = error->sub_type;
         error_object.origin.module_id = error->origin.module_id;
         error_object.origin.implementation_id = error->origin.implementation_id;
+        if (error->origin.mapping.has_value()) {
+            error_object.origin.mapping = types::error_history::Mapping{error->origin.mapping.value().evse,
+                                                                        error->origin.mapping.value().connector};
+        }
         error_object.message = error->message;
         error_object.description = error->description;
         if (not error->vendor_id.empty()) {
