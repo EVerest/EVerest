@@ -144,6 +144,8 @@ release in which it may be removed, and a link to or a description of
 the corresponding migration guide.
 
 Maintainers must ensure that an entry is added when introducing a deprecation.
+The entries of both indexes are kept in ``deprecations.yaml`` and
+``experimental.yaml`` next to the index pages, which render them as tables.
 
 ******************************
 How Deprecations Are Announced

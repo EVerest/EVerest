@@ -24,6 +24,10 @@ Docs are rendered at <https://everest.github.io>, starting with the
 Sphinx sources are under `docs/source/`: `explanation/` for concepts, `how-to-guides/`
 for recipes. Per-module docs are at `modules/<Category>/<Module>/docs/index.rst`.
 
+Deprecated and experimental public API components are recorded in
+`docs/source/project/releases/deprecations.yaml` and `experimental.yaml`; the index pages
+render these files, so a deprecation or an experimental component is an entry there.
+
 Docs are updated in the same change as the code they describe. After changing a
 module's public behavior (interface or type YAML, config keys, state machines, error
 semantics), check the module's `docs/index.rst` and any `docs/source/` page describing
