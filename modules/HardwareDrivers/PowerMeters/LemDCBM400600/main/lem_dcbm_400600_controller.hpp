@@ -7,10 +7,12 @@
 #include "http_client_interface.hpp"
 #include "lem_dcbm_time_sync_helper.hpp"
 #include <chrono>
+#include <cstdint>
 #include <everest/util/async/monitor.hpp>
 #include <fmt/format.h>
 #include <functional>
 #include <generated/interfaces/powermeter/Implementation.hpp>
+#include <optional>
 #include <string>
 #include <thread>
 #include <utility>
@@ -109,15 +111,32 @@ private:
         bool fetch_due = true;
     };
 
+    struct FallbackOCMF {
+        std::string transaction_id;
+        types::units_signed::SignedMeterValue signed_meter_value;
+    };
+
+    // Written by the poll thread on a status update and by the command thread on a transaction start or stop.
+    struct TransactionState {
+        // a transaction is running on the device, as far as the module knows
+        bool need_to_stop_transaction = false;
+        // the running transaction, otherwise the last known one
+        std::string current_transaction_id;
+        // Incremented by every change from a transaction start or stop. A status update applies what it read
+        // from the device only if no such change happened while it was waiting for the device.
+        std::uint64_t generation = 0;
+        // last OCMF record fetched while the transaction was running, returned if the device is unreachable at its
+        // stop
+        std::optional<FallbackOCMF> fallback_ocmf;
+    };
+
     const std::unique_ptr<HttpClientInterface> http_client;
     std::string meter_id;
     std::string public_key;
     std::string public_key_ocmf;
     std::string version;
     bool v2_capable = false;
-    bool need_to_stop_transaction = false;
-    std::string current_transaction_id;
-    types::units_signed::SignedMeterValue current_signed_meter_value;
+    everest::lib::util::monitor<TransactionState> transaction_state;
     everest::lib::util::monitor<OCMFFetchState> ocmf_fetch_state;
     std::unique_ptr<LemDCBMTimeSyncHelper> time_sync_helper;
     Conf config;
@@ -126,11 +145,25 @@ private:
     int get_identification_type();
     void set_identification_type(int identification_type);
     std::string get_current_transaction();
+    std::uint64_t transaction_state_generation();
+    void apply_device_transaction_state(std::uint64_t generation, bool need_to_stop_transaction,
+                                        const std::string& transaction_id);
+    void record_started_transaction(const std::string& transaction_id);
+    bool is_transaction_ongoing_on_device();
+    // Stops a transaction that is still running on the device before a new one is started. Throws if it cannot be
+    // stopped, since the device would reject the new transaction anyway.
+    void stop_dangling_transaction(const std::string& new_transaction_id);
     void request_device_to_start_transaction(const types::powermeter::TransactionReq& value);
     // Returns true if the response could not confirm the stop (AST format: no transactionStatus); the caller
     // then checks the device status with confirm_transaction_stopped().
     bool request_device_to_stop_transaction(const std::string& transaction_id);
     void confirm_transaction_stopped(const std::string& transaction_id);
+    // One attempt to stop a transaction on the device. awaiting_stop_confirmation is kept between the attempts of a
+    // retry: once the device accepted the stop without confirming it (AST format), a retry only checks the device
+    // status again instead of stopping an already stopped transaction once more.
+    void stop_transaction_on_device(const std::string& transaction_id, bool& awaiting_stop_confirmation);
+    // Forgets the transaction once the device confirmed its stop, unless another transaction has been recorded since.
+    void mark_transaction_stopped(const std::string& transaction_id);
     std::string fetch_ocmf_result(const std::string& transaction_id);
     types::powermeter::Powermeter convert_livemeasure_to_powermeter(const std::string& livemeasure);
     std::string transaction_start_request_to_dcbm_payload(const types::powermeter::TransactionReq& request);
