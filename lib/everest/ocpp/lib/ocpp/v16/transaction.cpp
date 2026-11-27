@@ -78,11 +78,11 @@ std::string Transaction::get_start_transaction_message_id() {
 }
 
 void Transaction::set_stop_transaction_message_id(const std::string& message_id) {
-    this->stop_transaction_message_id = message_id;
+    *this->stop_transaction_message_id.handle() = message_id;
 }
 
 std::string Transaction::get_stop_transaction_message_id() {
-    return this->stop_transaction_message_id;
+    return *this->stop_transaction_message_id.handle();
 }
 
 void Transaction::set_transaction_id(std::int32_t transaction_id) {
@@ -164,6 +164,7 @@ void TransactionHandler::add_transaction(std::shared_ptr<Transaction> transactio
 }
 
 void TransactionHandler::add_stopped_transaction(std::int32_t connector) {
+    const std::lock_guard<std::mutex> lock(this->active_transactions_mutex);
     this->stopped_transactions.push_back(std::move(this->active_transactions.at(connector)));
 }
 
@@ -180,6 +181,7 @@ bool TransactionHandler::remove_active_transaction(std::int32_t connector) {
 }
 
 void TransactionHandler::erase_stopped_transaction(std::string stop_transaction_message_id) {
+    const std::lock_guard<std::mutex> lock(this->active_transactions_mutex);
     this->stopped_transactions.erase(
         std::remove_if(this->stopped_transactions.begin(), this->stopped_transactions.end(),
                        [stop_transaction_message_id](std::shared_ptr<Transaction>& transaction) {

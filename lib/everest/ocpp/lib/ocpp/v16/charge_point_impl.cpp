@@ -288,22 +288,23 @@ ChargePointImpl::~ChargePointImpl() {
 
 std::unique_ptr<ocpp::MessageQueue<v16::MessageType>> ChargePointImpl::create_message_queue() {
 
-    // The StartTransaction.conf handler attempts to get the transaction based on the message id. The message id changes
-    // in case of a message retry attempt, so we need to update it for the transaction as well
-    const auto start_transaction_message_retry_callback = [this](const std::string& new_message_id,
-                                                                 const std::string& old_message_id) {
+    const auto transaction_message_retry_callback = [this](const std::string& new_message_id,
+                                                           const std::string& old_message_id) {
         auto transaction = this->transaction_handler->get_transaction(old_message_id);
-        if (transaction != nullptr) {
-            transaction->set_start_transaction_message_id(new_message_id);
-            try {
-                this->database_handler->update_start_transaction_message_id(transaction->get_session_id(),
-                                                                            new_message_id);
-            } catch (const QueryExecutionException& e) {
-                EVLOG_warning << "Could not update start transaction message id";
-            }
-        } else {
-            EVLOG_warning << "Could not find transaction with start_transaction_message_id: " << old_message_id
+        if (transaction == nullptr) {
+            EVLOG_warning << "Could not find transaction with message id: " << old_message_id
                           << " and could therefore not replace it with: " << new_message_id;
+            return;
+        }
+        if (transaction->get_stop_transaction_message_id() == old_message_id) {
+            transaction->set_stop_transaction_message_id(new_message_id);
+            return;
+        }
+        transaction->set_start_transaction_message_id(new_message_id);
+        try {
+            this->database_handler->update_start_transaction_message_id(transaction->get_session_id(), new_message_id);
+        } catch (const QueryExecutionException& e) {
+            EVLOG_warning << "Could not update start transaction message id";
         }
     };
 
@@ -333,7 +334,7 @@ std::unique_ptr<ocpp::MessageQueue<v16::MessageType>> ChargePointImpl::create_me
             this->configuration.getTransactionMessageRetryInterval(),
             this->configuration.getMessageQueueSizeThreshold().value_or(DEFAULT_MESSAGE_QUEUE_SIZE_THRESHOLD),
             this->configuration.getQueueAllMessages().value_or(false), message_types_discard_for_queueing},
-        this->external_notify, this->database_handler, start_transaction_message_retry_callback);
+        this->external_notify, this->database_handler, transaction_message_retry_callback);
 }
 
 void ChargePointImpl::on_websocket_connected(const int configuration_slot,
@@ -4775,16 +4776,15 @@ void ChargePointImpl::stop_transaction(std::int32_t connector, Reason reason, st
 
     {
         const std::lock_guard<std::mutex> lock(this->stop_transaction_mutex);
+        transaction->set_stop_transaction_message_id(message_id.get());
+        transaction->set_finished();
+        this->transaction_handler->add_stopped_transaction(transaction->get_connector());
         this->message_dispatcher->dispatch_call(call);
     }
 
     if (this->transaction_stopped_callback != nullptr) {
         this->transaction_stopped_callback(transaction->get_session_id(), connector, call.msg);
     }
-
-    transaction->set_finished();
-    transaction->set_stop_transaction_message_id(message_id.get());
-    this->transaction_handler->add_stopped_transaction(transaction->get_connector());
 
     try {
         this->database_handler->update_transaction(transaction->get_session_id(), req.meterStop,

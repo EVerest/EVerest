@@ -26,6 +26,10 @@ bool is_start_transaction_message(const ocpp::v16::MessageType message_type) {
     return message_type == v16::MessageType::StartTransaction;
 }
 
+bool is_stop_transaction_message(const ocpp::v16::MessageType message_type) {
+    return message_type == v16::MessageType::StopTransaction;
+}
+
 bool is_boot_notification_message(const ocpp::v16::MessageType message_type) {
     return message_type == ocpp::v16::MessageType::BootNotification;
 }
