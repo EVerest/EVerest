@@ -445,7 +445,9 @@ TEST_CASE_METHOD(SessionFixture, "ISO 15118-20 terminal responses bypass pacing 
             session->poll();
         }
         REQUIRE(response_from_wire<iso15118::message_20::AuthorizationResponse>(*conn).response_code ==
-                dt::ResponseCode::FAILED);
+                dt::ResponseCode::WARNING_EIMAuthorizationFailure);
+        REQUIRE(response_from_wire<iso15118::message_20::AuthorizationResponse>(*conn).evse_processing ==
+                dt::Processing::Finished);
     }
 
     SECTION("the EV terminates while waiting for authorization") {

@@ -112,7 +112,7 @@ SCENARIO("Authorization state handling") {
         }
     }
 
-    GIVEN("Bad Case - Ongoing timeout reached") {
+    GIVEN("Bad Case - Ongoing timeout reached (EIM)") {
 
         d20::Session session = d20::Session();
         session.offered_services.auth_services = {dt::Authorization::EIM, dt::Authorization::PnC};
@@ -125,7 +125,25 @@ SCENARIO("Authorization state handling") {
 
         const auto res = d20::state::handle_request(req, session, AuthStatus::Pending, true);
 
-        THEN("ResponseCode: FAILED") {
+        THEN("ResponseCode: WARNING_EIMAuthorizationFailure") {
+            REQUIRE(res.response_code == dt::ResponseCode::WARNING_EIMAuthorizationFailure);
+        }
+    }
+
+    GIVEN("Bad Case - Ongoing timeout reached (PnC)") {
+
+        d20::Session session = d20::Session();
+        session.offered_services.auth_services = {dt::Authorization::EIM, dt::Authorization::PnC};
+
+        message_20::AuthorizationRequest req;
+        req.header.session_id = session.get_id();
+        req.header.timestamp = 1691411798;
+        req.selected_authorization_service = dt::Authorization::PnC;
+        req.authorization_mode.emplace<dt::PnC_ASReqAuthorizationMode>();
+
+        const auto res = d20::state::handle_request(req, session, AuthStatus::Pending, true);
+
+        THEN("ResponseCode: Failed") {
             REQUIRE(res.response_code == dt::ResponseCode::FAILED);
         }
     }
