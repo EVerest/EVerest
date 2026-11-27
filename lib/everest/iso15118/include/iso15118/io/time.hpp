@@ -31,13 +31,19 @@ inline int32_t get_timeout_ms_until(const TimePoint& until, int32_t max_timeout_
 
 class Timeout {
 public:
-    explicit Timeout(uint32_t timeout_ms) {
-        timeout_point = get_current_time_point() + std::chrono::milliseconds(timeout_ms);
-    };
+    explicit Timeout(uint32_t timeout_ms) : Timeout(timeout_ms, get_current_time_point()) {
+    }
+    Timeout(uint32_t timeout_ms, const TimePoint& start) :
+        timeout_point(start + std::chrono::milliseconds(timeout_ms)) {
+    }
     ~Timeout() = default;
 
     bool is_reached() const {
-        return get_current_time_point() >= timeout_point;
+        return is_reached(get_current_time_point());
+    }
+
+    bool is_reached(const TimePoint& now) const {
+        return now >= timeout_point;
     }
 
     TimePoint get_timeout_point() const {

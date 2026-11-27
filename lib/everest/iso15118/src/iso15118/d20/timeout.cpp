@@ -9,13 +9,16 @@
 
 namespace iso15118::d20 {
 
+Timeouts::Timeouts(Clock now_) : now(std::move(now_)) {
+}
+
 void Timeouts::start_timeout(TimeoutType type, uint32_t timeout_ms) {
     const auto type_u8 = to_underlying_value(type);
     if (timeouts.at(type_u8).has_value()) {
         logf_warning("Timeout %u already started", type_u8);
         return;
     }
-    timeouts.at(type_u8).emplace(Timeout(timeout_ms));
+    timeouts.at(type_u8).emplace(Timeout(timeout_ms, now()));
 }
 
 void Timeouts::stop_timeout(TimeoutType type) {
@@ -34,10 +37,11 @@ void Timeouts::reset_timeout(TimeoutType type) {
 std::vector<TimeoutType> Timeouts::check() const {
     std::vector<std::pair<TimePoint, TimeoutType>> reached;
     reached.reserve(TIMEOUT_TYPE_SIZE);
+    const auto current = now();
 
     for (uint8_t i = 0; i < TIMEOUT_TYPE_SIZE; i++) {
         const auto& timeout = timeouts.at(i);
-        if (timeout.has_value() and timeout->is_reached()) {
+        if (timeout.has_value() and timeout->is_reached(current)) {
             reached.emplace_back(timeout->get_timeout_point(), static_cast<TimeoutType>(i));
         }
     }
