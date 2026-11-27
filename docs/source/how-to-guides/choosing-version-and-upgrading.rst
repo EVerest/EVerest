@@ -55,7 +55,8 @@ Upgrading to a new stable release line (e.g., ``2026.01.x`` to ``2026.07.0``) re
 
 - Review the :ref:`release notes <project-release-notes>` and the upgrade guide of the
   target release, for example :ref:`project-upgrading-to-2026-10`
-- Identify any breaking changes affecting your integration
+- Identify any breaking changes affecting your integration; the contract diff described in
+  :ref:`htg-compatibility-testing` lists them between any two releases
 - Update configurations and integrations as needed
 - Thoroughly test in a non-production environment
 - Plan a maintenance window for production deployment

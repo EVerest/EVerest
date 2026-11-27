@@ -1,0 +1,97 @@
+name: Compatibility Contract
+
+on:
+  workflow_call:
+    inputs:
+      runner:
+        description: 'Which runner to use'
+        required: false
+        default: 'ubuntu-24.04'
+        type: string
+      release_comparison:
+        description: >-
+          Also compare with the release the tree follows. A release is cut from its stable branch, so
+          on the development branch this comparison reports what the branch still lacks from the
+          release, whatever the change under test is. It always runs for stable branches.
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  contract:
+    name: public API contract
+    runs-on: ${{ inputs.runner }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          # The baselines are git refs: the merge base with the target branch and a release tag.
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Set up Python 3.x
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.x'
+      - name: Install dependencies
+        run: pip3 install pyyaml==6.0.3 pytest==8.4.2
+      - name: Unit tests of the contract rules
+        run: python3 -m pytest tests/compat/contract
+      - name: Determine baselines
+        id: baselines
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          MERGE_GROUP_BASE_REF: ${{ github.event.merge_group.base_ref }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          target="${BASE_REF:-${MERGE_GROUP_BASE_REF#refs/heads/}}"
+          target="${target:-${REF_NAME}}"
+          echo "target=${target}"
+          python3 tests/compat/contract/compat_contract.py baseline --target-branch "${target}" | tee -a "$GITHUB_OUTPUT"
+          echo "merge_base=$(git merge-base "origin/${target}" HEAD)" | tee -a "$GITHUB_OUTPUT"
+      - name: Contract diff against the merge base
+        env:
+          MERGE_BASE: ${{ steps.baselines.outputs.merge_base }}
+          RELEASE_TAG: ${{ steps.baselines.outputs.release_tag }}
+          PATCH_RELEASE: ${{ steps.baselines.outputs.patch_release }}
+        run: |
+          set -uo pipefail
+          args=()
+          [[ "${PATCH_RELEASE}" == "true" ]] && args+=(--patch-release)
+          # The release decides what counts: the exceptions it documents apply, and what it does not
+          # ship may still change.
+          python3 tests/compat/contract/compat_contract.py check \
+            --base "${MERGE_BASE}" --tree . --released "${RELEASE_TAG}" \
+            --report merge-base.md --quiet "${args[@]}"
+          status=$?
+          cat merge-base.md >> "$GITHUB_STEP_SUMMARY"
+          exit "${status}"
+      - name: Contract diff against the release
+        if: inputs.release_comparison || steps.baselines.outputs.patch_release == 'true'
+        env:
+          RELEASE_TAG: ${{ steps.baselines.outputs.release_tag }}
+          PATCH_RELEASE: ${{ steps.baselines.outputs.patch_release }}
+        run: |
+          set -uo pipefail
+          args=()
+          [[ "${PATCH_RELEASE}" == "true" ]] && args+=(--patch-release)
+          python3 tests/compat/contract/compat_contract.py check \
+            --base "${RELEASE_TAG}" --tree . --report release.md --quiet "${args[@]}"
+          status=$?
+          cat release.md >> "$GITHUB_STEP_SUMMARY"
+          exit "${status}"
+      - name: Require a release label when the allowlist changes
+        if: github.event_name == 'pull_request' && steps.baselines.outputs.patch_release != 'true'
+        env:
+          MERGE_BASE: ${{ steps.baselines.outputs.merge_base }}
+          LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+        run: |
+          set -euo pipefail
+          if git diff --quiet "${MERGE_BASE}" HEAD -- tests/compat/contract/allowlist.yaml; then
+            exit 0
+          fi
+          case ",${LABELS}," in
+            *",EVerestAPI breaking change,"*) exit 0;;
+          esac
+          echo "::error::tests/compat/contract/allowlist.yaml changed: label the pull request 'EVerestAPI breaking change'"
+          exit 1
