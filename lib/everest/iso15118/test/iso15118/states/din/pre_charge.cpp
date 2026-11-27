@@ -27,7 +27,7 @@ SCENARIO("DIN SECC PreCharge state handling") {
         message_din::PreChargeRequest req;
         req.header.session_id = session;
         req.ev_target_voltage = 400.0;
-        // An active send_error status override wins over EVSE_Ready (EvseV2G parity).
+        // An active send_error status override wins over EVSE_Ready.
         const auto res = din::state::handle_request(req, 390.0f, session, dt::DcEvseStatusCode::EVSE_Malfunction);
         THEN("the status code is EVSE_Malfunction") {
             REQUIRE(res.dc_evse_status.evse_status_code == dt::DcEvseStatusCode::EVSE_Malfunction);

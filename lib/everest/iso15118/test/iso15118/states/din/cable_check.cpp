@@ -78,7 +78,7 @@ SCENARIO("DIN SECC CableCheck state handling") {
     GIVEN("A module-reported EVSE error while the cable check is ongoing") {
         message_din::CableCheckRequest req;
         req.header.session_id = session;
-        // An active send_error status override wins over EVSE_IsolationMonitoringActive (EvseV2G parity).
+        // An active send_error status override wins over EVSE_IsolationMonitoringActive.
         const auto res = din::state::handle_request(req, /*cable_check_done=*/false, /*cable_check_fault=*/false,
                                                     session, dt::DcEvseStatusCode::EVSE_UtilityInterruptEvent);
         THEN("the status code is overridden while the response stays OK") {

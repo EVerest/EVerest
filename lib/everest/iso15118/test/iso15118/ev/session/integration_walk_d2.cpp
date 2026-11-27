@@ -77,7 +77,7 @@ constexpr float EVSE_MAX_POWER = 150000.0f;
 constexpr float AC_NOMINAL_VOLTAGE = 230.0f;
 constexpr float AC_EVSE_MAX_CURRENT = 32.0f;
 
-// The -2 engine paces requests at 100 ms (EvseV2G MAX_RES_TIME parity).
+// The -2 engine paces requests at 100 ms.
 constexpr auto MIN_REQUEST_INTERVAL = 100ms;
 
 template <typename Msg> std::vector<uint8_t> serialize_2(const Msg& msg) {

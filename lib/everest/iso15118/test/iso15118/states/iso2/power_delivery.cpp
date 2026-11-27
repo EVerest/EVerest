@@ -96,7 +96,7 @@ SCENARIO("ISO 15118-2 SECC PowerDelivery handling") {
         const auto res = d2::state::handle_request(req, id, true, 1, dt::IsolationLevel::Valid, true, schedule);
         THEN("The response signals EVSENotification::StopCharging and EVSE_Shutdown, and still starts") {
             // A stop REQUEST is not an inability to deliver energy: [V2G2-679] leaves the reaction to the EV, so
-            // no FAILED_PowerDeliveryNotApplied here, unlike EvseV2G's "status != EVSE_Ready" formulation.
+            // no FAILED_PowerDeliveryNotApplied here.
             REQUIRE(res.response_code == dt::ResponseCode::OK);
             REQUIRE(res.dc_evse_status.has_value());
             REQUIRE(res.dc_evse_status->notification == dt::EVSENotification::StopCharging);

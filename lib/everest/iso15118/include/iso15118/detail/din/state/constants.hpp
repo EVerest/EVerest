@@ -20,7 +20,7 @@ constexpr uint32_t TIMEOUT_POWER_DELIVERY_MS = 20000;
 constexpr uint32_t TIMEOUT_WELDING_DETECTION_MS = 20000;
 
 // A full day [V2G-DC-556], except while pausing for lack of energy, where the EV is told to come
-// back rather than to plan a day of charging (EvseV2G din_server.cpp PAUSE_DURATION).
+// back rather than to plan a day of charging.
 constexpr uint32_t DIN_SA_SCHEDULE_DURATION = 86400;
 constexpr uint32_t DIN_PAUSE_DURATION = 60 * 30;
 

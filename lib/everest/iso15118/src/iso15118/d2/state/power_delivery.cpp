@@ -62,7 +62,7 @@ handle_request(const message_2::PowerDeliveryRequest& req, const dt::SessionId& 
     res.header.session_id = session_id;
 
     // [V2G2-366]: a module-reported fault wins over the EVSE_Ready this state would otherwise claim,
-    // which per Table 98 means the charging procedure is running (EvseV2G parity). A Stop answers
+    // which per Table 98 means the charging procedure is running. A Stop answers
     // EVSE_Shutdown whoever initiated it: IEC 61851-23:2023 Table CC.9 t104 has the EVSE confirm the
     // disabled side B that way, and CC.7.6.19 tests it for the EV-initiated shutdown. The notification
     // stays with the charger-initiated stop.
@@ -101,9 +101,8 @@ handle_request(const message_2::PowerDeliveryRequest& req, const dt::SessionId& 
             return res;
         }
         // [V2G2-480]: FAILED_PowerDeliveryNotApplied when the EVSE cannot deliver energy. A latched module
-        // error is exactly that, and only the DC status code can say so -- hence DC only, as in EvseV2G.
-        // EvseV2G phrases the rule as "Start and EVSEStatusCode != EVSE_Ready", which also catches the
-        // EVSE_Shutdown of a charger-initiated stop. We deliberately do not: a stop REQUEST is not an
+        // error is exactly that, and only the DC status code can say so -- hence DC only.
+        // The EVSE_Shutdown of a charger-initiated stop deliberately does not count: a stop REQUEST is not an
         // inability to deliver energy, and the STOP_CHARGING guard enforces it once the [V2G2-679] window closes.
         if (is_dc and error_status_code.has_value()) {
             res.response_code = dt::ResponseCode::FAILED_PowerDeliveryNotApplied;
@@ -263,7 +262,7 @@ Result process_ac_power_delivery(Context& m_ctx, const message_2::PowerDeliveryR
         return renegotiate(m_ctx, req, false);
     }
 
-    // CHARGE_LOOP_FINISHED is DC-only, mirroring the is_dc_charger gate EvseV2G puts on it.
+    // CHARGE_LOOP_FINISHED is DC-only.
     if (not respond(m_ctx, req, false)) {
         return {};
     }

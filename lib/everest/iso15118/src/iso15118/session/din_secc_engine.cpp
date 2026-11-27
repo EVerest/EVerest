@@ -237,7 +237,7 @@ void DinSeccEngine::on_control_event(const d20::ControlEvent& event) {
     }
 
     // DIN SPEC 70121 has no SECC-initiated pause -- the SECC can only ask the EV to stop. Say so rather
-    // than drop the request silently (EvseV2G parity).
+    // than drop the request silently.
     if (const auto* pause = std::get_if<d20::PauseCharging>(&event); pause and static_cast<bool>(*pause)) {
         logf_warning("A charger-initiated pause is not supported in DIN SPEC 70121; use stop_charging instead");
         return;
@@ -298,7 +298,7 @@ void DinSeccEngine::on_timeout(d20::TimeoutType timeout) {
     }
 
     // The EV ignored the StopCharging request: the next response is answered FAILED and ends the
-    // session (EvseV2G stop_hlc parity). An EV that sends nothing is bounded by the sequence timeout.
+    // session. An EV that sends nothing is bounded by the sequence timeout.
     // Nothing arrived that the emergency shutdown could be reported on, so close anyway.
     if (timeout == d20::TimeoutType::EMERGENCY_SHUTDOWN) {
         if (not ctx.session_stopped) {

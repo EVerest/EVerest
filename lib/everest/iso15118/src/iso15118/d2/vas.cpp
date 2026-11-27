@@ -34,7 +34,7 @@ m2dt::Parameter to_iso2_parameter(const m20dt::Parameter& in) {
             } else if constexpr (std::is_same_v<T, m20dt::Name>) {
                 out.string_value = value;
             } else if constexpr (std::is_same_v<T, m20dt::RationalNumber>) {
-                // The VAS interface has no unit for a rational number; W mirrors EvseV2G.
+                // The VAS interface has no unit for a rational number, so W stands in.
                 out.physical_value = m2dt::to_physical_value(m20dt::from_RationalNumber(value), m2dt::Unit::W);
             }
         },

@@ -22,7 +22,7 @@ constexpr auto ONGOING_CABLE_CHECK = 40000ms;
 // Table 77 V2G_EVCC_PRE_CHARGE_TIMEOUT, Section 9.6.5.5 (Josev din_spec/timeouts.py).
 constexpr auto ONGOING_PRE_CHARGE = 50000ms;
 
-// EvseV2G MAX_RES_TIME parity.
+// No request faster than this.
 constexpr auto MIN_REQUEST_INTERVAL = 100ms;
 
 std::chrono::milliseconds response_timeout(StateID state);

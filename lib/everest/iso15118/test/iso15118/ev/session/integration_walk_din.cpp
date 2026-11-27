@@ -66,7 +66,7 @@ constexpr double EVSE_MAX_VOLTAGE = 920.0;
 constexpr double EVSE_MAX_CURRENT = 200.0;
 constexpr double EVSE_MAX_POWER = 150000.0;
 
-// The DIN engine paces requests at 100 ms (EvseV2G MAX_RES_TIME parity).
+// The DIN engine paces requests at 100 ms.
 constexpr auto MIN_REQUEST_INTERVAL = 100ms;
 
 template <typename Msg> std::vector<uint8_t> serialize_din(const Msg& msg) {

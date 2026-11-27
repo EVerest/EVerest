@@ -21,7 +21,7 @@ struct SessionConfig {
     bool free_service{true};
     dt::SupportedEnergyTransferMode energy_transfer_mode{dt::SupportedEnergyTransferMode::DC_extended};
 
-    // Two flavours (EvseV2G parity): the evse_capability_* values are the maximum the EVSE could ever
+    // Two flavours: the evse_capability_* values are the maximum the EVSE could ever
     // deliver, advertised in ChargeParameterDiscoveryRes and as the SAScheduleList PMax, while the
     // evse_maximum_* values are what energy management currently grants and go in CurrentDemandRes.
     double evse_capability_maximum_current_limit{0.0};
@@ -42,8 +42,7 @@ struct SessionConfig {
     d20::NoEnergyPauseMode no_energy_pause{d20::NoEnergyPauseMode::None};
 
     // In MILLISECONDS; 0 waits indefinitely. Only the EIM value applies -- DIN knows no other payment
-    // option. EvseV2G never bounded this loop at all, so a DIN session there could sit in Ongoing until
-    // the EV gave up.
+    // option. Unbounded, a DIN session could sit in Ongoing until the EV gave up.
     uint32_t auth_timeout_eim_ms{300000};
 };
 

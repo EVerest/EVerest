@@ -1089,7 +1089,7 @@ SCENARIO("ISO 15118-2 SECC EV setpoint forwarding") {
             secc.drive(current_demand_req());
             secc.drive(current_demand_req());
 
-            THEN("The setpoint is forwarded once (EvseV2G publish_dc_ev_target_voltage_current parity)") {
+            THEN("The setpoint is forwarded once") {
                 REQUIRE(secc.setpoints_forwarded == 1);
             }
 
@@ -1335,7 +1335,7 @@ SCENARIO("ISO 15118-2 SECC no-energy pause") {
         }
     }
 
-    // The pause is a DC mechanism (EvseV2G parity): an AC EV never gets the StopCharging notification and
+    // The pause is a DC mechanism: an AC EV never gets the StopCharging notification and
     // its PowerDelivery(Start) is not refused -- the 0 A limit in every ChargingStatusRes throttles it.
     GIVEN("An AC session with no energy available") {
         Secc ac_secc{dt::EnergyTransferMode::AC_three_phase_core};
@@ -1950,7 +1950,7 @@ SCENARIO("ISO 15118-2 SECC charger stop and shutdown paths") {
             }
         }
 
-        // [V2G2-880]: every other status code is informational, so the EV decides (EvseV2G parity).
+        // [V2G2-880]: every other status code is informational, so the EV decides.
         WHEN("The module reports a malfunction") {
             secc.fsm.context().set_active_error(d20::EvseErrorCode::Malfunction);
             secc.drive(pre_charge_req());

@@ -149,7 +149,7 @@ SCENARIO("ISO 15118-2 SECC ServiceDiscovery handling") {
         const auto res = d2::state::handle_request(req, id, 1, modes, /*offer_eim=*/false, /*offer_contract=*/true,
                                                    /*cert_service_offered=*/false);
 
-        THEN("Contract is the only payment option offered (EvseV2G parity; EIM is not implied)") {
+        THEN("Contract is the only payment option offered (EIM is not implied)") {
             REQUIRE(res.response_code == dt::ResponseCode::OK);
             REQUIRE(res.payment_option_list.size() == 1);
             REQUIRE(res.payment_option_list[0] == dt::PaymentOption::Contract);

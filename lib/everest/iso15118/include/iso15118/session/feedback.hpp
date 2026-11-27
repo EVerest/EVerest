@@ -176,13 +176,13 @@ struct Callbacks {
     std::function<void(const DcEvChargeProgress&)> dc_ev_charge_progress;
     std::function<void(const AcChargeLoopReq&)> ac_charge_loop_req;
     // Request and response alike, with the complete V2GTP frame exactly as it went over the wire (what
-    // EvseV2G publishes as v2g_messages). The frame view is only valid for the duration of the call.
+    // the module publishes as v2g_messages). The frame view is only valid for the duration of the call.
     std::function<void(const V2gMessageType&, const io::StreamInputView& exi_frame)> v2g_message;
     // The request last reported through v2g_message is answered with FAILED_SequenceError, which ends the
     // session. Reported before that response, so a consumer deriving the session phase from v2g_message can
     // tell the rejected request from one the session reached.
     std::function<void()> request_out_of_sequence;
-    // Reported before the SECC picks one, so a failed negotiation is reported too (EvseV2G parity).
+    // Reported before the SECC picks one, so a failed negotiation is reported too.
     std::function<void(const message_20::SupportedAppProtocolRequest&)> ev_app_protocols;
     std::function<void(const std::string&)> evccid;
     std::function<void(const std::string&)> selected_protocol;

@@ -68,7 +68,7 @@ SCENARIO("ISO 15118-2 SECC ChargeParameterDiscovery handling") {
         min_config.dc_min_current = 25.0f;
 
         const auto res = d2::state::handle_request(req, id, min_config);
-        THEN("FAILED_WrongChargeParameter with the EVSE announcing EVSE_Shutdown (EvseV2G parity)") {
+        THEN("FAILED_WrongChargeParameter with the EVSE announcing EVSE_Shutdown") {
             REQUIRE(res.response_code == dt::ResponseCode::FAILED_WrongChargeParameter);
             REQUIRE(res.dc_evse_charge_parameter.has_value()); // [V2G2-736]
             REQUIRE(res.dc_evse_charge_parameter->dc_evse_status.status_code == dt::DC_EVSEStatusCode::EVSE_Shutdown);

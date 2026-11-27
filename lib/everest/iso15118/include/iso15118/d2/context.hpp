@@ -139,7 +139,7 @@ public:
     void report_ev_status(const dt::DC_EVStatus& status);
 
     // The change filter lives here rather than in the loop state, which is rebuilt around a metering
-    // receipt and would forget it (EvseV2G publish_dc_ev_target_voltage_current parity).
+    // receipt and would forget it.
     using DcSetpoint = std::tuple<double, double, std::optional<double>, std::optional<double>, std::optional<double>>;
     void report_dc_setpoint(const DcSetpoint& setpoint, const session::feedback::DcReqControlMode& mode);
 

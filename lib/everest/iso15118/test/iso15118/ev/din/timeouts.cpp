@@ -72,7 +72,7 @@ SCENARIO("DIN 70121 EV Ongoing guard table") {
 }
 
 SCENARIO("DIN 70121 EV request pacing constant") {
-    THEN("the minimum request interval matches EvseV2G MAX_RES_TIME parity") {
+    THEN("the minimum request interval is 100 ms") {
         REQUIRE(timeouts::MIN_REQUEST_INTERVAL == 100ms);
     }
 }

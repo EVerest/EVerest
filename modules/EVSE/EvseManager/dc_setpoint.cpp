@@ -8,7 +8,7 @@
 namespace module {
 
 namespace {
-// The EV sees the offered minimum truncated by the HLC encoding (EvseV2G: 0.1 A): a target that much below it is
+// The EV sees the offered minimum truncated by the HLC encoding (by up to 0.1 A): a target that much below it is
 // the minimum, not a request below it.
 constexpr double OFFERED_MINIMUM_ENCODING_RESOLUTION_A = 0.1;
 

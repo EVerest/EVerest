@@ -46,9 +46,9 @@ enum class SetupStep : std::uint8_t {
 using SetupStepsDone = everest::lib::util::EnumFlags<SetupStep>;
 
 // Maps the last V2G message handled before a session tore down to a protocol-agnostic
-// HlcSessionFailedReasonEnum, keyed on the phase that message belongs to (mirrors EvseV2G's
-// map_v2g_msg_to_hlc_failed_reason). Returns std::nullopt for messages that represent a clean end
-// (SessionStop, WeldingDetection) or no session activity (None): no failure is reported for those.
+// HlcSessionFailedReasonEnum, keyed on the phase that message belongs to. Returns std::nullopt for messages that
+// represent a clean end (SessionStop, WeldingDetection) or no session activity (None): no failure is reported for
+// those.
 constexpr std::optional<types::evse_manager::HlcSessionFailedReasonEnum>
 map_v2g_message_to_hlc_failed_reason(iso15118::message_20::Type type) {
     using Type = iso15118::message_20::Type;
@@ -304,8 +304,8 @@ std::optional<float> convert_from_optional(const std::optional<uint32_t>& in);
 
 types::iso15118::AppProtocol convert_app_protocol(const iso15118::message_20::SupportedAppProtocol& app_protocol);
 
-// Debug rendering of a raw V2GTP frame for the v2g_messages var, in the two encodings EvseV2G
-// publishes (v2g_server.cpp:275-288): lowercase hex without separators, and standard base64.
+// Debug rendering of a raw V2GTP frame for the v2g_messages var: lowercase hex without separators,
+// and standard base64.
 std::string to_hex_string(const iso15118::io::StreamInputView& frame);
 std::string to_base64_string(const iso15118::io::StreamInputView& frame);
 types::iso15118::EvInformation convert_ev_info(const iso15118::d20::EVInformation& ev_info);

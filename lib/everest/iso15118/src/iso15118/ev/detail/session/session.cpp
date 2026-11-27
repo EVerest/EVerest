@@ -353,7 +353,7 @@ void Session::handle_complete_frame() {
 }
 
 void Session::arm_send_delay() {
-    // Pre-20 engines pace requests (EvseV2G MAX_RES_TIME parity). A zero delay would disarm a timerfd
+    // Pre-20 engines pace requests. A zero delay would disarm a timerfd
     // (it_value == 0); clamp to the smallest positive duration.
     const auto delay =
         std::max(timing.send_delay, with_engine(engine, [](auto& e) { return e.min_request_interval(); }));

@@ -57,9 +57,9 @@ message_din::PowerDeliveryResponse handle_request(const message_din::PowerDelive
     // [V2G-DC-401]: FAILED_PowerDeliveryNotApplied when the EVSE cannot deliver energy. Checked after
     // the request-validation legs above, so a malformed request still gets its own specific code.
     //
-    // EvseV2G phrases the ISO 15118-2 twin [V2G2-480] as "Start and EVSEStatusCode != EVSE_Ready", which
-    // also catches the EVSE_Shutdown of a charger-initiated stop. We deliberately do not: a stop REQUEST
-    // is not an inability to deliver energy, and the STOP_CHARGING guard enforces it once the window closes.
+    // As for the ISO 15118-2 twin [V2G2-480], the EVSE_Shutdown of a charger-initiated stop deliberately
+    // does not count: a stop REQUEST is not an inability to deliver energy, and the STOP_CHARGING guard
+    // enforces it once the window closes.
     if (req.ready_to_charge_state and error_status_code.has_value()) {
         return response_with_code(res, dt::ResponseCode::FAILED_PowerDeliveryNotApplied);
     }

@@ -555,7 +555,7 @@ SCENARIO("Authorization Ongoing timeouts") {
     session::EvseSetupConfig setup{};
     setup.evse_id = "DE*EVR*E12345*1";
 
-    GIVEN("The EvseV2G-compatible defaults") {
+    GIVEN("The defaults") {
         const session::SessionConfig config(setup);
         THEN("EIM waits 300 s and PnC the 55 s V2G_SECC_Ongoing_Performance_Time") {
             REQUIRE(config.auth_timeout_eim_s == 300);
@@ -583,7 +583,7 @@ SCENARIO("Authorization Ongoing timeouts") {
         }
     }
 
-    GIVEN("0, meaning wait indefinitely (EvseV2G parity)") {
+    GIVEN("0, meaning wait indefinitely") {
         setup.auth_timeout_eim_s = 0;
         setup.auth_timeout_pnc_s = 0;
         const session::SessionConfig config(setup);

@@ -37,7 +37,7 @@ static constexpr auto PEER_CLOSE_WAIT_MS = 500;
 static constexpr auto DLINK_SIGNAL_GRACE_MS = 300;
 static constexpr auto MIN_RESPONSE_INTERVAL_MS = 100; // minimum time between two response messages
 // ISO 15118-2 / DIN 70121: send each response this long after its request (minus processing time).
-// Some EVs' controllers crash if the SECC answers too fast (EvseV2G MAX_RES_TIME parity).
+// Some EVs' controllers crash if the SECC answers too fast.
 static constexpr auto RESPONSE_DELAY_AFTER_REQUEST_MS = 100;
 
 // DIN [V2G-DC-957], Table 75: 5 s guards the wait for the next CurrentDemandReq, against the
@@ -235,7 +235,7 @@ Session::Session(std::unique_ptr<io::IConnection> connection_, session::SessionC
     };
 
     // The engines see only the EXI payload; attach the frame being dispatched so the module can
-    // publish header + payload (EvseV2G v2g_messages parity). Responses are emitted from
+    // publish header + payload as v2g_messages. Responses are emitted from
     // send_response(), which has the frame in hand.
     callbacks.v2g_message = [this, forward = callbacks_.v2g_message](const V2gMessageType& type,
                                                                      const io::StreamInputView&) {
@@ -299,7 +299,7 @@ session::feedback::Signal Session::teardown_signal() const {
     // ([V2G2-727]/[V2G20-727]): per ISO 15118-3 Table 6 that also restarts matching through CP state E,
     // so the EV can retry without being unplugged, where TERMINATE would leave it stuck. DIN defines no
     // such primitive but wants the same outcome ([V2G-DC-942], NOTE at [V2G-DC-943]), so all three
-    // generations are treated alike (EvseV2G d_link_action parity).
+    // generations are treated alike.
     return Signal::DLINK_ERROR;
 }
 
@@ -680,7 +680,7 @@ void Session::handle_connection_event(io::ConnectionEvent event) {
         connection_established_time = get_current_time_point();
         logf_info("Accepted connection on port %d", connection->get_public_endpoint().port);
         // Guard the wait for the first request with the sequence timeout, so an EV that connects and
-        // sends nothing is closed rather than left open (EvseV2G parity).
+        // sends nothing is closed rather than left open.
         timeouts.start_timeout(d20::TimeoutType::SEQUENCE, d20::TIMEOUT_SEQUENCE);
         return;
 

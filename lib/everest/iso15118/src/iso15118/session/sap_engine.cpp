@@ -41,7 +41,7 @@ bool SapEngine::on_packet(v2gtp::PayloadType payload_type, const io::StreamInput
         return true;
     }
 
-    // Reported before deciding anything, so a failed negotiation is reported too (EvseV2G parity).
+    // Reported before deciding anything, so a failed negotiation is reported too.
     feedback.ev_app_protocols(*req);
 
     if (selecting_sap_based_on_energy_service) {
@@ -72,7 +72,7 @@ bool SapEngine::on_packet(v2gtp::PayloadType payload_type, const io::StreamInput
     } else if (selected_namespace == DIN70121_NAMESPACE) {
         feedback.selected_protocol("DIN70121");
     } else if (selected_namespace == ISO2_NAMESPACE) {
-        // EvseV2G-compatible string, so EvseManager / RpcApi classify this as ISO 15118-2 as before.
+        // The string EvseManager and RpcApi classify as ISO 15118-2.
         feedback.selected_protocol("ISO15118-2-2013");
     } else if (custom_selected) {
         feedback.selected_protocol(custom_protocol.value());
