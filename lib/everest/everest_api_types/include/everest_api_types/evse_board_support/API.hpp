@@ -124,4 +124,14 @@ struct ProximityPilot {
     Ampacity ampacity;
 };
 
+enum class LockState {
+    Unknown,
+    Unlocked,
+    Locked,
+};
+
+struct LockStatus {
+    LockState lock_state;
+};
+
 } // namespace everest::lib::API::V1_0::types::evse_board_support

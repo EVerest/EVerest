@@ -46,6 +46,7 @@
 #include "EventQueue.hpp"
 #include "IECStateMachine.hpp"
 #include "PersistentStore.hpp"
+#include "connector_lock_confirmation.hpp"
 #include "scoped_lock_timeout.hpp"
 #include "utils.hpp"
 
@@ -94,6 +95,7 @@ public:
         int sleep_before_enabling_pwm_hlc_mode_ms{0};
         utils::SessionIdType session_id_type{utils::SessionIdType::UUID};
         int hlc_charge_loop_without_energy_timeout_s{0};
+        int connector_lock_confirmation_timeout_ms{0};
     };
 
     enum class EvseState {
@@ -153,6 +155,10 @@ public:
 
     bool get_authorized_pnc();
     bool get_authorized_eim();
+
+    ConnectorLockConfirmation& get_connector_lock_confirmation() {
+        return connector_lock_confirmation;
+    }
 
     // this indicates the charger is done with all of its t_step_XX routines and HLC can now also start charging
     bool get_authorized_eim_ready_for_hlc();
@@ -298,6 +304,7 @@ private:
     take_signed_meter_data(std::optional<types::units_signed::SignedMeterValue>& data);
 
     bool stop_charging_on_fatal_error_internal();
+    void handle_connector_lock_confirmation();
     std::string stop_reason_flags(bool fatal_error = false);
     float get_max_current_internal();
     float get_max_current_signalled_to_ev_internal();
@@ -491,6 +498,8 @@ private:
         // CurrentDemand)
         int hlc_charge_loop_without_energy_timeout_s{300};
     } config_context;
+
+    ConnectorLockConfirmation connector_lock_confirmation;
 
     // Used by different threads, but requires no complete state machine locking
     std::atomic<float> soft_over_current_tolerance_percent{10.};

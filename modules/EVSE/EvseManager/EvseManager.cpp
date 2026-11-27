@@ -129,6 +129,11 @@ get_dc_external_derate(std::optional<float> present_voltage,
 
 void EvseManager::init() {
 
+    if (config.connector_lock_confirmation_timeout_ms > 0 and r_connector_lock.empty()) {
+        EVLOG_warning << "connector_lock_confirmation_timeout_ms is set, but no connector_lock is connected to confirm "
+                         "the lock. Not waiting for a connector lock confirmation.";
+    }
+
     if (!config.connector_type.empty()) {
         try {
             connector_type = types::evse_manager::string_to_connector_type_enum(config.connector_type);
@@ -248,6 +253,16 @@ void EvseManager::init() {
     // captive cable mode a cable already in the socket at boot would then stay unlocked.
     r_bsp->subscribe_ac_pp_ampacity(
         [this](types::board_support_common::ProximityPilot const& pp) { pp_ampacity.publish(pp); });
+
+    if (not r_connector_lock.empty()) {
+        r_connector_lock[0]->subscribe_lock_state([this](types::connector_lock::LockState state) {
+            // Outside the forwarder's lock: the HLC command blocks until the ISO module answers.
+            if (connector_lock_state.publish(state)) {
+                // An HLC authorization held back for the lock can be confirmed now.
+                charger_was_authorized();
+            }
+        });
+    }
 
     r_bsp->subscribe_request_stop_transaction(
         [this](types::evse_manager::StopTransactionRequest r) { charger->cancel_transaction(r); });
@@ -403,8 +418,14 @@ void EvseManager::ready() {
 
     // Wired before allow_updates(): the capabilities callback may enable captive mode, which can lock at once.
     if (r_connector_lock.size() > 0) {
-        bsp->signal_lock.connect([this]() { r_connector_lock[0]->call_lock(); });
-        bsp->signal_unlock.connect([this]() { r_connector_lock[0]->call_unlock(); });
+        bsp->signal_lock.connect([this]() {
+            charger->get_connector_lock_confirmation().lock_commanded();
+            r_connector_lock[0]->call_lock();
+        });
+        bsp->signal_unlock.connect([this]() {
+            charger->get_connector_lock_confirmation().unlock_commanded();
+            r_connector_lock[0]->call_unlock();
+        });
     }
 
     // Now incoming hardware capabilities can be processed
@@ -1125,15 +1146,18 @@ void EvseManager::ready() {
         // implement Auth handlers
         r_hlc[0]->subscribe_require_auth_eim([this]() {
             //  Do we have auth already (i.e. delayed HLC after charging already running)?
-            if ((config.dbg_hlc_auth_after_tstep and charger->get_authorized_eim_ready_for_hlc()) or
-                (not config.dbg_hlc_auth_after_tstep and charger->get_authorized_eim())) {
+            const bool authorized_eim =
+                (config.dbg_hlc_auth_after_tstep and charger->get_authorized_eim_ready_for_hlc()) or
+                (not config.dbg_hlc_auth_after_tstep and charger->get_authorized_eim());
+            if (authorized_eim and charger->get_connector_lock_confirmation().confirmed()) {
                 hlc_waiting_for_auth_eim = false;
                 hlc_waiting_for_auth_pnc = false;
                 r_hlc[0]->call_authorization_response(types::authorization::AuthorizationStatus::Accepted,
                                                       types::authorization::CertificateStatus::NoCertificateAvailable);
                 charger->get_stopwatch().mark("Auth EIM Done");
             } else {
-                if (config.enable_autocharge) {
+                // An authorized session only waiting for the connector lock needs no further token.
+                if (config.enable_autocharge and not authorized_eim) {
                     p_token_provider->publish_provided_token(autocharge_token);
                 }
                 hlc_waiting_for_auth_eim = true;
@@ -1338,6 +1362,11 @@ void EvseManager::ready() {
     r_bsp->subscribe_ac_nr_of_phases_available([this](int n) { signalNrOfPhasesAvailable(n); });
     // Subscribed in init(); replays a value the BSP published before this point.
     pp_ampacity.connect([this](types::board_support_common::ProximityPilot const& pp) { bsp->set_pp_ampacity(pp); });
+    connector_lock_state.connect([this](types::connector_lock::LockState state) {
+        session_log.evse(false,
+                         fmt::format("Connector lock state: {}", types::connector_lock::lock_state_to_string(state)));
+        charger->get_connector_lock_confirmation().lock_state_reported(state);
+    });
 
     if (r_powermeter_billing().size() > 0) {
         r_powermeter_billing()[0]->subscribe_powermeter([this](types::powermeter::Powermeter const& p) {
@@ -1787,6 +1816,8 @@ Charger::SetupConfig EvseManager::get_charger_setup_config(Charger::ChargeMode c
     charger_setup.sleep_before_enabling_pwm_hlc_mode_ms = config.sleep_before_enabling_pwm_hlc_mode_ms;
     charger_setup.session_id_type = utils::get_session_id_type_from_string(config.session_id_type);
     charger_setup.hlc_charge_loop_without_energy_timeout_s = config.hlc_charge_loop_without_energy_timeout_s;
+    charger_setup.connector_lock_confirmation_timeout_ms =
+        r_connector_lock.empty() ? 0 : config.connector_lock_confirmation_timeout_ms;
     return charger_setup;
 }
 
@@ -2164,6 +2195,9 @@ void EvseManager::log_v2g_message(types::iso15118::V2gMessages const& v2g_messag
 }
 
 void EvseManager::charger_was_authorized() {
+    if (not charger->get_connector_lock_confirmation().confirmed()) {
+        return;
+    }
 
     if (hlc_waiting_for_auth_pnc and charger->get_authorized_pnc()) {
         r_hlc[0]->call_authorization_response(types::authorization::AuthorizationStatus::Accepted,

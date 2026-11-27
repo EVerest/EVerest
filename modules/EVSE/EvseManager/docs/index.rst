@@ -88,6 +88,73 @@ back out within the delay, no lock is engaged. Set it to ``0`` to lock
 immediately. The timer checks every 500 ms, so the effective delay is rounded up
 to the next multiple of 500 ms.
 
+Connector lock confirmation
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The ``lock`` and ``unlock`` commands of the connector lock return immediately.
+A connector lock with feedback reports the physical state in its ``lock_state``
+variable (``Unknown``, ``Unlocked`` or ``Locked``). It can retry a failing
+lock itself and then raises ``connector_lock/ConnectorLockFailedLock`` only
+after its final retry.
+
+By default the EvseManager does not check this feedback. Set
+``connector_lock_confirmation_timeout_ms`` to a value above ``0`` to require
+the connector lock to report ``Locked`` within that time after each ``lock``
+command, and to make an authorization wait for it. This requires a
+``connector_lock`` connection; without one the EvseManager logs a warning and
+does not check the lock. It only applies to AC charging.
+
+When the lock is commanded depends on the locking rules: by default in CP state
+B right after plug-in, with ``unlock_when_deauthorized`` once the session is
+authorized, and in captive cable mode once an inserted cable is seated (see
+``keep_cable_locked_lock_delay_ms``). The timeout runs from that command,
+whether or not a session is authorized. In the default case the lock is usually
+confirmed before the authorization arrives, so there is no wait at all. An
+``unlock`` command ends the check. An authorized session that has to wait while
+no timeout is running, for example because the lock reported ``Locked`` and
+later dropped back to ``Unlocked`` or ``Unknown``, starts the timeout at that
+point. A session therefore never waits longer than the timeout.
+
+An ``unlock`` command also discards the lock state known to the EvseManager, so
+a ``Locked`` reported before it does not confirm a later ``lock`` command. The
+connector lock driver therefore has to publish ``lock_state`` at startup, on
+every change, and ``Locked`` again after a ``lock`` command that finds the lock
+already locked, for example because the preceding ``unlock`` could not open it.
+Without that report nothing changes on the driver side and the check times out
+although the lock is closed.
+
+While an authorized session waits for the lock:
+
+* It stays in ``WaitingForAuthentication`` and starts no transaction.
+* Basic charging: PWM stays off, so the EV cannot request power.
+* ISO 15118 (EIM and Plug and Charge): the authorization is not yet passed to
+  the ISO stack, so the EV keeps receiving ``EVSEProcessing=Ongoing`` in
+  ``AuthorizationRes``. In AC HLC the 5 % or X1 signalling stays unchanged.
+
+Once the lock reports ``Locked``, the session continues as if the authorization
+had just arrived. If the lock does not report ``Locked`` within the timeout, the
+EvseManager raises ``evse_manager/ConnectorLockConfirmationTimeout``. Like every
+blocking error (see `Error Handling`_), it makes the EvseManager Inoperative,
+which ends a running session with an error shutdown. A session waiting in
+``WaitingForAuthentication`` moves to ``Finished``, which also terminates the
+data link and with it an ISO 15118 session waiting for authorization. If a
+session was authorized and waiting for the lock, the EvseManager also drops the
+authorization and publishes a ``Deauthorized`` session event, so no transaction
+is started and the token is released.
+
+The error clears on unplug. Outside a session, for example a captive cable
+locked without an EV plugged in, it also clears when the lock reports
+``Locked`` later. A ``Locked`` report or a new authorization after the timeout
+does not resume the session.
+
+The EvseManager keeps the last reported lock state until the next ``unlock``
+command. A lock that stays ``Locked`` between sessions, as in captive cable
+mode, therefore needs no new report for the next session to start without
+waiting. After an ``unlock`` command, only a new ``Locked`` report confirms the
+lock, even if the lock never reported ``Unlocked`` in between.
+
+The session log shows every reported lock state and a timeout.
+
 DC Configuration
 ----------------
 
@@ -647,6 +714,8 @@ Errors raised by the EvseManager itself.
    * - ``evse_manager/MREC5OverVoltage``
      - yes
    * - ``evse_manager/MREC9AuthorizationTimeout``
+     - yes
+   * - ``evse_manager/ConnectorLockConfirmationTimeout``
      - yes
    * - ``evse_manager/PowermeterTransactionStartFailed``
      - yes

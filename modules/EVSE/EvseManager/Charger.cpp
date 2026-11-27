@@ -165,6 +165,8 @@ void Charger::run_state_machine() {
     constexpr int max_mainloop_runs = 10;
     int mainloop_runs = 0;
 
+    handle_connector_lock_confirmation();
+
     // run over state machine loop until current_state does not change anymore
     do {
         mainloop_runs++;
@@ -427,6 +429,10 @@ void Charger::run_state_machine() {
                     session_log.evse(false, "EIM Authorization received");
                 }
 
+                if (not connector_lock_confirmation.confirmed_or_start_wait()) {
+                    break;
+                }
+
                 // If we are restarting, the transaction may already be active
                 if (not shared_context.flag_transaction_active) {
                     if (!start_transaction()) {
@@ -558,6 +564,10 @@ void Charger::run_state_machine() {
                 }
                 // Contract / Plug and Charge
             } else if (shared_context.flag_authorized and shared_context.authorized_pnc) {
+
+                if (not connector_lock_confirmation.confirmed_or_start_wait()) {
+                    break;
+                }
 
                 if (not shared_context.flag_transaction_active) {
                     if (!start_transaction()) {
@@ -1457,6 +1467,9 @@ void Charger::process_cp_events_independent(CPEvent cp_event) {
         break;
     case CPEvent::CarUnplugged:
         shared_context.flag_ev_plugged_in = false;
+        // Not in clear_errors_on_unplug(): that also runs when raising this error re-initializes Idle, e.g. for a
+        // captive cable locked without an EV plugged in.
+        error_handling->clear_connector_lock_confirmation_timeout_error();
         break;
     case CPEvent::PowerOff:
         shared_context.contactor_open = true;
@@ -1987,6 +2000,8 @@ void Charger::setup(const SetupConfig& config) {
     config_context.sleep_before_enabling_pwm_hlc_mode_ms = config.sleep_before_enabling_pwm_hlc_mode_ms;
     config_context.session_id_type = config.session_id_type;
     config_context.hlc_charge_loop_without_energy_timeout_s = config.hlc_charge_loop_without_energy_timeout_s;
+    connector_lock_confirmation.set_timeout(std::chrono::milliseconds(
+        config.charge_mode == ChargeMode::AC ? config.connector_lock_confirmation_timeout_ms : 0));
 
     if (config_context.charge_mode == ChargeMode::DC) {
         shared_context.hlc_charging_active = true;
@@ -2011,6 +2026,40 @@ bool Charger::get_authorized_pnc() {
 bool Charger::get_authorized_eim() {
     Everest::scoped_lock_timeout lock(state_machine_mutex, Everest::MutexDescription::Charger_get_authorized_eim);
     return (shared_context.flag_authorized and not shared_context.authorized_pnc);
+}
+
+void Charger::handle_connector_lock_confirmation() {
+    switch (connector_lock_confirmation.poll()) {
+    case ConnectorLockConfirmation::Event::None:
+        return;
+    case ConnectorLockConfirmation::Event::ConfirmedAfterTimeout:
+        // Within a session the error clears on unplug; outside one, e.g. a captive cable locked without an EV
+        // plugged in, nothing else would clear it.
+        if (not shared_context.session_active) {
+            error_handling->clear_connector_lock_confirmation_timeout_error();
+        }
+        return;
+    case ConnectorLockConfirmation::Event::TimedOut:
+        break;
+    }
+
+    session_log.evse(false, "Connector lock not confirmed within timeout");
+    error_handling->raise_connector_lock_confirmation_timeout_error(
+        fmt::format("Connector lock not confirmed within {} ms", connector_lock_confirmation.timeout().count()));
+
+    // Not tied to WaitingForAuthentication: a data link error moves a waiting session through T_step_X1 and
+    // T_step_EF before it returns there.
+    const bool authorization_held_for_lock = shared_context.flag_ev_plugged_in and shared_context.flag_authorized and
+                                             not shared_context.flag_transaction_active;
+    if (not authorization_held_for_lock) {
+        return;
+    }
+    // Dropping the authorization lets the lock open again (if it only locks when authorized). The session itself
+    // ends through the raised error, which also terminates the data link of an ISO 15118 session, so stop_session()
+    // is not called here.
+    signal_simple_event(types::evse_manager::SessionEventEnum::Deauthorized);
+    shared_context.flag_authorized = false;
+    shared_context.authorized_pnc = false;
 }
 
 bool Charger::get_authorized_pnc_ready_for_hlc() {
