@@ -175,9 +175,16 @@ class TestOcpp201CostAndPrice:
         connector_id = 1
 
         probe_module_mock_fn = Mock()
+        final_cost_mock = Mock()
+
+        def on_session_cost(cost):
+            if cost["status"] == "Finished":
+                final_cost_mock(cost)
+            else:
+                probe_module_mock_fn(cost)
 
         probe_module.subscribe_variable(
-            "session_cost", "session_cost", probe_module_mock_fn)
+            "session_cost", "session_cost", on_session_cost)
 
         probe_module.start()
         await probe_module.wait_to_be_ready()
@@ -194,10 +201,12 @@ class TestOcpp201CostAndPrice:
             type=IdTokenTypeEnum.iso14443
         )
 
-        # Three TransactionEvents will be sent: started, updated and ended. The last two have the pricing information.
-        central_system.mock.on_transaction_event.side_effect = [transaction_event_response_started,  # Started
-                                                                transaction_event_response,  # Updated
-                                                                transaction_event_response_ended]  # Ended
+        def on_transaction_event(event_type, **kwargs):
+            return {"Started": transaction_event_response_started,
+                    "Updated": transaction_event_response,
+                    "Ended": transaction_event_response_ended}[event_type]
+
+        central_system.mock.on_transaction_event.side_effect = on_transaction_event
 
         assert await wait_for_and_validate(test_utility, chargepoint_with_pm, "StatusNotification",
                                            call201.StatusNotification(datetime.now().isoformat(),
@@ -234,13 +243,12 @@ class TestOcpp201CostAndPrice:
         received_data['cost_chunks'][0] = {
             'cost': {'value': 5510000}, 'metervalue_to': 0, 'timestamp_to': ANY}
         received_data['status'] = 'Finished'
-        probe_module_mock_fn.reset_mock()
 
         assert await wait_for_and_validate(test_utility, chargepoint_with_pm, "TransactionEvent",
                                            {"eventType": "Ended"})
 
-        await self.await_mock_called(probe_module_mock_fn)
-        probe_module_mock_fn.assert_called_once_with(received_data)
+        await self.await_mock_called(final_cost_mock)
+        final_cost_mock.assert_called_once_with(received_data)
 
     @pytest.mark.asyncio
     @pytest.mark.probe_module

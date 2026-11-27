@@ -30,22 +30,24 @@ active_modules:
         - implementation_id: main
           module_id: token_validator
   ev_manager:
-    module: EvManager
+    module: EvController
     config_module:
-      auto_enable: true
-      auto_exec: false
-      auto_exec_commands: sleep 1;iec_wait_pwr_ready;sleep 1;draw_power_regulated 16,3;sleep 30;unplug
+      hlc_device: auto
+      supported_protocols: ISO15118_2
       connector_id: 1
     connections:
-      ev:
-        - implementation_id: ev
-          module_id: iso15118_car
       ev_board_support:
-        - implementation_id: ev_board_support
-          module_id: connector_1_powerpath
+        - implementation_id: board_support
+          module_id: ev_manager_driver
       slac:
         - implementation_id: ev
           module_id: slac
+  ev_manager_driver:
+    module: EvDriverSim
+    connections:
+      ev_board_support:
+        - module_id: connector_1_powerpath
+          implementation_id: ev_board_support
   energy_manager:
     module: EnergyManager
     config_module:
@@ -129,11 +131,6 @@ active_modules:
       energy_consumer:
         - implementation_id: energy_grid
           module_id: api_sink_1_evsemgr
-  iso15118_car:
-    module: Ev15118
-    config_module:
-      device: auto
-      supported_protocols: ISO15118_2
   iso15118_charger:
     module: Evse15118D20
     config_module:

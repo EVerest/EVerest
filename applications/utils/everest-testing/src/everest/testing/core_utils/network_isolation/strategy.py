@@ -3,7 +3,8 @@
 
 """
 EverestConfigAdjustmentStrategy that rewrites the `device` field in ISO 15118
-modules to use a specific network interface, enabling parallel test execution.
+modules (`hlc_device` in EvController) to use a specific network interface,
+enabling parallel test execution.
 
 Usage:
     @pytest.mark.everest_config_adaptions(NetworkIsolationStrategy("ev_test0", "ev_test0_peer"))
@@ -20,12 +21,18 @@ _EV_SIDE_MODULES = frozenset({"Ev15118", "IsoMux"})
 # EVSE proxy-side modules: listen on the EVSE/proxy-side of the veth pair
 _PROXY_SIDE_MODULES = frozenset({"EvseV2G", "Evse15118D20"})
 
+# EV-facing modules that run ISO 15118 in-process and name the device `hlc_device`
+_EV_SIDE_HLC_MODULES = frozenset({"EvController"})
+
 # All ISO 15118 module types handled by this strategy
-ISO15118_MODULE_TYPES = _EV_SIDE_MODULES | _PROXY_SIDE_MODULES
+ISO15118_MODULE_TYPES = _EV_SIDE_MODULES | _PROXY_SIDE_MODULES | _EV_SIDE_HLC_MODULES
 
 
 class NetworkIsolationStrategy(EverestConfigAdjustmentStrategy):
     """Rewrites `device` in ISO 15118 modules to use dedicated network interfaces.
+
+    EvController names it `hlc_device`. Either key is rewritten only when the
+    config sets it.
 
     This enables multiple ISO 15118 test sessions to run in parallel by assigning
     each test to a separate virtual ethernet (veth) interface pair, avoiding port
@@ -67,7 +74,10 @@ class NetworkIsolationStrategy(EverestConfigAdjustmentStrategy):
 
             config_module = module_def.get("config_module", {})
 
-            if module_type in _EV_SIDE_MODULES:
+            if module_type in _EV_SIDE_HLC_MODULES:
+                if "hlc_device" in config_module:
+                    config_module["hlc_device"] = self._interface_name
+            elif module_type in _EV_SIDE_MODULES:
                 if "device" in config_module:
                     config_module["device"] = self._interface_name
                 if module_type == "IsoMux" and self._proxy_interface_name:

@@ -7,8 +7,7 @@
 # and the EVSE is export-capable. Availability normally arrives from OCPP, driven by
 # a grid_support capability publish, so with this config alone it is never asserted
 # and no AC_DER_* mode is offered. To assert it manually, call set_der_available on
-# the EvseManager after boot but before the EV plugs in (auto_exec_commands below
-# leaves a 20 s window):
+# the EvseManager after boot but before sending EvDriverSim a plug command:
 #
 #   topic:   everest/modules/evse_manager/impl/evse/cmd/set_der_available
 #   payload: {"msg_type":"Cmd","data":{"id":"1","args":{"available":true},
@@ -26,8 +25,8 @@
 # asserting availability the second line is also absent, because AC_DER_SAE never
 # enters the list at all.
 #
-# A full AC DER session is not negotiated here: EvManager starts the EV with
-# AC_BPT. This validates SECC advertising only.
+# The EV defaults to AcIsoD20DerSae and waits for an explicit EvDriverSim plug.
+# To negotiate an ISO session, set ac_hlc_use_5percent to true before startup.
 active_modules:
   iso15118_charger:
     module: Evse15118D20
@@ -37,13 +36,6 @@ active_modules:
       security:
         - module_id: evse_security
           implementation_id: main
-  iso15118_car:
-    module: Ev15118
-    config_module:
-      supported_protocols: ISO15118_20
-      device: auto
-      tls: prefer
-      tls_version: "1.3"
   evse_manager:
     module: EvseManager
     config_module:
@@ -98,22 +90,27 @@ active_modules:
   slac:
     module: SlacSimulator
   ev_manager:
-    module: EvManager
+    module: EvController
     config_module:
+      supported_protocols: ISO15118_20
+      hlc_device: auto
+      tls: prefer
+      tls_version: "1.3"
+      default_session: '{"mode":"AcIsoD20DerSae"}'
       connector_id: 1
-      auto_enable: true
-      auto_exec: true
-      auto_exec_commands: sleep 20;iso_wait_slac_matched;iso_start_v2g_session AC_BPT;iso_wait_pwr_ready;iso_draw_power_regulated 16,3;iso_wait_for_stop 20;iso_wait_v2g_session_stopped;unplug
+    connections:
+      ev_board_support:
+        - module_id: ev_manager_driver
+          implementation_id: board_support
+      slac:
+        - module_id: slac
+          implementation_id: ev
+  ev_manager_driver:
+    module: EvDriverSim
     connections:
       ev_board_support:
         - module_id: connector_1_powerpath
           implementation_id: ev_board_support
-      ev:
-        - module_id: iso15118_car
-          implementation_id: ev
-      slac:
-        - module_id: slac
-          implementation_id: ev
   auth:
     module: Auth
     config_module:

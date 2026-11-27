@@ -1,5 +1,6 @@
-# AC ISO 15118-2 SIL: C++ EVCC (Ev15118) against the EvseV2G SECC, plaintext, EIM.
-# The AC_EVChargeParameter values the EV sends come from the iso2_ac_* options.
+# AC ISO 15118-2 SIL: EvController's in-process EV session against the EvseV2G SECC, plaintext, EIM.
+# The AC_EVChargeParameter EVMaxVoltage is ac_nominal_voltage, EVMaxCurrent max_current_a and
+# EVMinCurrent min_current_a.
 settings:
   telemetry_enabled: true
 active_modules:
@@ -42,21 +43,25 @@ active_modules:
     module: Auth
   ev_manager:
     config_module:
-      auto_enable: true
-      auto_exec: false
-      auto_exec_commands: sleep 3;iso_wait_slac_matched;iso_start_v2g_session AC;iso_wait_pwr_ready;iso_draw_power_regulated 16,3;iso_wait_for_stop 20;iso_wait_v2g_session_stopped;unplug
+      hlc_device: auto
+      response_timeout_ms: 8000
+      supported_protocols: ISO15118_2
+      min_current_a: 6
       connector_id: 1
     connections:
-      ev:
-        - implementation_id: ev
-          module_id: iso15118_car
       ev_board_support:
-        - implementation_id: ev_board_support
-          module_id: connector_1_powerpath
+        - module_id: ev_manager_driver
+          implementation_id: board_support
       slac:
         - implementation_id: ev
           module_id: slac
-    module: EvManager
+    module: EvController
+  ev_manager_driver:
+    module: EvDriverSim
+    connections:
+      ev_board_support:
+        - implementation_id: ev_board_support
+          module_id: connector_1_powerpath
   energy_manager:
     config_module:
       switch_3ph1ph_while_charging_mode: Both
@@ -121,18 +126,6 @@ active_modules:
         - implementation_id: energy_grid
           module_id: connector_1
     module: EnergyNode
-  iso15118_car:
-    config_module:
-      device: auto
-      response_timeout_ms: 8000
-      supported_protocols: ISO15118_2
-      ac_phase_count: 3
-      iso2_ac_e_amount_wh: 60000
-      iso2_ac_ev_max_voltage_v: 400
-      iso2_ac_ev_max_current_a: 16
-      iso2_ac_ev_min_current_a: 6
-    connections: {}
-    module: Ev15118
   iso15118_charger:
     config_module:
       device: auto
@@ -245,10 +238,7 @@ active_modules:
         - id: main
           interface: ev_manager
           type: provide
-      top:
-        - id: ev
-          interface: ISO15118_ev
-          type: requirement
+      top: []
   connector_1:
     position:
       x: 13
@@ -360,18 +350,6 @@ active_modules:
         - id: energy_grid
           interface: energy
           type: provide
-  iso15118_car:
-    position:
-      x: 53
-      y: 23
-    terminals:
-      bottom:
-        - id: ev
-          interface: ISO15118_ev
-          type: provide
-      left: []
-      right: []
-      top: []
   iso15118_charger:
     position:
       x: -5

@@ -64,21 +64,23 @@ active_modules:
     module: Auth
   ev_manager:
     config_module:
-      auto_enable: true
-      auto_exec: false
-      auto_exec_commands: sleep 1;iec_wait_pwr_ready;sleep 1;draw_power_regulated 16,3;sleep 30;unplug
+      hlc_device: auto
+      supported_protocols: ISO15118_2
       connector_id: 1
     connections:
-      ev:
-        - implementation_id: ev
-          module_id: iso15118_car
       ev_board_support:
-        - implementation_id: ev_board_support
-          module_id: connector_1_powerpath
+        - module_id: ev_manager_driver
+          implementation_id: board_support
       slac:
         - implementation_id: ev
           module_id: slac
-    module: EvManager
+    module: EvController
+  ev_manager_driver:
+    module: EvDriverSim
+    connections:
+      ev_board_support:
+        - module_id: connector_1_powerpath
+          implementation_id: ev_board_support
   energy_manager:
     config_module:
       switch_3ph1ph_while_charging_mode: Both
@@ -143,12 +145,6 @@ active_modules:
         - implementation_id: energy_grid
           module_id: eebus_energy_sink
     module: EnergyNode
-  iso15118_car:
-    config_module:
-      device: auto
-      supported_protocols: ISO15118_2
-    connections: {}
-    module: Ev15118
   iso15118_charger:
     config_module:
       device: auto

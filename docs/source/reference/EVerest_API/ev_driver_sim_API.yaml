@@ -1,0 +1,446 @@
+---
+asyncapi: 3.0.0
+id: 'pionix:de:everest:ev_driver_sim_API'
+info:
+  title: 'EVerest API definition for the EV driver simulation'
+  version: 1.0.0
+  description: >-
+    API for EVerest API clients that drive an EvDriverSim, the simulated world around an
+    EvController in software-in-the-loop setups. The client plugs and unplugs the car, injects
+    electrical faults and runs preset scenarios. Hardware setups use no EvDriverSim.
+    Commands without arguments carry an empty JSON object ({}) as payload.
+    Every command is acknowledged once on e2m/command_ack.
+
+  license:
+    name: Apache-2.0
+    url: https://opensource.org/licenses/Apache-2.0
+  tags:
+    - name: EVerest
+    - name: ev_driver_sim
+servers:
+  default:
+    pathname: 'everest_api/1/ev_driver_sim/{module_id}'
+    host: 'localhost:1883'
+    description: default local MQTT
+    protocol: mqtt
+    variables:
+      module_id:
+        description: The ID of the module as defined in the EVerest config file.
+defaultContentType: application/json
+
+
+channels:
+  ########## ev_driver_sim
+  send_plug:
+    address: 'm2e/plug'
+    messages:
+      send_plug:
+        $ref: '#/components/messages/send_plug'
+  send_unplug:
+    address: 'm2e/unplug'
+    messages:
+      send_unplug:
+        $ref: '#/components/messages/send_unplug'
+  send_inject_fault:
+    address: 'm2e/inject_fault'
+    messages:
+      send_inject_fault:
+        $ref: '#/components/messages/send_inject_fault'
+  send_clear_fault:
+    address: 'm2e/clear_fault'
+    messages:
+      send_clear_fault:
+        $ref: '#/components/messages/send_clear_fault'
+  send_run_scenario:
+    address: 'm2e/run_scenario'
+    messages:
+      send_run_scenario:
+        $ref: '#/components/messages/send_run_scenario'
+
+  receive_world_state:
+    address: 'e2m/world_state'
+    messages:
+      receive_world_state:
+        $ref: '#/components/messages/receive_world_state'
+  receive_command_ack:
+    address: 'e2m/command_ack'
+    messages:
+      receive_command_ack:
+        $ref: '#/components/messages/receive_command_ack'
+  receive_scenario_event:
+    address: 'e2m/scenario_event'
+    messages:
+      receive_scenario_event:
+        $ref: '#/components/messages/receive_scenario_event'
+
+  receive_heartbeat:
+    address: 'e2m/heartbeat'
+    messages:
+      receive_heartbeat:
+        $ref: '#/components/messages/receive_heartbeat'
+  send_communication_check:
+    address: 'm2e/communication_check'
+    messages:
+      send_communication_check:
+        $ref: '#/components/messages/send_communication_check'
+
+
+
+operations:
+  ########## ev_driver_sim
+  send_plug:
+    title: 'Send plug'
+    action: send
+    channel:
+      $ref: '#/channels/send_plug'
+    description: 'Direction: Module to EVerest'
+  send_unplug:
+    title: 'Send unplug'
+    action: send
+    channel:
+      $ref: '#/channels/send_unplug'
+    description: 'Direction: Module to EVerest'
+  send_inject_fault:
+    title: 'Send inject fault'
+    action: send
+    channel:
+      $ref: '#/channels/send_inject_fault'
+    description: 'Direction: Module to EVerest'
+  send_clear_fault:
+    title: 'Send clear fault'
+    action: send
+    channel:
+      $ref: '#/channels/send_clear_fault'
+    description: 'Direction: Module to EVerest'
+  send_run_scenario:
+    title: 'Send run scenario'
+    action: send
+    channel:
+      $ref: '#/channels/send_run_scenario'
+    description: 'Direction: Module to EVerest'
+
+  receive_world_state:
+    title: 'Receive world state'
+    action: receive
+    channel:
+      $ref: '#/channels/receive_world_state'
+    description: 'Direction: EVerest to Module'
+  receive_command_ack:
+    title: 'Receive command acknowledgement'
+    action: receive
+    channel:
+      $ref: '#/channels/receive_command_ack'
+    description: 'Direction: EVerest to Module'
+  receive_scenario_event:
+    title: 'Receive scenario event'
+    action: receive
+    channel:
+      $ref: '#/channels/receive_scenario_event'
+    description: 'Direction: EVerest to Module'
+
+  receive_heartbeat:
+    title: 'Receive heartbeat'
+    action: receive
+    channel:
+      $ref: '#/channels/receive_heartbeat'
+    description: 'Direction: EVerest to Module'
+  send_communication_check:
+    title: 'Send communication check'
+    action: send
+    channel:
+      $ref: '#/channels/send_communication_check'
+    description: 'Direction: Module to EVerest'
+
+
+
+components:
+  messages:
+    ########## ev_driver_sim
+    send_plug:
+      name: send_plug
+      title: 'Send plug'
+      summary: >-
+        Passes the pilot to the car and announces A. Rejected with reason "already plugged" while the
+        pilot is passed.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/Empty'
+      examples:
+        - summary: "Plug the car."
+          payload: {}
+    send_unplug:
+      name: send_unplug
+      title: 'Send unplug'
+      summary: >-
+        Withholds the pilot, commands board CP A and announces the disconnection. Clears an active
+        CP E fault. Rejected with reason "already unplugged" while the pilot is withheld.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/Empty'
+      examples:
+        - summary: "Unplug the car."
+          payload: {}
+    send_inject_fault:
+      name: send_inject_fault
+      title: 'Send inject fault'
+      summary: >-
+        Injects an electrical fault. Only one fault can be active; a second injection is rejected.
+        Diode and RCD faults may be injected while unplugged and stay set across unplug. CP E is
+        rejected with reason "unplugged" while the pilot is withheld.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/InjectFaultParams'
+      examples:
+        - summary: "Inject a 30 mA residual current."
+          payload:
+            type: RcdError
+            rcd_mA: 30.0
+            message: "test"
+    send_clear_fault:
+      name: send_clear_fault
+      title: 'Send clear fault'
+      summary: >-
+        Undoes the active fault and restores the car's last commanded value: the diode flag, the RCD
+        current (0.1 mA when the car never set one), or the CP state. With no active fault it does
+        nothing.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/Empty'
+      examples:
+        - summary: "Clear the active fault."
+          payload: {}
+    send_run_scenario:
+      name: send_run_scenario
+      title: 'Send run scenario'
+      summary: >-
+        Runs a preset scenario. Rejected until the paired EvController's heartbeat was seen, while
+        another preset is pending or running, and while the pilot is passed. A rejection is published
+        both as a Rejected command_ack and as a Rejected scenario_event. The preset configures the
+        car's session, waits up to 10 s for its Accepted acknowledgement, then plugs and runs its steps.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/RunScenarioParams'
+      examples:
+        - summary: "Run AcIecBasic and stop after 1 s."
+          payload:
+            name: AcIecBasic
+            timing:
+              stop_after_ms: 1000
+
+    receive_world_state:
+      name: receive_world_state
+      title: 'Receive world state'
+      summary: The pilot gate and the active fault, published at readiness and on every change.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/WorldState'
+      examples:
+        - summary: "Plugged with a diode fault."
+          payload:
+            pilot: Passed
+            fault: DiodeFail
+    receive_command_ack:
+      name: receive_command_ack
+      title: 'Receive command acknowledgement'
+      summary: The result of a command. One acknowledgement is published for every command, including malformed ones.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/CommandAck'
+      examples:
+        - summary: "CP E injection rejected while unplugged."
+          payload:
+            command: inject_fault
+            status: Rejected
+            reason: "unplugged"
+    receive_scenario_event:
+      name: receive_scenario_event
+      title: 'Receive scenario event'
+      summary: The progress of a preset scenario.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/ScenarioEvent'
+      examples:
+        - summary: "A step fired."
+          payload:
+            name: AcIecBasic
+            kind: StepFired
+            message: "stop_session"
+
+    receive_heartbeat:
+      name: receive_heartbeat
+      title: 'Receive heartbeat'
+      summary: Heartbeat produced by EVerest as configured via cfg_heartbeat_interval_ms in the EVerest configuration
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/HeartBeatId'
+      examples:
+        - summary: "Heartbeat"
+          payload: 42
+
+    send_communication_check:
+      name: send_communication_check
+      title: 'Send communication check'
+      summary: Signal to EVerest that communication is good or check shall be stopped
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/CommunicationCheck'
+      examples:
+        - summary: ""
+          payload:
+            true
+
+
+  schemas:
+    Empty:
+      description: Empty object. Commands without arguments carry it as payload.
+      type: object
+    WorldFault:
+      description: |
+        Electrical fault of the simulated world.
+        - DiodeFail: sets the board's diode failure flag.
+        - RcdError: sets a residual current.
+        - CpErrorE: commands board CP E; the board's echo delivers E to the car.
+      type: string
+      enum:
+        - DiodeFail
+        - RcdError
+        - CpErrorE
+    InjectFaultParams:
+      description: Fault to inject.
+      type: object
+      required:
+        - type
+      properties:
+        type:
+          $ref: '#/components/schemas/WorldFault'
+        rcd_mA:
+          description: Residual current in mA. Required for RcdError, where it must be finite and nonnegative.
+          type: number
+          minimum: 0
+        message:
+          description: Annotation of the caller.
+          type: string
+    PilotState:
+      description: 'Pilot gate. Withheld: the car is unplugged. Passed: the car is plugged.'
+      type: string
+      enum:
+        - Withheld
+        - Passed
+    WorldState:
+      description: State of the simulated world.
+      type: object
+      required:
+        - pilot
+      properties:
+        pilot:
+          $ref: '#/components/schemas/PilotState'
+        fault:
+          $ref: '#/components/schemas/WorldFault'
+    CommandAckStatus:
+      description: Result of a command.
+      type: string
+      enum:
+        - Accepted
+        - Rejected
+    CommandAck:
+      description: Acknowledgement of a command.
+      type: object
+      required:
+        - command
+        - status
+      properties:
+        command:
+          description: The command suffix, for example inject_fault.
+          type: string
+        status:
+          $ref: '#/components/schemas/CommandAckStatus'
+        reason:
+          description: Why the command was rejected.
+          type: string
+    ScenarioName:
+      description: Preset scenario. The module documentation lists the steps of each.
+      type: string
+      enum:
+        - AcIecBasic
+        - AcIecPauseResume
+        - AcIsoBasic
+        - AcIsoD20Basic
+        - DcIsoBasic
+        - DcIsoD20Basic
+        - DcIsoPauseResume
+        - DcIsoBpt
+        - DcIsoMcs
+        - DiodeFailSmoke
+        - AcIecRampUp
+        - DcIsoTaper
+    TimingOverride:
+      description: Offset in ms from the preset start.
+      type: integer
+      minimum: 1
+      maximum: 2147483647
+    ScenarioTimingOverrides:
+      description: >-
+        Offsets that replace preset defaults. Each must be positive, apply to a phase the preset
+        contains, and keep the timed steps in order. An omitted field keeps its preset default.
+      type: object
+      properties:
+        pause_at_ms:
+          $ref: '#/components/schemas/TimingOverride'
+        resume_at_ms:
+          $ref: '#/components/schemas/TimingOverride'
+        stop_after_ms:
+          $ref: '#/components/schemas/TimingOverride'
+        unplug_after_ms:
+          $ref: '#/components/schemas/TimingOverride'
+        fault_at_ms:
+          $ref: '#/components/schemas/TimingOverride'
+        clear_fault_at_ms:
+          $ref: '#/components/schemas/TimingOverride'
+    RunScenarioParams:
+      description: Preset to run.
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          $ref: '#/components/schemas/ScenarioName'
+        timing:
+          $ref: '#/components/schemas/ScenarioTimingOverrides'
+    ScenarioEventKind:
+      description: |
+        Progress of a preset.
+        - Started: the car accepted the configuration and the initial plug succeeded.
+        - StepFired: a world step succeeded or an intent was published.
+        - Finished: every step succeeded or was dispatched. It does not mean the car finished charging.
+        - Rejected: the preset was refused or failed; remaining steps are canceled.
+      type: string
+      enum:
+        - Started
+        - StepFired
+        - Finished
+        - Rejected
+    ScenarioEvent:
+      description: A preset scenario event.
+      type: object
+      required:
+        - name
+        - kind
+      properties:
+        name:
+          $ref: '#/components/schemas/ScenarioName'
+        kind:
+          $ref: '#/components/schemas/ScenarioEventKind'
+        message:
+          description: The step that fired, or the reason of a rejection.
+          type: string
+
+    CommunicationCheck:
+      type: boolean
+      description: >-
+        Send true at least every cfg_communication_check_to_s seconds to signal that the client is alive, otherwise
+        EVerest raises a CommunicationFault, which the next message clears. Send false to stop the check until the
+        module restarts.
+    HeartBeatId:
+      type: integer
+      minimum: 0
+      description: "64bit unsigned integer. The id of every heartbeat increases by 1 and overflows when the maximum representable value is reached"

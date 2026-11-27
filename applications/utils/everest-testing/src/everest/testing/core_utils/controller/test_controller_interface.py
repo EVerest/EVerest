@@ -29,16 +29,20 @@ class TestController():
         """
         raise NotImplementedError()
 
-    def plug_in_ac_iso(self, payment_type, connector_id):
+    def plug_in_ac_iso(self, connector_id=1, payment_type="", iso15118_20=False):
         """
         Plug in of an electric vehicle to the chargepoint using AC ISO15118.
+        payment_type must be nonempty and accepted by the controller; otherwise raises ValueError.
+        iso15118_20 requests an ISO 15118-20 session.
         """
         raise NotImplementedError()
 
-    def plug_in_dc_iso(self, payment_type, connector_id, energy_mode):
+    def plug_in_dc_iso(self, connector_id=1, payment_type="", energy_mode="DC", iso15118_20=False):
         """
         Plug in of an electric vehicle to the chargepoint using DC ISO15118.
+        payment_type must be nonempty and accepted by the controller; otherwise raises ValueError.
         energy_mode is the EvManager iso_start_v2g_session energy mode, e.g. DC or dc_bpt.
+        iso15118_20 requests an ISO 15118-20 session; dc_bpt always runs one.
         """
         raise NotImplementedError()
 
@@ -78,9 +82,9 @@ class TestController():
         """
         raise NotImplementedError()
 
-    def plug_out(self):
+    def plug_out(self, connector_id=1, abrupt=False):
         """
-        Plug out of an electric vehicle from the chargepoint.
+        Unplug after ending an active session cleanly. Use abrupt=True to pull the plug mid-session.
         """
         raise NotImplementedError()
 

@@ -14,43 +14,19 @@ from everest.testing.core_utils.controller.test_controller_interface import (
 from everest.testing.core_utils.everest_core import EverestCore
 from everest.testing.core_utils.probe_module import ProbeModule
 
-from ev_iso15118d20_common import _ev_device_adaptions, wait_for_call, wait_for_match
+from ev_iso15118d20_common import (
+    WATT_PF_DIRECTIVES,
+    EvManagerAdjustmentStrategy,
+    _ev_device_adaptions,
+    wait_for_call,
+    wait_for_match,
+)
 
 
 # The SECC publishes this literal for any negotiated AC ISO 15118-20 namespace, DER included.
 D20_AC_PROTOCOL = "ISO15118-20:AC and similar"
 
 AC_DER_IEC_SERVICE = "AC_DER_IEC"
-
-# The one grid_support directive the probe pushes into the SECC. Evse15118D20 relays WattPF onto the
-# IEC WattCosPhiMode control function, so WattCosPhiMode is the only bit the SECC's AC_DER_IEC
-# DERControlFunctions offer carries. config-sil-ac-der-d20.yaml declares WattCosPhiMode on the
-# EV, so the offer is within what the EV supports and the strict
-# der_stop_on_unsupported_functions path accepts it instead of stopping the session.
-#
-# x is a percentage of the EVSE maximum charge power, y a cos phi (its sign selects the excitation),
-# so this curve needs no EVSE reactive-power base to de-normalize.
-WATT_PF_DIRECTIVES = {
-    "evse_id": 1,
-    "directives": [
-        {
-            "id": "sil-der-watt-pf",
-            "directive_type": "WattPF",
-            "priority": 0,
-            "is_default": False,
-            "source": "SIL probe",
-            "received_at": "2026-01-01T00:00:00Z",
-            "curve": {
-                "y_unit": "Not_Applicable",
-                "curve_data": [
-                    {"x": 0.0, "y": 1.0},
-                    {"x": 50.0, "y": 0.97},
-                    {"x": 100.0, "y": 0.9},
-                ],
-            },
-        }
-    ],
-}
 
 # Driven from the probe rather than from auto_exec, so the session starts only after the SECC has
 # been told about the DER wiring. The chain is event-gated throughout (iso_wait_*).
@@ -60,14 +36,6 @@ SESSION_COMMANDS = (
 )
 
 
-# EvseManager::ready() builds its initial AC energy transfer list with der_available hardcoded to
-# false (get_supported_ac_energy_transfers(..., false)), so AC_DER_IEC never reaches the SECC's
-# offered services and no AC DER session can be negotiated. That gate is deliberate: DER stays
-# unreleased until it has been fully tested. Until it is lifted this test cannot pass, so it is
-# skipped rather than left red. Drop this marker when EvseManager passes the real der_available.
-@pytest.mark.skip(
-    reason="AC_DER_IEC is gated off until EvseManager reports der_available in its initial energy transfers"
-)
 @pytest.mark.asyncio
 @pytest.mark.xdist_group(name="ISO15118")
 @pytest.mark.probe_module(
@@ -81,7 +49,16 @@ SESSION_COMMANDS = (
     }
 )
 @pytest.mark.everest_core_config("config-sil-ac-der-d20.yaml")
-@pytest.mark.everest_config_adaptions(*_ev_device_adaptions())
+# EvController declares DER functions as der_iec_functions, which Ev15118 takes as flags.
+@pytest.mark.everest_config_adaptions(
+    EvManagerAdjustmentStrategy(
+        der_watt_cos_phi_mode=True,
+        der_volt_var_mode=True,
+        der_dso_q_setpoint_provision=True,
+        der_dso_cos_phi_setpoint_provision=False,
+    ),
+    *_ev_device_adaptions(),
+)
 async def test_ev_iso15118d20_ac_der_iec_session(
     test_controller: TestController, everest_core: EverestCore
 ):
@@ -102,15 +79,9 @@ async def test_ev_iso15118d20_ac_der_iec_session(
     declares, reaching the charge loop at all exercises the intersection rule: an EV that mishandled
     the offered mask would have stopped the session here.
 
-    What the gate does not prove:
-      * The exact negotiated control-function set. The EV only logs it. The SECC maps its copy into
-        ChargingNeeds.der_charging_parameters.ev_supported_dercontrol, but the generated to_json for
-        DERChargingParameters replaces that list with an empty array whenever it is the first present
-        optional field, so the value never reaches the wire. Asserting the intersection directly
-        needs either a published variable on ISO15118_ev carrying the EV's negotiated mask, or that
-        serializer defect fixed.
-      * Directive application. The SECC does send DerControl in the charge loop, but Ev15118
-        only logs it; no variable carries it.
+    Ev15118 publishes the negotiated function set on der_negotiated_functions, and the gate checks
+    that it is exactly WattCosPhiMode. It does not prove directive application: Ev15118 publishes
+    the control blocks it receives but does not execute them.
     """
     test_controller.start()
     probe_module = ProbeModule(everest_core.get_runtime_session())
@@ -122,6 +93,7 @@ async def test_ev_iso15118d20_ac_der_iec_session(
     sim_enabled_mock = Mock()
     power_ready_mock = Mock()
     finished_mock = Mock()
+    negotiated_mock = Mock()
 
     probe_module.subscribe_variable("charger", "selected_protocol", selected_protocol_mock)
     probe_module.subscribe_variable("charger", "selected_service_parameters", selected_service_mock)
@@ -130,6 +102,7 @@ async def test_ev_iso15118d20_ac_der_iec_session(
     probe_module.subscribe_variable("car_sim", "enabled", sim_enabled_mock)
     probe_module.subscribe_variable("ev", "ev_power_ready", power_ready_mock)
     probe_module.subscribe_variable("ev", "v2g_session_finished", finished_mock)
+    probe_module.subscribe_variable("ev", "der_negotiated_functions", negotiated_mock)
 
     der_available_result = await probe_module.call_command("evse_manager", "set_der_available", {"available": True})
     assert der_available_result == "Accepted", (
@@ -182,5 +155,8 @@ async def test_ev_iso15118d20_ac_der_iec_session(
 
     await wait_for_call(power_ready_mock, timeout=30)
     assert power_ready_mock.call_args[0][0] is True, "ev_power_ready published without a true value"
+
+    negotiated = await wait_for_match(negotiated_mock, lambda value: value["flavor"] == "AC_DER_IEC")
+    assert negotiated.get("iec_functions") == ["WattCosPhiMode"], negotiated
 
     await wait_for_call(finished_mock, timeout=40)

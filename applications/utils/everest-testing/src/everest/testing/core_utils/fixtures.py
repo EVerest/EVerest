@@ -16,6 +16,7 @@ from ._configuration.everest_environment_setup import \
     EverestEnvironmentEvseSecurityConfiguration, EverestEnvironmentPersistentStoreConfiguration
 from everest.testing.core_utils.common import close_mqtt_client
 from everest.testing.core_utils.controller.everest_test_controller import EverestTestController
+from everest.testing.core_utils.controller.evctl_test_controller import EvControllerTestController
 from everest.testing.core_utils.everest_core import EverestCore
 from everest.testing.core_utils.network_isolation import (
     NetworkIsolationStrategy,
@@ -177,6 +178,18 @@ def test_controller(request, tmp_path, everest_core) -> EverestTestController:
 
     # FIXME (aw): proper life time management, shouldn't the fixure start and stop?
     test_controller.stop()
+
+@pytest.fixture
+def evctl_test_controller(everest_core: EverestCore) -> EvControllerTestController:
+    """Fixture that yields an EvControllerTestController bound to the
+    everest_core fixture; tears down via stop().
+    """
+
+    controller = EvControllerTestController(everest_core)
+
+    yield controller
+
+    controller.stop()
 
 @pytest.fixture
 def connected_mqtt_client(everest_core: EverestCore) -> mqtt.Client:

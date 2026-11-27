@@ -1,5 +1,5 @@
-# AC ISO 15118-20 SIL. iso_start_v2g_session AC_BPT selects BPT, as auto_exec_commands does; a plain
-# AC start negotiates AC.
+# AC ISO 15118-20 SIL. An EvController AcIsoD20 session with bpt params selects AC_BPT; without them
+# it negotiates AC.
 active_modules:
   iso15118_charger:
     module: Evse15118D20
@@ -9,13 +9,6 @@ active_modules:
       security:
         - module_id: evse_security
           implementation_id: main
-  iso15118_car:
-    module: Ev15118
-    config_module:
-      supported_protocols: ISO15118_20
-      device: auto
-      tls: prefer
-      tls_version: "1.3"
   evse_manager:
     module: EvseManager
     config_module:
@@ -69,22 +62,26 @@ active_modules:
   slac:
     module: SlacSimulator
   ev_manager:
-    module: EvManager
+    module: EvController
     config_module:
+      supported_protocols: ISO15118_20
+      hlc_device: auto
+      tls: prefer
+      tls_version: "1.3"
       connector_id: 1
-      auto_enable: true
-      auto_exec: false
-      auto_exec_commands: sleep 3;iso_wait_slac_matched;iso_start_v2g_session AC_BPT;iso_wait_pwr_ready;iso_draw_power_regulated 16,3;iso_wait_for_stop 20;iso_wait_v2g_session_stopped;unplug
+    connections:
+      ev_board_support:
+        - module_id: ev_manager_driver
+          implementation_id: board_support
+      slac:
+        - module_id: slac
+          implementation_id: ev
+  ev_manager_driver:
+    module: EvDriverSim
     connections:
       ev_board_support:
         - module_id: connector_1_powerpath
           implementation_id: ev_board_support
-      ev:
-        - module_id: iso15118_car
-          implementation_id: ev
-      slac:
-        - module_id: slac
-          implementation_id: ev
   auth:
     module: Auth
     config_module:

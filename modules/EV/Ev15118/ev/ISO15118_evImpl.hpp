@@ -34,7 +34,7 @@
 #include <iso15118/ev/params/iso2_ac.hpp>
 #include <iso15118/message/shared_datatypes.hpp>
 
-#include "contract_store.hpp"
+#include <everest/iso15118_ev_session/session_setup.hpp>
 // ev@75ac1216-19eb-4182-a85c-820f1fc2c091:v1
 
 namespace module {
@@ -136,23 +136,19 @@ private:
     everest::lib::util::monitor<SessionState> session;
     std::thread worker;
 
-    // HLC interface resolved once in ready(); "auto" is replaced by the picked device.
-    std::string hlc_device;
-    // MAC of hlc_device, the ISO 15118-2 / DIN EVCCID. Empty keeps the library default.
-    std::optional<std::array<uint8_t, 6>> evcc_mac;
+    // The configuration the shared session setup reads, from the module config as it is now.
+    everest::lib::iso15118_ev::VehicleConfig vehicle_config() const;
+    // Resolved once: the SAE profile in init(), which fails on a file that does not parse, the rest in
+    // ready(), which fails on an invalid supported_protocols list. "auto" is replaced by the picked
+    // device, and the PnC material is copied per session, so no file IO ever runs under the session
+    // monitor.
+    everest::lib::iso15118_ev::Vehicle vehicle;
     // make_ev_config is const and runs per session; warn about PnC-without-TLS only once.
     mutable bool pnc_without_tls_warned{false};
-    // Configured PnC material read once in ready(); copied per session. Static config, so no file IO
-    // ever runs under the session monitor.
-    iso15118::ev::d2::PnCConfig pnc_material;
-    // supported_protocols in SAP priority order, parsed once in ready(), which fails on an invalid list.
-    std::vector<iso15118::ProtocolId> protocols;
     // False until ready() starts the worker; start_charging fails until then. Stored last in
-    // ready() with release ordering. hlc_device, evcc_mac, pnc_material, protocols and sae_profile
-    // are immutable once it is true, so a handler that reads them loads it first, with acquire.
+    // ready() with release ordering. vehicle is immutable once it is true, so a
+    // handler that reads them loads it first, with acquire.
     std::atomic<bool> worker_started{false};
-    // Parsed once in init(), which fails on a file that does not parse.
-    iso15118::ev::d20::der::SaeInverterProfile sae_profile;
 
     void session_worker();
     void recover_worker_state() noexcept;
@@ -165,16 +161,10 @@ private:
     // end_session's work for a caller that holds the session lock; true when it cancelled a
     // requested session, whose worker the caller wakes once the lock is released.
     static bool end_session_locked(SessionState& state, ControllerAction action, bool drop_paused);
-    // pnc_material with the contract in pnc_contract_store_dir presented instead of the configured
-    // one when it is complete and valid. Reads files, so it runs before taking the session lock.
-    iso15118::ev::d2::PnCConfig session_pnc_material() const;
-    // Read for each session before the session lock is taken, so no file IO runs under it.
-    struct SessionFiles {
-        iso15118::ev::d2::PnCConfig pnc;
-        std::string key_password;
-    };
-    // Caller holds the session lock; reads energy_service, paused and cp_c_or_d from `state`.
-    iso15118::ev::config::EvConfig make_ev_config(const SessionState& state, const SessionFiles& files) const;
+    // Caller holds the session lock; reads energy_service, paused and cp_c_or_d from `state`. The files
+    // are read for each session before the session lock is taken, so no file IO runs under it.
+    iso15118::ev::config::EvConfig make_ev_config(const SessionState& state,
+                                                  const everest::lib::iso15118_ev::SessionFiles& files) const;
     iso15118::ev::feedback::Callbacks make_callbacks();
     // ev@3370e4dd-95f4-47a9-aaec-ea76f34a66c9:v1
 };

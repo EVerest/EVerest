@@ -1,0 +1,43 @@
+stateDiagram-v2
+    direction LR
+
+    [*] --> Disabled
+
+    Disabled --> Unplugged : Enable
+    Unplugged --> Disabled : Disable
+    Plugged --> Disabled : Disable
+    Charging --> Disabled : Disable
+
+    Plugged --> Unplugged : BspEvent(Disconnected)
+
+    state Active <<choice>>
+    Plugged --> Active
+    Active --> Charging : see ISO / AC IEC diagrams
+
+    Unplugged --> Plugged : A/B/C presence edge or present on entry
+    Active --> ChargerFault : BspEvent(E/F)
+    Unplugged --> ChargerFault : BspEvent(E/F), start pending
+    ChargerFault --> Plugged : BspEvent(A) / duty in (4,97), fresh session
+    ChargerFault --> Unplugged : BspEvent(Disconnected)
+    ChargerFault --> Disabled : Disable
+
+    note right of ChargerFault
+        E/F in Plugged, SlacMatching, V2GNegotiating,
+        BcbToggling, Charging, ChargingPwmPaused,
+        Paused or Stopping, or in Unplugged with a start
+        pending, is a charger fault: abort ISO, disable power,
+        set CP B, reset SLAC, then report it on e2m/fault.
+        Repeated E/F is ignored.
+    end note
+
+    Plugged --> Faulted : InternalFault
+    Charging --> Faulted : InternalFault
+    Faulted --> Unplugged : BspEvent(Disconnected)
+
+    note right of Disabled
+        Every non-Faulted active state accepts Disable
+        and routes to Disabled (SlacMatching,
+        V2GNegotiating, BcbToggling, Paused, Stopping,
+        ChargingPwmPaused too, not just the arrows
+        shown). Faulted ignores Disable.
+    end note
