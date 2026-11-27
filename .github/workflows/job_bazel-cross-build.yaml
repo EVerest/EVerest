@@ -12,6 +12,21 @@ on:
         description: 'Human-readable platform name for display'
         required: true
         type: string
+      ref:
+        description: 'The commit or branch to check out, the triggering one when empty'
+        required: false
+        default: ''
+        type: string
+      fail_on_build_failure:
+        description: 'Whether a failed build fails the job; when false, the step "Build failed" marks it'
+        required: false
+        default: true
+        type: boolean
+      save_repo_cache:
+        description: 'Whether to save the bazel repo cache on main after a cache miss'
+        required: false
+        default: true
+        type: boolean
 jobs:
   bazel-cross-build:
     name: build
@@ -22,6 +37,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
         with:
+          ref: ${{ inputs.ref }}
           persist-credentials: false
       - name: Authenticate GitHub downloads
         env:
@@ -51,14 +67,21 @@ jobs:
       - name: Record build start
         run: echo "BAZEL_BUILD_START=$(date +%s)" >> "$GITHUB_ENV"
       - name: Build all
+        id: build
+        continue-on-error: ${{ !inputs.fail_on_build_failure }}
         env:
           PLATFORM: ${{ inputs.platform }}
         run: >
           bazelisk build --config=ci "--config=${PLATFORM}" //...
           "--platforms=//third-party/bazel/toolchains:${PLATFORM}"
           --@bazel_tools//tools/test:incompatible_use_default_test_toolchain=false
+      - name: Build failed
+        if: ${{ steps.build.outcome == 'failure' }}
+        env:
+          PLATFORM: ${{ inputs.platform }}
+        run: echo "::error::the Bazel cross build for $PLATFORM failed"
       - name: Save bazel repo cache
-        if: ${{ github.ref == 'refs/heads/main' && steps.repo-cache.outputs.cache-hit != 'true' }}
+        if: ${{ inputs.save_repo_cache && github.ref == 'refs/heads/main' && steps.repo-cache.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@v6
         with:
           path: "~/.cache/bazel-repo-cache"

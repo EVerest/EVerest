@@ -7,7 +7,7 @@ import subprocess
 import sys
 import unittest
 
-from himalayas_record.runs import build_outcome, cross_targets, native_targets, pick_run
+from himalayas_record.runs import CROSS_FAILED_STEP, build_outcome, cross_targets, native_targets, pick_run
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 TESTDATA = os.path.join(HERE, "testdata")
@@ -173,6 +173,9 @@ class NativeTargetsTest(unittest.TestCase):
             [{"target": "x86_64-linux-gnu", "status": "passed", "toolchain": TOOLCHAIN}],
         )
 
+    def test_without_toolchain(self):
+        self.assertEqual(native_targets(load("jobs-main-push.json"), None), [{"target": "x86_64-linux-gnu", "status": "passed"}])
+
     def test_missing_cmake_job(self):
         self.assertEqual(native_targets(without_jobs(load("jobs-main-push.json"), "CMake GCC /"), TOOLCHAIN), [])
 
@@ -217,6 +220,16 @@ class CrossTargetsTest(unittest.TestCase):
             job = {"name": f"Bazel Cross ({platform}) / build", "conclusion": "success", "steps": []}
             with self.subTest(platform=platform), self.assertRaises(ValueError):
                 cross_targets(cross_jobs(job), {platform: TOOLCHAIN})
+
+    def test_successful_job_with_build_failed_step_is_failed(self):
+        steps = [{"name": "Build all", "conclusion": "failure"}, {"name": CROSS_FAILED_STEP, "conclusion": "success"}]
+        jobs_json = cross_jobs({"name": "Bazel Cross (aarch64-linux-gnu) / build", "conclusion": "success", "steps": steps})
+        self.assertEqual([t["status"] for t in cross_targets(jobs_json, CROSS_TOOLCHAINS)], ["failed"])
+
+    def test_skipped_build_failed_step_keeps_passed(self):
+        steps = [{"name": "Build all", "conclusion": "success"}, {"name": CROSS_FAILED_STEP, "conclusion": "skipped"}]
+        jobs_json = cross_jobs({"name": "Bazel Cross (aarch64-linux-gnu) / build", "conclusion": "success", "steps": steps})
+        self.assertEqual([t["status"] for t in cross_targets(jobs_json, CROSS_TOOLCHAINS)], ["passed"])
 
     def test_no_cross_jobs(self):
         self.assertEqual(cross_targets(load("jobs-main-push.json"), {}), [])
@@ -295,10 +308,10 @@ class CliTest(unittest.TestCase):
                 self.assertEqual((result.returncode, result.stdout), (2, ""))
                 self.assertIn("--cross-toolchain", result.stderr)
 
-    def test_targets_needs_toolchain(self):
+    def test_targets_without_toolchain(self):
         result = self.run_cli("targets", stdin_name="jobs-main-push.json")
-        self.assertEqual((result.returncode, result.stdout), (2, ""))
-        self.assertIn("--toolchain", result.stderr)
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(json.loads(result.stdout), [{"target": "x86_64-linux-gnu", "status": "passed"}])
 
     def test_unknown_command_is_a_usage_error(self):
         result = self.run_cli("frobnicate", stdin_name="jobs-main-push.json")

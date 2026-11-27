@@ -11,11 +11,19 @@ NATIVE_TARGET = "x86_64-linux-gnu"
 CROSS_JOB = re.compile(r"Bazel Cross \(([^)]+)\) / ")
 PLATFORM_PATTERN = re.compile(r"[a-z0-9_]+-[a-z0-9]+-[a-z0-9]+")
 CROSS_STATUSES = {"success": "passed", "skipped": "skipped"}
+CROSS_FAILED_STEP = "Build failed"
 
 
 def pick_run(runs_json: dict, sha: str, event: str) -> dict | None:
     runs = [run for run in runs_json["workflow_runs"] if run["head_sha"] == sha and run["event"] == event]
     return max(runs, key=lambda run: (run.get("run_started_at") or "", run["created_at"]), default=None)
+
+
+def _build_target(triple: str, status: str, toolchain: str | None) -> dict:
+    target = {"target": triple, "status": status}
+    if toolchain is not None:
+        target["toolchain"] = toolchain
+    return target
 
 
 def _jobs(jobs_json: dict) -> list[dict]:
@@ -39,11 +47,11 @@ def build_outcome(jobs_json: dict) -> str:
     return "failed" if job is None else _step_status(job, "Compile")
 
 
-def native_targets(jobs_json: dict, toolchain: str) -> list[dict]:
+def native_targets(jobs_json: dict, toolchain: str | None) -> list[dict]:
     job = _job(jobs_json, "CMake GCC /")
     if job is None:
         return []
-    return [{"target": NATIVE_TARGET, "status": _step_status(job, "Compile"), "toolchain": toolchain}]
+    return [_build_target(NATIVE_TARGET, _step_status(job, "Compile"), toolchain)]
 
 
 def cross_targets(jobs_json: dict, toolchains: dict[str, str]) -> list[dict]:
@@ -58,7 +66,9 @@ def cross_targets(jobs_json: dict, toolchains: dict[str, str]) -> list[dict]:
         if platform not in toolchains:
             raise ValueError(f"no toolchain given for cross platform {platform!r}")
         status = CROSS_STATUSES.get(job["conclusion"], "failed")
-        targets.append({"target": platform, "status": status, "toolchain": toolchains[platform]})
+        if any(step["name"] == CROSS_FAILED_STEP and step["conclusion"] == "success" for step in job.get("steps", [])):
+            status = "failed"
+        targets.append(_build_target(platform, status, toolchains[platform]))
     return targets
 
 
@@ -77,9 +87,7 @@ def main() -> int:
     pick.add_argument("--event", required=True)
     commands.add_parser("build-outcome", help="print passed or failed")
     targets = commands.add_parser("targets", help="print the build targets as a JSON list")
-    targets.add_argument(
-        "--toolchain", required=True, help='compiler and version of the native build, such as "gcc 13.2.0"'
-    )
+    targets.add_argument("--toolchain", help='compiler and version of the native target, such as "gcc 13.2.0"')
     targets.add_argument("--cross-jobs", metavar="FILE", help="jobs JSON of the run holding the cross builds")
     targets.add_argument(
         "--cross-toolchain",
