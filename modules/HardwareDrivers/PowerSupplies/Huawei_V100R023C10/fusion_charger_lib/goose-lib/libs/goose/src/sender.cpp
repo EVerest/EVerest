@@ -65,15 +65,15 @@ void Sender::run() {
         current_packet_cv.wait(lock, [this] { return stop_flag || current_packet.has_value(); });
         log.verbose << "Got first packet!";
         // after wait, we own the lock and send the packet
-    } else {
+    } else if (!has_new_package) {
         std::chrono::milliseconds wait_time = t0;
         if (current_ts_index < ts.size()) {
             wait_time = ts[current_ts_index];
             current_ts_index++;
         }
-        current_packet_cv.wait_for(lock, wait_time, [this] { return stop_flag || has_new_package; });
-        has_new_package = false;
+        wait_for_new_packet(lock, wait_time);
     }
+    has_new_package = false;
 
     {
         // Maybe the stop flag was set while waiting
@@ -94,6 +94,10 @@ void Sender::run() {
     sq_num++;
 
     // In the next run the else case of the if above will do the waiting
+}
+
+void Sender::wait_for_new_packet(std::unique_lock<std::mutex>& lock, std::chrono::milliseconds timeout) {
+    current_packet_cv.wait_for(lock, timeout, [this] { return stop_flag || has_new_package; });
 }
 
 const std::uint8_t* Sender::get_mac_address() const {
