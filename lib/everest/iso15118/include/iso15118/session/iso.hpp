@@ -49,7 +49,7 @@ struct SessionState {
 // The power-path state the module currently holds. A session that ends the regular way clears it
 // with PowerDelivery(Stop); one that is torn down instead -- mid-loop TCP drop, plug-out, kill --
 // never gets there, so it has to be undone explicitly, or only EvseManager's CP-event fallback is
-// left. EvseV2G does the same from connection_teardown() off its session.is_charging flag.
+// left.
 struct PowerPath {
     void observe(session::feedback::Signal);
 

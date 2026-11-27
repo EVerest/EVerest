@@ -25,7 +25,7 @@ bool is_offered_vas(const m2dt::ServiceList& offered, uint16_t service_id);
 // VAS interface carrying no unit. nullopt for an empty list leaves the optional element out.
 std::optional<m2dt::ServiceParameterList> to_iso2_parameter_list(const m20dt::ServiceParameterList& in);
 
-// A SelectedService without ParameterSetID is reported with parameter set 0 (EvseV2G parity).
+// A SelectedService without ParameterSetID is reported with parameter set 0.
 m20dt::VasSelectedServiceList selected_vas_services(const m2dt::SelectedServiceList& selected,
                                                     const m2dt::ServiceList& offered);
 

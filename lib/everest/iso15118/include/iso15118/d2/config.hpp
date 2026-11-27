@@ -26,7 +26,7 @@ struct SessionConfig {
     // service. Filtered by make_d2_config: never ServiceID 1 (charging) or 2 (Certificate).
     dt::ServiceList offered_vas_services{};
 
-    // Two flavours (EvseV2G parity): ChargeParameterDiscoveryRes advertises the maximum the EVSE could
+    // Two flavours: ChargeParameterDiscoveryRes advertises the maximum the EVSE could
     // ever deliver, while the charge loop reports what is available right now. Every limit defaults to 0
     // and only reported data may raise it -- an invented value must never be advertised to the EV.
 
@@ -57,13 +57,13 @@ struct SessionConfig {
 
     // Enables the Contract payment option, PaymentDetails chain validation and signature verification.
     bool pnc_enabled{false};
-    // The SECC offers exactly the configured options (EvseV2G/Josev parity), so a Contract-only SECC is
+    // The SECC offers exactly the configured options, so a Contract-only SECC is
     // possible -- ISO 15118-2 does not require EIM to always be offered. When the gating leaves no option
-    // at all, the states fall back to ExternalPayment like EvseV2G.
+    // at all, the states fall back to ExternalPayment.
     bool eim_enabled{true};
     std::string mo_root_cert_path{};
     std::string v2g_root_cert_path{};
-    // Forwarded to the CSMS instead (OCPP CentralContractValidationAllowed, EvseV2G parity).
+    // Forwarded to the CSMS instead (OCPP CentralContractValidationAllowed).
     bool central_contract_validation_allowed{false};
 
     // Advertised only when this is set AND the session is PnC-over-TLS. Independent of pnc_enabled, so a

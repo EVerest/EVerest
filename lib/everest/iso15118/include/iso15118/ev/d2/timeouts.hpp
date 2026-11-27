@@ -24,7 +24,7 @@ constexpr auto ONGOING_CABLE_CHECK = 40000ms;
 // Table 109: 7 s; relaxed to 10 s for slow power supplies (deliberate deviation).
 constexpr auto ONGOING_PRE_CHARGE = 10000ms;
 
-// EvseV2G MAX_RES_TIME parity: no request faster than this.
+// No request faster than this.
 constexpr auto MIN_REQUEST_INTERVAL = 100ms;
 
 std::chrono::milliseconds response_timeout(StateID state);

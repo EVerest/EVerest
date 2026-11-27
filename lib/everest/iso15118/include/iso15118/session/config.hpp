@@ -61,7 +61,7 @@ struct EvseSetupConfig {
     bool iso2_receipt_required{false};
     std::string contract_mo_root_path{};
     std::string contract_v2g_root_path{};
-    // Forwarded to the CSMS instead (OCPP CentralContractValidationAllowed, EvseV2G parity).
+    // Forwarded to the CSMS instead (OCPP CentralContractValidationAllowed).
     bool central_contract_validation_allowed{false};
     // Per phase, in A. Overrides the power-derived default; mid-session changes additionally reach the
     // running charge loop as an UpdateAcMaxCurrent control event.

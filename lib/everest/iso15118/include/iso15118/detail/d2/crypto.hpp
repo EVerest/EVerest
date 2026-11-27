@@ -12,8 +12,8 @@
 #include <iso15118/message_2/common_types.hpp>
 #include <iso15118/message_2/metering_receipt.hpp>
 
-// The SECC (verify) side was ported from EvseV2G's crypto_openssl.cpp; the EVCC (sign + contract-key
-// decrypt) side is the inverse, implemented fresh against ISO 15118-2 section 7.9.2.4.3 / Annex G.
+// The SECC side verifies; the EVCC side (sign + contract-key decrypt) is the inverse, per
+// ISO 15118-2 section 7.9.2.4.3 / Annex G.
 namespace iso15118::d2::crypto {
 
 namespace dt = message_2::datatypes;

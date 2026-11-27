@@ -25,7 +25,7 @@ SCENARIO("DIN SECC WeldingDetection state handling") {
     GIVEN("A module-reported EVSE error") {
         message_din::WeldingDetectionRequest req;
         req.header.session_id = session;
-        // An active send_error status override wins over EVSE_Ready (EvseV2G parity).
+        // An active send_error status override wins over EVSE_Ready.
         const auto res = din::state::handle_request(req, 42.0f, session, dt::DcEvseStatusCode::EVSE_Malfunction);
         THEN("the status code is EVSE_Malfunction") {
             REQUIRE(res.dc_evse_status.evse_status_code == dt::DcEvseStatusCode::EVSE_Malfunction);

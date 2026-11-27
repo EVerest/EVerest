@@ -14,7 +14,7 @@ static constexpr uint8_t SDP_PROTOCOL_VERSION = 0x01;
 static constexpr uint8_t SDP_INVERSE_PROTOCOL_VERSION = 0xFE;
 
 // Sized for ISO 15118-20 certificate installation replies (up to 17000 base64 characters), as
-// well as every other V2G message; matches EvseV2G's DEFAULT_BUFFER_SIZE.
+// well as every other V2G message.
 static constexpr std::size_t MAX_V2G_PACKET_SIZE = 16384;
 
 // FIXME (aw): should be called V2GTP or SDP buffer

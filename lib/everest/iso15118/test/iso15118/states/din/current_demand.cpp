@@ -93,7 +93,7 @@ SCENARIO("DIN SECC CurrentDemand state handling") {
     GIVEN("A module-reported EVSE error (Malfunction)") {
         message_din::CurrentDemandRequest req;
         req.header.session_id = session;
-        // An active send_error status override wins over the normal EVSE_Ready code (EvseV2G parity).
+        // An active send_error status override wins over the normal EVSE_Ready code.
         const auto res = din::state::handle_request(req, config, 400.0f, 125.0f, session, /*charger_stop=*/false,
                                                     dt::DcEvseStatusCode::EVSE_Malfunction);
         THEN("the status code is EVSE_Malfunction") {

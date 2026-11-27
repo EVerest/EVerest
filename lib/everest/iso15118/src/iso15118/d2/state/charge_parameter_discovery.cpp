@@ -202,7 +202,7 @@ message_2::ChargeParameterDiscoveryResponse build_response(const message_2::Char
         return res;
     }
 
-    // The parameter phase is always Finished (limits are known up front, EvseV2G parity).
+    // The parameter phase is always Finished (limits are known up front).
     res.evse_processing = dt::EVSEProcessing::Finished;
 
     std::optional<uint32_t> departure_time;

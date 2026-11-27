@@ -34,7 +34,7 @@ inline dt::AC_EVSEStatus make_ac_evse_status() {
     return status;
 }
 
-// So the EV sees a module-reported fault (mirrors EvseV2G send_error).
+// So the EV sees a module-reported fault.
 inline void apply_evse_error(const Context& ctx, dt::DC_EVSEStatus& status) {
     if (const auto code = ctx.error_status_code()) {
         status.status_code = code.value();

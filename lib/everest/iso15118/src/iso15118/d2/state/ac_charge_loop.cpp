@@ -32,7 +32,7 @@ message_2::ChargingStatusResponse handle_request([[maybe_unused]] const message_
 
     // MeterInfo is an independent optional element here, not a receipt payload: [Table 104] marks it "O"
     // for the SECC in both AC Message Sets, so an EIM session is entitled to a reading too -- unlike the
-    // DC loop. Report every reading the module forwarded (EvseV2G parity).
+    // DC loop. Report every reading the module forwarded.
     res.meter_info = meter_info;
 
     return res;
@@ -50,7 +50,7 @@ Result answer_charging_status(Context& ctx, const message_2::ChargingStatusReque
                                  not ctx.session().receipt_received and ctx.evse().latest_meter_info.has_value();
     auto res = handle_request(req, ctx.get_session_id(), ctx.session_config, ctx.session().sa_schedule_tuple_id,
                               ctx.evse().charger_stop_requested, request_receipt, ctx.evse().latest_meter_info);
-    // A module-reported RCD error is surfaced via the AC EVSE status RCD flag (mirrors EvseV2G send_error).
+    // A module-reported RCD error is surfaced via the AC EVSE status RCD flag.
     res.ac_evse_status.rcd = (ctx.evse().active_error == d20::EvseErrorCode::RCD);
     ctx.respond(res);
 

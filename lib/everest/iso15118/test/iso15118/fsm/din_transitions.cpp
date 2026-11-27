@@ -1239,7 +1239,7 @@ SCENARIO("DIN SPEC 70121 SECC charger stop and shutdown paths") {
             changed.ev_target_current = 150.0;
             secc.drive(changed);
 
-            THEN("The setpoint is forwarded to the power supply only on change (EvseV2G parity)") {
+            THEN("The setpoint is forwarded to the power supply only on change") {
                 REQUIRE(after_repeat == after_first);
                 REQUIRE(secc.setpoints_forwarded == after_first + 1);
             }

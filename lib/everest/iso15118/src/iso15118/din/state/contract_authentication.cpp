@@ -55,8 +55,8 @@ Result ContractAuthentication::on_request(const message_din::Variant& received) 
     if (received.get_if<message_din::ContractAuthenticationRequest>() != nullptr) {
 
         // Signalled once, on the first ContractAuthenticationReq, and the Ongoing loop is bounded from that
-        // same moment. DIN SPEC 70121 defines no timer for this (and EvseV2G left it unbounded), so the
-        // window is the module's auth_timeout_eim; 0 keeps EvseV2G's wait-forever behaviour.
+        // same moment. DIN SPEC 70121 defines no timer for this, so the window is the module's
+        // auth_timeout_eim; 0 waits forever.
         if (not auth_requested) {
             m_ctx.feedback.signal(session::feedback::Signal::REQUIRE_AUTH_EIM);
             auth_requested = true;

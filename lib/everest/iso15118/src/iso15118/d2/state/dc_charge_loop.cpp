@@ -67,7 +67,7 @@ message_2::CurrentDemandResponse handle_request(const dt::SessionId& session_id,
     res.evse_maximum_power_limit = to_physical_value(config.dc_max_power, Unit::W);
 
     // [Table 71]: the three *LimitAchieved flags describe the EVSE's own output, not the EV's requested
-    // target. (EvseV2G compares the EV targets against the maxima instead, which is a different claim.)
+    // target.
     res.evse_current_limit_achieved = present_current >= config.dc_max_current;
     res.evse_voltage_limit_achieved = present_voltage >= config.dc_max_voltage;
     res.evse_power_limit_achieved = (present_voltage * present_current) >= config.dc_max_power;
@@ -79,8 +79,8 @@ message_2::CurrentDemandResponse handle_request(const dt::SessionId& session_id,
 
     // MeterInfo is a Plug-and-Charge-only element of CurrentDemandRes: [Table 104] marks it "-" for both
     // peers in "DC Charging EIM", and [V2G2-666] forbids supporting a parameter marked so. An EIM
-    // session therefore gets no reading at all -- a deliberate deviation from EvseV2G, which sends it
-    // whenever the module supplied one. The AC counterpart differs: ChargingStatusRes may carry it in EIM.
+    // session therefore gets no reading at all, even when the module supplied one. The AC counterpart differs:
+    // ChargingStatusRes may carry it in EIM.
     if (pnc_selected) {
         res.meter_info = meter_info;
     }

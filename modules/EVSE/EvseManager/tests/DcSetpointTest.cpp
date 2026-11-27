@@ -105,7 +105,7 @@ TEST(DcSetpointTest, ramp_towards_target_below_offered_min_is_zero) {
     EXPECT_DOUBLE_EQ(charge(2.5, 6.4, true, 8.0f), 0.0);
 }
 
-// The EV sees a fractional minimum truncated by the HLC encoding: 2.55 A goes out as 2.5 A (EvseV2G) or 2.549 A
+// The EV sees a fractional minimum truncated by the HLC encoding: 2.55 A goes out as 2.549 A
 TEST(DcSetpointTest, target_at_the_encoded_fractional_min_gets_the_min) {
     auto caps = make_psu_caps();
     caps.min_export_current_A = 2.55f;

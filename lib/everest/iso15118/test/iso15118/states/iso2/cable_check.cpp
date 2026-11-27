@@ -41,7 +41,7 @@ SCENARIO("ISO 15118-2 SECC CableCheck handling") {
     }
 
     GIVEN("A module-reported EVSE error while the cable check is ongoing") {
-        // An active send_error status override wins over EVSE_IsolationMonitoringActive (EvseV2G parity).
+        // An active send_error status override wins over EVSE_IsolationMonitoringActive.
         const auto res = d2::state::handle_request(req, id, /*cable_check_done=*/false, /*cable_check_fault=*/false,
                                                    dt::DC_EVSEStatusCode::EVSE_UtilityInterruptEvent);
         THEN("the status code is overridden while the response stays OK") {

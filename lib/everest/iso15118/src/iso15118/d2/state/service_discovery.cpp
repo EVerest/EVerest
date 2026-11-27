@@ -38,7 +38,7 @@ message_2::ServiceDiscoveryResponse handle_request(
         // Resumed session: offer only the payment option selected in the paused session [V2G2-741].
         res.payment_option_list.push_back(resumed_payment_option.value());
     } else {
-        // Exactly the configured options (EvseV2G/Josev parity); the caller gates them and guarantees at
+        // Exactly the configured options; the caller gates them and guarantees at
         // least one is offered.
         if (offer_eim) {
             res.payment_option_list.push_back(dt::PaymentOption::ExternalPayment);
@@ -103,7 +103,7 @@ Result ServiceDiscovery::on_request(const message_2::Variant& received) {
 
     // PnC (Contract) is offered only over TLS [V2G2-632], and the Certificate service under that same
     // condition. Where the gating leaves no option at all -- a Contract-only configuration on plain TCP,
-    // or an empty configuration -- fall back to ExternalPayment like EvseV2G.
+    // or an empty configuration -- fall back to ExternalPayment.
     const bool offer_contract = m_ctx.session_config.pnc_enabled and m_ctx.session_config.tls_active;
     const bool offer_eim = m_ctx.session_config.eim_enabled or not offer_contract;
     const bool cert_service_offered = offer_contract and m_ctx.session_config.cert_install_service;

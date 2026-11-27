@@ -96,7 +96,7 @@ Result ServiceSelection::process_payment_selection(const message_2::PaymentServi
         return {};
     }
 
-    // Only for a selection that was offered and accepted, never for a rejected one (EvseV2G parity).
+    // Only for a selection that was offered and accepted, never for a rejected one.
     m_ctx.feedback.selected_payment_option(req.selected_payment_option);
 
     // Only once the whole selection has been validated.

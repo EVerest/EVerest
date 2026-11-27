@@ -141,7 +141,7 @@ types::iso15118::EnergyTransferMode convert_energy_transfer_mode(iso15118::share
 }
 
 // The EV reports remaining times and its departure time as seconds from now; the EVerest vars carry
-// absolute RFC3339 UTC timestamps (EvseV2G publish_dc_ev_remaining_time / publish_departure_time).
+// absolute RFC3339 UTC timestamps.
 std::string seconds_from_now_to_rfc3339(double seconds) {
     const auto offset = std::chrono::duration_cast<date::utc_clock::duration>(std::chrono::duration<double>(seconds));
     return Everest::Date::to_rfc3339(date::utc_clock::now() + offset);
@@ -1337,8 +1337,7 @@ iso15118::session::feedback::Callbacks ISO15118_chargerImpl::create_callbacks() 
             break;
         case Signal::DLINK_PAUSE:
             // A pause is not a session failure, so nothing is reported -- but the data link ends here
-            // too, so the per-session state still has to go (EvseV2G reinitialises it on every
-            // connection teardown, pause included).
+            // too, so the per-session state still has to go.
             reset_session_state();
             publish_dlink_pause(nullptr);
             break;
@@ -1355,10 +1354,9 @@ iso15118::session::feedback::Callbacks ISO15118_chargerImpl::create_callbacks() 
     callbacks.v2g_message = [this](const iso15118::V2gMessageType& id, const iso15118::io::StreamInputView& exi_frame) {
         // Always tracked: hlc_session_failed derives its reason from the message history at teardown.
         hlc_message_history.record(id);
-        // Published only in debug mode, mirroring EvseV2G's debugMode gate on this var. The frame is
-        // the complete V2GTP message (8-byte header + EXI payload), rendered in the same two encodings
-        // EvseV2G uses so existing log tooling can decode either one (v2g_server.cpp:275-288). xml and
-        // v2g_json stay unset: neither stack decodes the EXI back into a document.
+        // Published only in debug mode. The frame is the complete V2GTP message (8-byte header + EXI
+        // payload), rendered as hex and as base64 so log tooling can decode either one. xml and
+        // v2g_json stay unset: the EXI is not decoded back into a document.
         if (debug_mode) {
             types::iso15118::V2gMessages message;
             message.id = module::conversions::to_v2g_message_id(id);
@@ -1372,7 +1370,7 @@ iso15118::session::feedback::Callbacks ISO15118_chargerImpl::create_callbacks() 
 
     callbacks.request_out_of_sequence = [this] { hlc_message_history.reject_last_request(); };
 
-    // Debug only, like EvseV2G (v2g_server.cpp:467): the protocol list the EV offered in
+    // Debug only: the protocol list the EV offered in
     // SupportedAppProtocolReq, reported whether or not the negotiation went on to succeed.
     callbacks.ev_app_protocols = [this](const iso15118::message_20::SupportedAppProtocolRequest& req) {
         if (not debug_mode) {
@@ -1391,7 +1389,7 @@ iso15118::session::feedback::Callbacks ISO15118_chargerImpl::create_callbacks() 
     callbacks.selected_protocol = [this](const std::string& protocol) { publish_selected_protocol(protocol); };
 
     // DIN SPEC 70121 / ISO 15118-2 only; ISO 15118-20 negotiates authorization services instead and
-    // leaves this var untouched (EvseV2G iso_server.cpp:1020 parity).
+    // leaves this var untouched.
     callbacks.selected_payment_option = [this](iso15118::shared_datatypes::PaymentOption payment_option) {
         publish_selected_payment_option(payment_option == iso15118::shared_datatypes::PaymentOption::Contract
                                             ? types::iso15118::PaymentOption::Contract
@@ -1604,9 +1602,7 @@ iso15118::session::feedback::Callbacks ISO15118_chargerImpl::create_callbacks() 
 
 void ISO15118_chargerImpl::reset_session_state() {
     // Per-session state that must not leak into the following session. Run at every end of the data
-    // link, pause included: EvseV2G clears the equivalent fields from v2g_ctx_init_charging_state()
-    // (v2g_ctx.cpp:104), which connection_teardown() calls before it looks at the D-LINK action, so a
-    // paused session leaves nothing behind either.
+    // link, pause included, so a paused session leaves nothing behind either.
     hlc_message_history.reset();
     last_charging_complete.reset();
     last_bulk_charging_complete.reset();
@@ -1626,14 +1622,14 @@ void ISO15118_chargerImpl::report_hlc_session_failed() {
 void ISO15118_chargerImpl::handle_setup(types::iso15118::EVSEID& evse_id,
                                         types::iso15118::SaeJ2847BidiMode& sae_j2847_mode, bool& debug_mode) {
 
-    // SAE J2847/2 is not implemented here (EvseV2G offers it). Say so rather than have EvseManager
+    // SAE J2847/2 is not implemented here. Say so rather than have EvseManager
     // wait for a sae_bidi_mode_active that never comes.
     if (sae_j2847_mode != types::iso15118::SaeJ2847BidiMode::None) {
         EVLOG_warning << "SAE J2847/2 bidirectional mode ("
                       << types::iso15118::sae_j2847bidi_mode_to_string(sae_j2847_mode)
                       << ") is not supported by this module; the SAE service is not offered";
     }
-    // debug_mode gates the v2g_messages and ev_app_protocol publishes like EvseV2G's debugMode.
+    // debug_mode gates the v2g_messages and ev_app_protocol publishes.
     this->debug_mode = debug_mode;
     if (debug_mode) {
         EVLOG_info << "debug_mode enabled: publishing v2g_messages (message id plus the raw V2GTP frame as hex "
@@ -1652,7 +1648,7 @@ void ISO15118_chargerImpl::handle_set_charging_parameters(types::iso15118::Setup
     // EVSENominalVoltage (AC) and EVSEPeakCurrentRipple / EVSECurrentRegulationTolerance /
     // EVSEEnergyToBeDelivered (DC). ISO 15118-20 carries the same information in its limit structures and
     // ignores this. EvseManager calls this at setup (AC) and on every power-supply capabilities push (DC),
-    // which may land mid-session, so a live controller is updated too (mirrors EvseV2G's handler).
+    // which may land mid-session, so a live controller is updated too.
     iso15118::d20::PhysicalValues values;
     values.ac_nominal_voltage = physical_values.ac_nominal_voltage;
     values.dc_current_regulation_tolerance = physical_values.dc_current_regulation_tolerance;
@@ -1887,7 +1883,7 @@ void ISO15118_chargerImpl::handle_receipt_is_required(bool& receipt_required) {
     // CurrentDemandRes / AC ChargingStatusRes charge loop (PnC only). EvseManager calls this from its
     // own ready(), whose order vs this module's ready() (which creates the controller) is not
     // guaranteed. Store it in setup_config so a controller created later picks it up, AND update a live
-    // controller for calls that arrive after creation. (Mirrors EvseV2G's evse_v2g_data.receipt_required.)
+    // controller for calls that arrive after creation.
     std::scoped_lock lock(GEL);
     setup_config.iso2_receipt_required = receipt_required;
     if (controller) {
@@ -1912,7 +1908,7 @@ void ISO15118_chargerImpl::handle_pause_charging(bool& pause) {
 void ISO15118_chargerImpl::handle_no_energy_pause_charging(types::iso15118::NoEnergyPauseMode& mode) {
     // IEC 61851-23:2023 CC.3.5.3: no energy is available for this session. The ISO 15118-2 and DIN SPEC
     // 70121 SECC engines signal EVSENotification StopCharging in ChargeParameterDiscoveryRes and stop
-    // before starting the charge loop (EvseV2G parity). ISO 15118-20 does not act on it.
+    // before starting the charge loop. ISO 15118-20 does not act on it.
     auto pause = iso15118::d20::NoEnergyPauseMode::None;
     switch (mode) {
     case types::iso15118::NoEnergyPauseMode::PauseBeforeCableCheck:
@@ -1955,8 +1951,8 @@ bool ISO15118_chargerImpl::handle_update_supported_app_protocols(
 
     // Narrow the SupportedAppProtocol offer to the requested subset of the configured protocols (the
     // interface exists so a test setup can switch a protocol off). Kept in priority order -- ISO 15118-20,
-    // ISO 15118-2, DIN SPEC 70121 -- regardless of the order requested. Takes effect at the next session,
-    // as with EvseV2G. A protocol that is not configured cannot be switched on here.
+    // ISO 15118-2, DIN SPEC 70121 -- regardless of the order requested. Takes effect at the next session.
+    // A protocol that is not configured cannot be switched on here.
     bool all_supported{true};
     const auto requested = [&](types::iso15118::SupportedAppProtocol protocol) {
         return std::find(supported_app_protocols.app_protocols.begin(), supported_app_protocols.app_protocols.end(),
@@ -2007,8 +2003,7 @@ void ISO15118_chargerImpl::apply_supported_protocols() {
     auto offered = configured_protocol_offer;
 
     // DIN SPEC 70121 is DC only, so it must not be offered on an AC charger -- an EV picking it would only
-    // run into FAILED_WrongEnergyTransferType at ChargeParameterDiscovery. EvseV2G does the same
-    // (EvseV2G/charger/ISO15118_chargerImpl.cpp handle_update_energy_transfer_modes).
+    // run into FAILED_WrongEnergyTransferType at ChargeParameterDiscovery.
     bool din_removed{false};
     if (ac_energy_transfer_mode) {
         const auto din = std::find(offered.begin(), offered.end(), iso15118::ProtocolId::DIN70121);
@@ -2414,8 +2409,7 @@ void ISO15118_chargerImpl::handle_update_meter_info(types::powermeter::Powermete
 void ISO15118_chargerImpl::handle_send_error(types::iso15118::EvseError& error) {
     // Map the EvseManager error to the library's neutral EVSE error code and forward it as a control
     // event. The SECC engines stamp Malfunction / UtilityInterruptEvent (RCD -> AC RCD flag) into the DC
-    // charge responses so the EV sees the fault, and abort the session on EmergencyShutdown (mirrors
-    // EvseV2G's handle_send_error).
+    // charge responses so the EV sees the fault, and abort the session on EmergencyShutdown.
     auto code = iso15118::d20::EvseErrorCode::None;
     switch (error) {
     case types::iso15118::EvseError::Error_Contactor:
@@ -2432,7 +2426,7 @@ void ISO15118_chargerImpl::handle_send_error(types::iso15118::EvseError& error) 
         break;
     case types::iso15118::EvseError::Error_EmergencyShutdown:
     case types::iso15118::EvseError::Error_ErrorShutdown:
-        // The C++ stack has no keep-alive error shutdown (see EvseV2G); treat it as an emergency shutdown.
+        // The C++ stack has no keep-alive error shutdown; treat it as an emergency shutdown.
         code = iso15118::d20::EvseErrorCode::EmergencyShutdown;
         break;
     }

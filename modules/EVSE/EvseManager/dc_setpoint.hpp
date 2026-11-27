@@ -10,7 +10,7 @@
 namespace module {
 
 /// \brief Minimum charging current offered to the EV in ChargeParameterDiscovery: the nominal minimum in
-///        \p hlc_caps if reported, else the minimum. EvseV2G and Evse15118D20 select the same value.
+///        \p hlc_caps if reported, else the minimum. Evse15118D20 selects the same value.
 float offered_min_export_current_A(const types::power_supply_DC::Capabilities& hlc_caps);
 
 /// \brief Minimum discharging current offered to the EV, selected like offered_min_export_current_A().

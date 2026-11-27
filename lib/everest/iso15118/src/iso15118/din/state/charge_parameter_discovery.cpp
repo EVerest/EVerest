@@ -183,7 +183,7 @@ Result ChargeParameterDiscovery::on_request(const message_din::Variant& received
             // has no power for. The EV is expected to answer the StopCharging notification with a SessionStopReq,
             // which is the only request in sequence there. Section 9.7.4.2.4 does not cover the no-energy case at
             // all, so no requirement compels this; it is chosen for the tighter accepted set (staying here would
-            // keep admitting a ChargeParameterDiscoveryReq the charger cannot act on) and for EvseV2G parity.
+            // keep admitting a ChargeParameterDiscoveryReq the charger cannot act on).
             // AllowEvToIgnorePause deliberately proceeds: the notification was sent, but an EV ignoring it may
             // charge on.
             if (m_ctx.session_config.no_energy_pause == d20::NoEnergyPauseMode::BeforeCableCheck or

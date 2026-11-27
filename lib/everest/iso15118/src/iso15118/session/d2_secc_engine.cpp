@@ -30,9 +30,8 @@ bool has_dc_maxima(const d20::DcTransferLimits& dc) {
 }
 
 // update_ac_maximum_limits reports the AC charge power SUMMED OVER ALL PHASES, while both consumers
-// of the derived capability current need it PER PHASE. Dividing by the phase count here is a
-// deliberate deviation from EvseV2G, which divides by the nominal voltage alone and so over-reports
-// both values by the phase count on a three-phase charger.
+// of the derived capability current need it PER PHASE. Dividing by the nominal voltage alone would
+// over-report both values by the phase count on a three-phase charger.
 uint8_t ac_capability_phase_count(const d2::SessionConfig& out) {
     // A two-phase charger is advertised as single-phase by EvseManager's mode mapping.
     return everest::lib::util::exists(out.supported_energy_transfer_modes,
@@ -142,7 +141,7 @@ d2::SessionConfig make_d2_config(const session::SessionConfig& config, bool tls_
     out.ac_max_current = config.iso2_ac_max_current.value_or(out.ac_capability_max_current);
 
     out.pnc_enabled = config.iso2_pnc_enabled;
-    // A Contract-only SECC is permitted (EvseV2G parity), so ExternalPayment is offered only when configured.
+    // A Contract-only SECC is permitted, so ExternalPayment is offered only when configured.
     out.eim_enabled = std::find(config.authorization_services.begin(), config.authorization_services.end(),
                                 m20dt::Authorization::EIM) != config.authorization_services.end();
     out.cert_install_service = config.cert_install_service;
@@ -253,7 +252,7 @@ D2SeccEngine::D2SeccEngine(io::StreamOutputView output_view, const session::Sess
 
 bool D2SeccEngine::on_packet(v2gtp::PayloadType payload_type, const io::StreamInputView& view) {
     // All ISO 15118-2 messages share the single SAP payload type (0x8001); any other V2GTP payload
-    // type is ignored (EvseV2G parity).
+    // type is ignored.
     if (payload_type != v2gtp::PayloadType::SAP) {
         return false;
     }
@@ -346,7 +345,7 @@ void D2SeccEngine::on_control_event(const d20::ControlEvent& event) {
     }
 
     // ISO 15118-2 has no SECC-initiated pause -- the SECC can only ask the EV to stop. Say so rather
-    // than drop the request silently (EvseV2G parity).
+    // than drop the request silently.
     if (const auto* pause = std::get_if<d20::PauseCharging>(&event); pause and static_cast<bool>(*pause)) {
         logf_warning("A charger-initiated pause is not supported in ISO 15118-2; use stop_charging instead");
         return;
@@ -400,7 +399,7 @@ void D2SeccEngine::on_timeout(d20::TimeoutType timeout) {
     }
 
     // The EV ignored the StopCharging request: the next response is answered FAILED and ends the
-    // session (EvseV2G stop_hlc parity). An EV that sends nothing is bounded by the sequence timeout.
+    // session. An EV that sends nothing is bounded by the sequence timeout.
     // Nothing arrived that the emergency shutdown could be reported on, so close anyway.
     if (timeout == d20::TimeoutType::EMERGENCY_SHUTDOWN) {
         if (not ctx.session_stopped) {

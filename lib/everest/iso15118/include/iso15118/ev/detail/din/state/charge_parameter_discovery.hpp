@@ -23,7 +23,7 @@ struct Result {
     bool finished{false};
     std::optional<iso15118::session::feedback::DcMaximumLimits> limits{std::nullopt};
     // A finished response with no energy (StopCharging or a shutdown status) goes to SessionStop.
-    // EvseV2G rejects a CableCheckReq there with FAILED_SequenceError.
+    // An SECC may reject a CableCheckReq there with FAILED_SequenceError.
     bool evse_stopping{false};
 };
 

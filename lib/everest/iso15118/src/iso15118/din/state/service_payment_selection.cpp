@@ -47,7 +47,7 @@ Result ServicePaymentSelection::on_request(const message_din::Variant& received)
             return {};
         }
 
-        // Always ExternalPayment in DIN 70121 [V2G-DC-395]; EvseV2G leaves this unpublished on its DIN path.
+        // Always ExternalPayment in DIN 70121 [V2G-DC-395].
         m_ctx.feedback.selected_payment_option(req->selected_payment_option);
 
         return m_ctx.create_state<ContractAuthentication>();

@@ -176,7 +176,7 @@ SCENARIO("DIN SECC ChargeParameterDiscovery state handling") {
         config.evse_minimum_current_limit = 250.0; // the fixture EV offers at most 200 A
 
         const auto res = din::state::handle_request(req, config, true, session);
-        THEN("FAILED_WrongChargeParameter with the EVSE announcing EVSE_Shutdown (EvseV2G parity)") {
+        THEN("FAILED_WrongChargeParameter with the EVSE announcing EVSE_Shutdown") {
             REQUIRE(res.response_code == dt::ResponseCode::FAILED_WrongChargeParameter);
             REQUIRE(res.dc_evse_charge_parameter->dc_evse_status.evse_status_code ==
                     dt::DcEvseStatusCode::EVSE_Shutdown);

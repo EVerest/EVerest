@@ -4,8 +4,7 @@
 // exi_bitstream_has_overflow() refuses the bit after the last byte of the stream, including when
 // that bit starts a new byte and when the stream has no room at all, so write_bit and read_bit
 // never dereference data[data_size]. A truncated or oversized document always reaches that bit,
-// and EvseV2G accepts a message that exactly fills its receive buffer, where that byte is past the
-// allocation.
+// and for a message that exactly fills the receive buffer that byte is past the allocation.
 //
 // Checked without a sanitiser: the stream is told it owns fewer bytes than the array holds.
 

@@ -15,7 +15,7 @@ namespace iso15118 {
 void apply_dc_limits(din::SessionConfig& cfg, const d20::DcTransferLimits& dc);
 
 // Copies the power-supply hardware capabilities onto what ChargeParameterDiscoveryRes advertises --
-// the maximum the EVSE could ever deliver, kept apart from the live limits above (EvseV2G parity).
+// the maximum the EVSE could ever deliver, kept apart from the live limits above.
 void apply_dc_capabilities(din::SessionConfig& cfg, const d20::DcTransferLimits& dc);
 
 // Copies the module-reported physical EVSE parameters (set_charging_parameters) into the DIN config.

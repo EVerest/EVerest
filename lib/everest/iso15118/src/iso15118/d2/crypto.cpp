@@ -522,7 +522,7 @@ ContractValidationResult validate_contract_chain(const std::vector<uint8_t>& lea
             case X509_V_ERR_UNABLE_TO_GET_ISSUER_CERT:
             case X509_V_ERR_UNABLE_TO_GET_ISSUER_CERT_LOCALLY:
             case X509_V_ERR_SELF_SIGNED_CERT_IN_CHAIN:
-                // Eligible for central validation by the CSMS when allowed (EvseV2G NoCertificateAvailable parity).
+                // Eligible for central validation by the CSMS when allowed.
                 result.response_code = dt::ResponseCode::FAILED;
                 result.forwardable = true;
                 break;

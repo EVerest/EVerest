@@ -171,9 +171,8 @@ private:
     // change only. Reset when the session's data link ends.
     std::optional<bool> last_charging_complete;
     std::optional<bool> last_bulk_charging_complete;
-    // debug_mode from the setup command gates the v2g_messages and ev_app_protocol publishes (mirrors
-    // EvseV2G, which publishes both only with debugMode). Atomic: set from the command thread, read on
-    // the loop thread.
+    // debug_mode from the setup command gates the v2g_messages and ev_app_protocol publishes. Atomic:
+    // set from the command thread, read on the loop thread.
     std::atomic_bool debug_mode{false};
     // ISO 15118-2 and DIN report PreChargeReq targets through dc_charge_loop_req too.
     std::atomic_bool pre_charge_active{false};
