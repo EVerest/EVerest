@@ -9,7 +9,6 @@
 #include <map>
 #include <memory>
 #include <mutex>
-#include <set>
 
 #include <utils/types.hpp>
 
@@ -31,10 +30,6 @@ namespace authorization {
 
 inline bool operator<(const IdToken& lhs, const IdToken& rhs) {
     return lhs.value < rhs.value;
-}
-
-inline bool operator<(const ProvidedIdToken& lhs, const ProvidedIdToken& rhs) {
-    return lhs.id_token < rhs.id_token;
 }
 
 } // namespace authorization
@@ -67,7 +62,8 @@ class AuthHandler {
 public:
     AuthHandler(const SelectionAlgorithm& selection_algorithm, const int connection_timeout,
                 bool plug_in_timeout_enabled, bool prioritize_authorization_over_stopping_transaction,
-                bool ignore_connector_faults, bool stop_transaction_on_reswipe, const std::string& id, kvsIntf* store);
+                bool ignore_connector_faults, bool stop_transaction_on_reswipe, bool deauthorize_on_reswipe,
+                const std::string& id, kvsIntf* store);
     virtual ~AuthHandler();
 
     /**
@@ -220,6 +216,13 @@ public:
     void set_stop_transaction_on_reswipe(bool stop_transaction_on_reswipe);
 
     /**
+     * @brief Set the deauthorize on reswipe flag of the handler.
+     *
+     * @param deauthorize_on_reswipe
+     */
+    void set_deauthorize_on_reswipe(bool deauthorize_on_reswipe);
+
+    /**
      * @brief Registers the given \p callback to notify the evse about the processed authorization request.
      *
      * @param callback
@@ -291,6 +294,18 @@ private:
         SelectEvseReturnStatus status;
     };
 
+    /// \brief An authorization without an active transaction, either granted to an evse or still being processed.
+    struct PendingAuthorization {
+        IdToken id_token;
+        std::optional<int> evse_id; // Not set for a token that is still being processed
+    };
+
+    struct TokenInProcess {
+        ProvidedIdToken token; // Carries the parent id token of the validation result once accepted
+        bool accepted{false};  // A validator accepted the token
+        bool withdrawn{false}; // The authorization was withdrawn while the token is still being processed
+    };
+
     SelectionAlgorithm selection_algorithm;
     int connection_timeout;
     bool plug_in_timeout_enabled;
@@ -298,12 +313,13 @@ private:
     bool prioritize_authorization_over_stopping_transaction;
     bool ignore_faults;
     bool stop_transaction_on_reswipe;
+    bool deauthorize_on_reswipe;
     ReservationHandler reservation_handler;
 
     std::map<int, std::unique_ptr<EVSEContext>> evses;
 
     std::list<int> plug_in_queue;
-    std::set<ProvidedIdToken> tokens_in_process;
+    std::map<IdToken, TokenInProcess> tokens_in_process;
     std::condition_variable cv;
     std::condition_variable processing_finished_cv;
     std::mutex event_mutex;
@@ -335,6 +351,23 @@ private:
     int used_for_transaction(const std::vector<int>& evse_ids, const std::string& id_token);
     bool is_token_already_in_process(const ProvidedIdToken& provided_id_token,
                                      const std::vector<int>& referenced_evses);
+    /// \brief Returns true if \p id_token authorized one of \p evse_ids and no transaction has been started there yet.
+    bool is_authorized_without_transaction(const IdToken& id_token, const std::vector<int>& evse_ids);
+    /// \brief Returns true if \p provided_id_token was accepted and is still being processed, or authorized one of
+    /// \p referenced_evses without a transaction.
+    bool is_authorization_pending(const ProvidedIdToken& provided_id_token, const std::vector<int>& referenced_evses);
+    /// \brief Returns true if \p provided_id_token references at least one of \p evse_ids.
+    bool references_any_evse(const ProvidedIdToken& provided_id_token, const std::vector<int>& evse_ids);
+    /// \brief Finds a pending authorization at \p referenced_evses that shares the id token or parent id token (group
+    /// id) with the given ones.
+    std::optional<PendingAuthorization> find_pending_authorization(const IdToken& id_token,
+                                                                   const std::optional<IdToken>& parent_id_token,
+                                                                   const std::vector<int>& referenced_evses);
+    /// \brief Returns the pending authorizations at \p referenced_evses, each id token at most once.
+    std::vector<PendingAuthorization> get_pending_authorizations(const std::vector<int>& referenced_evses);
+    /// \brief Withdraws \p pending at \p referenced_evses without stopping a transaction. Must be called with the
+    /// event_mutex held by the caller.
+    bool withdraw_pending_authorization(const PendingAuthorization& pending, const std::vector<int>& referenced_evses);
     bool any_evse_available(const std::vector<int>& evse_ids);
     bool any_parent_id_present(const std::vector<int>& evse_ids);
     bool equals_master_pass_group_id(const std::optional<types::authorization::IdToken> parent_id_token);

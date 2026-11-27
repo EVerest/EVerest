@@ -95,7 +95,7 @@ protected:
     void init_auth_handler(SelectionAlgorithm selection_algorithm) {
         const std::string id = "auth_handler_test_id";
         this->auth_handler = std::make_unique<AuthHandler>(selection_algorithm, CONNECTION_TIMEOUT, true, false, false,
-                                                           true, id, nullptr);
+                                                           true, false, id, nullptr);
 
         this->auth_handler->register_notify_evse_callback([this](const int evse_index,
                                                                  const ProvidedIdToken& provided_token,
@@ -545,48 +545,40 @@ TEST_F(AuthTest, test_parent_id_reswipe_publishes_used_to_reauthorize) {
     ASSERT_FALSE(this->auth_receiver->get_authorization(1));
 }
 
-/// \brief Test that a master pass token still stops a transaction when stop_transaction_on_reswipe is false
-TEST_F(AuthTest, test_master_pass_still_stops_when_reswipe_stop_disabled) {
-    this->auth_handler->set_master_pass_group_id(PARENT_ID_TOKEN);
-    // set_prioritize_authorization_over_stopping_transaction=false; otherwise token could be used for authorization of
-    // another connector
-    this->auth_handler->set_prioritize_authorization_over_stopping_transaction(false);
-    this->auth_handler->set_stop_transaction_on_reswipe(false);
+/// \brief Test that a token of a type other than RFID or BankCard does not stop the transaction of a token
+/// sharing its parent id, even if stop_transaction_on_reswipe is true
+TEST_F(AuthTest, test_stop_transaction_on_reswipe_ignores_non_rfid_token_with_same_parent_id) {
+    this->auth_handler->set_stop_transaction_on_reswipe(true);
 
-    const SessionEvent session_event = get_session_started_event(types::evse_manager::StartSessionReason::EVConnected);
-    this->auth_handler->handle_session_event(1, session_event);
+    std::vector<int32_t> connectors{1};
+    ProvidedIdToken provided_token_1 = get_provided_token(VALID_TOKEN_1, connectors);
+    ProvidedIdToken provided_token_2 = get_provided_token(VALID_TOKEN_3, connectors);
+    provided_token_2.authorization_type = types::authorization::AuthorizationType::OCPP;
 
-    auto provided_token = get_provided_token(VALID_TOKEN_2);
+    SessionEvent session_event1 = get_session_started_event(types::evse_manager::StartSessionReason::EVConnected);
+    SessionEvent session_event2 = get_transaction_started_event(provided_token_1);
+
+    this->auth_handler->handle_session_event(1, session_event1);
 
     EXPECT_CALL(mock_publish_token_validation_status_callback,
-                Call(Field(&ProvidedIdToken::id_token, provided_token.id_token), TokenValidationStatus::Processing));
+                Call(Field(&ProvidedIdToken::id_token, provided_token_1.id_token), TokenValidationStatus::Processing));
     EXPECT_CALL(mock_publish_token_validation_status_callback,
-                Call(Field(&ProvidedIdToken::id_token, provided_token.id_token), TokenValidationStatus::Accepted));
+                Call(Field(&ProvidedIdToken::id_token, provided_token_1.id_token), TokenValidationStatus::Accepted));
     EXPECT_CALL(mock_publish_token_validation_status_callback,
-                Call(Field(&ProvidedIdToken::id_token, provided_token.id_token), TokenValidationStatus::UsedToStart));
-    auto result = this->auth_handler->on_token(provided_token);
-    ASSERT_TRUE(result == TokenHandlingResult::USED_TO_START_TRANSACTION);
+                Call(Field(&ProvidedIdToken::id_token, provided_token_1.id_token), TokenValidationStatus::UsedToStart));
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, provided_token_2.id_token), TokenValidationStatus::Processing));
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, provided_token_2.id_token), TokenValidationStatus::Rejected));
+    EXPECT_CALL(mock_stop_transaction_callback, Call(_, _)).Times(0);
 
-    // start transaction
-    SessionEvent session_event2 = get_transaction_started_event(provided_token);
+    auto result = this->auth_handler->on_token(provided_token_1);
+    ASSERT_EQ(result, TokenHandlingResult::USED_TO_START_TRANSACTION);
+
     this->auth_handler->handle_session_event(1, session_event2);
 
-    // swipe a token of the master pass group; it shall stop the transaction despite stop_transaction_on_reswipe
-    // being false
-    provided_token.id_token = {VALID_TOKEN_1, types::authorization::IdTokenType::ISO14443};
-
-    EXPECT_CALL(mock_publish_token_validation_status_callback,
-                Call(Field(&ProvidedIdToken::id_token, provided_token.id_token), TokenValidationStatus::Processing));
-    EXPECT_CALL(mock_publish_token_validation_status_callback,
-                Call(Field(&ProvidedIdToken::id_token, provided_token.id_token), TokenValidationStatus::UsedToStop));
-    EXPECT_CALL(mock_stop_transaction_callback,
-                Call(0, Field(&StopTransactionRequest::reason, StopTransactionReason::MasterPass)))
-        .Times(1);
-
-    result = this->auth_handler->on_token(provided_token);
-    ASSERT_TRUE(result == TokenHandlingResult::USED_TO_STOP_TRANSACTION);
-    ASSERT_FALSE(this->auth_receiver->get_authorization(0));
-    ASSERT_FALSE(this->auth_receiver->get_authorization(1));
+    result = this->auth_handler->on_token(provided_token_2);
+    ASSERT_EQ(result, TokenHandlingResult::NO_CONNECTOR_AVAILABLE);
 }
 
 /// \brief Simple test to test if authorize first and plugin provides authorization
@@ -1850,6 +1842,409 @@ TEST_F(AuthTest, test_authorization_without_transaction) {
     ASSERT_TRUE(this->auth_receiver->get_authorization(0));
 }
 
+/// \brief Test that swiping a token again withdraws an authorization for which no transaction has been started yet
+/// if deauthorize_on_reswipe is true
+TEST_F(AuthTest, test_deauthorize_on_reswipe_withdraws_authorization_without_transaction) {
+    this->auth_handler->set_deauthorize_on_reswipe(true);
+
+    std::vector<int32_t> connectors{1};
+    ProvidedIdToken provided_token = get_provided_token(VALID_TOKEN_1, connectors);
+
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, provided_token.id_token), TokenValidationStatus::Processing));
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, provided_token.id_token), TokenValidationStatus::Accepted));
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, provided_token.id_token), TokenValidationStatus::UsedToStart));
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, provided_token.id_token), TokenValidationStatus::Withdrawn));
+    EXPECT_CALL(mock_withdraw_authorization_callback_mock, Call(0));
+
+    TokenHandlingResult result;
+    std::thread t1([this, provided_token, &result]() { result = this->auth_handler->on_token(provided_token); });
+    t1.join();
+
+    ASSERT_TRUE(result == TokenHandlingResult::USED_TO_START_TRANSACTION);
+    ASSERT_TRUE(this->auth_receiver->get_authorization(0));
+
+    std::thread t2([this, provided_token, &result]() { result = this->auth_handler->on_token(provided_token); });
+    t2.join();
+
+    ASSERT_TRUE(result == TokenHandlingResult::WITHDRAWN);
+    ASSERT_FALSE(this->auth_receiver->get_authorization(0));
+}
+
+/// \brief Test that withdrawing a pending authorization on reswipe never stops a transaction of the same token that
+/// is active at an EVSE which is not referenced by the presented token
+TEST_F(AuthTest, test_deauthorize_on_reswipe_does_not_stop_transaction_at_other_evse) {
+    this->auth_handler->set_deauthorize_on_reswipe(true);
+    this->auth_handler->set_stop_transaction_on_reswipe(false);
+
+    ProvidedIdToken token_evse0 = get_provided_token(VALID_TOKEN_1, std::vector<int32_t>{1});
+    ProvidedIdToken token_evse1 = get_provided_token(VALID_TOKEN_1, std::vector<int32_t>{2});
+
+    this->auth_handler->handle_session_event(
+        1, get_session_started_event(types::evse_manager::StartSessionReason::EVConnected));
+    EXPECT_CALL(mock_publish_token_validation_status_callback, Call(_, _)).Times(testing::AnyNumber());
+    EXPECT_CALL(mock_withdraw_authorization_callback_mock, Call(1)).Times(1);
+    EXPECT_CALL(mock_stop_transaction_callback, Call(_, _)).Times(0);
+
+    ASSERT_TRUE(this->auth_handler->on_token(token_evse0) == TokenHandlingResult::USED_TO_START_TRANSACTION);
+    this->auth_handler->handle_session_event(1, get_transaction_started_event(token_evse0));
+
+    // no plug in at EVSE 2, so the authorization stays pending until the reswipe
+    TokenHandlingResult result1;
+    std::thread t1([this, token_evse1, &result1]() { result1 = this->auth_handler->on_token(token_evse1); });
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+
+    TokenHandlingResult result2 = this->auth_handler->on_token(token_evse1);
+    t1.join();
+
+    ASSERT_TRUE(result2 == TokenHandlingResult::WITHDRAWN);
+    ASSERT_TRUE(this->auth_receiver->get_authorization(0));
+}
+
+/// \brief Test that swiping a token again interrupts the wait for a plug in if deauthorize_on_reswipe is true
+TEST_F(AuthTest, test_deauthorize_on_reswipe_interrupts_wait_for_plug_in) {
+    this->auth_handler->set_deauthorize_on_reswipe(true);
+
+    std::vector<int32_t> connectors{1, 2};
+    ProvidedIdToken provided_token = get_provided_token(VALID_TOKEN_1, connectors);
+
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, provided_token.id_token), TokenValidationStatus::Processing));
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, provided_token.id_token), TokenValidationStatus::Accepted));
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, provided_token.id_token), TokenValidationStatus::Withdrawn));
+
+    TokenHandlingResult first_result;
+    TokenHandlingResult second_result;
+    std::thread t1(
+        [this, provided_token, &first_result]() { first_result = this->auth_handler->on_token(provided_token); });
+
+    // let the first swipe reach the wait for a plug in, which is shorter than CONNECTION_TIMEOUT
+    std::this_thread::sleep_for(std::chrono::milliseconds(300));
+
+    std::thread t2(
+        [this, provided_token, &second_result]() { second_result = this->auth_handler->on_token(provided_token); });
+    t1.join();
+    t2.join();
+
+    ASSERT_TRUE(first_result == TokenHandlingResult::WITHDRAWN);
+    ASSERT_TRUE(second_result == TokenHandlingResult::WITHDRAWN);
+    ASSERT_FALSE(this->auth_receiver->get_authorization(0));
+    ASSERT_FALSE(this->auth_receiver->get_authorization(1));
+}
+
+/// \brief Test that swiping a different token with the same parent id withdraws an authorization without transaction
+/// if deauthorize_on_reswipe is true
+TEST_F(AuthTest, test_deauthorize_on_reswipe_with_same_parent_id_withdraws_authorization) {
+    this->auth_handler->set_deauthorize_on_reswipe(true);
+
+    std::vector<int32_t> connectors{1};
+    ProvidedIdToken provided_token_1 = get_provided_token(VALID_TOKEN_1, connectors);
+    ProvidedIdToken provided_token_3 = get_provided_token(VALID_TOKEN_3, connectors);
+
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, provided_token_1.id_token), TokenValidationStatus::Processing));
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, provided_token_1.id_token), TokenValidationStatus::Accepted));
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, provided_token_1.id_token), TokenValidationStatus::UsedToStart));
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, provided_token_1.id_token), TokenValidationStatus::Withdrawn));
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, provided_token_3.id_token), TokenValidationStatus::Processing));
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, provided_token_3.id_token), TokenValidationStatus::Withdrawn));
+    EXPECT_CALL(mock_withdraw_authorization_callback_mock, Call(0));
+
+    TokenHandlingResult result;
+    std::thread t1([this, provided_token_1, &result]() { result = this->auth_handler->on_token(provided_token_1); });
+    t1.join();
+
+    ASSERT_TRUE(result == TokenHandlingResult::USED_TO_START_TRANSACTION);
+    ASSERT_TRUE(this->auth_receiver->get_authorization(0));
+
+    std::thread t2([this, provided_token_3, &result]() { result = this->auth_handler->on_token(provided_token_3); });
+    t2.join();
+
+    ASSERT_TRUE(result == TokenHandlingResult::WITHDRAWN);
+    ASSERT_FALSE(this->auth_receiver->get_authorization(0));
+}
+
+/// \brief Test that swiping a different token with the same parent id interrupts the wait for a plug in if
+/// deauthorize_on_reswipe is true
+TEST_F(AuthTest, test_deauthorize_on_reswipe_with_same_parent_id_interrupts_wait_for_plug_in) {
+    this->auth_handler->set_deauthorize_on_reswipe(true);
+
+    std::vector<int32_t> connectors{1, 2};
+    ProvidedIdToken provided_token_1 = get_provided_token(VALID_TOKEN_1, connectors);
+    ProvidedIdToken provided_token_3 = get_provided_token(VALID_TOKEN_3, connectors);
+
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, provided_token_1.id_token), TokenValidationStatus::Processing));
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, provided_token_1.id_token), TokenValidationStatus::Accepted));
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, provided_token_1.id_token), TokenValidationStatus::Withdrawn));
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, provided_token_3.id_token), TokenValidationStatus::Processing));
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, provided_token_3.id_token), TokenValidationStatus::Withdrawn));
+
+    TokenHandlingResult first_result;
+    TokenHandlingResult second_result;
+    std::thread t1(
+        [this, provided_token_1, &first_result]() { first_result = this->auth_handler->on_token(provided_token_1); });
+
+    // let the first swipe reach the wait for a plug in, which is shorter than CONNECTION_TIMEOUT
+    std::this_thread::sleep_for(std::chrono::milliseconds(300));
+
+    std::thread t2(
+        [this, provided_token_3, &second_result]() { second_result = this->auth_handler->on_token(provided_token_3); });
+    t1.join();
+    t2.join();
+
+    ASSERT_TRUE(first_result == TokenHandlingResult::WITHDRAWN);
+    ASSERT_TRUE(second_result == TokenHandlingResult::WITHDRAWN);
+    ASSERT_FALSE(this->auth_receiver->get_authorization(0));
+    ASSERT_FALSE(this->auth_receiver->get_authorization(1));
+}
+
+/// \brief Test that swiping a token again while it is still being validated is ignored if deauthorize_on_reswipe is
+/// true
+TEST_F(AuthTest, test_deauthorize_on_reswipe_ignores_reswipe_during_validation) {
+    this->auth_handler->set_deauthorize_on_reswipe(true);
+    this->auth_handler->register_validate_token_callback([](const ProvidedIdToken& provided_token) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        ValidationResult result;
+        result.authorization_status = AuthorizationStatus::Accepted;
+        return std::vector<ValidationResult>{result};
+    });
+
+    std::vector<int32_t> connectors{1};
+    ProvidedIdToken provided_token = get_provided_token(VALID_TOKEN_1, connectors);
+
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, provided_token.id_token), TokenValidationStatus::Processing));
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, provided_token.id_token), TokenValidationStatus::Accepted));
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, provided_token.id_token), TokenValidationStatus::UsedToStart));
+    EXPECT_CALL(mock_withdraw_authorization_callback_mock, Call(_)).Times(0);
+
+    TokenHandlingResult first_result;
+    TokenHandlingResult second_result;
+    std::thread t1(
+        [this, provided_token, &first_result]() { first_result = this->auth_handler->on_token(provided_token); });
+
+    // second swipe while the first one is still in the validator
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    std::thread t2(
+        [this, provided_token, &second_result]() { second_result = this->auth_handler->on_token(provided_token); });
+    t1.join();
+    t2.join();
+
+    ASSERT_TRUE(first_result == TokenHandlingResult::USED_TO_START_TRANSACTION);
+    ASSERT_TRUE(second_result == TokenHandlingResult::ALREADY_IN_PROCESS);
+    ASSERT_TRUE(this->auth_receiver->get_authorization(0));
+}
+
+/// \brief Test that swiping the parent id token of an authorization without transaction withdraws it if
+/// deauthorize_on_reswipe is true
+TEST_F(AuthTest, test_deauthorize_on_reswipe_with_parent_id_token_withdraws_authorization) {
+    this->auth_handler->set_deauthorize_on_reswipe(true);
+
+    std::vector<int32_t> connectors{1};
+    ProvidedIdToken provided_token = get_provided_token(VALID_TOKEN_1, connectors);
+    ProvidedIdToken parent_token = get_provided_token(PARENT_ID_TOKEN, connectors);
+
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, provided_token.id_token), TokenValidationStatus::Processing));
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, provided_token.id_token), TokenValidationStatus::Accepted));
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, provided_token.id_token), TokenValidationStatus::UsedToStart));
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, provided_token.id_token), TokenValidationStatus::Withdrawn));
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, parent_token.id_token), TokenValidationStatus::Processing));
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, parent_token.id_token), TokenValidationStatus::Withdrawn));
+    EXPECT_CALL(mock_withdraw_authorization_callback_mock, Call(0));
+    EXPECT_CALL(mock_stop_transaction_callback, Call(_, _)).Times(0);
+
+    auto result = this->auth_handler->on_token(provided_token);
+    ASSERT_TRUE(result == TokenHandlingResult::USED_TO_START_TRANSACTION);
+    ASSERT_TRUE(this->auth_receiver->get_authorization(0));
+
+    result = this->auth_handler->on_token(parent_token);
+    ASSERT_TRUE(result == TokenHandlingResult::WITHDRAWN);
+    ASSERT_FALSE(this->auth_receiver->get_authorization(0));
+}
+
+/// \brief Test that a token of a type other than RFID or BankCard does not withdraw its authorization when presented
+/// again, even if deauthorize_on_reswipe is true
+TEST_F(AuthTest, test_deauthorize_on_reswipe_ignores_non_rfid_token) {
+    this->auth_handler->set_deauthorize_on_reswipe(true);
+
+    std::vector<int32_t> connectors{1};
+    ProvidedIdToken provided_token = get_provided_token(VALID_TOKEN_1, connectors);
+    provided_token.authorization_type = types::authorization::AuthorizationType::OCPP;
+
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, provided_token.id_token), TokenValidationStatus::Processing));
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, provided_token.id_token), TokenValidationStatus::Accepted));
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, provided_token.id_token), TokenValidationStatus::UsedToStart));
+    EXPECT_CALL(mock_withdraw_authorization_callback_mock, Call(_)).Times(0);
+
+    auto result = this->auth_handler->on_token(provided_token);
+    ASSERT_TRUE(result == TokenHandlingResult::USED_TO_START_TRANSACTION);
+
+    result = this->auth_handler->on_token(provided_token);
+    ASSERT_TRUE(result == TokenHandlingResult::ALREADY_IN_PROCESS);
+    ASSERT_TRUE(this->auth_receiver->get_authorization(0));
+}
+
+/// \brief Test that a token presented again in a different letter case withdraws the authorization if
+/// deauthorize_on_reswipe is true
+TEST_F(AuthTest, test_deauthorize_on_reswipe_is_case_insensitive) {
+    this->auth_handler->set_deauthorize_on_reswipe(true);
+
+    std::vector<int32_t> connectors{1};
+    ProvidedIdToken provided_token = get_provided_token(VALID_TOKEN_1, connectors);
+    ProvidedIdToken lower_case_token = get_provided_token("valid_rfid_1", connectors);
+
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, provided_token.id_token), TokenValidationStatus::Processing));
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, provided_token.id_token), TokenValidationStatus::Accepted));
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, provided_token.id_token), TokenValidationStatus::UsedToStart));
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, provided_token.id_token), TokenValidationStatus::Withdrawn));
+    EXPECT_CALL(mock_withdraw_authorization_callback_mock, Call(0));
+
+    auto result = this->auth_handler->on_token(provided_token);
+    ASSERT_TRUE(result == TokenHandlingResult::USED_TO_START_TRANSACTION);
+
+    result = this->auth_handler->on_token(lower_case_token);
+    ASSERT_TRUE(result == TokenHandlingResult::WITHDRAWN);
+    ASSERT_FALSE(this->auth_receiver->get_authorization(0));
+}
+
+/// \brief Fixture for reswipes while an authorization exists but no transaction has been started yet, with
+/// deauthorize_on_reswipe disabled. Parameters: <plug in before swipe, stop_transaction_on_reswipe>
+class AuthPendingReswipeTest : public AuthTest, public ::testing::WithParamInterface<std::tuple<bool, bool>> {
+protected:
+    const std::vector<int32_t> connectors{1, 2};
+
+    void SetUp() override {
+        AuthTest::SetUp();
+        this->auth_handler->set_deauthorize_on_reswipe(false);
+        this->auth_handler->set_stop_transaction_on_reswipe(std::get<1>(GetParam()));
+    }
+
+    /// Brings evse 1 into the state "authorized with VALID_TOKEN_1, no transaction yet", either by plugging in
+    /// before or after the swipe
+    void authorize_pending() {
+        const auto token = get_provided_token(VALID_TOKEN_1, connectors);
+        const auto plug_in = get_session_started_event(types::evse_manager::StartSessionReason::EVConnected);
+        TokenHandlingResult result;
+
+        if (std::get<0>(GetParam())) {
+            this->auth_handler->handle_session_event(1, plug_in);
+            result = this->auth_handler->on_token(token);
+        } else {
+            std::thread swipe([this, token, &result]() { result = this->auth_handler->on_token(token); });
+            // let the swipe reach the wait for a plug in
+            std::this_thread::sleep_for(std::chrono::milliseconds(300));
+            this->auth_handler->handle_session_event(1, plug_in);
+            swipe.join();
+        }
+
+        ASSERT_TRUE(result == TokenHandlingResult::USED_TO_START_TRANSACTION);
+        ASSERT_TRUE(this->auth_receiver->get_authorization(0));
+    }
+
+    void expect_first_swipe_published() {
+        const auto id_token = get_provided_token(VALID_TOKEN_1).id_token;
+        EXPECT_CALL(mock_publish_token_validation_status_callback,
+                    Call(Field(&ProvidedIdToken::id_token, id_token), TokenValidationStatus::Processing));
+        EXPECT_CALL(mock_publish_token_validation_status_callback,
+                    Call(Field(&ProvidedIdToken::id_token, id_token), TokenValidationStatus::Accepted));
+        EXPECT_CALL(mock_publish_token_validation_status_callback,
+                    Call(Field(&ProvidedIdToken::id_token, id_token), TokenValidationStatus::UsedToStart));
+    }
+};
+
+/// \brief Swiping the same token again is ignored while its authorization waits for a transaction
+TEST_P(AuthPendingReswipeTest, same_token_is_ignored) {
+    this->expect_first_swipe_published();
+    EXPECT_CALL(mock_stop_transaction_callback, Call(_, _)).Times(0);
+    EXPECT_CALL(mock_withdraw_authorization_callback_mock, Call(_)).Times(0);
+
+    ASSERT_NO_FATAL_FAILURE(this->authorize_pending());
+
+    const auto result = this->auth_handler->on_token(get_provided_token(VALID_TOKEN_1, connectors));
+    ASSERT_TRUE(result == TokenHandlingResult::ALREADY_IN_PROCESS);
+    ASSERT_TRUE(this->auth_receiver->get_authorization(0));
+}
+
+/// \brief A different token sharing the parent id of the pending authorization is ignored as well
+TEST_P(AuthPendingReswipeTest, token_with_same_parent_id_is_ignored) {
+    const auto token_3 = get_provided_token(VALID_TOKEN_3, connectors);
+    this->expect_first_swipe_published();
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, token_3.id_token), TokenValidationStatus::Processing));
+    EXPECT_CALL(mock_stop_transaction_callback, Call(_, _)).Times(0);
+    EXPECT_CALL(mock_withdraw_authorization_callback_mock, Call(_)).Times(0);
+
+    ASSERT_NO_FATAL_FAILURE(this->authorize_pending());
+
+    const auto result = this->auth_handler->on_token(token_3);
+    ASSERT_TRUE(result == TokenHandlingResult::ALREADY_IN_PROCESS);
+    ASSERT_TRUE(this->auth_receiver->get_authorization(0));
+}
+
+/// \brief Swiping a token whose id equals the parent id of the pending authorization is handled like a reswipe on
+/// an active transaction: it reauthorizes if stop_transaction_on_reswipe is false, otherwise it requests a stop
+TEST_P(AuthPendingReswipeTest, parent_id_token_handled_like_active_transaction) {
+    const bool stop_on_reswipe = std::get<1>(GetParam());
+    const auto parent_token = get_provided_token(PARENT_ID_TOKEN, connectors);
+    this->expect_first_swipe_published();
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, parent_token.id_token), TokenValidationStatus::Processing));
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, parent_token.id_token),
+                     stop_on_reswipe ? TokenValidationStatus::UsedToStop : TokenValidationStatus::UsedToReauthorize));
+    EXPECT_CALL(mock_withdraw_authorization_callback_mock, Call(_)).Times(0);
+    if (stop_on_reswipe) {
+        EXPECT_CALL(mock_stop_transaction_callback,
+                    Call(0, Field(&StopTransactionRequest::reason, StopTransactionReason::Local)));
+    } else {
+        EXPECT_CALL(mock_stop_transaction_callback, Call(_, _)).Times(0);
+    }
+
+    ASSERT_NO_FATAL_FAILURE(this->authorize_pending());
+
+    const auto result = this->auth_handler->on_token(parent_token);
+    ASSERT_TRUE(result == (stop_on_reswipe ? TokenHandlingResult::USED_TO_STOP_TRANSACTION
+                                           : TokenHandlingResult::USED_TO_REAUTHORIZE));
+    ASSERT_TRUE(this->auth_receiver->get_authorization(0) == !stop_on_reswipe);
+}
+
+INSTANTIATE_TEST_SUITE_P(PlugInOrderAndStopOnReswipe, AuthPendingReswipeTest,
+                         ::testing::Combine(::testing::Bool(), ::testing::Bool()),
+                         [](const ::testing::TestParamInfo<std::tuple<bool, bool>>& info) {
+                             return std::string(std::get<0>(info.param) ? "plug_in_first" : "swipe_first") +
+                                    (std::get<1>(info.param) ? "_stop_on_reswipe" : "_no_stop_on_reswipe");
+                         });
+
 /// \brief Test if two transactions can be started for two succeeding plugins before two card swipes
 TEST_F(AuthTest, test_two_transactions_start_stop) {
 
@@ -2130,6 +2525,498 @@ TEST_F(AuthTest, test_master_pass_group_id) {
     ASSERT_TRUE(result == TokenHandlingResult::USED_TO_STOP_TRANSACTION);
     ASSERT_FALSE(this->auth_receiver->get_authorization(0));
     ASSERT_FALSE(this->auth_receiver->get_authorization(1));
+}
+
+enum class MasterPassState {
+    Idle,                    // No session event and no swipe before the master pass swipe
+    SwipedWaitingForPlugIn,  // A token was swiped, but no EV is plugged in yet, so the swipe waits for a plug in
+    PluggedInNotAuthorized,  // An EV is plugged in, but no token was swiped
+    AuthorizedNoTransaction, // An EV is plugged in and a token authorized it, but no transaction has started
+    TransactionActive,       // An EV is plugged in, authorized and its transaction has started
+};
+
+/// \brief Fixture for master pass swipes. Parameters: <prioritize_authorization_over_stopping_transaction,
+/// stop_transaction_on_reswipe, deauthorize_on_reswipe, state of evse>. The master pass token must behave the same
+/// for every combination of the settings.
+class AuthMasterPassTest : public AuthTest,
+                           public ::testing::WithParamInterface<std::tuple<bool, bool, bool, MasterPassState>> {
+protected:
+    const std::vector<int32_t> connectors{1, 2};
+
+    void SetUp() override {
+        AuthTest::SetUp();
+        this->auth_handler->set_master_pass_group_id(PARENT_ID_TOKEN);
+        this->auth_handler->set_prioritize_authorization_over_stopping_transaction(std::get<0>(GetParam()));
+        this->auth_handler->set_stop_transaction_on_reswipe(std::get<1>(GetParam()));
+        this->auth_handler->set_deauthorize_on_reswipe(std::get<2>(GetParam()));
+    }
+
+    std::thread waiting_swipe;
+    TokenHandlingResult waiting_swipe_result{};
+    std::promise<void> swipe_accepted;
+
+    void TearDown() override {
+        if (this->waiting_swipe.joinable()) {
+            this->waiting_swipe.join();
+        }
+        AuthTest::TearDown();
+    }
+
+    MasterPassState state() const {
+        return std::get<3>(GetParam());
+    }
+
+    void expect_token_published(const ProvidedIdToken& token, const std::vector<TokenValidationStatus>& statuses) {
+        for (const auto status : statuses) {
+            EXPECT_CALL(mock_publish_token_validation_status_callback,
+                        Call(Field(&ProvidedIdToken::id_token, token.id_token), status));
+        }
+    }
+
+    /// Brings evse 1 into the parameterized state using VALID_TOKEN_2
+    void prepare_state(const ProvidedIdToken& token) {
+        if (this->state() == MasterPassState::Idle) {
+            return;
+        }
+        if (this->state() == MasterPassState::SwipedWaitingForPlugIn) {
+            this->waiting_swipe =
+                std::thread([this, token]() { this->waiting_swipe_result = this->auth_handler->on_token(token); });
+            // the swipe holds the handler lock until it waits for the plug in, so the master pass swipe cannot overtake
+            // it once the token is accepted
+            ASSERT_EQ(this->swipe_accepted.get_future().wait_for(std::chrono::seconds(CONNECTION_TIMEOUT)),
+                      std::future_status::ready);
+            return;
+        }
+        this->auth_handler->handle_session_event(
+            1, get_session_started_event(types::evse_manager::StartSessionReason::EVConnected));
+        if (this->state() == MasterPassState::PluggedInNotAuthorized) {
+            return;
+        }
+
+        const auto result = this->auth_handler->on_token(token);
+        ASSERT_TRUE(result == TokenHandlingResult::USED_TO_START_TRANSACTION);
+        ASSERT_TRUE(this->auth_receiver->get_authorization(0));
+
+        if (this->state() == MasterPassState::TransactionActive) {
+            this->auth_handler->handle_session_event(1, get_transaction_started_event(token));
+        }
+    }
+};
+
+/// \brief A master pass token withdraws a pending authorization and stops an active transaction, independent of
+/// prioritize_authorization_over_stopping_transaction, stop_transaction_on_reswipe and deauthorize_on_reswipe
+TEST_P(AuthMasterPassTest, test_master_pass_token_stops_or_withdraws) {
+    const auto first_token = get_provided_token(VALID_TOKEN_2, connectors);
+    const auto master_pass_token = get_provided_token(VALID_TOKEN_1, connectors);
+
+    if (this->state() == MasterPassState::AuthorizedNoTransaction ||
+        this->state() == MasterPassState::TransactionActive) {
+        this->expect_token_published(first_token, {TokenValidationStatus::Processing, TokenValidationStatus::Accepted,
+                                                   TokenValidationStatus::UsedToStart});
+    }
+
+    if (this->state() == MasterPassState::SwipedWaitingForPlugIn) {
+        this->expect_token_published(first_token,
+                                     {TokenValidationStatus::Processing, TokenValidationStatus::Withdrawn});
+        EXPECT_CALL(mock_publish_token_validation_status_callback,
+                    Call(Field(&ProvidedIdToken::id_token, first_token.id_token), TokenValidationStatus::Accepted))
+            .WillOnce(Invoke([this](const auto&, const auto&) { this->swipe_accepted.set_value(); }));
+    }
+
+    switch (this->state()) {
+    case MasterPassState::Idle:
+    case MasterPassState::PluggedInNotAuthorized:
+        this->expect_token_published(master_pass_token,
+                                     {TokenValidationStatus::Processing, TokenValidationStatus::UsedToStop});
+        EXPECT_CALL(mock_stop_transaction_callback, Call(_, _)).Times(0);
+        EXPECT_CALL(mock_withdraw_authorization_callback_mock, Call(_)).Times(0);
+        break;
+    case MasterPassState::SwipedWaitingForPlugIn:
+        this->expect_token_published(master_pass_token,
+                                     {TokenValidationStatus::Processing, TokenValidationStatus::Withdrawn});
+        EXPECT_CALL(mock_stop_transaction_callback, Call(_, _)).Times(0);
+        EXPECT_CALL(mock_withdraw_authorization_callback_mock, Call(_)).Times(0);
+        break;
+    case MasterPassState::AuthorizedNoTransaction:
+        this->expect_token_published(first_token, {TokenValidationStatus::Withdrawn});
+        this->expect_token_published(master_pass_token,
+                                     {TokenValidationStatus::Processing, TokenValidationStatus::Withdrawn});
+        EXPECT_CALL(mock_stop_transaction_callback, Call(_, _)).Times(0);
+        EXPECT_CALL(mock_withdraw_authorization_callback_mock, Call(0)).Times(1);
+        break;
+    case MasterPassState::TransactionActive:
+        this->expect_token_published(master_pass_token,
+                                     {TokenValidationStatus::Processing, TokenValidationStatus::UsedToStop});
+        EXPECT_CALL(mock_stop_transaction_callback,
+                    Call(0, Field(&StopTransactionRequest::reason, StopTransactionReason::MasterPass)))
+            .Times(1);
+        EXPECT_CALL(mock_withdraw_authorization_callback_mock, Call(_)).Times(0);
+        break;
+    }
+
+    ASSERT_NO_FATAL_FAILURE(this->prepare_state(first_token));
+
+    const auto result = this->auth_handler->on_token(master_pass_token);
+
+    if (this->waiting_swipe.joinable()) {
+        this->waiting_swipe.join();
+        ASSERT_TRUE(this->waiting_swipe_result == TokenHandlingResult::WITHDRAWN);
+    }
+
+    switch (this->state()) {
+    case MasterPassState::Idle:
+    case MasterPassState::PluggedInNotAuthorized:
+    case MasterPassState::TransactionActive:
+        ASSERT_TRUE(result == TokenHandlingResult::USED_TO_STOP_TRANSACTION);
+        break;
+    case MasterPassState::SwipedWaitingForPlugIn:
+    case MasterPassState::AuthorizedNoTransaction:
+        ASSERT_TRUE(result == TokenHandlingResult::WITHDRAWN);
+        break;
+    }
+    ASSERT_FALSE(this->auth_receiver->get_authorization(0));
+    ASSERT_FALSE(this->auth_receiver->get_authorization(1));
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    AllSettingsAndStates, AuthMasterPassTest,
+    ::testing::Combine(::testing::Bool(), ::testing::Bool(), ::testing::Bool(),
+                       ::testing::Values(MasterPassState::Idle, MasterPassState::SwipedWaitingForPlugIn,
+                                         MasterPassState::PluggedInNotAuthorized,
+                                         MasterPassState::AuthorizedNoTransaction, MasterPassState::TransactionActive)),
+    [](const ::testing::TestParamInfo<AuthMasterPassTest::ParamType>& info) {
+        const char* state = "";
+        switch (std::get<3>(info.param)) {
+        case MasterPassState::Idle:
+            state = "idle";
+            break;
+        case MasterPassState::SwipedWaitingForPlugIn:
+            state = "swipedWaitingForPlugIn";
+            break;
+        case MasterPassState::PluggedInNotAuthorized:
+            state = "pluggedInNotAuthorized";
+            break;
+        case MasterPassState::AuthorizedNoTransaction:
+            state = "authorizedNoTransaction";
+            break;
+        case MasterPassState::TransactionActive:
+            state = "transactionActive";
+            break;
+        }
+        return std::string(std::get<0>(info.param) ? "prioritizeAuth" : "prioritizeStop") +
+               (std::get<1>(info.param) ? "_stopOnReswipe" : "_noStopOnReswipe") +
+               (std::get<2>(info.param) ? "_deauthOnReswipe" : "_noDeauthOnReswipe") + "_" + state;
+    });
+
+/// \brief Test that a token of a type other than RFID or BankCard does not withdraw the authorization of a token
+/// sharing its parent id, even if deauthorize_on_reswipe is true
+TEST_F(AuthTest, test_deauthorize_on_reswipe_ignores_non_rfid_token_with_same_parent_id) {
+    this->auth_handler->set_deauthorize_on_reswipe(true);
+
+    std::vector<int32_t> connectors{1};
+    ProvidedIdToken provided_token_1 = get_provided_token(VALID_TOKEN_1, connectors);
+    ProvidedIdToken provided_token_2 = get_provided_token(VALID_TOKEN_3, connectors);
+    provided_token_2.authorization_type = types::authorization::AuthorizationType::OCPP;
+
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, provided_token_1.id_token), TokenValidationStatus::Processing));
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, provided_token_1.id_token), TokenValidationStatus::Accepted));
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, provided_token_1.id_token), TokenValidationStatus::UsedToStart));
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, provided_token_2.id_token), TokenValidationStatus::Processing));
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, provided_token_2.id_token), TokenValidationStatus::Rejected));
+    EXPECT_CALL(mock_withdraw_authorization_callback_mock, Call(_)).Times(0);
+    EXPECT_CALL(mock_stop_transaction_callback, Call(_, _)).Times(0);
+
+    auto result = this->auth_handler->on_token(provided_token_1);
+    ASSERT_EQ(result, TokenHandlingResult::USED_TO_START_TRANSACTION);
+
+    result = this->auth_handler->on_token(provided_token_2);
+    ASSERT_EQ(result, TokenHandlingResult::NO_CONNECTOR_AVAILABLE);
+    ASSERT_TRUE(this->auth_receiver->get_authorization(0));
+}
+
+/// \brief Test that swiping a token again at an evse it authorized without a transaction withdraws only that
+/// authorization and does not stop the transaction the same token started at an evse the swipe does not reference
+TEST_F(AuthTest, test_deauthorize_on_reswipe_keeps_transaction_at_unreferenced_evse) {
+    this->auth_handler->set_deauthorize_on_reswipe(true);
+
+    const ProvidedIdToken token_at_evse_1 = get_provided_token(VALID_TOKEN_1, std::vector<int32_t>{1});
+    const ProvidedIdToken token_at_evse_2 = get_provided_token(VALID_TOKEN_1, std::vector<int32_t>{2});
+
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, token_at_evse_1.id_token), TokenValidationStatus::Processing))
+        .Times(2);
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, token_at_evse_1.id_token), TokenValidationStatus::Accepted))
+        .Times(2);
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, token_at_evse_1.id_token), TokenValidationStatus::UsedToStart))
+        .Times(2);
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, token_at_evse_1.id_token), TokenValidationStatus::Withdrawn));
+    EXPECT_CALL(mock_withdraw_authorization_callback_mock, Call(1));
+    EXPECT_CALL(mock_stop_transaction_callback, Call(_, _)).Times(0);
+
+    this->auth_handler->handle_session_event(
+        1, get_session_started_event(types::evse_manager::StartSessionReason::EVConnected));
+    auto result = this->auth_handler->on_token(token_at_evse_1);
+    ASSERT_TRUE(result == TokenHandlingResult::USED_TO_START_TRANSACTION);
+    this->auth_handler->handle_session_event(1, get_transaction_started_event(token_at_evse_1));
+
+    result = this->auth_handler->on_token(token_at_evse_2);
+    ASSERT_TRUE(result == TokenHandlingResult::USED_TO_START_TRANSACTION);
+    ASSERT_TRUE(this->auth_receiver->get_authorization(0));
+    ASSERT_TRUE(this->auth_receiver->get_authorization(1));
+
+    result = this->auth_handler->on_token(token_at_evse_2);
+    ASSERT_TRUE(result == TokenHandlingResult::WITHDRAWN);
+    ASSERT_TRUE(this->auth_receiver->get_authorization(0));
+    ASSERT_FALSE(this->auth_receiver->get_authorization(1));
+}
+
+/// \brief Test that a master pass token that withdraws a swipe waiting for a plug in does not stop the transaction
+/// the waiting token started at an evse the master pass swipe does not reference
+TEST_F(AuthTest, test_master_pass_keeps_transaction_at_unreferenced_evse) {
+    this->auth_receiver->add_evse_index(2);
+    this->auth_handler->init_evse(3, 2, {Connector(1, types::evse_manager::ConnectorTypeEnum::cCCS2)});
+    this->auth_handler->set_master_pass_group_id(PARENT_ID_TOKEN);
+
+    const ProvidedIdToken charging_token = get_provided_token(VALID_TOKEN_2, std::vector<int32_t>{3});
+    const ProvidedIdToken waiting_token = get_provided_token(VALID_TOKEN_2, std::vector<int32_t>{1, 2});
+    const ProvidedIdToken master_pass_token = get_provided_token(VALID_TOKEN_1, std::vector<int32_t>{1, 2});
+
+    std::promise<void> waiting_swipe_accepted;
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, charging_token.id_token), TokenValidationStatus::Processing))
+        .Times(2);
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, charging_token.id_token), TokenValidationStatus::Accepted))
+        .WillOnce(Return())
+        .WillOnce(Invoke([&waiting_swipe_accepted](const auto&, const auto&) { waiting_swipe_accepted.set_value(); }));
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, charging_token.id_token), TokenValidationStatus::UsedToStart));
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, charging_token.id_token), TokenValidationStatus::Withdrawn));
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, master_pass_token.id_token), TokenValidationStatus::Processing));
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, master_pass_token.id_token), TokenValidationStatus::Withdrawn));
+    EXPECT_CALL(mock_withdraw_authorization_callback_mock, Call(_)).Times(0);
+    EXPECT_CALL(mock_stop_transaction_callback, Call(_, _)).Times(0);
+
+    this->auth_handler->handle_session_event(
+        3, get_session_started_event(types::evse_manager::StartSessionReason::EVConnected));
+    const auto charging_result = this->auth_handler->on_token(charging_token);
+    ASSERT_TRUE(charging_result == TokenHandlingResult::USED_TO_START_TRANSACTION);
+    this->auth_handler->handle_session_event(3, get_transaction_started_event(charging_token));
+
+    TokenHandlingResult waiting_result{};
+    std::thread waiting_swipe(
+        [this, waiting_token, &waiting_result]() { waiting_result = this->auth_handler->on_token(waiting_token); });
+    // the swipe holds the handler lock until it waits for the plug in, so the master pass swipe cannot overtake it
+    // once the token is accepted
+    EXPECT_EQ(waiting_swipe_accepted.get_future().wait_for(std::chrono::seconds(CONNECTION_TIMEOUT)),
+              std::future_status::ready);
+
+    const auto master_pass_result = this->auth_handler->on_token(master_pass_token);
+    waiting_swipe.join();
+
+    EXPECT_TRUE(master_pass_result == TokenHandlingResult::WITHDRAWN);
+    EXPECT_TRUE(waiting_result == TokenHandlingResult::WITHDRAWN);
+    EXPECT_TRUE(this->auth_receiver->get_authorization(2));
+
+    SessionEvent session_finished;
+    session_finished.event = SessionEventEnum::SessionFinished;
+    this->auth_handler->handle_session_event(3, session_finished);
+}
+
+/// \brief Fixture for swipes that withdraw an authorization while another request is handled concurrently. The
+/// validation of one token can be held back to keep that token in process for as long as a test needs it.
+class AuthConcurrentWithdrawTest : public AuthTest {
+protected:
+    const std::chrono::seconds WAIT_TIMEOUT{3};
+
+    std::promise<void> validation_entered;
+    std::promise<void> validation_released;
+    bool handler_blocked{false};
+
+    void TearDown() override {
+        AuthTest::TearDown();
+        if (this->handler_blocked) {
+            // threads are still blocked inside the handler, so it cannot be destroyed
+            this->auth_handler.release();
+        }
+    }
+
+    void allow_any_publish() {
+        EXPECT_CALL(mock_publish_token_validation_status_callback, Call(_, _)).Times(::testing::AnyNumber());
+    }
+
+    /// Accepts every token like the default validator, but holds back the validation of \p blocked_token until
+    /// validation_released is set
+    void hold_back_validation_of(const std::string& blocked_token) {
+        this->auth_handler->register_validate_token_callback(
+            [this, blocked_token](const ProvidedIdToken& provided_token) {
+                const auto& id_token = provided_token.id_token.value;
+                if (id_token == blocked_token) {
+                    this->validation_entered.set_value();
+                    this->validation_released.get_future().wait_for(WAIT_TIMEOUT);
+                }
+                ValidationResult result;
+                result.authorization_status = AuthorizationStatus::Accepted;
+                if (id_token == VALID_TOKEN_1 || id_token == VALID_TOKEN_3) {
+                    result.parent_id_token = {PARENT_ID_TOKEN, types::authorization::IdTokenType::ISO14443};
+                }
+                return std::vector<ValidationResult>{result};
+            });
+    }
+
+    bool wait_for_validation_entered() {
+        return this->validation_entered.get_future().wait_for(WAIT_TIMEOUT) == std::future_status::ready;
+    }
+
+    /// Authorizes evse 1 with \p authorized_token and swipes \p swiped_token, which withdraws that authorization.
+    /// A withdraw request for evse 1 arrives while \p swiped_token is still being validated. Returns true if both
+    /// the swipe and the withdraw request return.
+    bool swipe_and_withdraw_request_return(const std::string& authorized_token, const std::string& swiped_token) {
+        const std::vector<int32_t> connectors{1};
+        this->allow_any_publish();
+
+        if (this->auth_handler->on_token(get_provided_token(authorized_token, connectors)) !=
+            TokenHandlingResult::USED_TO_START_TRANSACTION) {
+            ADD_FAILURE() << "evse 1 could not be authorized";
+            return false;
+        }
+
+        this->hold_back_validation_of(swiped_token);
+
+        auto* handler = this->auth_handler.get();
+        auto swipe_returned = std::make_shared<std::promise<void>>();
+        auto withdraw_returned = std::make_shared<std::promise<void>>();
+        auto swipe_future = swipe_returned->get_future();
+        auto withdraw_future = withdraw_returned->get_future();
+
+        std::thread swipe([handler, swipe_returned, token = get_provided_token(swiped_token, connectors)]() {
+            handler->on_token(token);
+            swipe_returned->set_value();
+        });
+        EXPECT_TRUE(this->wait_for_validation_entered());
+
+        std::thread withdraw([handler, withdraw_returned]() {
+            types::authorization::WithdrawAuthorizationRequest request;
+            request.evse_id = 1;
+            handler->handle_withdraw_authorization(request);
+            withdraw_returned->set_value();
+        });
+        // let the withdraw request start waiting for the swipe that is still being validated
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+        this->validation_released.set_value();
+
+        const auto deadline = std::chrono::steady_clock::now() + WAIT_TIMEOUT;
+        const bool returned = swipe_future.wait_until(deadline) == std::future_status::ready &&
+                              withdraw_future.wait_until(deadline) == std::future_status::ready;
+        if (returned) {
+            swipe.join();
+            withdraw.join();
+        } else {
+            swipe.detach();
+            withdraw.detach();
+            this->handler_blocked = true;
+        }
+        return returned;
+    }
+
+    /// Authorizes evse 1 with VALID_TOKEN_1 and swipes its parent id token. The authorization is reset by a
+    /// Deauthorized event after the parent id token swipe decided to withdraw it and before it could do so, because
+    /// another withdraw request is still in progress. Returns the result of the parent id token swipe.
+    TokenHandlingResult swipe_parent_id_token_while_authorization_is_reset() {
+        std::promise<void> parent_swipe_started;
+        EXPECT_CALL(mock_publish_token_validation_status_callback, Call(_, _))
+            .Times(::testing::AnyNumber())
+            .WillRepeatedly(Invoke([&parent_swipe_started](const ProvidedIdToken& token, TokenValidationStatus status) {
+                if (token.id_token.value == PARENT_ID_TOKEN && status == TokenValidationStatus::Processing) {
+                    parent_swipe_started.set_value();
+                }
+            }));
+
+        const auto authorized =
+            this->auth_handler->on_token(get_provided_token(VALID_TOKEN_1, std::vector<int32_t>{1}));
+        EXPECT_TRUE(authorized == TokenHandlingResult::USED_TO_START_TRANSACTION);
+
+        // a withdraw request for a token that is still being validated stays in progress until validation_released
+        this->hold_back_validation_of(VALID_TOKEN_2);
+        std::thread other_swipe(
+            [this]() { this->auth_handler->on_token(get_provided_token(VALID_TOKEN_2, std::vector<int32_t>{2})); });
+        EXPECT_TRUE(this->wait_for_validation_entered());
+        std::thread other_withdraw([this]() {
+            types::authorization::WithdrawAuthorizationRequest request;
+            request.id_token = {VALID_TOKEN_2, types::authorization::IdTokenType::ISO14443};
+            this->auth_handler->handle_withdraw_authorization(request);
+        });
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+
+        TokenHandlingResult parent_result{};
+        std::thread parent_swipe([this, &parent_result]() {
+            parent_result = this->auth_handler->on_token(get_provided_token(PARENT_ID_TOKEN, std::vector<int32_t>{1}));
+        });
+        EXPECT_EQ(parent_swipe_started.get_future().wait_for(WAIT_TIMEOUT), std::future_status::ready);
+
+        // the parent id token swipe holds the handler lock until it waits for the withdraw request in progress, so
+        // this event is handled after the swipe found the authorization and before it withdraws it
+        SessionEvent deauthorized_event;
+        deauthorized_event.event = SessionEventEnum::Deauthorized;
+        this->auth_handler->handle_session_event(1, deauthorized_event);
+
+        this->validation_released.set_value();
+        other_swipe.join();
+        other_withdraw.join();
+        parent_swipe.join();
+        return parent_result;
+    }
+};
+
+/// \brief Test that a swipe that withdraws the authorization of a token sharing its parent id and a withdraw request
+/// that arrives while this swipe is still being validated do not block each other
+TEST_F(AuthConcurrentWithdrawTest, test_deauthorize_on_reswipe_does_not_block_concurrent_withdraw_request) {
+    this->auth_handler->set_deauthorize_on_reswipe(true);
+
+    ASSERT_TRUE(this->swipe_and_withdraw_request_return(VALID_TOKEN_1, VALID_TOKEN_3));
+}
+
+/// \brief Test that a master pass swipe that withdraws an authorization and a withdraw request that arrives while
+/// this swipe is still being validated do not block each other
+TEST_F(AuthConcurrentWithdrawTest, test_master_pass_does_not_block_concurrent_withdraw_request) {
+    this->auth_handler->set_master_pass_group_id(PARENT_ID_TOKEN);
+
+    ASSERT_TRUE(this->swipe_and_withdraw_request_return(VALID_TOKEN_2, VALID_TOKEN_1));
+}
+
+/// \brief Test that a parent id token swipe does not request a stop at an evse whose authorization was reset before
+/// the swipe could withdraw it
+TEST_F(AuthConcurrentWithdrawTest, test_deauthorize_on_reswipe_does_not_stop_after_authorization_was_reset) {
+    this->auth_handler->set_deauthorize_on_reswipe(true);
+    this->auth_handler->set_stop_transaction_on_reswipe(true);
+    EXPECT_CALL(mock_stop_transaction_callback, Call(_, _)).Times(0);
+
+    const auto result = this->swipe_parent_id_token_while_authorization_is_reset();
+
+    ASSERT_FALSE(result == TokenHandlingResult::USED_TO_STOP_TRANSACTION);
+}
+
+/// \brief Test that a parent id token swipe does not reauthorize an evse whose authorization was reset before the
+/// swipe could withdraw it
+TEST_F(AuthConcurrentWithdrawTest, test_deauthorize_on_reswipe_does_not_reauthorize_after_authorization_was_reset) {
+    this->auth_handler->set_deauthorize_on_reswipe(true);
+    this->auth_handler->set_stop_transaction_on_reswipe(false);
+    EXPECT_CALL(mock_stop_transaction_callback, Call(_, _)).Times(0);
+
+    const auto result = this->swipe_parent_id_token_while_authorization_is_reset();
+
+    ASSERT_FALSE(result == TokenHandlingResult::USED_TO_REAUTHORIZE);
 }
 
 /// \brief Test TimedOut is published when authorization was provided but transaction has never been started.
@@ -2834,8 +3721,9 @@ protected:
         this->kvs.call_store("reservation_auth_handler_test_id",
                              Array{json::object({{"evse_id", 1}, {"reservation", reservation}})});
 
-        this->auth_handler = std::make_unique<AuthHandler>(SelectionAlgorithm::PlugEvents, CONNECTION_TIMEOUT, true,
-                                                           false, false, true, "auth_handler_test_id", &this->kvs);
+        this->auth_handler =
+            std::make_unique<AuthHandler>(SelectionAlgorithm::PlugEvents, CONNECTION_TIMEOUT, true, false, false, true,
+                                          false, "auth_handler_test_id", &this->kvs);
         this->auth_handler->register_reserved_callback(this->mock_reserved_callback.AsStdFunction());
         this->auth_handler->register_reservation_cancelled_callback(
             [](const std::optional<int32_t>, const int32_t, const ReservationEndReason, const bool) {});
