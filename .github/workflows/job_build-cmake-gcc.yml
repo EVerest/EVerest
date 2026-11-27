@@ -215,7 +215,11 @@ jobs:
         id: tar_build_tree
         if: ${{ !cancelled() && steps.compile.outcome == 'success' }}
         run: |
-          sudo tar -I 'zstd -T0 -3' --exclude='*.o' --exclude='*.a.tmp' -cf build-tree.tar.zst build
+          if ! sudo test -d cache/cpm/catch2; then
+            echo '::error::Missing Catch2 source cache at cache/cpm/catch2'
+            exit 1
+          fi
+          sudo tar -I 'zstd -T0 -3' --exclude='*.o' --exclude='*.a.tmp' -cf build-tree.tar.zst build cache/cpm/catch2
           sudo chown "$(id -u):$(id -g)" build-tree.tar.zst
       - name: Upload build tree
         id: upload_build_tree
