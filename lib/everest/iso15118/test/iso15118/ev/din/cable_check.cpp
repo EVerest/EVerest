@@ -73,6 +73,14 @@ void expect_diverts_to_session_stop(PrimedState<State>& primed, const message_di
     REQUIRE(requests.get<message_din::SessionStopRequest>().has_value());
     REQUIRE(requests.get<message_din::CableCheckRequest>().has_value() == false);
 }
+void finish_session_stop(PrimedState<State>& primed) {
+    message_din::SessionStopResponse session_stop{};
+    session_stop.header = header();
+    session_stop.response_code = dt::ResponseCode::OK;
+    primed.handle_response(session_stop);
+    primed.feed(ev::din::Event::V2GTP_MESSAGE);
+}
+
 } // namespace
 
 SCENARIO("DIN 70121 EV CableCheck's first request goes out on the ChargeParameterDiscovery transition") {
@@ -147,11 +155,7 @@ SCENARIO("DIN 70121 EV CableCheck terminates on a shutdown status code over a la
     expect_diverts_to_session_stop(primed, make_response(header(), dt::ResponseCode::OK, dt::EvseProcessing::Finished,
                                                          dt::DcEvseStatusCode::EVSE_Shutdown));
 
-    message_din::SessionStopResponse session_stop{};
-    session_stop.header = header();
-    session_stop.response_code = dt::ResponseCode::OK;
-    primed.handle_response(session_stop);
-    primed.feed(ev::din::Event::V2GTP_MESSAGE);
+    finish_session_stop(primed);
 
     REQUIRE(primed.ctx.is_session_stopped() == true);
     REQUIRE(primed.ctx.is_session_paused() == false);
@@ -172,6 +176,43 @@ SCENARIO("DIN 70121 EV CableCheck acts on a shutdown status code while EVSEProce
                                        make_response(header(), dt::ResponseCode::OK, dt::EvseProcessing::Ongoing,
                                                      dt::DcEvseStatusCode::EVSE_Shutdown));
     }
+}
+
+SCENARIO("DIN 70121 EV CableCheck diverts to SessionStop on an EVSE StopCharging notification") {
+    const auto processing = GENERATE(dt::EvseProcessing::Ongoing, dt::EvseProcessing::Finished);
+    const ev::feedback::Callbacks callbacks{};
+    PrimedState<State> primed{callbacks, no_seed, begun};
+
+    auto res = make_response(header(), dt::ResponseCode::OK, processing, dt::DcEvseStatusCode::EVSE_Ready);
+    res.dc_evse_status.evse_notification = dt::EvseNotification::StopCharging;
+    expect_diverts_to_session_stop(primed, res);
+}
+
+SCENARIO("DIN 70121 EV CableCheck terminates on an EVSE StopCharging notification over a latched EV pause") {
+    const ev::feedback::Callbacks callbacks{};
+    PrimedState<State> primed{callbacks, no_seed, begun};
+
+    primed.ctx.set_pause_charging_requested(true);
+    auto res = ok_response(header());
+    res.dc_evse_status.evse_notification = dt::EvseNotification::StopCharging;
+    expect_diverts_to_session_stop(primed, res);
+
+    finish_session_stop(primed);
+
+    REQUIRE(primed.ctx.is_session_stopped() == true);
+    REQUIRE(primed.ctx.is_session_paused() == false);
+}
+
+SCENARIO("DIN 70121 EV CableCheck pauses on a latched pause request") {
+    const ev::feedback::Callbacks callbacks{};
+    PrimedState<State> primed{callbacks, no_seed, begun};
+
+    primed.ctx.set_pause_charging_requested(true);
+    expect_diverts_to_session_stop(primed, ok_response(header()));
+
+    finish_session_stop(primed);
+
+    REQUIRE(primed.ctx.is_session_paused() == true);
 }
 
 SCENARIO("DIN 70121 EV CableCheck diverts to SessionStop on a latched stop request") {

@@ -18,16 +18,6 @@ message_din::CableCheckRequest create_request(const dt::DcEvStatus& dc_ev_status
     return req;
 }
 
-Result handle_response(const message_din::CableCheckResponse& res) {
-    Result result;
-    result.finished = (res.evse_processing == dt::EvseProcessing::Finished);
-
-    const auto status = res.dc_evse_status.evse_status_code;
-    result.evse_shutdown =
-        (status == dt::DcEvseStatusCode::EVSE_Shutdown or status == dt::DcEvseStatusCode::EVSE_EmergencyShutdown);
-    return result;
-}
-
 } // namespace cable_check
 
 namespace {
@@ -89,17 +79,14 @@ Result CableCheck::feed(Event ev) {
         return Result::stopping();
     }
 
-    const auto result = cable_check::handle_response(*res);
-    if (result.evse_shutdown) {
-        logf_error("CableCheck finished with an EVSE (emergency) shutdown, stopping the session");
-        return to_session_stop(m_ctx, session::StopReason::EvseTerminate);
-    }
-
-    if (auto stop = stop_before_start(m_ctx)) {
+    // Checked in any EVSEProcessing state. [V2G-DC-893/894]: once EVSEProcessing is Finished the EVCC
+    // disregards EVSEIsolationStatus and every EVSEStatusCode except EVSE_Shutdown and
+    // EVSE_EmergencyShutdown before sending PreChargeReq.
+    if (auto stop = stop_before_start(m_ctx, "CableCheck", res->dc_evse_status)) {
         return std::move(*stop);
     }
 
-    if (result.finished) {
+    if (res->evse_processing == dt::EvseProcessing::Finished) {
         return to_pre_charge(m_ctx);
     }
 
