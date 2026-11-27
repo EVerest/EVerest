@@ -513,14 +513,13 @@ TEST_F(ProvisioningItemsPerMessageTest, GetReportOverItemsPerMessageIsAnsweredWi
 class ProvisioningBootNotificationTest : public ProvisioningResetTest {
 protected:
     void set_modem_value(const ComponentVariable& cv, const std::string& value) {
-        ASSERT_EQ(dm->set_read_only_value(cv.component, cv.variable.value(), AttributeEnum::Actual, value, "test"),
+        ASSERT_EQ(dm->set_value(cv.component, cv.variable.value(), AttributeEnum::Actual, value, "test", true),
                   SetVariableStatusEnum::Accepted);
     }
 
     json send_boot_notification() {
         json sent;
-        EXPECT_CALL(mock_dispatcher, dispatch_call(::testing::_, ::testing::_))
-            .WillOnce(::testing::SaveArg<0>(&sent));
+        EXPECT_CALL(mock_dispatcher, dispatch_call(::testing::_, ::testing::_)).WillOnce(::testing::SaveArg<0>(&sent));
         provisioning->boot_notification_req(BootReasonEnum::PowerUp);
         return sent;
     }
