@@ -1,0 +1,89 @@
+EVerest TSC Meeting - 26 November 2026
+======================================
+
+
+Attendance
+----------
+
+
+Voting Members
+~~~~~~~~~~~~~~
+
+- [x] (Chair) Marco Möller [Pionix]
+- [ ] Cornelius Claussen [Pionix] -> vote delegated to Marco
+- [x] Kai-Uwe Hermann [Pionix]
+- [x] Piet Gömpel [Pionix]
+- [x] Moritz Barsnick [chargebyte]
+- [ ] Holger Rapp [Qwello] -> vote delegated to Marco
+- [ ] S. Shankari [NREL]
+
+
+Other Attendees
+~~~~~~~~~~~~~~~
+- Martin Litré [Pionix]
+- Rui Faria
+
+
+Agenda
+------
+
+- Highlights of the month
+- EVerest Development Update
+    - Core Updates
+    - Cloud Communication WG
+    - Car Communication WG
+- Vulnerability Management Team Update
+- EVerest stable release 2026.10.0
+    - Release highlights
+    - Compliance testing
+- EVerest and AFIR
+- OSS in the age of AI
+    - Contribution roles and the PR flood
+    - Branches as quality levels: merge fast, promote after heavy tests
+- Project Himalayas: Federated Testing
+    - The trigger and the agreed base
+    - Reporting and submissions
+    - Himalayas today: 1,456 tests, 96% passed
+    - Roadmap and call for test contributors
+
+- Events Recap
+    - Connected Home Energy Forum: Matter in EVerest (Berlin, Oct 26-27)
+    - 5th joint meeting of D4E, STF and CoW and V2G Leaders Europe (Brussels, Nov 23-24)
+    - EU Roadmap on smart and bidirectional charging: standards gaps and open source maturity check
+    - ElaadNL test event on residential flexibility (Arnhem, Nov 25-26)
+- Upcoming Events
+    - EVerest CPO Forum (online, Dec 1, 17:00 CET)
+    - EU Open Source Week 2027 (Brussels, Jan 25 - Feb 1)
+    - FOSDEM 2027 (Brussels, Jan 30-31)
+    - More 2027 events in the slides
+
+- Next TSC on December 17th 2026 at 5pm CET
+
+Action Items
+------------
+- Send out recording and slides to EVerest mailing list
+- All: upgrade to 2026.10.0 and report regressions: https://github.com/EVerest/EVerest/issues
+- All: consider contributing test results to Himalayas (build only, SIL or HIL); reach out to the TSC for support
+- TSC: bring the vote on mandatory federated testing for TSC membership back to a future TSC
+- All: give feedback on the branch quality levels model and which test results may move verified
+- Tell everest@lists.lfenergy.org where you will show EVerest
+
+
+Recording:
+----------
+- `https://youtu.be/sZ4oOIYI9l0 <https://youtu.be/sZ4oOIYI9l0>`_
+
+
+Notes
+-----
+Decisions:
+- Vote: remove JOET, on their own wish. Result: all in favor, accepted
+- Vote postponed: make contributing to federated testing (Himalayas) mandatory on the path to becoming a TSC member. Good discussion, all in principle positive
+
+Other:
+- 2026.10.0 released on 26 November: 53 contributors (27 first-time), 8 breaking changes and 14 deprecations, see the release notes: https://github.com/EVerest/EVerest/releases/tag/2026.10.0
+- 2026.02.2 patch release published on 5 November with security fixes; security fixes now target 2026.10
+- Release scope: one C++ ISO 15118 stack (DIN 70121, -2, -20), OCPPmulti (1.6, 2.0.1, 2.1), AC DER / V2X, EvseSlac, MCS, manager overhaul, security hardening
+- Compliance: tested against ISO 15118-4, -5 and -21 test cases and with OCTT for OCPP 1.6 and 2.0.1 (2.1 partially)
+- AFIR: 11 of 12 charger-side obligations ready in EVerest, the 12th (opt-out of automatic authentication) is an integrator HMI choice; covers the 1 Jan 2027 ISO 15118-20 mandate; scorecard: https://www.pionix.com/everest-afir
+- Himalayas: 1,456 tests (each counted once), 96% passed; Pionix and Kempower report on main, Zaptec on 2026.10 with a first HIL setup; status at https://everest.github.io/Himalayas/
