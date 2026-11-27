@@ -485,6 +485,47 @@ enum class CertificateValidationResult {
     Unknown,
 };
 
+/// \brief Result of mapping CertificateValidationResult to authorization status values
+struct CertificateValidationStatusResult {
+    v2::AuthorizationStatusEnum authorization_status;
+    v2::AuthorizeCertificateStatusEnum certificate_status;
+    bool check_local_auth_list;
+};
+
+/// \brief Maps a CertificateValidationResult to the appropriate authorization status values.
+/// For Valid result: authorization_status is Unknown, certificate_status is Accepted, check_local_auth_list is true.
+/// The caller should check check_local_auth_list and may override the status values based on local_authorize_offline.
+/// \param result The certificate validation result to map
+/// \returns A struct containing authorization_status, certificate_status, and check_local_auth_list flag
+inline CertificateValidationStatusResult map_certificate_validation_to_status(CertificateValidationResult result) {
+    CertificateValidationStatusResult status{};
+    status.check_local_auth_list = false;
+
+    switch (result) {
+    case CertificateValidationResult::Valid:
+        status.authorization_status = v2::AuthorizationStatusEnum::Unknown;
+        status.certificate_status = v2::AuthorizeCertificateStatusEnum::Accepted;
+        status.check_local_auth_list = true;
+        break;
+    case CertificateValidationResult::Expired:
+        status.authorization_status = v2::AuthorizationStatusEnum::Expired;
+        status.certificate_status = v2::AuthorizeCertificateStatusEnum::CertificateExpired;
+        break;
+    case CertificateValidationResult::InvalidSignature:
+        status.authorization_status = v2::AuthorizationStatusEnum::Invalid;
+        status.certificate_status = v2::AuthorizeCertificateStatusEnum::SignatureError;
+        break;
+    case CertificateValidationResult::InvalidLeafSignature:
+    case CertificateValidationResult::IssuerNotFound:
+    case CertificateValidationResult::InvalidChain:
+    case CertificateValidationResult::Unknown:
+        status.authorization_status = v2::AuthorizationStatusEnum::Invalid;
+        status.certificate_status = v2::AuthorizeCertificateStatusEnum::CertChainError;
+        break;
+    }
+    return status;
+}
+
 namespace conversions {
 /// \brief Converts the given InstallCertificateResult \p e to human readable string
 /// \returns a string representation of the InstallCertificateResult
