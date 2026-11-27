@@ -4,6 +4,7 @@
 
 #include <array>
 #include <cstdint>
+#include <functional>
 #include <optional>
 #include <vector>
 
@@ -62,7 +63,9 @@ constexpr uint32_t TIMEOUT_AC_CONTACTOR_CLOSE = 1400;
 
 class Timeouts {
 public:
-    explicit Timeouts() = default;
+    using Clock = std::function<TimePoint()>;
+
+    explicit Timeouts(Clock now = get_current_time_point);
     ~Timeouts() = default;
 
     void start_timeout(TimeoutType type, uint32_t timeout_ms);
@@ -71,6 +74,7 @@ public:
     std::vector<TimeoutType> check() const;
 
 private:
+    Clock now;
     std::array<std::optional<Timeout>, TIMEOUT_TYPE_SIZE> timeouts;
 };
 
