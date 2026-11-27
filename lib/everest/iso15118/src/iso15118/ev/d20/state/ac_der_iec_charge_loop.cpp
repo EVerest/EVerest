@@ -13,6 +13,7 @@
 #include <iso15118/ev/d20/state/leave_charge_loop.hpp>
 #include <iso15118/ev/detail/d20/ac_target_power.hpp>
 #include <iso15118/ev/detail/d20/context_helper.hpp>
+#include <iso15118/ev/detail/d20/display_parameters.hpp>
 #include <iso15118/message/ac_der_iec_charge_loop.hpp>
 
 namespace iso15118::ev::d20::state {
@@ -87,7 +88,9 @@ message_20::DER_AC_ChargeLoopRequest AC_DER_IEC_ChargeLoop::make_request(const p
 }
 
 message_20::DER_AC_ChargeLoopRequest AC_DER_IEC_ChargeLoop::make_request(const Context& ctx) {
-    return make_request(ctx.get_ac_params(), ctx.ac_connector(), ctx.selected_control_mode(), ctx.energy_request());
+    auto req = make_request(ctx.get_ac_params(), ctx.ac_connector(), ctx.selected_control_mode(), ctx.energy_request());
+    req.display_parameters = make_display_parameters(ctx.get_dc_params());
+    return req;
 }
 
 void AC_DER_IEC_ChargeLoop::enter() {

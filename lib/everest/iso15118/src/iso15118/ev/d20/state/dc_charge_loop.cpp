@@ -11,6 +11,7 @@
 #include <iso15118/ev/d20/state/dc_charge_loop.hpp>
 #include <iso15118/ev/d20/state/leave_charge_loop.hpp>
 #include <iso15118/ev/detail/d20/context_helper.hpp>
+#include <iso15118/ev/detail/d20/display_parameters.hpp>
 #include <iso15118/message/dc_charge_loop.hpp>
 
 namespace iso15118::ev::d20::state {
@@ -84,7 +85,10 @@ message_20::DC_ChargeLoopRequest DC_ChargeLoop::make_request(const params::DcCha
 }
 
 message_20::DC_ChargeLoopRequest DC_ChargeLoop::make_request(const Context& ctx) {
-    return make_request(ctx.get_dc_params(), ctx.selected_service(), ctx.selected_control_mode(), ctx.energy_request());
+    const auto dc_params = ctx.get_dc_params();
+    auto req = make_request(dc_params, ctx.selected_service(), ctx.selected_control_mode(), ctx.energy_request());
+    req.display_parameters = make_display_parameters(dc_params);
+    return req;
 }
 
 namespace {

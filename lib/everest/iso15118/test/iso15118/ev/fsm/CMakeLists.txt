@@ -16,6 +16,7 @@ add_executable(test_ev_fsm
     dc_charge_loop.cpp
     dc_charge_parameter_discovery.cpp
     dc_charge_params.cpp
+    display_parameters.cpp
     dc_pre_charge.cpp
     dc_welding_detection.cpp
     der_sae_control_validation.cpp
