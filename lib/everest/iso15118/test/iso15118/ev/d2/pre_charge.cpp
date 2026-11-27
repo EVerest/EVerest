@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 #include "helper.hpp"
 
@@ -127,4 +128,31 @@ SCENARIO("ISO15118-2 EV PreCharge rejects malformed responses") {
     wrong.response_code = dt::ResponseCode::OK;
     wrong.evse_processing = dt::EVSEProcessing::Finished;
     check_rejection_paths(callbacks, ev::d2::StateID::PreCharge, make_fsm, make_ok, wrong);
+}
+
+SCENARIO("ISO15118-2 EV PreCharge honors charger StopCharging before another request") {
+    const auto voltage = GENERATE(100.0, 395.0);
+    const auto ev_stop = GENERATE(false, true);
+    const auto ev_pause = GENERATE(false, true);
+    int stops = 0;
+    bool power_on = false;
+    ev::feedback::Callbacks callbacks{};
+    callbacks.stop_from_charger = [&stops]() { ++stops; };
+    callbacks.dc_power_on = [&power_on]() { power_on = true; };
+    PrimedState<ev::d2::state::PreCharge> primed{callbacks, d2_no_seed, by_cable_check};
+    primed.ctx.set_stop_charging_requested(ev_stop);
+    primed.ctx.set_pause_charging_requested(ev_pause);
+    auto res = make_response(d2_header(), dt::ResponseCode::OK, voltage);
+    res.dc_evse_status.notification = dt::EVSENotification::StopCharging;
+
+    primed.handle_response(res);
+    const auto result = primed.feed(ev::d2::Event::V2GTP_MESSAGE);
+
+    CHECK(result.output == ev::d2::Disposition::Transitioning);
+    CHECK(primed.fsm.get_current_state_id() == ev::d2::StateID::SessionStop);
+    CHECK(stops == 1);
+    CHECK_FALSE(power_on);
+    const auto request = primed.take_requests().get<message_2::SessionStopRequest>();
+    REQUIRE(request.has_value());
+    CHECK(request->charging_session == dt::ChargingSession::Terminate);
 }
