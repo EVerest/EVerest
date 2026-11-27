@@ -20,7 +20,6 @@ from everest.testing.core_utils.everest_core import EverestCore
 from everest.testing.core_utils.network_isolation import (
     NetworkIsolationStrategy,
     WORKER_INTERFACE_ENV,
-    WORKER_PROXY_INTERFACE_ENV,
 )
 
 
@@ -113,11 +112,10 @@ def everest_config_strategies(request) -> list[EverestConfigAdjustmentStrategy]:
             additional_configuration_strategies.append(v)
 
     # Auto-inject NetworkIsolationStrategy when a worker interface is assigned.
-    # The env vars are set by the NetworkIsolationPlugin on xdist worker nodes.
+    # The env var is set by the NetworkIsolationPlugin on xdist worker nodes.
     interface = os.environ.get(WORKER_INTERFACE_ENV)
     if interface:
-        proxy_interface = os.environ.get(WORKER_PROXY_INTERFACE_ENV)
-        additional_configuration_strategies.append(NetworkIsolationStrategy(interface, proxy_interface))
+        additional_configuration_strategies.append(NetworkIsolationStrategy(interface))
 
     return additional_configuration_strategies
 

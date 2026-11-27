@@ -132,10 +132,9 @@ class D20TlsConfigAdjustmentStrategy(EverestConfigAdjustmentStrategy):
     """Force a specific TLS version on the direct-d20 SIL config so the
     Evse15118D20 ConnectionSSL adapter performs the handshake end to end.
 
-    Unlike the IsoMux configs (where IsoMux terminates TLS and the d20
-    backend only sees decrypted plaintext), config-sil-dc-d20.yaml wires
-    EvseManager's `hlc` straight to Evse15118D20, which runs its own SDP
-    server and therefore drives the ConnectionSSL / tls::Server adapter.
+    config-sil-dc-d20.yaml wires EvseManager's `hlc` straight to
+    Evse15118D20, which runs its own SDP server and therefore drives the
+    ConnectionSSL / tls::Server adapter.
 
     tls13=False -> EV offers TLS 1.2 only and presents no client cert; the
                    SECC accepts the 1.2 offer and requires no client cert
@@ -191,6 +190,26 @@ class TlsVersionAutoAdjustmentStrategy(EverestConfigAdjustmentStrategy):
         ev["tls_version"] = "auto"
         ev["supported_protocols"] = "ISO15118_20,ISO15118_2"
         return adjusted_config
+
+
+def iso15118_version_params(**dc_strategy_args):
+    """ISO 15118-2 and ISO 15118-20 DC sessions on Evse15118D20, both adjusted by DcConfigAdjustmentStrategy."""
+    setups = [
+        ("iso15118_dc_d2", "config-sil-dc.yaml", DcConfigAdjustmentStrategy(**dc_strategy_args)),
+        (
+            "iso15118_dc_d20",
+            "config-sil-dc-d20-plaintext.yaml",
+            DcConfigAdjustmentStrategy(ev_d20_only=True, **dc_strategy_args),
+        ),
+    ]
+    return [
+        pytest.param(
+            name,
+            marks=[pytest.mark.everest_core_config(config), pytest.mark.everest_config_adaptions(strategy)],
+            id=name,
+        )
+        for name, config, strategy in setups
+    ]
 
 
 class EvseV2gForceTlsAdjustmentStrategy(EverestConfigAdjustmentStrategy):
@@ -738,25 +757,10 @@ async def test_iso15118_ac_session_stop_by_evse(
 @pytest.mark.probe_module(
     connections={
         "evse_manager": [Requirement("evse_manager", "evse")],
-        "charger": [Requirement("iso_mux", "charger")],
+        "charger": [Requirement("iso15118_charger", "charger")],
     }
 )
-@pytest.mark.everest_core_config("config-sil-dc-isomux.yaml")
-@pytest.mark.parametrize(
-    "iso15118_version",
-    [
-        pytest.param(
-            "iso15118_dc_d2",
-            marks=pytest.mark.everest_config_adaptions(DcConfigAdjustmentStrategy()),
-            id="iso15118_dc_d2",
-        ),
-        pytest.param(
-            "iso15118_dc_d20",
-            marks=pytest.mark.everest_config_adaptions(DcConfigAdjustmentStrategy(ev_d20_only=True)),
-            id="iso15118_dc_d20",
-        ),
-    ],
-)
+@pytest.mark.parametrize("iso15118_version", iso15118_version_params())
 async def test_iso15118_dc_session(
     iso15118_version,test_controller: TestController, everest_core: EverestCore
 ):
@@ -805,8 +809,8 @@ async def test_iso15118_20_dc_session_over_tls(
     """ISO 15118-20 DC charging session over TLS through the Evse15118D20
     ConnectionSSL adapter, at both negotiated TLS versions.
 
-    config-sil-dc-d20.yaml wires EvseManager.hlc directly to Evse15118D20
-    (no IsoMux), so the d20 module owns the SDP server and terminates TLS via
+    config-sil-dc-d20.yaml wires EvseManager.hlc directly to Evse15118D20,
+    so the d20 module owns the SDP server and terminates TLS via
     the tls::Server adapter under test. The session only reaches Charging if
     the handshake succeeds, so a regression in the adapter (TLS 1.2 min-version
     pinning, the enforce_tls_1_3 path, or the verify-client-on-1.3 upgrade)
@@ -891,7 +895,7 @@ async def test_tls_version_auto_runs_iso15118_2_over_tls_1_2(
 @pytest.mark.probe_module(
     connections={"evse_manager": [Requirement("evse_manager", "evse")]}
 )
-@pytest.mark.everest_core_config("config-sil-dc-isomux.yaml")
+@pytest.mark.everest_core_config("config-sil-dc.yaml")
 @pytest.mark.parametrize(
     "delivers_energy",
     [
@@ -939,22 +943,7 @@ async def test_iso15118_dc_target_below_offered_minimum_delivers_zero(
 @pytest.mark.probe_module(
     connections={"evse_manager": [Requirement("evse_manager", "evse")]}
 )
-@pytest.mark.everest_core_config("config-sil-dc-isomux.yaml")
-@pytest.mark.parametrize(
-    "iso15118_version",
-    [
-        pytest.param(
-            "iso15118_dc_d2",
-            marks=pytest.mark.everest_config_adaptions(DcConfigAdjustmentStrategy()),
-            id="iso15118_dc_d2",
-        ),
-        pytest.param(
-            "iso15118_dc_d20",
-            marks=pytest.mark.everest_config_adaptions(DcConfigAdjustmentStrategy(ev_d20_only=True)),
-            id="iso15118_dc_d20",
-        ),
-    ],
-)
+@pytest.mark.parametrize("iso15118_version", iso15118_version_params())
 @pytest.mark.xdist_group(name="ISO15118")
 async def test_iso15118_dc_session_stop_by_evse(
     iso15118_version, test_controller: TestController, everest_core: EverestCore
@@ -985,22 +974,7 @@ async def test_iso15118_dc_session_stop_by_evse(
 @pytest.mark.probe_module(
     connections={"evse_manager": [Requirement("evse_manager", "evse")]}
 )
-@pytest.mark.everest_core_config("config-sil-dc-isomux.yaml")
-@pytest.mark.parametrize(
-    "iso15118_version",
-    [
-        pytest.param(
-            "iso15118_dc_d2",
-            marks=pytest.mark.everest_config_adaptions(DcConfigAdjustmentStrategy()),
-            id="iso15118_dc_d2",
-        ),
-        pytest.param(
-            "iso15118_dc_d20",
-            marks=pytest.mark.everest_config_adaptions(DcConfigAdjustmentStrategy(ev_d20_only=True)),
-            id="iso15118_dc_d20",
-        ),
-    ],
-)
+@pytest.mark.parametrize("iso15118_version", iso15118_version_params())
 async def test_iso15118_dc_session_error_before_session(
     iso15118_version, test_controller: TestController, everest_core: EverestCore
 ):
@@ -1215,22 +1189,7 @@ async def test_iso15118_dc_session_no_energy_before_session(
         "gcp": [Requirement("grid_connection_point", "external_limits")],
     }
 )
-@pytest.mark.everest_core_config("config-sil-dc-isomux.yaml")
-@pytest.mark.parametrize(
-    "iso15118_version",
-    [
-        pytest.param(
-            "iso15118_dc_d2",
-            marks=pytest.mark.everest_config_adaptions(DcConfigAdjustmentStrategy(zero_power_ignore_pause=True, hlc_charge_loop_without_energy_timeout_s=30)),
-            id="iso15118_dc_d2",
-        ),
-        pytest.param(
-            "iso15118_dc_d20",
-            marks=pytest.mark.everest_config_adaptions(DcConfigAdjustmentStrategy(zero_power_ignore_pause=True, hlc_charge_loop_without_energy_timeout_s=30, ev_d20_only=True)),
-            id="iso15118_dc_d20",
-        ),
-    ],
-)
+@pytest.mark.parametrize("iso15118_version", iso15118_version_params(zero_power_ignore_pause=True, hlc_charge_loop_without_energy_timeout_s=30))
 @pytest.mark.xdist_group(name="ISO15118")
 async def test_iso15118_dc_session_no_energy_before_session_no_pause(
     iso15118_version,test_controller: TestController, everest_core: EverestCore
@@ -1341,22 +1300,7 @@ async def test_iso15118_ac_session_no_energy_during_session_timeout_triggers(
         "gcp": [Requirement("grid_connection_point", "external_limits")],
     }
 )
-@pytest.mark.everest_core_config("config-sil-dc-isomux.yaml")
-@pytest.mark.parametrize(
-    "iso15118_version",
-    [
-        pytest.param(
-            "iso15118_dc_d2",
-            marks=pytest.mark.everest_config_adaptions(DcConfigAdjustmentStrategy(hlc_charge_loop_without_energy_timeout_s=30)),
-            id="iso15118_dc_d2",
-        ),
-        pytest.param(
-            "iso15118_dc_d20",
-            marks=pytest.mark.everest_config_adaptions(DcConfigAdjustmentStrategy(hlc_charge_loop_without_energy_timeout_s=30, ev_d20_only=True)),
-            id="iso15118_dc_d20",
-        ),
-    ],
-)
+@pytest.mark.parametrize("iso15118_version", iso15118_version_params(hlc_charge_loop_without_energy_timeout_s=30))
 @pytest.mark.xdist_group(name="ISO15118")
 async def test_iso15118_dc_session_no_energy_during_session(
     iso15118_version,test_controller: TestController, everest_core: EverestCore
@@ -1382,22 +1326,7 @@ async def test_iso15118_dc_session_no_energy_during_session(
         "gcp": [Requirement("grid_connection_point", "external_limits")],
     }
 )
-@pytest.mark.everest_core_config("config-sil-dc-isomux.yaml")
-@pytest.mark.parametrize(
-    "iso15118_version",
-    [
-        pytest.param(
-            "iso15118_dc_d2",
-            marks=pytest.mark.everest_config_adaptions(DcConfigAdjustmentStrategy(hlc_charge_loop_without_energy_timeout_s=5)),
-            id="iso15118_dc_d2",
-        ),
-        pytest.param(
-            "iso15118_dc_d20",
-            marks=pytest.mark.everest_config_adaptions(DcConfigAdjustmentStrategy(hlc_charge_loop_without_energy_timeout_s=5, ev_d20_only=True)),
-            id="iso15118_dc_d20",
-        ),
-    ],
-)
+@pytest.mark.parametrize("iso15118_version", iso15118_version_params(hlc_charge_loop_without_energy_timeout_s=5))
 @pytest.mark.xdist_group(name="ISO15118")
 async def test_iso15118_dc_session_no_energy_during_session_timeout_triggers(
     iso15118_version, test_controller: TestController, everest_core: EverestCore

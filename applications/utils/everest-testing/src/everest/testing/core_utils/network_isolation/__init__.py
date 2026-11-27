@@ -7,7 +7,6 @@ from .plugin import (
     get_worker_interface,
     VETH_PREFIX,
     WORKER_INTERFACE_ENV,
-    WORKER_PROXY_INTERFACE_ENV,
 )
 
 __all__ = [
@@ -16,5 +15,4 @@ __all__ = [
     "VETH_PREFIX",
     "get_worker_interface",
     "WORKER_INTERFACE_ENV",
-    "WORKER_PROXY_INTERFACE_ENV",
 ]

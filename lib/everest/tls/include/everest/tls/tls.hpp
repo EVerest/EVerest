@@ -311,15 +311,6 @@ public:
     [[nodiscard]] [[deprecated(
         "Temporarily used with IsoMux module. Will be removed together with IsoMux module in the future.")]] SSL*
     ssl_context() const;
-
-    /**
-     * \brief set the read timeout in ms
-     */
-    [[deprecated(
-        "Temporarily used with IsoMux module. Will be removed together with IsoMux module in the future.")]] void
-    set_read_timeout(int ms) {
-        m_timeout_ms = ms;
-    }
 };
 
 /**

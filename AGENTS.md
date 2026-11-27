@@ -66,7 +66,7 @@ builds do not ship its keys; a failed generation fails configure. Conditions and
 outputs are in `cmake/assets/iso15118-pki/README.md`.
 
 To iterate faster, build one module (`cmake --build build --target OCPPmulti`) or skip
-heavy ones with `-DEVEREST_EXCLUDE_MODULES="EvseSlac;EvseV2G;IsoMux"`, quoting the
+heavy ones with `-DEVEREST_EXCLUDE_MODULES="EvseSlac;EvseV2G"`, quoting the
 list. `cmake -LH build` lists all options; the two easiest to miss are
 `EVEREST_ENABLE_COVERAGE` and `CMAKE_RUN_CLANG_TIDY`, both OFF.
 

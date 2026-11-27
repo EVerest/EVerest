@@ -214,8 +214,8 @@ INSTANTIATE_TEST_SUITE_P(
         source_root / "config/config-sil-ac-d20.yaml", source_root / "config/config-sil-ac-der-d20.yaml",
         source_root / "config/config-sil-dc-bpt-d20.yaml", source_root / "config/config-sil-dc-d20-plaintext.yaml",
         source_root / "config/config-sil-dc-d20-tls.yaml", source_root / "config/config-sil-dc-d20.yaml",
-        source_root / "config/config-sil-dc-evsev2g.yaml", source_root / "config/config-sil-dc-isomux.yaml",
-        source_root / "config/config-sil-mcs.yaml", aux_config_dir / "everest-config-ocpp201-sil-dc-d20-eim.yaml",
+        source_root / "config/config-sil-dc-evsev2g.yaml", source_root / "config/config-sil-mcs.yaml",
+        aux_config_dir / "everest-config-ocpp201-sil-dc-d20-eim.yaml",
         aux_config_dir / "everest-config-ocpp201-sil-dc-d20.yaml",
         aux_config_dir / "everest-config-ocppmulti-sil-dc-d20-eim.yaml"));
 
