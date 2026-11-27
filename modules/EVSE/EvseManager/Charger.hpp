@@ -126,6 +126,8 @@ public:
 
     // external input to charger: update max_current and new validUntil
     bool set_max_current(float ampere, std::chrono::time_point<std::chrono::steady_clock> validUntil);
+    // external input to charger: until when the energy schedule shows no energy, if it looks that far ahead
+    void set_no_energy_until(std::optional<std::chrono::time_point<std::chrono::steady_clock>> until);
     float get_max_current();
 
     sigslot::signal<float> signal_max_current;
@@ -309,6 +311,10 @@ private:
     void bcb_toggle_detect_stop_pulse();
     bool bcb_toggle_detected();
     bool evse_pause_resumable() const;
+    // The charge loop ran out of energy: pause the ISO 15118-20 dynamic mode session instead of terminating it
+    bool no_energy_pauses() const;
+    // The energy schedule shows no energy until after the charge loop timeout, so waiting for it cannot help
+    bool no_energy_outlasts_timeout() const;
     void resume_evse_pause_marker();
 
     void clear_errors_on_unplug();
@@ -416,6 +422,7 @@ private:
         bool dlink_established{false};
         float max_current;
         std::chrono::time_point<std::chrono::steady_clock> max_current_valid_until;
+        std::optional<std::chrono::time_point<std::chrono::steady_clock>> no_energy_until;
         std::optional<double> max_current_cable;
         std::atomic_bool flag_transaction_active;
         bool session_active;
@@ -575,6 +582,9 @@ private:
         // StoppingCharging was entered for a user pause (flag_paused_by_evse), even if resume_charging() has
         // cleared that flag since.
         bool stopping_for_evse_pause{false};
+        // StoppingCharging was entered because the ISO 15118-20 dynamic mode charge loop had no energy: pause the
+        // session rather than terminating it.
+        bool stopping_for_no_energy{false};
         // How long StoppingCharging waits for the EV before the hard stop; chosen when the state is entered.
         int stopping_charging_timeout_ms{STOPPING_CHARGING_TIMEOUT_MS};
 
