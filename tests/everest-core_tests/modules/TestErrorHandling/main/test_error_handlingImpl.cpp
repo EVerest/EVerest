@@ -54,6 +54,9 @@ void test_error_handlingImpl::init() {
 void test_error_handlingImpl::ready() {
 }
 
+void test_error_handlingImpl::shutdown() {
+}
+
 void test_error_handlingImpl::handle_clear_error(std::string& type, std::string& sub_type) {
     this->clear_error(type, sub_type);
 }
