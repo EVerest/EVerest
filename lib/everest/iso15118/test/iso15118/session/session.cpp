@@ -18,10 +18,16 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 
+#include <iso15118/message/ac_charge_loop.hpp>
+#include <iso15118/message/ac_charge_parameter_discovery.hpp>
 #include <iso15118/message/authorization.hpp>
 #include <iso15118/message/authorization_setup.hpp>
 #include <iso15118/message/decode.hpp>
+#include <iso15118/message/power_delivery.hpp>
+#include <iso15118/message/schedule_exchange.hpp>
+#include <iso15118/message/service_detail.hpp>
 #include <iso15118/message/service_discovery.hpp>
+#include <iso15118/message/service_selection.hpp>
 #include <iso15118/message/session_setup.hpp>
 #include <iso15118/message/session_stop.hpp>
 #include <iso15118/message/variant.hpp>
@@ -828,4 +834,142 @@ TEST_CASE_METHOD(SessionFixture, "An ISO 15118-20 session that ends without paus
     session->poll();
     REQUIRE(session->is_finished());
     REQUIRE_FALSE(pause_ctx.has_value());
+}
+
+TEST_CASE_METHOD(SessionFixture, "A request read before the sequence deadline is handled by a late poll") {
+    auto session = make_session(make_eim_session_config(), true, true);
+    const auto session_id = start_session(*session, *conn);
+    const auto deadline = now + std::chrono::milliseconds(iso15118::d20::TIMEOUT_SEQUENCE);
+
+    now = deadline - 100ms;
+    queue_authorization(*conn, session_id);
+    now = deadline + 10ms;
+    session->poll();
+
+    REQUIRE_FALSE(session->is_finished());
+    REQUIRE(response_from_wire<iso15118::message_20::AuthorizationResponse>(*conn).evse_processing ==
+            dt::Processing::Ongoing);
+}
+
+TEST_CASE_METHOD(SessionFixture, "The sequence timeout ends a session without a pending request") {
+    auto session = make_session(make_eim_session_config(), true, true);
+    start_session(*session, *conn);
+
+    now += std::chrono::milliseconds(iso15118::d20::TIMEOUT_SEQUENCE) + 10ms;
+    session->poll();
+
+    REQUIRE(conn->closed);
+}
+
+namespace {
+
+constexpr std::chrono::milliseconds SEQUENCE_TIMEOUT{iso15118::d20::TIMEOUT_SEQUENCE};
+constexpr std::chrono::milliseconds CHARGE_LOOP_SEQUENCE_TIMEOUT{iso15118::d20::TIMEOUT_SEQUENCE_CHARGE_LOOP};
+
+struct AcSession : SessionFixture {
+    std::unique_ptr<iso15118::Session> session;
+    dt::SessionId session_id{};
+
+    AcSession() {
+        iso15118::session::EvseSetupConfig setup{};
+        setup.authorization_services = {dt::Authorization::EIM};
+        setup.supported_energy_services = {dt::ServiceCategory::AC};
+        setup.ac_setup_config = iso15118::d20::AcSetupConfig{230, {dt::AcConnector::ThreePhase}};
+        setup.control_mobility_modes = {{dt::ControlMode::Dynamic, dt::MobilityNeedsMode::ProvidedByEvcc}};
+        session = make_session(iso15118::session::SessionConfig{setup}, true, true);
+        session_id = start_session(*session, *conn);
+    }
+
+    template <typename Response, typename Request>
+    Response exchange(Request req, iso15118::v2gtp::PayloadType payload = iso15118::v2gtp::PayloadType::Part20Main) {
+        now += 100ms;
+        req.header = {session_id, 0};
+        queue_request(*conn, req, payload);
+        session->poll();
+        const auto res = response_from_wire<Response>(*conn, payload);
+        REQUIRE(res.response_code == dt::ResponseCode::OK);
+        return res;
+    }
+
+    void run_until_power_delivery() {
+        namespace m20 = iso15118::message_20;
+
+        session->push_control_event(iso15118::d20::AuthorizationResponse{true});
+        session->poll();
+        m20::AuthorizationRequest authorization{};
+        authorization.selected_authorization_service = dt::Authorization::EIM;
+        authorization.authorization_mode = dt::EIM_ASReqAuthorizationMode{};
+        REQUIRE(exchange<m20::AuthorizationResponse>(authorization).evse_processing == dt::Processing::Finished);
+
+        exchange<m20::ServiceDiscoveryResponse>(m20::ServiceDiscoveryRequest{});
+        m20::ServiceDetailRequest detail{};
+        detail.service = m20::to_underlying_value(dt::ServiceCategory::AC);
+        exchange<m20::ServiceDetailResponse>(detail);
+        m20::ServiceSelectionRequest selection{};
+        selection.selected_energy_transfer_service = {dt::ServiceCategory::AC, 0};
+        exchange<m20::ServiceSelectionResponse>(selection);
+        exchange<m20::AC_ChargeParameterDiscoveryResponse>(m20::AC_ChargeParameterDiscoveryRequest{},
+                                                           iso15118::v2gtp::PayloadType::Part20AC);
+        m20::ScheduleExchangeRequest schedule{};
+        schedule.max_supporting_points = 12;
+        REQUIRE(exchange<m20::ScheduleExchangeResponse>(schedule).processing == dt::Processing::Finished);
+    }
+
+    void queue_power_delivery(dt::Progress progress, dt::Processing processing = dt::Processing::Finished) {
+        now += 100ms;
+        iso15118::message_20::PowerDeliveryRequest req{};
+        req.header = {session_id, 0};
+        req.processing = processing;
+        req.charge_progress = progress;
+        queue_request(*conn, req);
+    }
+
+    void transfer_contactor(dt::Progress progress, bool closed) {
+        queue_power_delivery(progress);
+        session->poll();
+        REQUIRE(conn->written.empty());
+        session->push_control_event(iso15118::d20::ClosedContactor{closed});
+        session->poll();
+        REQUIRE(response_from_wire<iso15118::message_20::PowerDeliveryResponse>(*conn).response_code ==
+                dt::ResponseCode::OK);
+    }
+
+    void require_sequence_timeout(std::chrono::milliseconds timeout) {
+        const auto sent = now;
+        now = sent + timeout - 1ms;
+        session->poll();
+        REQUIRE_FALSE(conn->closed);
+        now = sent + timeout + 1ms;
+        session->poll();
+        REQUIRE(conn->closed);
+    }
+};
+
+} // namespace
+
+TEST_CASE_METHOD(AcSession, "The ISO 15118-20 sequence timeout follows the next expected request") {
+    run_until_power_delivery();
+
+    SECTION("a PowerDeliveryReq") {
+        require_sequence_timeout(SEQUENCE_TIMEOUT);
+    }
+
+    SECTION("a ChargeLoopReq after PowerDeliveryRes(Start)") {
+        transfer_contactor(dt::Progress::Start, true);
+        require_sequence_timeout(CHARGE_LOOP_SEQUENCE_TIMEOUT);
+    }
+
+    SECTION("a ChargeLoopReq after a ChargeLoopRes") {
+        transfer_contactor(dt::Progress::Start, true);
+        iso15118::message_20::AC_ChargeLoopRequest req{};
+        req.control_mode.emplace<dt::Dynamic_AC_CLReqControlMode>();
+        exchange<iso15118::message_20::AC_ChargeLoopResponse>(req, iso15118::v2gtp::PayloadType::Part20AC);
+        require_sequence_timeout(CHARGE_LOOP_SEQUENCE_TIMEOUT);
+    }
+
+    SECTION("a SessionStopReq after PowerDeliveryRes(Stop)") {
+        transfer_contactor(dt::Progress::Start, true);
+        transfer_contactor(dt::Progress::Stop, false);
+        require_sequence_timeout(SEQUENCE_TIMEOUT);
+    }
 }

@@ -111,7 +111,7 @@ void D20SeccEngine::on_control_event(const d20::ControlEvent& event) {
 
 void D20SeccEngine::on_timeout(d20::TimeoutType timeout) {
     if (timeout == d20::TimeoutType::SEQUENCE) {
-        logf_error("Sequence Timeout 40secs is reached. Stopping the session");
+        logf_error("Sequence timeout is reached. Stopping the session");
         ctx.session_stopped = true;
         return;
     }

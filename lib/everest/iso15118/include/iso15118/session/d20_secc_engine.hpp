@@ -45,6 +45,20 @@ public:
     bool is_stopping() const {
         return ctx.session_stopped or ctx.session_paused;
     }
+    // [V2G20-2010], [V2G20-2012], [V2G20-2013], AMD1 [V2G20-3208] and [V2G20-3209] (which replace [V2G20-2009] and
+    // [V2G20-2192]): the V2G_SECC_Sequence_Timeout of Tables 216 and 217 applies while a ChargeLoopReq is the next
+    // request.
+    bool expects_charge_loop_request() const {
+        switch (fsm.get_current_state_id()) {
+        case d20::StateID::AC_ChargeLoop:
+        case d20::StateID::DC_ChargeLoop:
+        case d20::StateID::AC_DER_IEC_ChargeLoop:
+        case d20::StateID::AC_DER_SAE_ChargeLoop:
+            return not is_stopping();
+        default:
+            return false;
+        }
+    }
     bool is_finished() const;
     bool is_paused() const;
     std::optional<session::feedback::SessionStopAction> pop_session_stop_res_pending();
