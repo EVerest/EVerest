@@ -63,6 +63,7 @@ struct Fixture {
                                                       d2_pause_ctx);
         if (accept) {
             conn->fire(iso15118::io::ConnectionEvent::ACCEPTED);
+            conn->fire(iso15118::io::ConnectionEvent::OPEN);
         }
     }
 
@@ -84,6 +85,29 @@ SCENARIO("The communication setup timer anchor follows the negotiated protocol")
 
         THEN("there is no TCP/TLS anchor to report") {
             REQUIRE_FALSE(fixture.session->get_tcp_setup_timer_anchor().has_value());
+        }
+    }
+
+    GIVEN("a TLS connection accepted whose handshake has not completed") {
+        Fixture fixture{{ProtocolId::ISO15118_20}, false};
+        fixture.conn->fire(iso15118::io::ConnectionEvent::ACCEPTED);
+
+        THEN("the connection is not established yet, so there is no TCP/TLS anchor") {
+            REQUIRE_FALSE(fixture.session->get_tcp_setup_timer_anchor().has_value());
+        }
+    }
+
+    GIVEN("a TLS handshake completing after the TCP accept") {
+        Fixture fixture{{ProtocolId::ISO15118_20}, false};
+        fixture.conn->fire(iso15118::io::ConnectionEvent::ACCEPTED);
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        const auto before_open = iso15118::get_current_time_point();
+        fixture.conn->fire(iso15118::io::ConnectionEvent::OPEN);
+
+        THEN("the anchor is the handshake completion, not the TCP accept") {
+            const auto anchor = fixture.session->get_tcp_setup_timer_anchor();
+            REQUIRE(anchor.has_value());
+            REQUIRE(anchor.value() >= before_open);
         }
     }
 
