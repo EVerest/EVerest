@@ -203,7 +203,9 @@ What happens then depends on whether the owner registered a `VariableValueProvid
   for example, without a deadline, so a provider that forwards to another process enforces its own timeout, well within
   the message timeout of the CSMS. Its answer is returned as it is. `Accepted` means that the owner applied exactly
   the written value, and libocpp stores it in memory, so the owner does not report it; an owner that would apply
-  another value, a clamped one for example, rejects the write. `RebootRequired` means that the owner holds the value
+  another value, a clamped one for example, rejects the write. A provider whose `reports_accepted_values` returns
+  true reports the accepted value itself with `notify_value_changed` before `set_value` returns, and libocpp does not
+  store it. `RebootRequired` means that the owner holds the value
   for the next start and registers with it then, see
   [Writes answered with RebootRequired](#writes-answered-with-rebootrequired).
 - Without a provider, libocpp stores the values of persistent attributes itself, and the owner learns of writes through
@@ -218,9 +220,15 @@ SetMonitoringBase and SetMonitoringLevel, which change a ReadOnly variable, an O
 is rejected for a read-only key before anything is written, and the other writes of libocpp, to `NumberOfConnectors`
 for example, reach the owner like a SetVariables.req.
 
-libocpp stores the value of a write once the owner accepted it, so a change that the owner reports with
-`notify_value_changed` while the write is in progress is overwritten by it. An owner whose change must outlast the
-write reports it after `set_value` returned.
+libocpp stores the value of a write once the owner accepted it, if the variable is still registered by that owner and
+the value still fits it, so a change that the owner reports with `notify_value_changed` while the write is in progress
+is overwritten by it. An owner whose change must outlast the write reports it after `set_value` returned, or reports
+accepted values itself, see `VariableValueProvider::reports_accepted_values`, so that its reports and registrations
+are applied in the order it made them.
+
+An owner keeps its provider until it unregisters: a registration with another provider, or without one, while the
+owner is registered with a provider is rejected with `ProviderChanged` and changes nothing. A registration with the
+same provider while a write is in progress keeps the written value when the owner accepts it.
 
 How EVerest uses this is described in
 [How the device model is composed](../../../../../modules/EVSE/OCPPmulti/docs/device_model.rst), the documentation

@@ -68,6 +68,7 @@ class Owner:
     """Implements the ocpp_device_model commands at the probe module"""
 
     def __init__(self, probe_module, registrations):
+        self.probe_module = probe_module
         self.registration_results = Mock()
         self.writes = Mock()
         self.reply = "Accepted"
@@ -80,7 +81,16 @@ class Owner:
 
     def _set_value(self, args):
         self.writes(args["request"])
+        # Published before the answer, as the module providing the interface does
+        publish_message(
+            self.probe_module,
+            {"write_result": {"request_id": args["request_id"], "request": args["request"], "status": self.reply}},
+        )
         return self.reply
+
+
+def publish_message(probe_module, message):
+    probe_module.publish_variable(IMPLEMENTATION_ID, "owner_message", message)
 
 
 async def start(probe_module, central_system: CentralSystem):
@@ -175,20 +185,18 @@ async def test_registration_at_runtime_is_applied_and_answered(probe_module, cen
     charge_point = await start(probe_module, central_system)
     assert (await read(charge_point, "AuxCtrlr"))["attribute_status"] == GetVariableStatusEnumType.unknown_component
 
-    probe_module.publish_variable(
-        IMPLEMENTATION_ID, "registration", fan_speed_registration("10", owner="aux", component="AuxCtrlr")
-    )
+    publish_message(probe_module, {"registration": fan_speed_registration("10", owner="aux", component="AuxCtrlr")})
     await wait_for_calls(owner.registration_results, 1)
     assert owner.registration_results.call_args.args[0] == {"owner": "aux", "status": "Accepted", "rejected": []}
     assert (await read(charge_point, "AuxCtrlr"))["attribute_value"] == "10"
 
     # The owners of the OCPP module are not available to external owners
-    probe_module.publish_variable(IMPLEMENTATION_ID, "registration", fan_speed_registration(owner="EVEREST"))
+    publish_message(probe_module, {"registration": fan_speed_registration(owner="EVEREST")})
     await wait_for_calls(owner.registration_results, 2)
     assert owner.registration_results.call_args.args[0]["status"] == "OwnerInUse"
 
     # A registration without components releases the owner
-    probe_module.publish_variable(IMPLEMENTATION_ID, "registration", {"owner": "aux", "components": []})
+    publish_message(probe_module, {"registration": {"owner": "aux", "components": []}})
     await wait_for_calls(owner.registration_results, 3)
     assert owner.registration_results.call_args.args[0]["status"] == "Accepted"
     assert (await read(charge_point, "AuxCtrlr"))["attribute_status"] == GetVariableStatusEnumType.unknown_component
@@ -224,10 +232,9 @@ async def test_value_change_of_the_owner_triggers_a_monitor(
     assert response.set_monitoring_result[0]["status"] == SetMonitoringStatusEnumType.accepted
     monitor_id = response.set_monitoring_result[0]["id"]
 
-    probe_module.publish_variable(
-        IMPLEMENTATION_ID,
-        "value_changed",
-        {"component": {"name": "CoolingCtrlr"}, "variable": {"name": "FanSpeed"}, "value": "75"},
+    publish_message(
+        probe_module,
+        {"value_change": {"component": {"name": "CoolingCtrlr"}, "variable": {"name": "FanSpeed"}, "value": "75"}},
     )
 
     def validate_event(meta_data, msg, exp_payload):
@@ -247,22 +254,29 @@ async def test_value_change_of_the_owner_triggers_a_monitor(
 @pytest.mark.everest_core_config("everest-config-ocpp201-probe-module.yaml")
 @pytest.mark.probe_module
 @pytest.mark.everest_config_adaptions(DeviceModelConnectionAdjustment())
-async def test_value_change_ahead_of_its_registration_is_applied(probe_module, central_system: CentralSystem):
+async def test_owner_messages_are_applied_in_the_order_they_are_published(
+    probe_module, central_system: CentralSystem
+):
     owner = Owner(probe_module, [])
     charge_point = await start(probe_module, central_system)
 
-    # registration and value_changed are separate vars, so the OCPP module may handle the change first
-    probe_module.publish_variable(
-        IMPLEMENTATION_ID,
-        "value_changed",
-        {"owner": "aux", "component": {"name": "AuxCtrlr"}, "variable": {"name": "FanSpeed"}, "value": "55"},
-    )
-    probe_module.publish_variable(
-        IMPLEMENTATION_ID, "registration", fan_speed_registration("10", owner="aux", component="AuxCtrlr")
-    )
+    def change(value):
+        return {
+            "value_change": {
+                "owner": "aux",
+                "component": {"name": "AuxCtrlr"},
+                "variable": {"name": "FanSpeed"},
+                "value": value,
+            }
+        }
+
+    # A change ahead of the registration of its owner is ignored, the one after it applies
+    publish_message(probe_module, change("55"))
+    publish_message(probe_module, {"registration": fan_speed_registration("10", owner="aux", component="AuxCtrlr")})
+    publish_message(probe_module, change("65"))
     await wait_for_calls(owner.registration_results, 1)
     assert owner.registration_results.call_args.args[0] == {"owner": "aux", "status": "Accepted", "rejected": []}
-    assert (await read(charge_point, "AuxCtrlr"))["attribute_value"] == "55"
+    assert (await read(charge_point, "AuxCtrlr"))["attribute_value"] == "65"
 
 
 @pytest.mark.asyncio

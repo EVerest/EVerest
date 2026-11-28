@@ -53,7 +53,6 @@ private:
     MonitorStore monitors;
     StoredValues stored_values;
     ProviderCalls provider_calls;
-    std::uint64_t last_registration_generation{0};
 
     /// \brief Listener for the internal change of a variable
     std::vector<on_variable_changed> variable_listener;
@@ -155,16 +154,17 @@ private:
                                 const std::string& source);
 
     /// \brief Forwards the write of \p value to the provider of the variable after releasing \p lock, then stores the
-    /// value if the provider accepted it, see store_provided_value
+    /// value if the provider accepted it and does not report accepted values itself, see store_provided_value
     /// \return The result of the provider
     SetVariableStatusEnum forward_to_provider(Lock lock, const ComposedVariable& composed, const Component& component,
                                               const Variable& variable, const AttributeEnum& attribute_enum,
                                               const std::string& value, const std::string& source);
 
-    /// \brief Stores \p value, which the provider of the registration \p generation accepted, unless the variable
-    /// belongs to another registration by now. Requires the mutex not to be held.
-    void store_provided_value(std::uint64_t generation, const Component& component, const Variable& variable,
-                              const AttributeEnum& attribute_enum, const std::string& value, const std::string& source);
+    /// \brief Stores \p value, which \p provider of \p owner accepted, unless the variable is no longer registered by
+    /// \p owner with \p provider or the value no longer fits it. Requires the mutex not to be held.
+    void store_provided_value(const std::string& owner, const VariableValueProvider* provider,
+                              const Component& component, const Variable& variable, const AttributeEnum& attribute_enum,
+                              const std::string& value, const std::string& source);
 
     /// \brief Updates the model with \p value: persist, then, only if that is Accepted, the value in memory. A storage
     /// exception counts as Rejected.

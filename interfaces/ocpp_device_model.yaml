@@ -34,45 +34,48 @@ cmds:
   set_value:
     description: >-
       Applies a write to an attribute of a registered variable, from the CSMS, a SetVariables.req for example, or from
-      the OCPP service itself. The OCPP module waits for the answer without a deadline, so the module answers
-      promptly, well within the message timeout of the CSMS, and rejects a write it cannot complete by then. Calls to
-      one module instance are delivered one at a time, so a write answered late delays the following ones.
-      Accepted means that the owner applied exactly the written value: the OCPP service then stores it, so the owner
-      does not report it with value_changed. RebootRequired means that the owner kept exactly the written value, and
-      that it takes effect at the next start: the OCPP service does not store it and keeps the current value, and the
-      owner registers the new value at the next start. An owner that would apply or keep another value, a clamped one
-      for example, rejects the write.
+      the OCPP service itself. The module publishes the owner's answer as a write_result in owner_message, in its place
+      among the owner's other messages, and returns the same status only after that. A write the owner does not
+      answer in time is answered Rejected with a write_result that carries no value, so its place does not matter. The OCPP module waits for the
+      answer without a deadline, so the module answers promptly, well within the message timeout of the CSMS, and
+      rejects a write it cannot complete by then, also with a write_result. Calls to one module instance are delivered
+      one at a time, so a write answered late delays the following ones.
+      Accepted means that the owner applied exactly the written value: the OCPP service stores it when it handles the
+      write_result, so the owner does not report it with a value_change. RebootRequired means that the owner kept
+      exactly the written value, and that it takes effect at the next start: the OCPP service does not store it and
+      keeps the current value, and the owner registers the new value at the next start. An owner that would apply or
+      keep another value, a clamped one for example, rejects the write.
     arguments:
       request:
         description: The write to apply
         type: object
         $ref: /ocpp_device_model#/WriteRequest
+      request_id:
+        description: Identifies the write in the write_result that answers it
+        type: string
     result:
       description: >-
-        Accepted, RebootRequired or Rejected. UnknownComponent, UnknownVariable and NotSupportedAttributeType are
-        returned to the CSMS as they are.
+        Accepted, RebootRequired or Rejected, as in the write_result. UnknownComponent, UnknownVariable and
+        NotSupportedAttributeType are returned to the CSMS as they are.
       type: string
       $ref: /ocpp#/SetVariableStatusEnumType
 vars:
-  registration:
+  owner_message:
     description: >-
-      Published to replace the registration of one owner at runtime, or to add an owner; the registrations of the
+      Every registration, value change and write result of the owners of the module, published in the order in which
+      the module received them from the owners, so that the OCPP service applies them in that order and an owner's
+      latest message wins.
+      A registration replaces the registration of one owner at runtime, or adds an owner; the registrations of the
       other owners of the module stay. An empty components list removes everything the owner registered and releases
-      the owner name. The monitors of a variable survive a registration that registers it again. An owner added after
-      startup starts without the monitors of earlier boots, which the first start of the OCPP service removed. In OCPP
-      1.6 mode, the ocpp16_key of each variable is mapped while the registration lasts: a registration replaces the
-      keys of the owner's earlier one, and a release removes them. At startup get_registrations is authoritative: a registration published before the
-      OCPP module subscribed is lost.
+      the owner name; writes to the owner that are still waiting for their write_result are answered Rejected. The
+      monitors of a variable survive a registration that registers it again. An owner added after startup starts
+      without the monitors of earlier boots, which the first start of the OCPP service removed. In OCPP 1.6 mode, the
+      ocpp16_key of each variable is mapped while the registration lasts: a registration replaces the keys of the
+      owner's earlier one, and a release removes them. At startup get_registrations is authoritative: a message
+      published before the OCPP module subscribed is lost.
+      A value change reports a value of a registered variable that the owner changed itself. Every change is reported:
+      the OCPP service holds the values in memory and serves reads from there. A value change of a value that does not
+      fit the variable, or for an owner that is not registered by the module, is ignored and logged by the OCPP module.
+      A write result answers a set_value call.
     type: object
-    $ref: /ocpp_device_model#/Registration
-  value_changed:
-    description: >-
-      Published when the owner changed a value of a registered variable itself. Every change is reported: the OCPP
-      service holds the values in memory and serves reads from there. A report is applied as it arrives, so a write in
-      progress may overwrite it. A report that arrives before the registration of its owner is applied, which the
-      framework allows because registration and value_changed are separate vars, is kept and applied after it, up to
-      64 reports per module for owners that are not registered. A report of a value that does not fit the variable, or
-      for an owner that another module holds or whose registration is refused, is ignored and logged by the OCPP
-      module.
-    type: object
-    $ref: /ocpp_device_model#/ValueChange
+    $ref: /ocpp_device_model#/OwnerMessage

@@ -36,8 +36,8 @@ protected:
     // command handler functions (virtual)
     virtual types::ocpp_device_model::Registrations handle_get_registrations() override;
     virtual void handle_set_registration_result(types::ocpp_device_model::RegistrationResult& result) override;
-    virtual types::ocpp::SetVariableStatusEnumType
-    handle_set_value(types::ocpp_device_model::WriteRequest& request) override;
+    virtual types::ocpp::SetVariableStatusEnumType handle_set_value(types::ocpp_device_model::WriteRequest& request,
+                                                                    std::string& request_id) override;
 
     // ev@d2d1847a-7b88-41dd-ad07-92785f06f5c4:v1
     // insert your protected definitions here
@@ -54,6 +54,8 @@ private:
     // ev@3370e4dd-95f4-47a9-aaec-ea76f34a66c9:v1
     // insert your private definitions here
     int timeout_s{10};
+    void publish_write_result(const types::ocpp_device_model::WriteRequest& request, const std::string& request_id,
+                              types::ocpp::SetVariableStatusEnumType status);
     // ev@3370e4dd-95f4-47a9-aaec-ea76f34a66c9:v1
 };
 

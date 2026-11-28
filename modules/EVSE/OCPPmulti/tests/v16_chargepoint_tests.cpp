@@ -60,10 +60,18 @@ public:
     void set_registration_result(const types::ocpp_device_model::RegistrationResult& result) override {
         this->results.push_back(result);
     }
-    types::ocpp::SetVariableStatusEnumType
-    set_value(const types::ocpp_device_model::WriteRequest& /*request*/) override {
+    types::ocpp::SetVariableStatusEnumType set_value(const types::ocpp_device_model::WriteRequest& request,
+                                                     const std::string& request_id) override {
+        // Published before the answer, as the module providing the interface does
+        if (this->owners != nullptr) {
+            types::ocpp_device_model::OwnerMessage message;
+            message.write_result = types::ocpp_device_model::WriteResult{
+                request_id, request, types::ocpp::SetVariableStatusEnumType::Accepted};
+            this->owners->on_owner_message(0, message);
+        }
         return types::ocpp::SetVariableStatusEnumType::Accepted;
     }
+    ocpp_module_common::device_model::ExternalOwners* owners{nullptr};
     std::vector<types::ocpp_device_model::RegistrationResult> results;
 };
 
@@ -97,6 +105,7 @@ protected:
         args.connector_mapping = {{1, {{1, 1}}}, {2, {{1, 2}}}};
         args.v16_ocpp16_network_config_slot = 1;
         args.v16_enable_legacy_config_migration = false;
+        m_owner_connection->owners = &m_external_owners;
         m_external_owners.set_startup_registrations(0, {});
         args.external_owners = &m_external_owners;
         m_chargepoint.init(args);

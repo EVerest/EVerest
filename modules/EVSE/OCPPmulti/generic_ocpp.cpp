@@ -49,8 +49,9 @@ public:
         this->device_model.call_set_registration_result(result);
     }
 
-    types::ocpp::SetVariableStatusEnumType set_value(const types::ocpp_device_model::WriteRequest& request) override {
-        return this->device_model.call_set_value(request);
+    types::ocpp::SetVariableStatusEnumType set_value(const types::ocpp_device_model::WriteRequest& request,
+                                                     const std::string& request_id) override {
+        return this->device_model.call_set_value(request, request_id);
     }
 
 private:
@@ -864,13 +865,9 @@ void GenericOcpp::init_external_owners() {
         std::make_unique<module::device_model::ExternalOwners>(std::move(connections));
 
     for (std::size_t index = 0; index < mv_requires.device_model.size(); ++index) {
-        mv_requires.device_model.at(index)->subscribe_registration(
-            [this, index](const types::ocpp_device_model::Registration& registration) {
-                mv_device_model_sources.external_owners->on_registration(index, registration);
-            });
-        mv_requires.device_model.at(index)->subscribe_value_changed(
-            [this, index](const types::ocpp_device_model::ValueChange& change) {
-                mv_device_model_sources.external_owners->on_value_changed(index, change);
+        mv_requires.device_model.at(index)->subscribe_owner_message(
+            [this, index](const types::ocpp_device_model::OwnerMessage& message) {
+                mv_device_model_sources.external_owners->on_owner_message(index, message);
             });
     }
 }

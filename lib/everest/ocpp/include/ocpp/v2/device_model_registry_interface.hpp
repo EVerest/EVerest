@@ -26,17 +26,24 @@ public:
     /// rejects a write it cannot complete by then. Calls are not serialised, also not for one variable.
     ///
     /// Accepted means that the owner applied exactly \p value: DeviceModel then stores it in memory, so the owner does
-    /// not report it. An owner that would apply another value, a clamped one for example, rejects the write.
-    /// RebootRequired means that the owner holds \p value for the next start and registers with it then. DeviceModel
-    /// keeps the value in effect until then, and so must the owner: it does not report the held value with
-    /// notify_value_changed before the next start.
+    /// not report it, unless reports_accepted_values is true. An owner that would apply another value, a clamped one
+    /// for example, rejects the write. RebootRequired means that the owner holds \p value for the next start and
+    /// registers with it then. DeviceModel keeps the value in effect until then, and so must the owner: it does not
+    /// report the held value with notify_value_changed before the next start.
     ///
-    /// DeviceModel stores an accepted value once this call returned. When writes to one variable overlap, the value
-    /// stored last stays in memory.
-    /// \param source The source of the value (e.g. 'csms', 'internal')
+    /// DeviceModel stores an accepted value once this call returned, if the variable is still registered by the same
+    /// owner with this provider and the value still fits it. When writes to one variable overlap, the value stored last
+    /// stays in memory. \param source The source of the value (e.g. 'csms', 'internal')
     virtual SetVariableStatusEnum set_value(const Component& component, const Variable& variable,
                                             AttributeEnum attribute, const std::string& value,
                                             const std::string& source) = 0;
+
+    /// \brief Whether the owner reports an accepted value itself with notify_value_changed, before set_value returns,
+    /// in the order of its other reports and registrations. DeviceModel then does not store the value after set_value
+    /// returned, so a report or registration that the owner made after accepting the write is not overwritten.
+    virtual bool reports_accepted_values() const {
+        return false;
+    }
 };
 
 /// \brief A variable that an owner registers at runtime
@@ -84,14 +91,17 @@ enum class RegistrationRejectionReason {
     /// variable is connection configuration or computed by the OCPP 1.6 stack, has no Actual attribute or, for a
     /// built-in key, another data type than the key's built-in variable. Not set by the device model.
     Ocpp16KeyInvalid,
+    /// \brief The owner is registered with another provider. An owner keeps its provider until it is unregistered.
+    ProviderChanged,
 };
 
 struct RejectedVariable {
     Component component;
     Variable variable;
     RegistrationRejectionReason reason;
-    /// \brief For AlreadyDefined: the owner that defines the variable, the owner of its component config entry or the
-    /// runtime owner that registered it, the registering owner itself for a variable it defines twice
+    /// \brief For AlreadyDefined and ProviderChanged: the owner that defines the variable, the owner of its component
+    /// config entry or the runtime owner that registered it, the registering owner itself for a variable it defines
+    /// twice
     std::string defined_by;
 };
 
@@ -114,13 +124,11 @@ public:
     /// VARIABLE_OWNER_COMPONENT_CONFIG and VARIABLE_OWNER_OCPP_STACK, and the variables that libocpp writes from its
     /// own state, see RegistrationRejectionReason::ReservedVariable.
     /// \param provider Receives the writes to the registered variables. Without a provider, writes are applied to the
-    /// model like writes to any other variable. A write that is in progress while \p owner registers again is not
-    /// stored, the registered value stays. DeviceModel shares the ownership of the provider until \p owner is
-    /// unregistered or registers with another provider, and until the calls to it in progress return; unregistering
-    /// and registering with another provider wait for the calls in progress, unless they are called from a call to a
-    /// provider, see unregister_components. Registering with another provider does not wait for the writes that reach
-    /// that provider already. A caller that waits must not hold a lock that set_value of the provider it waits for
-    /// takes.
+    /// model like writes to any other variable. An owner keeps its provider until it is unregistered: a registration
+    /// with another provider, or without one, while \p owner is registered with a provider is rejected with
+    /// RegistrationRejectionReason::ProviderChanged and changes nothing. A write that is in progress while \p owner
+    /// registers again is stored if the value still fits the variable. DeviceModel shares the ownership of the provider
+    /// until \p owner is unregistered and the calls to it in progress returned.
     virtual ComponentRegistrationResult register_components(const std::string& owner,
                                                             const std::vector<RegisteredComponent>& components,
                                                             std::shared_ptr<VariableValueProvider> provider) = 0;
@@ -138,8 +146,8 @@ public:
     /// what the CSMS may set, not what the owner reports. The reserved owners are rejected.
     ///
     /// A report made while a write to the same attribute is in progress is overwritten when DeviceModel stores that
-    /// write, after set_value returned. An owner whose change must outlast the write reports it after set_value
-    /// returned.
+    /// write, after set_value returned, unless the provider reports accepted values itself, see
+    /// VariableValueProvider::reports_accepted_values.
     virtual SetVariableStatusEnum notify_value_changed(const Component& component, const Variable& variable,
                                                        AttributeEnum attribute, const std::string& value,
                                                        const std::string& owner) = 0;

@@ -267,9 +267,18 @@ public:
     void set_registration_result(const dm_types::RegistrationResult& result) override {
         this->results.push_back(result);
     }
-    types::ocpp::SetVariableStatusEnumType set_value(const dm_types::WriteRequest& /*request*/) override {
+    types::ocpp::SetVariableStatusEnumType set_value(const dm_types::WriteRequest& request,
+                                                     const std::string& request_id) override {
+        // Published before the answer, as the module providing the interface does
+        if (this->owners != nullptr) {
+            dm_types::OwnerMessage message;
+            message.write_result =
+                dm_types::WriteResult{request_id, request, types::ocpp::SetVariableStatusEnumType::Accepted};
+            this->owners->on_owner_message(0, message);
+        }
         return types::ocpp::SetVariableStatusEnumType::Accepted;
     }
+    ocpp_module_common::device_model::ExternalOwners* owners{nullptr};
     std::vector<dm_types::RegistrationResult> results;
 };
 
@@ -296,6 +305,7 @@ dm_types::Registrations make_registrations(const std::string& component_name, co
 TEST_F(ChargePointConfigFactoryV16Test, ExternalOwnersAreRegistered) {
     const auto connection = std::make_shared<OwnerConnection>();
     ocpp_module_common::device_model::ExternalOwners owners({connection});
+    connection->owners = &owners;
 
     types::ocpp::Variable fan_speed;
     fan_speed.name = "FanSpeed";
@@ -336,6 +346,7 @@ mappings:
 )yaml";
     const auto connection = std::make_shared<OwnerConnection>();
     ocpp_module_common::device_model::ExternalOwners owners({connection});
+    connection->owners = &owners;
     types::ocpp::Variable fan_speed;
     fan_speed.name = "FanSpeed";
     owners.set_startup_registrations(0,
@@ -366,6 +377,7 @@ dm_types::Registrations make_keyed_fan_speed(const std::string& key) {
 TEST_F(ChargePointConfigFactoryV16Test, KeyDeclaredByExternalOwnerApplies) {
     const auto connection = std::make_shared<OwnerConnection>();
     ocpp_module_common::device_model::ExternalOwners owners({connection});
+    connection->owners = &owners;
     owners.set_startup_registrations(0, make_keyed_fan_speed("CoolingFanSpeed"));
 
     auto result = module::config_factory_v16::create_charge_point_configuration(work_dir, make_params(), n_evse, {},
@@ -395,6 +407,7 @@ mappings:
 )yaml";
     const auto connection = std::make_shared<OwnerConnection>();
     ocpp_module_common::device_model::ExternalOwners owners({connection});
+    connection->owners = &owners;
     owners.set_startup_registrations(0, make_keyed_fan_speed("CoolingFanSpeed"));
     auto params = make_params();
     params.Ocpp16KeyMappingsPath = mapping_file.string();
@@ -425,6 +438,7 @@ mappings:
 )yaml";
     const auto connection = std::make_shared<OwnerConnection>();
     ocpp_module_common::device_model::ExternalOwners owners({connection});
+    connection->owners = &owners;
     owners.set_startup_registrations(0, make_keyed_fan_speed("CoolingFanSpeed"));
     auto params = make_params();
     params.Ocpp16KeyMappingsPath = mapping_file.string();
@@ -451,6 +465,7 @@ TEST_F(ChargePointConfigFactoryV16Test, FeatureProfilesSeeValuesOfExternalOwners
 
     const auto connection = std::make_shared<OwnerConnection>();
     ocpp_module_common::device_model::ExternalOwners owners({connection});
+    connection->owners = &owners;
     types::ocpp::Variable cost_and_price_enabled;
     cost_and_price_enabled.name = "CustomImplementationEnabled";
     cost_and_price_enabled.instance = "org.openchargealliance.costmsg";

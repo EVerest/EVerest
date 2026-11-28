@@ -80,6 +80,10 @@ public:
         return this->result;
     }
 
+    bool reports_accepted_values() const override {
+        return this->reports_values;
+    }
+
     std::vector<std::string> received() {
         std::lock_guard<std::mutex> lock(this->mutex);
         return this->values;
@@ -88,6 +92,7 @@ public:
     SetVariableStatusEnum result = SetVariableStatusEnum::Accepted;
     std::chrono::milliseconds delay{0};
     std::atomic<int> calls_running{0};
+    bool reports_values{false};
     /// \brief What the owner does with a value before the provider returns
     std::function<void(const Component&, const Variable&, const std::string&)> on_set;
 
@@ -372,6 +377,7 @@ TEST_F(DeviceModelRegistryTest, variable_of_the_component_config_is_rejected) {
 
 TEST_F(DeviceModelRegistryTest, registering_again_replaces_the_previous_registration) {
     register_config_view();
+    dm->unregister_components(OWNER);
 
     RegisteredComponent component;
     component.component = config_component;
@@ -666,13 +672,30 @@ TEST_F(DeviceModelRegistryTest, provider_may_unregister_its_owner_and_register_a
         RegisteredComponent component;
         component.component = config_component;
         component.variables.push_back(make_registered_variable(timeout.name, value));
-        EXPECT_TRUE(dm->register_components(OWNER, {component}, replacement).rejected.empty());
         dm->unregister_components(OWNER);
+        EXPECT_TRUE(dm->register_components(OWNER, {component}, replacement).rejected.empty());
     };
 
     EXPECT_EQ(dm->set_value(config_component, timeout, AttributeEnum::Actual, "90", "csms"),
               SetVariableStatusEnum::Accepted);
-    EXPECT_FALSE(visible(config_component, timeout));
+    EXPECT_EQ(get(config_component, timeout), "90");
+    EXPECT_TRUE(replacement->received().empty());
+}
+
+TEST_F(DeviceModelRegistryTest, value_accepted_by_a_provider_replaced_during_the_write_is_not_stored) {
+    register_config_view();
+    const auto replacement = std::make_shared<FakeProvider>();
+    provider->on_set = [this, replacement](const Component&, const Variable&, const std::string&) {
+        RegisteredComponent component;
+        component.component = config_component;
+        component.variables.push_back(make_registered_variable(timeout.name, "75"));
+        dm->unregister_components(OWNER);
+        EXPECT_TRUE(dm->register_components(OWNER, {component}, replacement).rejected.empty());
+    };
+
+    EXPECT_EQ(dm->set_value(config_component, timeout, AttributeEnum::Actual, "90", "csms"),
+              SetVariableStatusEnum::Accepted);
+    EXPECT_EQ(get(config_component, timeout), "75");
     EXPECT_TRUE(replacement->received().empty());
 }
 
@@ -718,10 +741,30 @@ TEST_F(DeviceModelRegistryTest, device_model_keeps_the_provider_until_its_owner_
     EXPECT_TRUE(registered.expired());
 }
 
-TEST_F(DeviceModelRegistryTest, registering_again_during_a_write_keeps_the_registered_value) {
+TEST_F(DeviceModelRegistryTest, registering_again_with_the_same_provider_during_a_write_keeps_the_written_value) {
     register_config_view();
     provider->delay = std::chrono::milliseconds(50);
-    const auto replacement = std::make_shared<FakeProvider>();
+
+    std::thread writer([this]() {
+        EXPECT_EQ(dm->set_value(config_component, timeout, AttributeEnum::Actual, "90", "csms"),
+                  SetVariableStatusEnum::Accepted);
+    });
+    while (provider->calls_running.load() == 0) {
+        std::this_thread::yield();
+    }
+    RegisteredComponent component;
+    component.component = config_component;
+    component.variables.push_back(make_registered_variable(timeout.name, "75"));
+    ASSERT_TRUE(dm->register_components(OWNER, {component}, provider).rejected.empty());
+    writer.join();
+
+    EXPECT_EQ(provider->received(), std::vector<std::string>{"90"});
+    EXPECT_EQ(get(config_component, timeout), "90");
+}
+
+TEST_F(DeviceModelRegistryTest, registering_again_with_limits_that_exclude_the_written_value_drops_it) {
+    register_config_view();
+    provider->delay = std::chrono::milliseconds(50);
 
     std::thread writer([this]() { dm->set_value(config_component, timeout, AttributeEnum::Actual, "90", "csms"); });
     while (provider->calls_running.load() == 0) {
@@ -730,144 +773,57 @@ TEST_F(DeviceModelRegistryTest, registering_again_during_a_write_keeps_the_regis
     RegisteredComponent component;
     component.component = config_component;
     component.variables.push_back(make_registered_variable(timeout.name, "75"));
-    ASSERT_TRUE(dm->register_components(OWNER, {component}, replacement).rejected.empty());
+    component.variables.back().characteristics.maxLimit = 80;
+    ASSERT_TRUE(dm->register_components(OWNER, {component}, provider).rejected.empty());
     writer.join();
 
-    EXPECT_EQ(provider->received(), std::vector<std::string>{"90"});
     EXPECT_EQ(get(config_component, timeout), "75");
 }
 
-TEST_F(DeviceModelRegistryTest, registering_another_provider_does_not_wait_for_writes_to_it) {
+TEST_F(DeviceModelRegistryTest, registering_another_provider_without_unregistering_is_rejected) {
     register_config_view();
-    std::promise<void> release_replaced;
-    provider->on_set = [&release_replaced](const Component&, const Variable&, const std::string&) {
-        release_replaced.get_future().wait();
-    };
     const auto replacement = std::make_shared<FakeProvider>();
-    std::promise<void> registered;
-    std::atomic<bool> registered_during_the_write{false};
-    replacement->on_set = [&registered, &registered_during_the_write](const Component&, const Variable&,
-                                                                      const std::string&) {
-        registered_during_the_write =
-            registered.get_future().wait_for(std::chrono::seconds(5)) == std::future_status::ready;
-    };
+    RegisteredComponent component;
+    component.component = config_component;
+    component.variables.push_back(make_registered_variable(timeout.name, "75"));
 
-    std::thread writer_to_replaced(
-        [this]() { dm->set_value(config_component, timeout, AttributeEnum::Actual, "90", "csms"); });
-    while (provider->calls_running.load() == 0) {
-        std::this_thread::yield();
-    }
-    std::thread registering([this, &replacement, &registered]() {
-        RegisteredComponent component;
-        component.component = config_component;
-        component.variables.push_back(make_registered_variable(timeout.name, "75"));
-        EXPECT_TRUE(dm->register_components(OWNER, {component}, replacement).rejected.empty());
-        registered.set_value();
-    });
-    while (get(config_component, timeout) != "75") {
-        std::this_thread::yield();
-    }
-    std::thread writer_to_replacement(
-        [this]() { dm->set_value(config_component, timeout, AttributeEnum::Actual, "100", "csms"); });
-    while (replacement->calls_running.load() == 0) {
-        std::this_thread::yield();
-    }
-    release_replaced.set_value();
+    const auto result = dm->register_components(OWNER, {component}, replacement);
 
-    writer_to_replaced.join();
-    registering.join();
-    writer_to_replacement.join();
-    EXPECT_TRUE(registered_during_the_write.load());
-    EXPECT_EQ(get(config_component, timeout), "100");
+    ASSERT_EQ(result.rejected.size(), 1);
+    EXPECT_EQ(result.rejected.at(0).reason, RegistrationRejectionReason::ProviderChanged);
+    EXPECT_EQ(get(config_component, timeout), "60");
+    EXPECT_EQ(dm->set_value(config_component, timeout, AttributeEnum::Actual, "90", "csms"),
+              SetVariableStatusEnum::Accepted);
+    EXPECT_EQ(provider->received(), std::vector<std::string>{"90"});
+    EXPECT_TRUE(replacement->received().empty());
 }
 
-TEST_F(DeviceModelRegistryTest, registering_a_replaced_provider_again_does_not_wait_for_writes_to_it) {
+TEST_F(DeviceModelRegistryTest, registering_another_provider_after_unregistering_is_accepted) {
     register_config_view();
-    std::promise<void> release;
-    provider->on_set = [&release](const Component&, const Variable&, const std::string&) {
-        release.get_future().wait();
-    };
-    const auto register_timeout = [this](const std::shared_ptr<FakeProvider>& with_provider, const std::string& value) {
-        RegisteredComponent component;
-        component.component = config_component;
-        component.variables.push_back(make_registered_variable(timeout.name, value));
-        EXPECT_TRUE(dm->register_components(OWNER, {component}, with_provider).rejected.empty());
-    };
+    dm->unregister_components(OWNER);
+    const auto replacement = std::make_shared<FakeProvider>();
+    RegisteredComponent component;
+    component.component = config_component;
+    component.variables.push_back(make_registered_variable(timeout.name, "75"));
 
-    std::thread writer([this]() { dm->set_value(config_component, timeout, AttributeEnum::Actual, "90", "csms"); });
-    while (provider->calls_running.load() == 0) {
-        std::this_thread::yield();
-    }
-    std::thread registering_another(
-        [&register_timeout]() { register_timeout(std::make_shared<FakeProvider>(), "75"); });
-    while (get(config_component, timeout) != "75") {
-        std::this_thread::yield();
-    }
-    auto registering_again =
-        std::async(std::launch::async, [this, &register_timeout]() { register_timeout(provider, "80"); });
-    const bool registered_during_the_write =
-        registering_again.wait_for(std::chrono::seconds(5)) == std::future_status::ready;
-    release.set_value();
-
-    writer.join();
-    registering_another.join();
-    registering_again.get();
-    EXPECT_TRUE(registered_during_the_write);
-    EXPECT_EQ(get(config_component, timeout), "80");
+    EXPECT_TRUE(dm->register_components(OWNER, {component}, replacement).rejected.empty());
+    EXPECT_EQ(dm->set_value(config_component, timeout, AttributeEnum::Actual, "90", "csms"),
+              SetVariableStatusEnum::Accepted);
+    EXPECT_EQ(replacement->received(), std::vector<std::string>{"90"});
 }
 
-TEST_F(DeviceModelRegistryTest, replaced_registration_does_not_wait_for_writes_to_the_provider_registered_since) {
+TEST_F(DeviceModelRegistryTest, accepted_value_of_a_provider_that_reports_it_is_not_stored) {
+    provider->reports_values = true;
     register_config_view();
-    std::promise<void> release_first;
-    provider->on_set = [&release_first](const Component&, const Variable&, const std::string&) {
-        release_first.get_future().wait();
-    };
-    const auto last = std::make_shared<FakeProvider>();
-    std::promise<void> release_last;
-    last->on_set = [&release_last](const Component&, const Variable&, const std::string&) {
-        release_last.get_future().wait();
-    };
-    const auto register_timeout = [this](const std::shared_ptr<FakeProvider>& with_provider, const std::string& value) {
-        RegisteredComponent component;
-        component.component = config_component;
-        component.variables.push_back(make_registered_variable(timeout.name, value));
-        EXPECT_TRUE(dm->register_components(OWNER, {component}, with_provider).rejected.empty());
-    };
 
-    std::thread writer_to_first(
-        [this]() { dm->set_value(config_component, timeout, AttributeEnum::Actual, "90", "csms"); });
-    while (provider->calls_running.load() == 0) {
-        std::this_thread::yield();
-    }
-    auto registering_second = std::async(
-        std::launch::async, [&register_timeout]() { register_timeout(std::make_shared<FakeProvider>(), "75"); });
-    while (get(config_component, timeout) != "75") {
-        std::this_thread::yield();
-    }
-    auto registering_last =
-        std::async(std::launch::async, [&register_timeout, &last]() { register_timeout(last, "80"); });
-    while (get(config_component, timeout) != "80") {
-        std::this_thread::yield();
-    }
-    std::thread writer_to_last(
-        [this]() { dm->set_value(config_component, timeout, AttributeEnum::Actual, "100", "csms"); });
-    while (last->calls_running.load() == 0) {
-        std::this_thread::yield();
-    }
-    release_first.set_value();
-    const bool second_registered_during_the_write =
-        registering_second.wait_for(std::chrono::seconds(5)) == std::future_status::ready;
-    const bool last_registered_during_the_write =
-        registering_last.wait_for(std::chrono::seconds(5)) == std::future_status::ready;
-    release_last.set_value();
+    EXPECT_EQ(dm->set_value(config_component, timeout, AttributeEnum::Actual, "90", "csms"),
+              SetVariableStatusEnum::Accepted);
+    EXPECT_EQ(provider->received(), std::vector<std::string>{"90"});
+    EXPECT_EQ(get(config_component, timeout), "60");
 
-    writer_to_first.join();
-    writer_to_last.join();
-    registering_second.get();
-    registering_last.get();
-    EXPECT_TRUE(second_registered_during_the_write);
-    EXPECT_TRUE(last_registered_during_the_write);
-    EXPECT_EQ(get(config_component, timeout), "100");
+    EXPECT_EQ(dm->notify_value_changed(config_component, timeout, AttributeEnum::Actual, "90", OWNER),
+              SetVariableStatusEnum::Accepted);
+    EXPECT_EQ(get(config_component, timeout), "90");
 }
 
 TEST_F(DeviceModelRegistryTest, providers_of_one_owner_may_unregister_it_from_concurrent_writes) {

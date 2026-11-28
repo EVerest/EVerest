@@ -115,7 +115,7 @@ async def test_get_registrations_answers_when_every_expected_owner_registered(
 @pytest.mark.everest_core_config('probe-ocpp-device-model.yaml')
 async def test_get_registrations_answers_without_missing_owner_at_deadline(
         everest_core: EverestCore, client: AsyncApiMqttHandler, probe_module: ProbeModule):
-    registrations = probe_module.subscribe_variable_to_queue(CONNECTION, "registration")
+    messages = probe_module.subscribe_variable_to_queue(CONNECTION, "owner_message")
     # a registration beyond a length limit of the interface is answered Invalid instead of being part of the
     # answer, which fails as a whole when EVerest validates it (validate_schema)
     too_long = registration("meter_2", evse_id=2)
@@ -134,8 +134,8 @@ async def test_get_registrations_answers_without_missing_owner_at_deadline(
     # an owner that missed the deadline still registers at runtime
     late = registration("meter_2", evse_id=2)
     await publish(client, everest_core, "m2e/registration", late)
-    assert await asyncio.to_thread(registrations.get, timeout=5) == late
-    assert registrations.empty(), "a registration before the answer was passed on to the var"
+    assert await asyncio.to_thread(messages.get, timeout=5) == {"registration": late}
+    assert messages.empty(), "a registration before the answer was passed on to the var"
 
 
 @pytest.mark.asyncio
@@ -195,8 +195,9 @@ async def test_set_registration_result_is_published_for_a_refused_registration(
 
 @pytest.mark.asyncio
 @pytest.mark.everest_core_config('probe-ocpp-device-model.yaml')
-async def test_set_value_returns_the_reply_of_the_client(
+async def test_set_value_returns_the_reply_of_the_client_after_publishing_it(
         everest_core: EverestCore, client: AsyncApiMqttHandler, probe_module: ProbeModule):
+    messages = probe_module.subscribe_variable_to_queue(CONNECTION, "owner_message")
     requests = asyncio.Queue()
 
     async def on_set_value(payload: str):
@@ -207,26 +208,56 @@ async def test_set_value_returns_the_reply_of_the_client(
 
     await client.register_handler(topic(everest_core, "e2m/set_value"), on_set_value)
 
-    result = await probe_module.call_command(CONNECTION, "set_value", {"request": WRITE_REQUEST})
+    result = await probe_module.call_command(CONNECTION, "set_value", {"request": WRITE_REQUEST, "request_id": "7"})
 
     assert result == "RebootRequired"
     assert (await asyncio.wait_for(requests.get(), 1))["payload"] == WRITE_REQUEST
+    assert await asyncio.to_thread(messages.get, timeout=5) == {
+        "write_result": {"request_id": "7", "request": WRITE_REQUEST, "status": "RebootRequired"}}
+
+
+@pytest.mark.asyncio
+@pytest.mark.everest_core_config('probe-ocpp-device-model.yaml')
+async def test_set_value_keeps_the_order_of_the_owner_messages(
+        everest_core: EverestCore, client: AsyncApiMqttHandler, probe_module: ProbeModule):
+    await probe_module.call_command(CONNECTION, "get_registrations", {})
+    messages = probe_module.subscribe_variable_to_queue(CONNECTION, "owner_message")
+
+    async def on_set_value(payload: str):
+        request = json.loads(payload)
+        # The owner registers again before it answers the write
+        await publish(client, everest_core, "m2e/registration", registration("meter_1"))
+        await client.publish(f"{everest_core.mqtt_external_prefix}{request['headers']['replyTo']}",
+                             json.dumps("Accepted"))
+
+    await client.register_handler(topic(everest_core, "e2m/set_value"), on_set_value)
+
+    result = await probe_module.call_command(CONNECTION, "set_value", {"request": WRITE_REQUEST, "request_id": "8"})
+
+    assert result == "Accepted"
+    assert await asyncio.to_thread(messages.get, timeout=5) == {"registration": registration("meter_1")}
+    assert await asyncio.to_thread(messages.get, timeout=5) == {
+        "write_result": {"request_id": "8", "request": WRITE_REQUEST, "status": "Accepted"}}
 
 
 @pytest.mark.asyncio
 @pytest.mark.everest_core_config('probe-ocpp-device-model.yaml')
 async def test_set_value_is_rejected_without_a_reply(
         everest_core: EverestCore, client: AsyncApiMqttHandler, probe_module: ProbeModule):
-    result = await probe_module.call_command(CONNECTION, "set_value", {"request": WRITE_REQUEST})
+    messages = probe_module.subscribe_variable_to_queue(CONNECTION, "owner_message")
+
+    result = await probe_module.call_command(CONNECTION, "set_value", {"request": WRITE_REQUEST, "request_id": "9"})
 
     assert result == "Rejected"
+    assert await asyncio.to_thread(messages.get, timeout=5) == {
+        "write_result": {"request_id": "9", "request": WRITE_REQUEST, "status": "Rejected"}}
 
 
 @pytest.mark.asyncio
 @pytest.mark.everest_core_config('probe-ocpp-device-model.yaml')
 async def test_value_changed_is_passed_on(
         everest_core: EverestCore, client: AsyncApiMqttHandler, probe_module: ProbeModule):
-    changes = probe_module.subscribe_variable_to_queue(CONNECTION, "value_changed")
+    messages = probe_module.subscribe_variable_to_queue(CONNECTION, "owner_message")
     change = {
         "owner": "meter_1",
         "component": {"name": "Powermeter", "evse": {"id": 1}},
@@ -236,7 +267,7 @@ async def test_value_changed_is_passed_on(
 
     await publish(client, everest_core, "m2e/value_changed", change)
 
-    assert await asyncio.to_thread(changes.get, timeout=5) == change
+    assert await asyncio.to_thread(messages.get, timeout=5) == {"value_change": change}
 
 
 @pytest.mark.asyncio
@@ -271,7 +302,7 @@ async def test_undecodable_registration_is_answered_invalid(
 @pytest.mark.everest_core_config('probe-ocpp-device-model.yaml')
 async def test_value_changed_during_collection_is_passed_on(
         everest_core: EverestCore, client: AsyncApiMqttHandler, probe_module: ProbeModule):
-    changes = probe_module.subscribe_variable_to_queue(CONNECTION, "value_changed")
+    messages = probe_module.subscribe_variable_to_queue(CONNECTION, "owner_message")
     change = {
         "owner": "meter_1",
         "component": {"name": "Powermeter", "evse": {"id": 1}},
@@ -288,7 +319,7 @@ async def test_value_changed_during_collection_is_passed_on(
     result = await probe_module.call_command(CONNECTION, "get_registrations", {})
 
     assert owners_of(result) == ["meter_1"]
-    assert await asyncio.to_thread(changes.get, timeout=5) == change
+    assert await asyncio.to_thread(messages.get, timeout=5) == {"value_change": change}
 
 
 @pytest.mark.asyncio
