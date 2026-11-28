@@ -39,9 +39,8 @@ Committee Members
 - (Chief Architect) Piet Gömpel [Pionix] (`@Pietfried <https://github.com/Pietfried>`_)
 - Moritz Barsnick [Chargebyte] (`@barsnick <https://github.com/barsnick>`_)
 - Holger Rapp [qwello] (`@SirVer <https://github.com/SirVer>`_)
-- K. Shankari [Joint office of Energy and Transportation] (`@shankari <https://github.com/shankari>`_)
 
-**Last updated: 2026-03-27**
+**Last updated: 2026-11-26**
 
 .. toctree::
     :hidden:
