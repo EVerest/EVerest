@@ -805,6 +805,76 @@ TEST_CASE_METHOD(SessionFixture, "ISO 15118-20 without TLS offers neither PnC no
     }
 }
 
+TEST_CASE_METHOD(SessionFixture, "ISO 15118-20 can be limited to TLS 1.3 during protocol selection") {
+    const auto require_tls_1_3 = GENERATE(false, true);
+    const auto transport = GENERATE(0, 12, 13);
+    const auto offer_iso2 = GENERATE(false, true);
+    const auto use_custom_namespace = GENERATE(false, true);
+    const std::string custom_namespace = "urn:example:custom-ac";
+    conn->secure = transport != 0;
+
+    iso15118::session::EvseSetupConfig setup{};
+    setup.supported_protocols = {iso15118::ProtocolId::ISO15118_20, iso15118::ProtocolId::ISO15118_2};
+    setup.iso15118_20_enforce_tls_1_3 = require_tls_1_3;
+
+    if (use_custom_namespace) {
+        setup.custom_protocol = custom_namespace;
+    }
+
+    auto session = make_session(iso15118::session::SessionConfig{setup}, false);
+    conn->fire(iso15118::io::ConnectionEvent::ACCEPTED);
+    session->poll();
+    conn->tls_1_3 = transport == 13;
+    conn->fire(iso15118::io::ConnectionEvent::OPEN);
+
+    iso15118::message_20::SupportedAppProtocolRequest sap;
+    sap.app_protocol.push_back(
+        {use_custom_namespace ? custom_namespace : iso15118::ISO20_AC_PROTOCOL_NAMESPACE, 1, 0, 1, 1});
+
+    if (offer_iso2) {
+        sap.app_protocol.push_back({iso15118::ISO2_NAMESPACE, 2, 0, 2, 2});
+    }
+
+    queue_request(*conn, sap, iso15118::v2gtp::PayloadType::SAP);
+    session->poll();
+    now += 200ms;
+    session->poll();
+
+    const auto response = response_from_wire<iso15118::message_20::SupportedAppProtocolResponse>(
+        *conn, iso15118::v2gtp::PayloadType::SAP);
+    const bool iso20_allowed = not require_tls_1_3 or transport == 13;
+    using ResponseCode = iso15118::message_20::SupportedAppProtocolResponse::ResponseCode;
+
+    if (iso20_allowed or offer_iso2) {
+        REQUIRE(response.response_code == ResponseCode::OK_SuccessfulNegotiation);
+        REQUIRE(response.schema_id == (iso20_allowed ? 1 : 2));
+    } else {
+        REQUIRE(response.response_code == ResponseCode::Failed_NoNegotiation);
+        REQUIRE_FALSE(response.schema_id.has_value());
+    }
+}
+
+TEST_CASE_METHOD(SessionFixture, "A pre-negotiated ISO 15118-20 session also requires TLS 1.3 in strict mode") {
+    const auto transport = GENERATE(0, 12, 13);
+    conn->secure = transport != 0;
+    conn->tls_1_3 = transport == 13;
+
+    auto config = make_pnc_session_config();
+    config.iso15118_20_enforce_tls_1_3 = true;
+    auto session = make_session(std::move(config), true);
+
+    if (transport == 13) {
+        start_session(*session, *conn);
+        REQUIRE_FALSE(conn->closed);
+    } else {
+        // Cleanup happens during polling, outside the controller's session lock.
+        REQUIRE_FALSE(conn->closed);
+        session->poll();
+        REQUIRE(conn->closed);
+        REQUIRE(conn->written.empty());
+    }
+}
+
 TEST_CASE_METHOD(SessionFixture, "ISO 15118-20 over TLS keeps PnC and certificate installation") {
     conn->secure = true;
     auto session = make_session(make_pnc_session_config(), true);

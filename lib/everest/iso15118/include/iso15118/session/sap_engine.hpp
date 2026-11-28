@@ -2,6 +2,7 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 #pragma once
 
+#include <algorithm>
 #include <optional>
 #include <string>
 #include <vector>
@@ -35,6 +36,14 @@ public:
               session::feedback::Callbacks callbacks, bool tls_active);
 
     bool on_packet(v2gtp::PayloadType, const io::StreamInputView&);
+    void exclude_iso15118_20() {
+        supported_protocols.erase(
+            std::remove(supported_protocols.begin(), supported_protocols.end(), ProtocolId::ISO15118_20),
+            supported_protocols.end());
+        // A custom namespace also uses the ISO 15118-20 engine.
+        custom_protocol.reset();
+    }
+
     void on_control_event(const d20::ControlEvent&);
     void on_timeout(d20::TimeoutType);
 
@@ -81,10 +90,10 @@ private:
     session::Feedback feedback;
 
     // Copied so the engine does not outlive-reference the Session's config.
-    const std::vector<ProtocolId> supported_protocols;
+    std::vector<ProtocolId> supported_protocols;
     const std::vector<message_20::datatypes::ServiceCategory> supported_energy_services;
     const bool selecting_sap_based_on_energy_service;
-    const std::optional<std::string> custom_protocol;
+    std::optional<std::string> custom_protocol;
     const bool tls_active;
 
     std::optional<SeccOutgoing> outgoing{std::nullopt};

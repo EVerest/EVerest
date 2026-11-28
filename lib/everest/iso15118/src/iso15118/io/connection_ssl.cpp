@@ -14,6 +14,7 @@
 #include <vector>
 
 #include <arpa/inet.h>
+#include <openssl/ssl.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -137,6 +138,10 @@ void ConnectionSSL::set_event_callback(const ConnectionEventCallback& callback) 
 
 Ipv6EndPoint ConnectionSSL::get_public_endpoint() const {
     return end_point;
+}
+
+bool ConnectionSSL::is_tls_1_3() const {
+    return handshake_complete and ssl->connection != nullptr and ssl->connection->protocol_version() == TLS1_3_VERSION;
 }
 
 std::optional<sha512_hash_t> ConnectionSSL::get_vehicle_cert_hash() const {

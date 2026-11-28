@@ -59,6 +59,10 @@ public:
         return secure;
     }
 
+    bool is_tls_1_3() const override {
+        return secure and tls_1_3;
+    }
+
     std::optional<io::sha512_hash_t> get_vehicle_cert_hash() const override {
         return vehicle_cert_hash;
     }
@@ -100,6 +104,7 @@ public:
     io::ReadResult next_read_result{};
     bool closed{false};
     bool secure{false};
+    bool tls_1_3{false};
     std::vector<uint8_t> written;
     bool half_closed{false};
     bool half_close_ready{true};

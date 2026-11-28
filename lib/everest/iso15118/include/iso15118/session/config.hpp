@@ -54,6 +54,7 @@ struct EvseSetupConfig {
 
     // Priority-ordered: lower index == higher priority. Defaults to ISO 15118-20 only.
     std::vector<ProtocolId> supported_protocols{ProtocolId::ISO15118_20};
+    bool iso15118_20_enforce_tls_1_3{false};
 
     // The MO/V2G root paths validate the contract certificate chain.
     bool iso2_pnc_enabled{false};
@@ -136,6 +137,7 @@ struct SessionConfig {
     bool selecting_sap_based_on_energy_service{false};
 
     std::vector<ProtocolId> supported_protocols{ProtocolId::ISO15118_20};
+    bool iso15118_20_enforce_tls_1_3{false};
 
     bool iso2_pnc_enabled{false};
     // Only effective for PnC (Contract) sessions per [V2G2-691].

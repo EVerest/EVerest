@@ -255,6 +255,7 @@ SessionConfig::SessionConfig(EvseSetupConfig config) :
     custom_protocol(std::move(config.custom_protocol)),
     selecting_sap_based_on_energy_service(config.selecting_sap_based_on_energy_service),
     supported_protocols(std::move(config.supported_protocols)),
+    iso15118_20_enforce_tls_1_3(config.iso15118_20_enforce_tls_1_3),
     iso2_pnc_enabled(config.iso2_pnc_enabled),
     iso2_receipt_required(config.iso2_receipt_required),
     contract_mo_root_path(std::move(config.contract_mo_root_path)),

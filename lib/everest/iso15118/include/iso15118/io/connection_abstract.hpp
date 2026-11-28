@@ -49,6 +49,11 @@ struct IConnection {
     /// permits only over TLS (e.g. Plug&Charge / Contract payment).
     virtual bool is_secure() const = 0;
 
+    /// True after a TLS 1.3 handshake has completed.
+    virtual bool is_tls_1_3() const {
+        return false;
+    }
+
     virtual std::optional<sha512_hash_t> get_vehicle_cert_hash() const = 0;
 
     virtual ~IConnection() = default;

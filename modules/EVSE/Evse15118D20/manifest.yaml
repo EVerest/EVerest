@@ -44,6 +44,14 @@ config:
       leaf chains can be installed concurrently regardless of this flag.
     type: boolean
     default: false
+  iso15118_20_enforce_tls_1_3:
+    description: >-
+      Select ISO 15118-20 only after a successful TLS 1.3 handshake. This policy
+      applies to protocol selection and leaves the transport available to other
+      protocols unchanged. Leave false to permit unsecured ISO 15118-20 for lab
+      bring-up.
+    type: boolean
+    default: false
   supported_DIN70121:
     description: >-
       Offer DIN SPEC 70121 (DC only) in the SupportedAppProtocol handshake. Negotiated with the
@@ -63,8 +71,8 @@ config:
       supported_DIN70121 must be enabled. ISO 15118-20 is TLS-only ([V2G20-2677]), so it is silently
       dropped from the offer when no V2G leaf certificate is available; ISO 15118-2 and DIN SPEC 70121
       keep running unsecured in that case. When a certificate IS available, -20 stays in the offer even
-      on unsecured connections (ENFORCE_NO_TLS, or an EV requesting no transport security): such a
-      session works but is not standard-conformant, and is logged as a warning. Set this to false to
+      on unsecured connections unless iso15118_20_enforce_tls_1_3 is enabled. An unsecured
+      ISO 15118-20 session works for lab bring-up and is logged as a warning. Set this to false to
       offer only ISO 15118-2 / DIN SPEC 70121 on unsecured deployments.
     type: boolean
     default: true
